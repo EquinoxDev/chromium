@@ -50,6 +50,9 @@ class TouchActionFilterTest : public testing::Test,
   void SetGestureSequenceInProgress() {
     filter_.gesture_sequence_in_progress_ = true;
   }
+  void ResetGestureSequenceInProgress() {
+    filter_.gesture_sequence_in_progress_ = false;
+  }
   void PanTest(cc::TouchAction action,
                float scroll_x,
                float scroll_y,
@@ -1196,6 +1199,28 @@ TEST_P(TouchActionFilterTest, GestureArrivesBeforeHasHandlerSet) {
             FilterGestureEventResult::kFilterGestureEventAllowed);
 }
 
+TEST_P(TouchActionFilterTest, PinchGesturesAllowedByWhiteListedTouchAction) {
+  filter_.OnHasTouchEventHandlers(true);
+  EXPECT_FALSE(ActiveTouchAction().has_value());
+  EXPECT_FALSE(filter_.allowed_touch_action().has_value());
+
+  // white listed touch action has a default value of Auto, and pinch related
+  // gestures should be allowed.
+  WebGestureEvent pinch_begin = SyntheticWebGestureEventBuilder::Build(
+      WebInputEvent::kGesturePinchBegin, kSourceDevice);
+  WebGestureEvent pinch_update =
+      SyntheticWebGestureEventBuilder::BuildPinchUpdate(1.2f, 5, 5, 0,
+                                                        kSourceDevice);
+  WebGestureEvent pinch_end = SyntheticWebGestureEventBuilder::Build(
+      WebInputEvent::kGesturePinchEnd, kSourceDevice);
+  EXPECT_EQ(filter_.FilterGestureEvent(&pinch_begin),
+            FilterGestureEventResult::kFilterGestureEventAllowed);
+  EXPECT_EQ(filter_.FilterGestureEvent(&pinch_update),
+            FilterGestureEventResult::kFilterGestureEventAllowed);
+  EXPECT_EQ(filter_.FilterGestureEvent(&pinch_end),
+            FilterGestureEventResult::kFilterGestureEventAllowed);
+}
+
 // Test gesture event filtering with white listed touch action. It should test
 // all 3 kinds of results: Allowed / Dropped / Delayed.
 TEST_P(TouchActionFilterTest, FilterWithWhiteListedTouchAction) {
@@ -1404,6 +1429,23 @@ TEST_P(TouchActionFilterTest, ScrollBeginWithoutTapDown) {
   } else {
     EXPECT_EQ(ActiveTouchAction().value(), cc::kTouchActionPan);
     EXPECT_EQ(filter_.allowed_touch_action().value(), cc::kTouchActionPan);
+  }
+
+  ResetTouchAction();
+  ResetActiveTouchAction();
+  ResetGestureSequenceInProgress();
+  EXPECT_FALSE(ActiveTouchAction().has_value());
+  EXPECT_FALSE(filter_.allowed_touch_action().has_value());
+
+  // Ensure that there is no crash at GSB if both |allowed_| and |active_|
+  // touch action have no value.
+  if (compositor_touch_action_enabled_)
+    filter_.OnSetWhiteListedTouchAction(cc::kTouchActionPan);
+  EXPECT_EQ(filter_.FilterGestureEvent(&scroll_begin),
+            FilterGestureEventResult::kFilterGestureEventAllowed);
+  if (!compositor_touch_action_enabled_) {
+    EXPECT_EQ(filter_.allowed_touch_action().value(), cc::kTouchActionAuto);
+    EXPECT_EQ(ActiveTouchAction().value(), cc::kTouchActionAuto);
   }
 }
 

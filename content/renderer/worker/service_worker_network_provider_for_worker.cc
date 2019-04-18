@@ -15,6 +15,7 @@
 #include "content/renderer/service_worker/service_worker_provider_context.h"
 #include "services/network/public/cpp/features.h"
 #include "services/network/public/cpp/weak_wrapper_shared_url_loader_factory.h"
+#include "third_party/blink/public/common/service_worker/service_worker_types.h"
 #include "third_party/blink/public/common/service_worker/service_worker_utils.h"
 #include "third_party/blink/public/mojom/service_worker/service_worker_object.mojom.h"
 
@@ -29,47 +30,16 @@ ServiceWorkerNetworkProviderForWorker::Create(
     scoped_refptr<network::SharedURLLoaderFactory> fallback_loader_factory,
     bool is_secure_context,
     std::unique_ptr<NavigationResponseOverrideParameters> response_override) {
+  DCHECK(info);
   auto provider = base::WrapUnique(new ServiceWorkerNetworkProviderForWorker(
       is_secure_context, std::move(response_override)));
-  if (blink::ServiceWorkerUtils::IsServicificationEnabled()) {
-    DCHECK(info);
-    provider->context_ = base::MakeRefCounted<ServiceWorkerProviderContext>(
-        info->provider_id,
-        blink::mojom::ServiceWorkerProviderType::kForSharedWorker,
-        std::move(info->client_request), std::move(info->host_ptr_info),
-        std::move(controller_info), std::move(fallback_loader_factory));
-    if (script_loader_factory_info.is_valid()) {
-      provider->script_loader_factory_.Bind(
-          std::move(script_loader_factory_info));
-    }
-  } else {
-    DCHECK(!info);
-    int provider_id = ServiceWorkerProviderContext::GetNextId();
-    auto host_info = blink::mojom::ServiceWorkerProviderHostInfo::New(
-        provider_id, MSG_ROUTING_NONE,
-        blink::mojom::ServiceWorkerProviderType::kForSharedWorker,
-        true /* is_parent_frame_secure */, nullptr /* host_request */,
-        nullptr /* client_ptr_info */);
-    blink::mojom::ServiceWorkerContainerAssociatedRequest client_request =
-        mojo::MakeRequest(&host_info->client_ptr_info);
-    blink::mojom::ServiceWorkerContainerHostAssociatedPtrInfo host_ptr_info;
-    host_info->host_request = mojo::MakeRequest(&host_ptr_info);
-
-    provider->context_ = base::MakeRefCounted<ServiceWorkerProviderContext>(
-        provider_id, blink::mojom::ServiceWorkerProviderType::kForSharedWorker,
-        std::move(client_request), std::move(host_ptr_info),
-        std::move(controller_info), std::move(fallback_loader_factory));
-    if (ChildThreadImpl::current()) {
-      ChildThreadImpl::current()->channel()->GetRemoteAssociatedInterface(
-          &provider->dispatcher_host_);
-      provider->dispatcher_host_->OnProviderCreated(std::move(host_info));
-    } else {
-      // current() may be null in tests. Silently drop messages sent over
-      // ServiceWorkerContainerHost since we couldn't set it up correctly due
-      // to this test limitation. This way we don't crash when the associated
-      // interface ptr is used.
-      mojo::AssociateWithDisconnectedPipe(host_info->host_request.PassHandle());
-    }
+  provider->context_ = base::MakeRefCounted<ServiceWorkerProviderContext>(
+      blink::mojom::ServiceWorkerProviderType::kForSharedWorker,
+      std::move(info->client_request), std::move(info->host_ptr_info),
+      std::move(controller_info), std::move(fallback_loader_factory));
+  if (script_loader_factory_info.is_valid()) {
+    provider->script_loader_factory_.Bind(
+        std::move(script_loader_factory_info));
   }
   return provider;
 }
@@ -83,7 +53,6 @@ ServiceWorkerNetworkProviderForWorker::
 void ServiceWorkerNetworkProviderForWorker::WillSendRequest(
     blink::WebURLRequest& request) {
   auto extra_data = std::make_unique<RequestExtraData>();
-  extra_data->set_service_worker_provider_id(provider_id());
   extra_data->set_initiated_in_secure_context(is_secure_context_);
   if (response_override_) {
     DCHECK(base::FeatureList::IsEnabled(network::features::kNetworkService));
@@ -106,11 +75,6 @@ ServiceWorkerNetworkProviderForWorker::CreateURLLoader(
     // instead of the script loader.
     return nullptr;
   }
-
-  // S13nServiceWorker:
-  // We only install our own URLLoader if Servicification is enabled.
-  if (!blink::ServiceWorkerUtils::IsServicificationEnabled())
-    return nullptr;
 
   // If the |script_loader_factory_| exists, use it.
   if (script_loader_factory_) {
@@ -146,12 +110,6 @@ int64_t ServiceWorkerNetworkProviderForWorker::ControllerServiceWorkerID() {
 }
 
 void ServiceWorkerNetworkProviderForWorker::DispatchNetworkQuiet() {}
-
-int ServiceWorkerNetworkProviderForWorker::provider_id() const {
-  if (!context_)
-    return kInvalidServiceWorkerProviderId;
-  return context_->provider_id();
-}
 
 ServiceWorkerNetworkProviderForWorker::ServiceWorkerNetworkProviderForWorker(
     bool is_secure_context,

@@ -7,7 +7,9 @@
 #include <vector>
 
 #include "base/no_destructor.h"
+#include "ui/accessibility/ax_constants.mojom.h"
 #include "ui/accessibility/ax_node_data.h"
+#include "ui/accessibility/ax_role_properties.h"
 #include "ui/accessibility/ax_tree_data.h"
 
 namespace ui {
@@ -26,6 +28,13 @@ const AXTreeData& AXPlatformNodeDelegateBase::GetTreeData() const {
   return *empty_data;
 }
 
+AXNodePosition::AXPositionInstance
+AXPlatformNodeDelegateBase::CreateTextPositionAt(
+    int offset,
+    ax::mojom::TextAffinity affinity) const {
+  return AXNodePosition::CreateNullPosition();
+}
+
 gfx::NativeViewAccessible AXPlatformNodeDelegateBase::GetNSWindow() {
   return nullptr;
 }
@@ -42,12 +51,32 @@ gfx::NativeViewAccessible AXPlatformNodeDelegateBase::ChildAtIndex(int index) {
   return nullptr;
 }
 
-gfx::Rect AXPlatformNodeDelegateBase::GetClippedScreenBoundsRect() const {
+gfx::Rect AXPlatformNodeDelegateBase::GetBoundsRect(
+    const AXCoordinateSystem coordinate_system,
+    const AXClippingBehavior clipping_behavior,
+    AXOffscreenResult* offscreen_result) const {
   return gfx::Rect();
 }
 
-gfx::Rect AXPlatformNodeDelegateBase::GetUnclippedScreenBoundsRect() const {
+gfx::Rect AXPlatformNodeDelegateBase::GetRangeBoundsRect(
+    const int start_offset,
+    const int end_offset,
+    const AXCoordinateSystem coordinate_system,
+    const AXClippingBehavior clipping_behavior,
+    AXOffscreenResult* offscreen_result) const {
   return gfx::Rect();
+}
+
+gfx::Rect AXPlatformNodeDelegateBase::GetClippedScreenBoundsRect(
+    AXOffscreenResult* offscreen_result) const {
+  return GetBoundsRect(AXCoordinateSystem::kScreen,
+                       AXClippingBehavior::kClipped, offscreen_result);
+}
+
+gfx::Rect AXPlatformNodeDelegateBase::GetUnclippedScreenBoundsRect(
+    AXOffscreenResult* offscreen_result) const {
+  return GetBoundsRect(AXCoordinateSystem::kScreen,
+                       AXClippingBehavior::kUnclipped, offscreen_result);
 }
 
 gfx::NativeViewAccessible AXPlatformNodeDelegateBase::HitTestSync(int x,
@@ -73,23 +102,33 @@ AXPlatformNodeDelegateBase::GetTargetForNativeAccessibilityEvent() {
 }
 
 bool AXPlatformNodeDelegateBase::IsTable() const {
-  return false;
+  return ui::IsTableLike(GetData().role);
 }
 
 int AXPlatformNodeDelegateBase::GetTableRowCount() const {
-  return 0;
+  return GetData().GetIntAttribute(ax::mojom::IntAttribute::kTableRowCount);
 }
 
 int AXPlatformNodeDelegateBase::GetTableColCount() const {
-  return 0;
+  return GetData().GetIntAttribute(ax::mojom::IntAttribute::kTableColumnCount);
 }
 
-int32_t AXPlatformNodeDelegateBase::GetTableAriaColCount() const {
-  return 0;
+base::Optional<int32_t> AXPlatformNodeDelegateBase::GetTableAriaColCount()
+    const {
+  int32_t aria_column_count =
+      GetData().GetIntAttribute(ax::mojom::IntAttribute::kAriaColumnCount);
+  if (aria_column_count == ax::mojom::kUnknownAriaColumnOrRowCount)
+    return base::nullopt;
+  return aria_column_count;
 }
 
-int32_t AXPlatformNodeDelegateBase::GetTableAriaRowCount() const {
-  return 0;
+base::Optional<int32_t> AXPlatformNodeDelegateBase::GetTableAriaRowCount()
+    const {
+  int32_t aria_row_count =
+      GetData().GetIntAttribute(ax::mojom::IntAttribute::kAriaRowCount);
+  if (aria_row_count == ax::mojom::kUnknownAriaColumnOrRowCount)
+    return base::nullopt;
+  return aria_row_count;
 }
 
 int32_t AXPlatformNodeDelegateBase::GetTableCellCount() const {
@@ -98,58 +137,65 @@ int32_t AXPlatformNodeDelegateBase::GetTableCellCount() const {
 
 const std::vector<int32_t> AXPlatformNodeDelegateBase::GetColHeaderNodeIds()
     const {
-  return std::vector<int32_t>();
+  return {};
 }
 
 const std::vector<int32_t> AXPlatformNodeDelegateBase::GetColHeaderNodeIds(
     int32_t col_index) const {
-  return std::vector<int32_t>();
+  return {};
 }
 
 const std::vector<int32_t> AXPlatformNodeDelegateBase::GetRowHeaderNodeIds()
     const {
-  return std::vector<int32_t>();
+  return {};
 }
 
 const std::vector<int32_t> AXPlatformNodeDelegateBase::GetRowHeaderNodeIds(
     int32_t row_index) const {
-  return std::vector<int32_t>();
+  return {};
+}
+
+AXPlatformNode* AXPlatformNodeDelegateBase::GetTableCaption() {
+  return nullptr;
 }
 
 bool AXPlatformNodeDelegateBase::IsTableRow() const {
-  return false;
+  return ui::IsTableRow(GetData().role);
 }
 
 int32_t AXPlatformNodeDelegateBase::GetTableRowRowIndex() const {
-  return 0;
+  return GetData().GetIntAttribute(ax::mojom::IntAttribute::kTableRowIndex);
 }
 
 bool AXPlatformNodeDelegateBase::IsTableCellOrHeader() const {
-  return false;
+  return ui::IsCellOrTableHeader(GetData().role);
 }
 
 int32_t AXPlatformNodeDelegateBase::GetTableCellColIndex() const {
-  return 0;
+  return GetData().GetIntAttribute(
+      ax::mojom::IntAttribute::kTableCellColumnIndex);
 }
 
 int32_t AXPlatformNodeDelegateBase::GetTableCellRowIndex() const {
-  return 0;
+  return GetData().GetIntAttribute(ax::mojom::IntAttribute::kTableCellRowIndex);
 }
 
 int32_t AXPlatformNodeDelegateBase::GetTableCellColSpan() const {
-  return 0;
+  return GetData().GetIntAttribute(
+      ax::mojom::IntAttribute::kTableCellColumnSpan);
 }
 
 int32_t AXPlatformNodeDelegateBase::GetTableCellRowSpan() const {
-  return 0;
+  return GetData().GetIntAttribute(ax::mojom::IntAttribute::kTableCellRowSpan);
 }
 
 int32_t AXPlatformNodeDelegateBase::GetTableCellAriaColIndex() const {
-  return 0;
+  return GetData().GetIntAttribute(
+      ax::mojom::IntAttribute::kAriaCellColumnIndex);
 }
 
 int32_t AXPlatformNodeDelegateBase::GetTableCellAriaRowIndex() const {
-  return 0;
+  return GetData().GetIntAttribute(ax::mojom::IntAttribute::kAriaCellRowIndex);
 }
 
 int32_t AXPlatformNodeDelegateBase::GetCellId(int32_t row_index,
@@ -163,6 +209,14 @@ int32_t AXPlatformNodeDelegateBase::GetTableCellIndex() const {
 
 int32_t AXPlatformNodeDelegateBase::CellIndexToId(int32_t cell_index) const {
   return -1;
+}
+
+bool AXPlatformNodeDelegateBase::IsCellOrHeaderOfARIATable() const {
+  return false;
+}
+
+bool AXPlatformNodeDelegateBase::IsCellOrHeaderOfARIAGrid() const {
+  return false;
 }
 
 bool AXPlatformNodeDelegateBase::AccessibilityPerformAction(
@@ -182,11 +236,25 @@ AXPlatformNodeDelegateBase::GetLocalizedRoleDescriptionForUnlabeledImage()
   return base::string16();
 }
 
+base::string16 AXPlatformNodeDelegateBase::GetLocalizedStringForLandmarkType()
+    const {
+  return base::string16();
+}
+
+base::string16
+AXPlatformNodeDelegateBase::GetStyleNameAttributeAsLocalizedString() const {
+  return base::string16();
+}
+
 bool AXPlatformNodeDelegateBase::ShouldIgnoreHoveredStateForTesting() {
   return true;
 }
 
 bool AXPlatformNodeDelegateBase::IsOffscreen() const {
+  return false;
+}
+
+bool AXPlatformNodeDelegateBase::IsWebContent() const {
   return false;
 }
 
@@ -236,6 +304,19 @@ std::set<AXPlatformNode*> AXPlatformNodeDelegateBase::GetReverseRelations(
 const AXUniqueId& AXPlatformNodeDelegateBase::GetUniqueId() const {
   static base::NoDestructor<AXUniqueId> dummy_unique_id;
   return *dummy_unique_id;
+}
+
+base::Optional<int> AXPlatformNodeDelegateBase::FindTextBoundary(
+    ui::TextBoundaryType boundary_type,
+    int offset,
+    TextBoundaryDirection direction,
+    ax::mojom::TextAffinity affinity) const {
+  return base::nullopt;
+}
+
+const std::vector<gfx::NativeViewAccessible>
+AXPlatformNodeDelegateBase::GetDescendants() const {
+  return {};
 }
 
 bool AXPlatformNodeDelegateBase::IsOrderedSetItem() const {

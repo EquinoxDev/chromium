@@ -306,6 +306,8 @@ ChildProcessImportance MockRenderProcessHost::GetEffectiveImportance() {
   NOTIMPLEMENTED();
   return ChildProcessImportance::NORMAL;
 }
+
+void MockRenderProcessHost::DumpProcessStack() {}
 #endif
 
 void MockRenderProcessHost::SetSuddenTerminationAllowed(bool allowed) {
@@ -347,7 +349,7 @@ const service_manager::Identity& MockRenderProcessHost::GetChildIdentity() {
   return child_identity_;
 }
 
-std::unique_ptr<base::SharedPersistentMemoryAllocator>
+std::unique_ptr<base::PersistentMemoryAllocator>
 MockRenderProcessHost::TakeMetricsAllocator() {
   return nullptr;
 }
@@ -393,8 +395,6 @@ void MockRenderProcessHost::DisableKeepAliveRefCount() {
 bool MockRenderProcessHost::IsKeepAliveRefCountDisabled() {
   return false;
 }
-
-void MockRenderProcessHost::PurgeAndSuspend() {}
 
 void MockRenderProcessHost::Resume() {}
 

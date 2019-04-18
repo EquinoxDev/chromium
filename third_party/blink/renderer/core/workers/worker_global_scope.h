@@ -40,6 +40,7 @@
 #include "third_party/blink/renderer/core/frame/dom_timer_coordinator.h"
 #include "third_party/blink/renderer/core/messaging/blink_transferable_message.h"
 #include "third_party/blink/renderer/core/script/script.h"
+#include "third_party/blink/renderer/core/workers/global_scope_creation_params.h"
 #include "third_party/blink/renderer/core/workers/worker_animation_frame_provider.h"
 #include "third_party/blink/renderer/core/workers/worker_or_worklet_global_scope.h"
 #include "third_party/blink/renderer/core/workers/worker_settings.h"
@@ -59,13 +60,11 @@ class FetchClientSettingsObjectSnapshot;
 class FontFaceSet;
 class OffscreenFontSelector;
 class V8VoidFunction;
-class WorkerClassicScriptLoader;
 class StringOrTrustedScriptURL;
 class TrustedTypePolicyFactory;
 class WorkerLocation;
 class WorkerNavigator;
 class WorkerThread;
-struct GlobalScopeCreationParams;
 
 class CORE_EXPORT WorkerGlobalScope
     : public WorkerOrWorkletGlobalScope,
@@ -80,7 +79,7 @@ class CORE_EXPORT WorkerGlobalScope
   // Returns null if caching is not supported.
   virtual SingleCachedMetadataHandler* CreateWorkerScriptCachedMetadataHandler(
       const KURL& script_url,
-      const Vector<uint8_t>* meta_data) {
+      std::unique_ptr<Vector<uint8_t>> meta_data) {
     return nullptr;
   }
 
@@ -134,9 +133,6 @@ class CORE_EXPORT WorkerGlobalScope
   OffscreenFontSelector* GetFontSelector() { return font_selector_; }
 
   CoreProbeSink* GetProbeSink() final;
-  const base::UnguessableToken& GetParentDevToolsToken() {
-    return parent_devtools_token_;
-  }
 
   // EventTarget
   ExecutionContext* GetExecutionContext() const final;
@@ -149,12 +145,15 @@ class CORE_EXPORT WorkerGlobalScope
                              String source_code,
                              std::unique_ptr<Vector<uint8_t>> cached_meta_data,
                              const v8_inspector::V8StackTraceId& stack_id);
-  void ImportClassicScript(
+
+  // Fetches and evaluates the top-level classic script.
+  virtual void FetchAndRunClassicScript(
       const KURL& script_url,
       const FetchClientSettingsObjectSnapshot& outside_settings_object,
-      const v8_inspector::V8StackTraceId& stack_id);
-  // Imports the top-level module script for |module_url_record|.
-  virtual void ImportModuleScript(
+      const v8_inspector::V8StackTraceId& stack_id) = 0;
+
+  // Fetches and evaluates the top-level module script.
+  virtual void FetchAndRunModuleScript(
       const KURL& module_url_record,
       const FetchClientSettingsObjectSnapshot& outside_settings_object,
       network::mojom::FetchCredentialsMode) = 0;
@@ -185,8 +184,6 @@ class CORE_EXPORT WorkerGlobalScope
   WorkerGlobalScope(std::unique_ptr<GlobalScopeCreationParams>,
                     WorkerThread*,
                     base::TimeTicks time_origin);
-  void ApplyContentSecurityPolicyFromHeaders(
-      const ContentSecurityPolicyResponseHeaders&);
 
   // ExecutionContext
   void ExceptionThrown(ErrorEvent*) override;
@@ -200,39 +197,14 @@ class CORE_EXPORT WorkerGlobalScope
 
   mojom::ScriptType GetScriptType() const { return script_type_; }
 
- private:
-  virtual void importScriptsFromStrings(const Vector<String>& urls,
-                                        ExceptionState&);
+  GlobalScopeCSPApplyMode GetCSPApplyMode() const { return csp_apply_mode_; }
 
+ private:
   void SetWorkerSettings(std::unique_ptr<WorkerSettings>);
 
-  void DidReceiveResponseForClassicScript(
-      WorkerClassicScriptLoader* classic_script_loader);
-  void DidImportClassicScript(WorkerClassicScriptLoader* classic_script_loader,
-                              const v8_inspector::V8StackTraceId& stack_id);
-
-  // |kNotHandled| is used when the script was not in
-  // InstalledScriptsManager, which means it was not an installed script.
-  enum class LoadResult { kSuccess, kFailed, kNotHandled };
-
-  // Tries to load the script synchronously from the
-  // InstalledScriptsManager, which holds scripts that are sent from the browser
-  // upon starting an installed worker. This blocks until the script is
-  // received. If the script load could not be handled by the
-  // InstalledScriptsManager, e.g. when the script was not an installed script,
-  // returns LoadResult::kNotHandled.
-  // TODO(crbug.com/753350): Factor out LoadScriptFrom* into a new class which
-  // provides the worker's scripts.
-  LoadResult LoadScriptFromInstalledScriptsManager(
-      const KURL& script_url,
-      KURL* out_response_url,
-      String* out_source_code,
-      std::unique_ptr<Vector<uint8_t>>* out_cached_meta_data);
-
-  // Tries to load the script synchronously from the WorkerClassicScriptLoader,
-  // which requests the script from the browser. This blocks until the script is
-  // received.
-  LoadResult LoadScriptFromClassicScriptLoader(
+  // Used for importScripts().
+  void ImportScriptsInternal(const Vector<String>& urls, ExceptionState&);
+  bool FetchClassicImportedScript(
       const KURL& script_url,
       KURL* out_response_url,
       String* out_source_code,
@@ -244,11 +216,10 @@ class CORE_EXPORT WorkerGlobalScope
   KURL url_;
   const mojom::ScriptType script_type_;
   const String user_agent_;
-  const base::UnguessableToken parent_devtools_token_;
   std::unique_ptr<WorkerSettings> worker_settings_;
 
   mutable Member<WorkerLocation> location_;
-  mutable TraceWrapperMember<WorkerNavigator> navigator_;
+  mutable Member<WorkerNavigator> navigator_;
   Member<TrustedTypePolicyFactory> trusted_types_;
 
   WorkerThread* thread_;
@@ -263,13 +234,15 @@ class CORE_EXPORT WorkerGlobalScope
   int last_pending_error_event_id_ = 0;
 
   Member<OffscreenFontSelector> font_selector_;
-  TraceWrapperMember<WorkerAnimationFrameProvider> animation_frame_provider_;
+  Member<WorkerAnimationFrameProvider> animation_frame_provider_;
 
   service_manager::InterfaceProvider interface_provider_;
 
   const base::UnguessableToken agent_cluster_id_;
 
   HttpsState https_state_;
+
+  GlobalScopeCSPApplyMode csp_apply_mode_;
 };
 
 template <>

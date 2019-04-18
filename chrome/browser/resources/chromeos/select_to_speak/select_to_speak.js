@@ -184,20 +184,21 @@ SelectToSpeak.prototype = {
    */
   requestSpeakSelectedText_: function(focusedNode) {
     // If nothing is selected, return early.
-    if (!focusedNode || !focusedNode.root || !focusedNode.root.anchorObject ||
-        !focusedNode.root.focusObject) {
+    if (!focusedNode || !focusedNode.root ||
+        !focusedNode.root.selectionStartObject ||
+        !focusedNode.root.selectionEndObject) {
       this.onNullSelection_();
       return;
     }
-    let anchorObject = focusedNode.root.anchorObject;
-    let anchorOffset = focusedNode.root.anchorOffset || 0;
-    let focusObject = focusedNode.root.focusObject;
-    let focusOffset = focusedNode.root.focusOffset || 0;
+    let anchorObject = focusedNode.root.selectionStartObject;
+    let anchorOffset = focusedNode.root.selectionStartOffset || 0;
+    let focusObject = focusedNode.root.selectionEndObject;
+    let focusOffset = focusedNode.root.selectionEndOffset || 0;
     if (anchorObject === focusObject && anchorOffset == focusOffset) {
       this.onNullSelection_();
       return;
     }
-    // First calculate the equivalant position for this selection.
+    // First calculate the equivalent position for this selection.
     // Sometimes the automation selection returns a offset into a root
     // node rather than a child node, which may be a bug. This allows us to
     // work around that bug until it is fixed or redefined.
@@ -406,9 +407,22 @@ SelectToSpeak.prototype = {
    * @private
    */
   clearFocusRing_: function() {
-    chrome.accessibilityPrivate.setFocusRing([]);
+    this.setFocusRings_([]);
     chrome.accessibilityPrivate.setHighlights(
         [], this.prefsManager_.highlightColor());
+  },
+
+  /**
+   * Sets the focus ring to |rects|.
+   * @param {!Array<!chrome.accessibilityPrivate.ScreenRect>} rects
+   * @private
+   */
+  setFocusRings_: function(rects) {
+    chrome.accessibilityPrivate.setFocusRings([{
+      rects: rects,
+      type: chrome.accessibilityPrivate.FocusType.GLOW,
+      color: this.prefsManager_.focusRingColor()
+    }]);
   },
 
   /**
@@ -466,8 +480,7 @@ SelectToSpeak.prototype = {
       },
       // onSelectionChanged: Mouse selection rect changed.
       onSelectionChanged: rect => {
-        chrome.accessibilityPrivate.setFocusRing(
-            [rect], this.prefsManager_.focusRingColor());
+        this.setFocusRings_([rect]);
       },
       // onKeystrokeSelection: Keys pressed for reading highlighted text.
       onKeystrokeSelection: () => {
@@ -880,12 +893,9 @@ SelectToSpeak.prototype = {
     // the one node. if it has siblings, highlight the parent.
     if (this.currentBlockParent_ != null &&
         node.role == RoleType.INLINE_TEXT_BOX) {
-      chrome.accessibilityPrivate.setFocusRing(
-          [this.currentBlockParent_.location],
-          this.prefsManager_.focusRingColor());
+      this.setFocusRings_([this.currentBlockParent_.location]);
     } else {
-      chrome.accessibilityPrivate.setFocusRing(
-          [node.location], this.prefsManager_.focusRingColor());
+      this.setFocusRings_([node.location]);
     }
   },
 

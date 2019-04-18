@@ -158,10 +158,9 @@ bool StyleSheetContents::IsCacheableForStyleElement() const {
 }
 
 void StyleSheetContents::ParserAppendRule(StyleRuleBase* rule) {
-  if (rule->IsImportRule()) {
+  if (auto* import_rule = DynamicTo<StyleRuleImport>(rule)) {
     // Parser enforces that @import rules come before anything else
     DCHECK(child_rules_.IsEmpty());
-    StyleRuleImport* import_rule = ToStyleRuleImport(rule);
     if (import_rule->MediaQueries())
       SetHasMediaQueries();
     import_rules_.push_back(import_rule);
@@ -170,13 +169,12 @@ void StyleSheetContents::ParserAppendRule(StyleRuleBase* rule) {
     return;
   }
 
-  if (rule->IsNamespaceRule()) {
+  if (auto* namespace_rule = DynamicTo<StyleRuleNamespace>(rule)) {
     // Parser enforces that @namespace rules come before all rules other than
     // import/charset rules
     DCHECK(child_rules_.IsEmpty());
-    StyleRuleNamespace& namespace_rule = ToStyleRuleNamespace(*rule);
-    ParserAddNamespace(namespace_rule.Prefix(), namespace_rule.Uri());
-    namespace_rules_.push_back(&namespace_rule);
+    ParserAddNamespace(namespace_rule->Prefix(), namespace_rule->Uri());
+    namespace_rules_.push_back(namespace_rule);
     return;
   }
 
@@ -227,10 +225,10 @@ bool StyleSheetContents::WrapperInsertRule(StyleRuleBase* rule,
   if (index < import_rules_.size() ||
       (index == import_rules_.size() && rule->IsImportRule())) {
     // Inserting non-import rule before @import is not allowed.
-    if (!rule->IsImportRule())
+    auto* import_rule = DynamicTo<StyleRuleImport>(rule);
+    if (!import_rule)
       return false;
 
-    StyleRuleImport* import_rule = ToStyleRuleImport(rule);
     if (import_rule->MediaQueries())
       SetHasMediaQueries();
 
@@ -251,14 +249,14 @@ bool StyleSheetContents::WrapperInsertRule(StyleRuleBase* rule,
       (index == namespace_rules_.size() && rule->IsNamespaceRule())) {
     // Inserting non-namespace rules other than import rule before @namespace is
     // not allowed.
-    if (!rule->IsNamespaceRule())
+    auto* namespace_rule = DynamicTo<StyleRuleNamespace>(rule);
+    if (!namespace_rule)
       return false;
     // Inserting @namespace rule when rules other than import/namespace/charset
     // are present is not allowed.
     if (!child_rules_.IsEmpty())
       return false;
 
-    StyleRuleNamespace* namespace_rule = ToStyleRuleNamespace(rule);
     namespace_rules_.insert(index, namespace_rule);
     // For now to be compatible with IE and Firefox if namespace rule with same
     // prefix is added irrespective of adding the rule at any index, last added
@@ -286,8 +284,6 @@ bool StyleSheetContents::WrapperDeleteRule(unsigned index) {
 
   if (index < import_rules_.size()) {
     import_rules_[index]->ClearParentStyleSheet();
-    if (import_rules_[index]->IsFontFaceRule())
-      NotifyRemoveFontFaceRule(ToStyleRuleFontFace(import_rules_[index].Get()));
     import_rules_.EraseAt(index);
     return true;
   }
@@ -302,7 +298,7 @@ bool StyleSheetContents::WrapperDeleteRule(unsigned index) {
   index -= namespace_rules_.size();
 
   if (child_rules_[index]->IsFontFaceRule())
-    NotifyRemoveFontFaceRule(ToStyleRuleFontFace(child_rules_[index].Get()));
+    NotifyRemoveFontFaceRule(To<StyleRuleFontFace>(child_rules_[index].Get()));
   child_rules_.EraseAt(index);
   return true;
 }
@@ -493,18 +489,18 @@ static bool ChildRulesHaveFailedOrCanceledSubresources(
     const StyleRuleBase* rule = rules[i].Get();
     switch (rule->GetType()) {
       case StyleRuleBase::kStyle:
-        if (ToStyleRule(rule)->PropertiesHaveFailedOrCanceledSubresources())
+        if (To<StyleRule>(rule)->PropertiesHaveFailedOrCanceledSubresources())
           return true;
         break;
       case StyleRuleBase::kFontFace:
-        if (ToStyleRuleFontFace(rule)
+        if (To<StyleRuleFontFace>(rule)
                 ->Properties()
                 .HasFailedOrCanceledSubresources())
           return true;
         break;
       case StyleRuleBase::kMedia:
         if (ChildRulesHaveFailedOrCanceledSubresources(
-                ToStyleRuleMedia(rule)->ChildRules()))
+                To<StyleRuleMedia>(rule)->ChildRules()))
           return true;
         break;
       case StyleRuleBase::kCharset:
@@ -605,7 +601,7 @@ void StyleSheetContents::ClearReferencedFromResource() {
 RuleSet& StyleSheetContents::EnsureRuleSet(const MediaQueryEvaluator& medium,
                                            AddRuleFlags add_rule_flags) {
   if (!rule_set_) {
-    rule_set_ = RuleSet::Create();
+    rule_set_ = MakeGarbageCollected<RuleSet>();
     rule_set_->AddRulesFromSheet(this, medium, add_rule_flags);
   }
   return *rule_set_.Get();
@@ -656,10 +652,9 @@ static void FindFontFaceRulesFromRules(
   for (unsigned i = 0; i < rules.size(); ++i) {
     StyleRuleBase* rule = rules[i].Get();
 
-    if (rule->IsFontFaceRule()) {
-      font_face_rules.push_back(ToStyleRuleFontFace(rule));
-    } else if (rule->IsMediaRule()) {
-      StyleRuleMedia* media_rule = ToStyleRuleMedia(rule);
+    if (auto* font_face_rule = DynamicTo<StyleRuleFontFace>(rule)) {
+      font_face_rules.push_back(font_face_rule);
+    } else if (auto* media_rule = DynamicTo<StyleRuleMedia>(rule)) {
       // We cannot know whether the media rule matches or not, but
       // for safety, remove @font-face in the media rule (if exists).
       FindFontFaceRulesFromRules(media_rule->ChildRules(), font_face_rules);

@@ -17,11 +17,9 @@
 #include "base/strings/string16.h"
 #include "chrome/browser/android/tab_state.h"
 #include "chrome/browser/sync/glue/synced_tab_delegate_android.h"
-#include "components/favicon/core/favicon_driver_observer.h"
 #include "components/infobars/core/infobar_manager.h"
 #include "components/omnibox/browser/location_bar_model.h"
 #include "components/sessions/core/session_id.h"
-#include "content/public/browser/web_contents_observer.h"
 
 class GURL;
 class Profile;
@@ -30,8 +28,6 @@ namespace cc {
 class Layer;
 }
 
-struct NavigateParams;
-
 namespace android {
 class TabWebContentsDelegateAndroid;
 class TabContentManager;
@@ -39,7 +35,6 @@ class TabContentManager;
 
 namespace content {
 class DevToolsAgentHost;
-class NavigationHandle;
 class WebContents;
 }
 
@@ -47,8 +42,7 @@ namespace prerender {
 class PrerenderManager;
 }
 
-class TabAndroid : public favicon::FaviconDriverObserver,
-                   public content::WebContentsObserver {
+class TabAndroid {
  public:
   // A Java counterpart will be generated for this enum.
   // GENERATED_JAVA_ENUM_PACKAGE: org.chromium.chrome.browser
@@ -72,7 +66,7 @@ class TabAndroid : public favicon::FaviconDriverObserver,
   static void AttachTabHelpers(content::WebContents* web_contents);
 
   TabAndroid(JNIEnv* env, const base::android::JavaRef<jobject>& obj);
-  ~TabAndroid() override;
+  ~TabAndroid();
 
   base::android::ScopedJavaLocalRef<jobject> GetJavaObject();
 
@@ -111,16 +105,7 @@ class TabAndroid : public favicon::FaviconDriverObserver,
   void SetWindowSessionID(SessionID window_id);
   void SetSyncId(int sync_id);
 
-  void HandlePopupNavigation(NavigateParams* params);
-
   bool HasPrerenderedUrl(GURL gurl);
-
-  // Overridden from favicon::FaviconDriverObserver:
-  void OnFaviconUpdated(favicon::FaviconDriver* favicon_driver,
-                        NotificationIconType notification_icon_type,
-                        const GURL& icon_url,
-                        bool icon_url_changed,
-                        const gfx::Image& image) override;
 
   // Returns true if this tab is currently presented in the context of custom
   // tabs. Tabs can be moved between different activities so the returned value
@@ -190,13 +175,6 @@ class TabAndroid : public favicon::FaviconDriverObserver,
   static void CreateHistoricalTabFromContents(
       content::WebContents* web_contents);
 
-  void UpdateBrowserControlsState(
-      JNIEnv* env,
-      const base::android::JavaParamRef<jobject>& obj,
-      jint constraints,
-      jint current,
-      jboolean animate);
-
   void LoadOriginalImage(JNIEnv* env,
                          const base::android::JavaParamRef<jobject>& obj);
 
@@ -208,16 +186,6 @@ class TabAndroid : public favicon::FaviconDriverObserver,
       JNIEnv* env,
       const base::android::JavaParamRef<jobject>& obj,
       const base::android::JavaParamRef<jobject>& delegate);
-
-  // TODO(dtrainor): Remove this, pull content_layer() on demand.
-  void AttachToTabContentManager(
-      JNIEnv* env,
-      const base::android::JavaParamRef<jobject>& obj,
-      const base::android::JavaParamRef<jobject>& jtab_content_manager);
-
-  void ClearThumbnailPlaceholder(
-      JNIEnv* env,
-      const base::android::JavaParamRef<jobject>& obj);
 
   bool HasPrerenderedUrl(JNIEnv* env,
                          const base::android::JavaParamRef<jobject>& obj,
@@ -244,17 +212,18 @@ class TabAndroid : public favicon::FaviconDriverObserver,
 
   bool ShouldEnableEmbeddedMediaExperience() const;
 
+  void SetNightModeEnabled(JNIEnv* env,
+                           const base::android::JavaParamRef<jobject>& obj,
+                           jboolean enabled);
+
+  bool NightModeEnabled() const;
+
   scoped_refptr<content::DevToolsAgentHost> GetDevToolsAgentHost();
 
   void SetDevToolsAgentHost(scoped_refptr<content::DevToolsAgentHost> host);
 
   void AttachDetachedTab(JNIEnv* env,
                          const base::android::JavaParamRef<jobject>& obj);
-
-  void NavigationEntryChanged(
-      const content::EntryChangedDetails& change_details) override;
-  void DidFinishNavigation(
-      content::NavigationHandle* navigation_handle) override;
 
   bool AreRendererInputEventsIgnored(
       JNIEnv* env,
@@ -280,6 +249,7 @@ class TabAndroid : public favicon::FaviconDriverObserver,
   GURL webapp_manifest_scope_;
   bool picture_in_picture_enabled_;
   bool embedded_media_experience_enabled_;
+  bool night_mode_enabled_ = false;
 
   DISALLOW_COPY_AND_ASSIGN(TabAndroid);
 };

@@ -230,12 +230,19 @@ void ProxyMain::BeginMainFrame(
   // what this does.
   layer_tree_host_->RequestMainFrameUpdate();
 
+  // Check now if we should stop deferring commits
+  if (defer_commits_ && base::TimeTicks::Now() > commits_restart_time_) {
+    StopDeferringCommits();
+  }
+
   // At this point the main frame may have deferred commits to avoid committing
   // right now, or we may be deferring commits but not deferring main
   // frame updates.
   skip_commit |= defer_main_frame_update_ || defer_commits_;
 
   if (skip_commit) {
+    current_pipeline_stage_ = NO_PIPELINE_STAGE;
+    layer_tree_host_->DidBeginMainFrame();
     TRACE_EVENT_INSTANT0("cc", "EarlyOut_DeferCommit_InsideBeginMainFrame",
                          TRACE_EVENT_SCOPE_THREAD);
     layer_tree_host_->RecordEndOfFrameMetrics(begin_main_frame_start_time);
@@ -246,10 +253,8 @@ void ProxyMain::BeginMainFrame(
                                   CommitEarlyOutReason::ABORTED_DEFERRED_COMMIT,
                                   begin_main_frame_start_time,
                                   base::Passed(&empty_swap_promises)));
-    current_pipeline_stage_ = NO_PIPELINE_STAGE;
     // We intentionally don't report CommitComplete() here since it was aborted
     // prematurely and we're waiting to do another commit in the future.
-    layer_tree_host_->DidBeginMainFrame();
     // When we stop deferring commits, we should resume any previously requested
     // pipeline stages.
     deferred_final_pipeline_stage_ = final_pipeline_stage_;
@@ -284,8 +289,9 @@ void ProxyMain::BeginMainFrame(
 
   current_pipeline_stage_ = COMMIT_PIPELINE_STAGE;
   if (final_pipeline_stage_ < COMMIT_PIPELINE_STAGE) {
+    current_pipeline_stage_ = NO_PIPELINE_STAGE;
+    layer_tree_host_->DidBeginMainFrame();
     TRACE_EVENT_INSTANT0("cc", "EarlyOut_NoUpdates", TRACE_EVENT_SCOPE_THREAD);
-    layer_tree_host_->RecordEndOfFrameMetrics(begin_main_frame_start_time);
     std::vector<std::unique_ptr<SwapPromise>> swap_promises =
         layer_tree_host_->GetSwapPromiseManager()->TakeSwapPromises();
     ImplThreadTaskRunner()->PostTask(
@@ -298,9 +304,8 @@ void ProxyMain::BeginMainFrame(
     // Although the commit is internally aborted, this is because it has been
     // detected to be a no-op.  From the perspective of an embedder, this commit
     // went through, and input should no longer be throttled, etc.
-    current_pipeline_stage_ = NO_PIPELINE_STAGE;
     layer_tree_host_->CommitComplete();
-    layer_tree_host_->DidBeginMainFrame();
+    layer_tree_host_->RecordEndOfFrameMetrics(begin_main_frame_start_time);
     return;
   }
 
@@ -314,13 +319,15 @@ void ProxyMain::BeginMainFrame(
   layer_tree_host_->QueueSwapPromise(
       std::make_unique<LatencyInfoSwapPromise>(new_latency_info));
 
+  current_pipeline_stage_ = NO_PIPELINE_STAGE;
+  layer_tree_host_->DidBeginMainFrame();
+
   // Notify the impl thread that the main thread is ready to commit. This will
   // begin the commit process, which is blocking from the main thread's
   // point of view, but asynchronously performed on the impl thread,
   // coordinated by the Scheduler.
   {
     TRACE_EVENT0("cc", "ProxyMain::BeginMainFrame::commit");
-    layer_tree_host_->RecordEndOfFrameMetrics(begin_main_frame_start_time);
 
     DebugScopedSetMainThreadBlocked main_thread_blocked(task_runner_provider_);
 
@@ -336,9 +343,8 @@ void ProxyMain::BeginMainFrame(
     completion.Wait();
   }
 
-  current_pipeline_stage_ = NO_PIPELINE_STAGE;
   layer_tree_host_->CommitComplete();
-  layer_tree_host_->DidBeginMainFrame();
+  layer_tree_host_->RecordEndOfFrameMetrics(begin_main_frame_start_time);
 }
 
 void ProxyMain::DidPresentCompositorFrame(
@@ -437,13 +443,6 @@ bool ProxyMain::RequestedAnimatePending() {
   return max_requested_pipeline_stage_ >= ANIMATE_PIPELINE_STAGE;
 }
 
-void ProxyMain::NotifyInputThrottledUntilCommit() {
-  DCHECK(IsMainThread());
-  ImplThreadTaskRunner()->PostTask(
-      FROM_HERE, base::BindOnce(&ProxyImpl::SetInputThrottledUntilCommitOnImpl,
-                                base::Unretained(proxy_impl_.get()), true));
-}
-
 void ProxyMain::SetDeferMainFrameUpdate(bool defer_main_frame_update) {
   DCHECK(IsMainThread());
   if (defer_main_frame_update_ == defer_main_frame_update)
@@ -462,16 +461,26 @@ void ProxyMain::SetDeferMainFrameUpdate(bool defer_main_frame_update) {
                                 defer_main_frame_update));
 }
 
-void ProxyMain::SetDeferCommits(bool defer_commits) {
-  DCHECK(IsMainThread());
-  if (defer_commits_ == defer_commits)
+void ProxyMain::StartDeferringCommits(base::TimeDelta timeout) {
+  DCHECK(task_runner_provider_->IsMainThread());
+
+  // Do nothing if already deferring. The timeout remains as it was from when
+  // we most recently began deferring.
+  if (defer_commits_)
     return;
 
-  defer_commits_ = defer_commits;
-  if (defer_commits_)
-    TRACE_EVENT_ASYNC_BEGIN0("cc", "ProxyMain::SetDeferCommits", this);
-  else
-    TRACE_EVENT_ASYNC_END0("cc", "ProxyMain::SetDeferCommits", this);
+  TRACE_EVENT_ASYNC_BEGIN0("cc", "ProxyMain::SetDeferCommits", this);
+
+  defer_commits_ = true;
+  commits_restart_time_ = base::TimeTicks::Now() + timeout;
+}
+
+void ProxyMain::StopDeferringCommits() {
+  if (!defer_commits_)
+    return;
+  defer_commits_ = false;
+  commits_restart_time_ = base::TimeTicks();
+  TRACE_EVENT_ASYNC_END0("cc", "ProxyMain::SetDeferCommits", this);
 }
 
 bool ProxyMain::CommitRequested() const {

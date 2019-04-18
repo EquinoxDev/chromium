@@ -8,7 +8,6 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <deque>
 #include <map>
 #include <memory>
 #include <string>
@@ -16,9 +15,8 @@
 #include "base/callback.h"
 #include "base/containers/id_map.h"
 #include "base/macros.h"
-#include "base/memory/ref_counted.h"
+#include "base/memory/scoped_refptr.h"
 #include "base/strings/string16.h"
-#include "base/synchronization/lock.h"
 #include "base/time/time.h"
 #include "content/common/service_worker/service_worker_types.h"
 #include "ipc/ipc_listener.h"
@@ -37,11 +35,12 @@
 #include "third_party/blink/public/platform/modules/service_worker/web_service_worker_error.h"
 #include "third_party/blink/public/web/modules/service_worker/web_service_worker_context_client.h"
 #include "third_party/blink/public/web/modules/service_worker/web_service_worker_context_proxy.h"
+#include "third_party/blink/public/web/web_embedded_worker.h"
 #include "v8/include/v8.h"
 
 namespace base {
+class SequencedTaskRunner;
 class SingleThreadTaskRunner;
-class TaskRunner;
 }
 
 namespace blink {
@@ -96,15 +95,26 @@ class CONTENT_EXPORT ServiceWorkerContextClient
   // Called on the main thread.
   ~ServiceWorkerContextClient() override;
 
+  // Called on the main thread.
+  void StartWorkerContext(std::unique_ptr<blink::WebEmbeddedWorker> worker,
+                          const blink::WebEmbeddedWorkerStartData& start_data);
+  // Called on the main thread.
+  blink::WebEmbeddedWorker& worker();
+  // Called on the main thread.
+  void UpdateSubresourceLoaderFactories(
+      std::unique_ptr<blink::URLLoaderFactoryBundleInfo>
+          subresource_loader_factories);
+
   // WebServiceWorkerContextClient overrides.
-  void WorkerReadyForInspection() override;
-  void WorkerContextFailedToStart() override;
-  void FailedToLoadInstalledClassicScript() override;
+  void WorkerReadyForInspectionOnMainThread() override;
+  void WorkerContextFailedToStartOnMainThread() override;
+  void FailedToLoadClassicScript() override;
   void FailedToFetchModuleScript() override;
-  void WorkerScriptLoaded() override;
-  void InstalledWorkerScriptLoaded() override;
+  void WorkerScriptLoadedOnMainThread() override;
+  void WorkerScriptLoadedOnWorkerThread() override;
   void WorkerContextStarted(
-      blink::WebServiceWorkerContextProxy* proxy) override;
+      blink::WebServiceWorkerContextProxy* proxy,
+      scoped_refptr<base::SequencedTaskRunner> worker_task_runner) override;
   void WillEvaluateScript() override;
   void DidEvaluateScript(bool success) override;
   void DidInitializeWorkerContext(v8::Local<v8::Context> context) override;
@@ -115,8 +125,8 @@ class CONTENT_EXPORT ServiceWorkerContextClient
                        int line_number,
                        int column_number,
                        const blink::WebString& source_url) override;
-  void ReportConsoleMessage(int source,
-                            int level,
+  void ReportConsoleMessage(blink::mojom::ConsoleMessageSource source,
+                            blink::mojom::ConsoleMessageLevel level,
                             const blink::WebString& message,
                             int line_number,
                             const blink::WebString& source_url) override;
@@ -189,8 +199,9 @@ class CONTENT_EXPORT ServiceWorkerContextClient
       int payment_request_id,
       blink::mojom::ServiceWorkerEventStatus status) override;
   std::unique_ptr<blink::WebServiceWorkerNetworkProvider>
-  CreateServiceWorkerNetworkProvider() override;
-  scoped_refptr<blink::WebWorkerFetchContext> CreateServiceWorkerFetchContext(
+  CreateServiceWorkerNetworkProviderOnMainThread() override;
+  scoped_refptr<blink::WebWorkerFetchContext>
+  CreateServiceWorkerFetchContextOnMainThread(
       blink::WebServiceWorkerNetworkProvider*) override;
   int WillStartTask() override;
   void DidEndTask(int task_id) override;
@@ -207,11 +218,6 @@ class CONTENT_EXPORT ServiceWorkerContextClient
       blink::mojom::DispatchFetchEventParamsPtr params,
       blink::mojom::ServiceWorkerFetchResponseCallbackPtr response_callback,
       DispatchFetchEventCallback callback);
-
-  // TODO(crbug.com/907311): Remove after we identified the cause of crash.
-  void SetReportDebugLogForTesting(bool report_debug_log) {
-    report_debug_log_ = report_debug_log;
-  }
 
   /////////////////////////////////////////////////////////////////////////////
   // The following are for use by NavigationPreloadRequest.
@@ -359,15 +365,13 @@ class CONTENT_EXPORT ServiceWorkerContextClient
   bool RequestedTermination() const;
 
   // Stops the worker context. Called on the main thread.
-  void StopWorker();
+  void StopWorkerOnMainThread();
 
   base::WeakPtr<ServiceWorkerContextClient> GetWeakPtr();
 
   void SetTimeoutTimerForTesting(
       std::unique_ptr<ServiceWorkerTimeoutTimer> timeout_timer);
-
-  // TODO(crbug.com/907311): Remove after we identified the cause of crash.
-  void RecordDebugLog(const char* message);
+  ServiceWorkerTimeoutTimer* GetTimeoutTimerForTesting();
 
   const int64_t service_worker_version_id_;
   const GURL service_worker_scope_;
@@ -381,7 +385,7 @@ class CONTENT_EXPORT ServiceWorkerContextClient
   blink::mojom::RendererPreferenceWatcherRequest preference_watcher_request_;
 
   scoped_refptr<base::SingleThreadTaskRunner> main_thread_task_runner_;
-  scoped_refptr<base::TaskRunner> worker_task_runner_;
+  scoped_refptr<base::SequencedTaskRunner> worker_task_runner_;
 
   // Not owned; |this| is destroyed when |proxy_| becomes invalid.
   blink::WebServiceWorkerContextProxy* proxy_;
@@ -407,15 +411,22 @@ class CONTENT_EXPORT ServiceWorkerContextClient
 
   blink::mojom::BlobRegistryPtr blob_registry_;
 
-  // Initialized on the worker thread in workerContextStarted and
-  // destructed on the worker thread in willDestroyWorkerContext.
+  // Initialized on the worker thread in WorkerContextStarted and
+  // destructed on the worker thread in WillDestroyWorkerContext.
+  //
+  // WARNING: This can be cleared at nearly any time, since WillDestroyContext
+  // is called by Blink when it decides to terminate the worker thread. This
+  // includes during event dispatch if a JavaScript debugger breakpoint pauses
+  // execution (see issue 934622). It should be safe to assume |context_| is
+  // valid at the start of a task that was posted to |worker_task_runner_|, as
+  // that is from WorkerThread::GetTaskRunner() which safely drops the task on
+  // worker termination.
   std::unique_ptr<WorkerContextData> context_;
 
   // Accessed on the worker thread. Passed to the browser process after worker
   // startup completes.
   blink::mojom::EmbeddedWorkerStartTimingPtr start_timing_;
 
-  // S13nServiceWorker:
   // A URLLoaderFactory instance used for subresource loading.
   scoped_refptr<HostChildURLLoaderFactoryBundle> loader_factories_;
 
@@ -424,10 +435,7 @@ class CONTENT_EXPORT ServiceWorkerContextClient
   network::mojom::URLLoaderFactoryPtr
       network_service_connection_error_handler_holder_;
 
-  // TODO(crbug.com/907311): Remove after we identified the cause of crash.
-  bool report_debug_log_ = true;
-  base::Lock debug_log_lock_;
-  std::deque<std::string> debug_log_ GUARDED_BY(debug_log_lock_);
+  std::unique_ptr<blink::WebEmbeddedWorker> worker_;
 
   DISALLOW_COPY_AND_ASSIGN(ServiceWorkerContextClient);
 };

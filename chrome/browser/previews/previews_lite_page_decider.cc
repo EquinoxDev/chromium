@@ -38,6 +38,7 @@
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_user_data.h"
 #include "net/base/net_errors.h"
+#include "services/network/public/cpp/features.h"
 
 namespace {
 const char kUserNeedsNotification[] =
@@ -188,7 +189,11 @@ PreviewsLitePageDecider::MaybeCreateThrottleFor(
   DCHECK(handle->GetWebContents());
   DCHECK(handle->GetWebContents()->GetBrowserContext());
 
-  if (base::FeatureList::IsEnabled(
+  if (!handle->IsInMainFrame())
+    return nullptr;
+
+  if (base::FeatureList::IsEnabled(network::features::kNetworkService) &&
+      base::FeatureList::IsEnabled(
           previews::features::kHTTPSServerPreviewsUsingURLLoader)) {
     return nullptr;
   }
@@ -337,11 +342,14 @@ void PreviewsLitePageDecider::ReportDataSavings(int64_t network_bytes,
   if (!drp_settings_ || !drp_settings_->data_reduction_proxy_service())
     return;
 
+  // The total data usage is tracked for all data in Chrome, so we only need to
+  // update the savings.
+  int64_t data_saved = original_bytes - network_bytes;
   drp_settings_->data_reduction_proxy_service()->UpdateDataUseForHost(
-      network_bytes, original_bytes, host);
+      0, data_saved, host);
 
   drp_settings_->data_reduction_proxy_service()->UpdateContentLengths(
-      network_bytes, original_bytes, true /* data_reduction_proxy_enabled */,
+      0, data_saved, true /* data_reduction_proxy_enabled */,
       data_reduction_proxy::DataReductionProxyRequestType::
           VIA_DATA_REDUCTION_PROXY,
       "text/html", true /* is_user_traffic */,

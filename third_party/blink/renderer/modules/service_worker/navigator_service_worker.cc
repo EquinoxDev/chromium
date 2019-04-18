@@ -90,7 +90,7 @@ ServiceWorkerContainer* NavigatorServiceWorker::GetOrCreateContainer(
            ->GetSecurityOrigin()
            ->CanAccessServiceWorkers()) {
     String error_message;
-    if (frame->GetSecurityContext()->IsSandboxed(kSandboxOrigin)) {
+    if (frame->GetSecurityContext()->IsSandboxed(WebSandboxFlags::kOrigin)) {
       error_message =
           "Service worker is disabled because the context is sandboxed and "
           "lacks the 'allow-same-origin' flag.";
@@ -102,8 +102,10 @@ ServiceWorkerContainer* NavigatorServiceWorker::GetOrCreateContainer(
     return nullptr;
   }
 
-  if (frame->GetSecurityContext()->GetSecurityOrigin()->IsLocal())
-    UseCounter::Count(frame, WebFeature::kFileAccessedServiceWorker);
+  if (frame->GetSecurityContext()->GetSecurityOrigin()->IsLocal()) {
+    UseCounter::Count(frame->GetDocument(),
+                      WebFeature::kFileAccessedServiceWorker);
+  }
 
   return ServiceWorkerContainer::From(
       To<Document>(frame->DomWindow()->GetExecutionContext()));

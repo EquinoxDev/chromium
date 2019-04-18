@@ -31,7 +31,6 @@
 #include "base/logging.h"
 #include "base/macros.h"
 #include "base/observer_list.h"
-#include "components/keyed_service/core/keyed_service.h"
 #include "components/prefs/pref_change_registrar.h"
 #include "components/prefs/pref_member.h"
 #include "components/signin/core/browser/account_info.h"
@@ -43,13 +42,10 @@ class PrefService;
 class ProfileOAuth2TokenService;
 class SigninClient;
 
-class SigninManagerBase : public KeyedService {
+class SigninManagerBase {
  public:
   class Observer {
    public:
-    // Called when a user fails to sign into Google services such as sync.
-    virtual void GoogleSigninFailed(const GoogleServiceAuthError& error) {}
-
     // Called when a user signs into Google services such as sync.
     // This method is not called during a reauth.
     virtual void GoogleSigninSucceeded(const AccountInfo& account_info) {}
@@ -63,7 +59,6 @@ class SigninManagerBase : public KeyedService {
    private:
     // SigninManagers that fire notifications.
     friend class SigninManager;
-    friend class FakeSigninManager;
   };
 
 // On non-ChromeOS platforms, SigninManagerBase should only be instantiated
@@ -83,7 +78,7 @@ class SigninManagerBase : public KeyedService {
  public:
 #endif
 
-  ~SigninManagerBase() override;
+  virtual ~SigninManagerBase();
 
   // Registers per-profile prefs.
   static void RegisterProfilePrefs(PrefRegistrySimple* registry);
@@ -94,12 +89,6 @@ class SigninManagerBase : public KeyedService {
   // If user was signed in, load tokens from DB if available.
   void Initialize(PrefService* local_state);
   bool IsInitialized() const;
-
-  // Returns true if a signin to Chrome is allowed (by policy or pref).
-  // TODO(crbug.com/806778): this method should not be used externally,
-  // instead the value of the kSigninAllowed preference should be checked.
-  // Once all external code has been modified, this method will be removed.
-  virtual bool IsSigninAllowed() const;
 
   // If a user has previously signed in (and has not signed out), this returns
   // the know information of the account. Otherwise, it returns an empty struct.
@@ -126,21 +115,12 @@ class SigninManagerBase : public KeyedService {
   // Returns true if there is an authenticated user.
   bool IsAuthenticated() const;
 
-  // KeyedService implementation.
-  void Shutdown() override;
-
-  // Methods to register or remove observers of signin.
-  void AddObserver(Observer* observer);
-  void RemoveObserver(Observer* observer);
-
-  // Adds a callback that will be called when this instance is shut down.Not
-  // intended for general usage, but rather for usage only by the Identity
-  // Service implementation during the time period of conversion of Chrome to
-  // use the Identity Service.
-  std::unique_ptr<base::CallbackList<void()>::Subscription>
-  RegisterOnShutdownCallback(const base::Closure& cb) {
-    return on_shutdown_callback_list_.Add(cb);
-  }
+  // Methods to set or clear the observer of signin.
+  // In practice these should only be used by IdentityManager.
+  // NOTE: If SetObserver is called, ClearObserver should be called before
+  // the destruction of SigninManagerBase.
+  void SetObserver(Observer* observer);
+  void ClearObserver();
 
  protected:
   SigninClient* signin_client() const { return client_; }
@@ -170,14 +150,11 @@ class SigninManagerBase : public KeyedService {
   // call this.
   void ClearAuthenticatedAccountId();
 
-  // List of observers to notify on signin events.
-  // Makes sure list is empty on destruction.
-  base::ObserverList<Observer, true>::Unchecked observer_list_;
+  // Observer to notify on signin events.
+  // There is a DCHECK on destruction that this has been cleared.
+  Observer* observer_ = nullptr;
 
  private:
-  friend class FakeSigninManagerBase;
-  friend class FakeSigninManager;
-
   // Added only to allow SigninManager to call the SigninManagerBase
   // constructor while disallowing any ad-hoc subclassing of
   // SigninManagerBase.

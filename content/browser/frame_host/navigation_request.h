@@ -14,6 +14,7 @@
 #include "base/optional.h"
 #include "base/strings/string_util.h"
 #include "content/browser/frame_host/navigation_entry_impl.h"
+#include "content/browser/frame_host/navigation_throttle_runner.h"
 #include "content/browser/initiator_csp_context.h"
 #include "content/browser/loader/navigation_url_loader_delegate.h"
 #include "content/common/content_export.h"
@@ -37,6 +38,7 @@ class NavigationHandleImpl;
 class NavigationURLLoader;
 class NavigationData;
 class NavigationUIData;
+class NavigatorDelegate;
 class SiteInstanceImpl;
 struct SubresourceLoaderParams;
 
@@ -45,7 +47,8 @@ struct SubresourceLoaderParams;
 // ResourceDispatcherHost (that lives on the IO thread).
 // TODO(clamy): Describe the interactions between the UI and IO thread during
 // the navigation following its refactoring.
-class CONTENT_EXPORT NavigationRequest : public NavigationURLLoaderDelegate {
+class CONTENT_EXPORT NavigationRequest : public NavigationURLLoaderDelegate,
+                                         NavigationThrottleRunner::Delegate {
  public:
   // Keeps track of the various stages of a NavigationRequest.
   enum NavigationState {
@@ -67,6 +70,30 @@ class CONTENT_EXPORT NavigationRequest : public NavigationURLLoaderDelegate {
     // The request failed on the IO thread and an error page should be
     // displayed. This is one of the two final states for the request.
     FAILED,
+  };
+
+  // Used to track the navigation state of NavigationHandleImpl.
+  // Note: the states named PROCESSING_* indicate that NavigationThrottles are
+  // currently processing the corresponding event. When they are done, the
+  // state will move to the next in the list.
+  // TODO(zetamoo): Merge NavigationHandleState with NavigationState, and remove
+  //                the duplicates. Remove the PROCESSING_* states once the
+  //                NavigationThrottleRunner is owned by the NavigationRequest.
+  enum NavigationHandleState {
+    NOT_CREATED = 0,
+    INITIAL,
+    PROCESSING_WILL_START_REQUEST,
+    WILL_START_REQUEST,
+    PROCESSING_WILL_REDIRECT_REQUEST,
+    WILL_REDIRECT_REQUEST,
+    PROCESSING_WILL_FAIL_REQUEST,
+    WILL_FAIL_REQUEST,
+    CANCELING,
+    PROCESSING_WILL_PROCESS_RESPONSE,
+    WILL_PROCESS_RESPONSE,
+    READY_TO_COMMIT,
+    DID_COMMIT,
+    DID_COMMIT_ERROR_PAGE,
   };
 
   // The SiteInstance currently associated with the navigation. Note that the
@@ -119,6 +146,7 @@ class CONTENT_EXPORT NavigationRequest : public NavigationURLLoaderDelegate {
   // renderer-initiated navigations.
   static std::unique_ptr<NavigationRequest> CreateForCommit(
       FrameTreeNode* frame_tree_node,
+      RenderFrameHostImpl* render_frame_host,
       NavigationEntryImpl* entry,
       const FrameHostMsg_DidCommitProvisionalLoad_Params& params,
       bool is_renderer_initiated,
@@ -163,6 +191,10 @@ class CONTENT_EXPORT NavigationRequest : public NavigationURLLoaderDelegate {
 
   int bindings() const { return bindings_; }
 
+  SiteInstanceImpl* starting_site_instance() const {
+    return starting_site_instance_.get();
+  }
+
   bool browser_initiated() const { return browser_initiated_ ; }
 
   bool from_begin_navigation() const { return from_begin_navigation_; }
@@ -186,6 +218,27 @@ class CONTENT_EXPORT NavigationRequest : public NavigationURLLoaderDelegate {
     return response_ ? response_->head.mime_type : base::EmptyString();
   }
 
+  // The RenderFrameHost that will commit the navigation or an error page.
+  // This is computed when the response is received, or when the navigation
+  // fails and error page should be displayed.
+  RenderFrameHostImpl* render_frame_host() const {
+    // Only allow the RenderFrameHost to be retrieved once it has been set for
+    // this navigation. This will happens either at WillProcessResponse time for
+    // regular navigations or at WillFailRequest time for error pages.
+    CHECK_GE(handle_state_, PROCESSING_WILL_FAIL_REQUEST)
+        << "This accessor should only be called after a RenderFrameHost has "
+           "been picked for this navigation.";
+    static_assert(
+        WILL_FAIL_REQUEST < WILL_PROCESS_RESPONSE,
+        "WillFailRequest state should come before WillProcessResponse");
+    return render_frame_host_;
+  }
+
+  const network::ResourceResponse* response() { return response_.get(); }
+  const GlobalRequestID& request_id() const { return request_id_; }
+  bool is_download() const { return is_download_; }
+  const base::Optional<net::SSLInfo>& ssl_info() { return ssl_info_; }
+
   void SetWaitingForRendererResponse();
 
   // Creates a NavigationHandle. This should be called after any previous
@@ -194,13 +247,21 @@ class CONTENT_EXPORT NavigationRequest : public NavigationURLLoaderDelegate {
   // happens for renderer-initiated same-document navigations).
   void CreateNavigationHandle(bool is_for_commit);
 
-  // Returns ownership of the navigation handle.
-  std::unique_ptr<NavigationHandleImpl> TakeNavigationHandle();
-
   void set_on_start_checks_complete_closure_for_testing(
       const base::Closure& closure) {
     on_start_checks_complete_closure_ = closure;
   }
+
+  // Sets ID of the RenderProcessHost we expect the navigation to commit in.
+  // This is used to inform the RenderProcessHost to expect a navigation to the
+  // url we're navigating to.
+  void SetExpectedProcess(RenderProcessHost* expected_process);
+
+  // Updates the destination site URL for this navigation. This is called on
+  // redirects. |post_redirect_process| is the renderer process that should
+  // handle the navigation following the redirect if it can be handled by an
+  // existing RenderProcessHost. Otherwise, it should be null.
+  void UpdateSiteURL(RenderProcessHost* post_redirect_process);
 
   int nav_entry_id() const { return nav_entry_id_; }
 
@@ -240,7 +301,55 @@ class CONTENT_EXPORT NavigationRequest : public NavigationURLLoaderDelegate {
     common_params_.has_user_gesture = has_user_gesture;
   }
 
+  // Ignores any interface disconnect that might happen to the
+  // navigation_client used to commit.
+  void IgnoreCommitInterfaceDisconnection();
+
+  bool IsSameDocument() const;
+
+  int navigation_entry_offset() { return navigation_entry_offset_; }
+
+  // TODO(zetamoo): Remove once |handle_state_| is modified exclusively from
+  //                NavigationRequest.
+  void set_handle_state(const NavigationHandleState state) {
+    handle_state_ = state;
+  }
+
+  NavigationHandleState handle_state() { return handle_state_; }
+
+  NavigationUIData* navigation_ui_data() const {
+    return navigation_ui_data_.get();
+  }
+
+  // Resume and CancelDeferredNavigation must only be called by the
+  // NavigationThrottle that is currently deferring the navigation.
+  // |resuming_throttle| and |cancelling_throttle| are the throttles calling
+  // these methods.
+  void Resume(NavigationThrottle* resuming_throttle);
+  void CancelDeferredNavigation(NavigationThrottle* cancelling_throttle,
+                                NavigationThrottle::ThrottleCheckResult result);
+
+  // Simulates the navigation resuming. Most callers should just let the
+  // deferring NavigationThrottle do the resuming.
+  void CallResumeForTesting();
+
+  void RegisterThrottleForTesting(
+      std::unique_ptr<NavigationThrottle> navigation_throttle);
+
+  bool IsDeferredForTesting();
+
+  typedef base::OnceCallback<void(NavigationThrottle::ThrottleCheckResult)>
+      ThrottleChecksFinishedCallback;
+
+  NavigationThrottle* GetDeferringThrottleForTesting() const {
+    return throttle_runner_->GetDeferringThrottle();
+  }
+
  private:
+  // TODO(clamy): Transform NavigationHandleImplTest into NavigationRequestTest
+  // once NavigationHandleImpl has become a wrapper around NavigationRequest.
+  friend class NavigationHandleImplTest;
+
   NavigationRequest(FrameTreeNode* frame_tree_node,
                     const CommonNavigationParams& common_params,
                     mojom::BeginNavigationParamsPtr begin_params,
@@ -292,16 +401,14 @@ class CONTENT_EXPORT NavigationRequest : public NavigationURLLoaderDelegate {
   // NavigationHandle.
   void OnStartChecksComplete(NavigationThrottle::ThrottleCheckResult result);
   void OnRedirectChecksComplete(NavigationThrottle::ThrottleCheckResult result);
-  void OnFailureChecksComplete(RenderFrameHostImpl* render_frame_host,
-                               NavigationThrottle::ThrottleCheckResult result);
+  void OnFailureChecksComplete(NavigationThrottle::ThrottleCheckResult result);
   void OnWillProcessResponseChecksComplete(
       NavigationThrottle::ThrottleCheckResult result);
 
   // Called either by OnFailureChecksComplete() or OnRequestFailed() directly.
   // |error_page_content| contains the content of the error page (i.e. flattened
   // HTML, JS, CSS).
-  void CommitErrorPage(RenderFrameHostImpl* render_frame_host,
-                       const base::Optional<std::string>& error_page_content);
+  void CommitErrorPage(const base::Optional<std::string>& error_page_content);
 
   // Have a RenderFrameHost commit the navigation. The NavigationRequest will
   // be destroyed after this call.
@@ -383,7 +490,90 @@ class CONTENT_EXPORT NavigationRequest : public NavigationURLLoaderDelegate {
   // Only used with PerNavigationMojoInterface enabled.
   void IgnoreInterfaceDisconnection();
 
+  // Inform the RenderProcessHost to no longer expect a navigation.
+  void ResetExpectedProcess();
+
+  // https://crbug.com/936962 happens when a |render_frame_host_| has been
+  // selected and the |loader_| calls OnRequestFailed(). This shouldn't be
+  // possible, because |render_frame_host_| and |loader_| can't be non-null at
+  // the same time.
+  // TODO(https://crbug.com/936962): Remove this when the bug is fixed.
+  void VerifyLoaderAndRenderFrameHostExpectations();
+
+  // Compute the history offset of the new document compared to the current one.
+  // See navigation_history_offset_ for more details.
+  int EstimateHistoryOffset();
+
+  // Record download related UseCounters when navigation is a download before
+  // filtered by download_policy.
+  void RecordDownloadUseCountersPrePolicyCheck(
+      NavigationDownloadPolicy download_policy);
+
+  // Record download related UseCounters when navigation is a download after
+  // filtered by download_policy.
+  void RecordDownloadUseCountersPostPolicyCheck();
+
+  // NavigationThrottleRunner::Delegate:
+  void OnNavigationEventProcessed(
+      NavigationThrottleRunner::Event event,
+      NavigationThrottle::ThrottleCheckResult result) override;
+
+  void OnWillStartRequestProcessed(
+      NavigationThrottle::ThrottleCheckResult result);
+  void OnWillRedirectRequestProcessed(
+      NavigationThrottle::ThrottleCheckResult result);
+  void OnWillFailRequestProcessed(
+      NavigationThrottle::ThrottleCheckResult result);
+  void OnWillProcessResponseProcessed(
+      NavigationThrottle::ThrottleCheckResult result);
+
+  NavigatorDelegate* GetDelegate() const;
+
+  void CancelDeferredNavigationInternal(
+      NavigationThrottle::ThrottleCheckResult result);
+
+  // TODO(zetamoo): Remove the Will* methods and fold them into their callers.
+
+  // Called when the URLRequest will start in the network stack. |callback| will
+  // be called when all throttle checks have completed. This will allow the
+  // caller to cancel the navigation or let it proceed.
+  void WillStartRequest(ThrottleChecksFinishedCallback callback);
+
+  // Called when the URLRequest will be redirected in the network stack.
+  // |callback| will be called when all throttles check have completed. This
+  // will allow the caller to cancel the navigation or let it proceed.
+  // This will also inform the delegate that the request was redirected.
+  //
+  // |post_redirect_process| is the renderer process we expect to use to commit
+  // the navigation now that it has been redirected. It can be null if there is
+  // no live process that can be used. In that case, a suitable renderer process
+  // will be created at commit time.
+  void WillRedirectRequest(const GURL& new_referrer_url,
+                           RenderProcessHost* post_redirect_process,
+                           ThrottleChecksFinishedCallback callback);
+
+  // Called when the URLRequest will fail. |callback| will be called when all
+  // throttles check have completed. This will allow the caller to explicitly
+  // cancel the navigation (with a custom error code and/or custom error page
+  // HTML) or let the failure proceed as normal.
+  void WillFailRequest(ThrottleChecksFinishedCallback callback);
+
+  // Called when the URLRequest has delivered response headers and metadata.
+  // |callback| will be called when all throttle checks have completed,
+  // allowing the caller to cancel the navigation or let it proceed.
+  // NavigationHandle will not call |callback| with a result of DEFER.
+  // If the result is PROCEED, then 'ReadyToCommitNavigation' will be called
+  // just before calling |callback|.
+  void WillProcessResponse(ThrottleChecksFinishedCallback callback);
+
+  // Checks for attempts to navigate to a page that is already referenced more
+  // than once in the frame's ancestors.  This is a helper function used by
+  // WillStartRequest and WillRedirectRequest to prevent the navigation.
+  bool IsSelfReferentialURL();
+
   FrameTreeNode* frame_tree_node_;
+
+  RenderFrameHostImpl* render_frame_host_ = nullptr;
 
   // Initialized on creation of the NavigationRequest. Sent to the renderer when
   // the navigation is ready to commit.
@@ -392,8 +582,8 @@ class CONTENT_EXPORT NavigationRequest : public NavigationURLLoaderDelegate {
   // redirects.
   // Note: |common_params_| and |begin_params_| are not const as they can be
   // modified during redirects.
-  // Note: |commit_params_| is not const because service_worker_provider_id
-  // and should_create_service_worker will be set in OnResponseStarted.
+  // Note: |commit_params_| is not const because was_discarded will
+  // be set in CreatedNavigationRequest.
   CommonNavigationParams common_params_;
   mojom::BeginNavigationParamsPtr begin_params_;
   CommitNavigationParams commit_params_;
@@ -427,6 +617,8 @@ class CONTENT_EXPORT NavigationRequest : public NavigationURLLoaderDelegate {
   int bindings_;
   int nav_entry_id_ = 0;
 
+  scoped_refptr<SiteInstanceImpl> starting_site_instance_;
+
   // Whether the navigation should be sent to a renderer a process. This is
   // true, except for 204/205 responses and downloads.
   bool response_should_be_rendered_;
@@ -451,13 +643,22 @@ class CONTENT_EXPORT NavigationRequest : public NavigationURLLoaderDelegate {
   // completed, these objects will be used to continue the navigation.
   scoped_refptr<network::ResourceResponse> response_;
   network::mojom::URLLoaderClientEndpointsPtr url_loader_client_endpoints_;
-  net::SSLInfo ssl_info_;
-  bool is_download_;
+  base::Optional<net::SSLInfo> ssl_info_;
+  bool is_download_ = false;
+  bool is_stream_ = false;
+  GlobalRequestID request_id_;
 
   // Holds information for the navigation while the WillFailRequest
   // checks are performed by the NavigationHandle.
   bool has_stale_copy_in_cache_;
   int net_error_;
+
+  // Identifies in which RenderProcessHost this navigation is expected to
+  // commit.
+  int expected_render_process_host_id_;
+
+  // The site URL of this navigation, as obtained from SiteInstance::GetSiteURL.
+  GURL site_url_;
 
   std::unique_ptr<InitiatorCSPContext> initiator_csp_context_;
 
@@ -490,6 +691,17 @@ class CONTENT_EXPORT NavigationRequest : public NavigationURLLoaderDelegate {
   // HTTPS. This is used only on subframe navigations, when
   // upgrade-insecure-requests is set as a CSP policy.
   bool upgrade_if_insecure_ = false;
+
+  // The offset of the new document in the history.
+  // See NavigationHandle::GetNavigationEntryOffset() for details.
+  int navigation_entry_offset_ = 0;
+
+  // TODO(zetamoo): Merge |handle_state_| with |state_|.
+  NavigationHandleState handle_state_ = NOT_CREATED;
+
+  // Owns the NavigationThrottles associated with this navigation, and is
+  // responsible for notifying them about the various navigation events.
+  std::unique_ptr<NavigationThrottleRunner> throttle_runner_;
 
   base::WeakPtrFactory<NavigationRequest> weak_factory_;
 

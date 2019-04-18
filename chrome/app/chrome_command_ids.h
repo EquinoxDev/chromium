@@ -91,7 +91,9 @@
 #define IDC_WINDOW_MUTE_SITE            35012
 #define IDC_WINDOW_PIN_TAB              35013
 #define IDC_MIGRATE_LOCAL_CREDIT_CARD_FOR_PAGE 35014
-#define IDC_SEND_TO_MY_DEVICES          35015
+#define IDC_SEND_TAB_TO_SELF            35015
+#define IDC_FOCUS_THIS_TAB              35016
+#define IDC_CONTENT_LINK_SEND_TAB_TO_SELF 35017
 
 // Clipboard commands
 #define IDC_CUT                         36000
@@ -177,7 +179,7 @@
 #define IDC_SHOW_BETA_FORUM             40252
 #define IDC_TOGGLE_JAVASCRIPT_APPLE_EVENTS 40253
 #define IDC_INSTALL_PWA                 40254
-#define IDC_MANAGED_UI_HELP             40255
+#define IDC_SHOW_MANAGEMENT_PAGE             40255
 #define IDC_PASTE_AND_GO                40256
 
 // Spell-check

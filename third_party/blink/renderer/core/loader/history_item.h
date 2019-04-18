@@ -31,8 +31,8 @@
 #include "third_party/blink/public/platform/web_scroll_anchor_data.h"
 #include "third_party/blink/renderer/core/core_export.h"
 #include "third_party/blink/renderer/core/loader/frame_loader_types.h"
+#include "third_party/blink/renderer/core/scroll/scroll_types.h"
 #include "third_party/blink/renderer/platform/heap/handle.h"
-#include "third_party/blink/renderer/platform/scroll/scroll_types.h"
 #include "third_party/blink/renderer/platform/weborigin/referrer.h"
 #include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
 
@@ -100,15 +100,13 @@ class CORE_EXPORT HistoryItem final
   void SetStateObject(scoped_refptr<SerializedScriptValue>);
   SerializedScriptValue* StateObject() const { return state_object_.get(); }
 
-  void SetItemSequenceNumber(long long number) {
-    item_sequence_number_ = number;
-  }
-  long long ItemSequenceNumber() const { return item_sequence_number_; }
+  void SetItemSequenceNumber(int64_t number) { item_sequence_number_ = number; }
+  int64_t ItemSequenceNumber() const { return item_sequence_number_; }
 
-  void SetDocumentSequenceNumber(long long number) {
+  void SetDocumentSequenceNumber(int64_t number) {
     document_sequence_number_ = number;
   }
-  long long DocumentSequenceNumber() const { return document_sequence_number_; }
+  int64_t DocumentSequenceNumber() const { return document_sequence_number_; }
 
   void SetScrollRestorationType(HistoryScrollRestorationType type) {
     scroll_restoration_type_ = type;

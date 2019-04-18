@@ -29,8 +29,14 @@ struct SerializedHeader {
 struct UserMessageEventData {
   uint64_t sequence_num;
   uint32_t num_ports;
-  uint32_t padding;
+  SlotId slot_id;
 };
+
+// Sanity check to ensure that we aren't breaking the binary structure of
+// UserMessageEventData for older Mojo core versions. The structure has always
+// been 16 bytes wide.
+static_assert(sizeof(UserMessageEventData) == 16,
+              "Bad UserMessageEventData size");
 
 struct ObserveProxyEventData {
   NodeName proxy_node_name;
@@ -50,6 +56,12 @@ struct ObserveClosureEventData {
 struct MergePortEventData {
   PortName new_port_name;
   Event::PortDescriptor new_port_descriptor;
+};
+
+struct SlotClosedEventData {
+  uint64_t last_sequence_num;
+  SlotId slot_id;
+  char padding[4];
 };
 
 #pragma pack(pop)
@@ -75,11 +87,16 @@ static_assert(sizeof(ObserveClosureEventData) % kPortsMessageAlignment == 0,
 static_assert(sizeof(MergePortEventData) % kPortsMessageAlignment == 0,
               "Invalid MergePortEventData size.");
 
+static_assert(sizeof(SlotClosedEventData) % kPortsMessageAlignment == 0,
+              "Invalid SlotClosedEventData size.");
+
 }  // namespace
 
 Event::PortDescriptor::PortDescriptor() {
   memset(padding, 0, sizeof(padding));
 }
+
+Event::PortDescriptor::PortDescriptor(const PortDescriptor&) = default;
 
 Event::~Event() = default;
 
@@ -105,6 +122,8 @@ ScopedEvent Event::Deserialize(const void* buffer, size_t num_bytes) {
       return ObserveClosureEvent::Deserialize(port_name, header + 1, data_size);
     case Type::kMergePort:
       return MergePortEvent::Deserialize(port_name, header + 1, data_size);
+    case Type::kSlotClosed:
+      return SlotClosedEvent::Deserialize(port_name, header + 1, data_size);
     default:
       DVLOG(2) << "Ingoring unknown port event type: "
                << static_cast<uint32_t>(header->type);
@@ -130,6 +149,13 @@ void Event::Serialize(void* buffer) const {
 ScopedEvent Event::Clone() const {
   return nullptr;
 }
+
+UserMessageEvent::PortAttachment::PortAttachment() = default;
+
+UserMessageEvent::PortAttachment::PortAttachment(const PortAttachment&) =
+    default;
+
+UserMessageEvent::PortAttachment::~PortAttachment() = default;
 
 UserMessageEvent::~UserMessageEvent() = default;
 
@@ -174,6 +200,7 @@ ScopedEvent UserMessageEvent::Deserialize(const PortName& port_name,
   auto event =
       base::WrapUnique(new UserMessageEvent(port_name, data->sequence_num));
   event->ReservePorts(data->num_ports);
+  event->set_slot_id(data->slot_id);
   const auto* in_descriptors =
       reinterpret_cast<const PortDescriptor*>(data + 1);
   std::copy(in_descriptors, in_descriptors + data->num_ports,
@@ -181,7 +208,10 @@ ScopedEvent UserMessageEvent::Deserialize(const PortName& port_name,
 
   const auto* in_names =
       reinterpret_cast<const PortName*>(in_descriptors + data->num_ports);
-  std::copy(in_names, in_names + data->num_ports, event->ports());
+  for (size_t i = 0; i < data->num_ports; ++i) {
+    event->ports()[i].name = in_names[i];
+    event->ports()[i].slot_id = event->port_descriptors()[i].new_slot_id;
+  }
   return std::move(event);
 }
 
@@ -210,14 +240,17 @@ void UserMessageEvent::SerializeData(void* buffer) const {
   data->sequence_num = sequence_num_;
   DCHECK(base::IsValueInRangeForNumericType<uint32_t>(ports_.size()));
   data->num_ports = static_cast<uint32_t>(ports_.size());
-  data->padding = 0;
+  data->slot_id = slot_id_;
 
   auto* ports_data = reinterpret_cast<PortDescriptor*>(data + 1);
   std::copy(port_descriptors_.begin(), port_descriptors_.end(), ports_data);
 
   auto* port_names_data =
       reinterpret_cast<PortName*>(ports_data + ports_.size());
-  std::copy(ports_.begin(), ports_.end(), port_names_data);
+  for (size_t i = 0; i < ports_.size(); ++i) {
+    port_names_data[i] = ports_[i].name;
+    ports_data[i].new_slot_id = ports_[i].slot_id.value_or(kDefaultSlotId);
+  }
 }
 
 PortAcceptedEvent::PortAcceptedEvent(const PortName& port_name)
@@ -376,6 +409,38 @@ void MergePortEvent::SerializeData(void* buffer) const {
   auto* data = static_cast<MergePortEventData*>(buffer);
   data->new_port_name = new_port_name_;
   data->new_port_descriptor = new_port_descriptor_;
+}
+
+SlotClosedEvent::SlotClosedEvent(const PortName& port_name,
+                                 SlotId slot_id,
+                                 uint64_t last_sequence_num)
+    : Event(Type::kSlotClosed, port_name),
+      slot_id_(slot_id),
+      last_sequence_num_(last_sequence_num) {}
+
+SlotClosedEvent::~SlotClosedEvent() = default;
+
+// static
+ScopedEvent SlotClosedEvent::Deserialize(const PortName& port_name,
+                                         const void* buffer,
+                                         size_t num_bytes) {
+  if (num_bytes < sizeof(SlotClosedEventData))
+    return nullptr;
+
+  const auto* data = static_cast<const SlotClosedEventData*>(buffer);
+  return std::make_unique<SlotClosedEvent>(port_name, data->slot_id,
+                                           data->last_sequence_num);
+}
+
+size_t SlotClosedEvent::GetSerializedDataSize() const {
+  return sizeof(SlotClosedEventData);
+}
+
+void SlotClosedEvent::SerializeData(void* buffer) const {
+  auto* data = static_cast<SlotClosedEventData*>(buffer);
+  data->slot_id = slot_id_;
+  data->last_sequence_num = last_sequence_num_;
+  memset(data->padding, 0, sizeof(data->padding));
 }
 
 }  // namespace ports

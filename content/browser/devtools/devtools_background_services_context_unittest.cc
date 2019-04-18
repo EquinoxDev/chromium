@@ -15,11 +15,17 @@
 #include "content/public/browser/content_browser_client.h"
 #include "content/public/test/test_browser_context.h"
 #include "content/public/test/test_browser_thread_bundle.h"
+#include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "url/origin.h"
 
 namespace content {
 namespace {
+
+using testing::_;
+
+const std::string kEventName = "Test Event";
+const std::string kInstanceId = "my-instance";
 
 class TestBrowserClient : public ContentBrowserClient {
  public:
@@ -71,15 +77,17 @@ void DidFindServiceWorkerRegistration(
 
 void DidGetLoggedBackgroundServiceEvents(
     base::OnceClosure quit_closure,
-    std::vector<devtools::proto::BackgroundServiceState>* out_feature_states,
-    std::vector<devtools::proto::BackgroundServiceState> feature_states) {
+    std::vector<devtools::proto::BackgroundServiceEvent>* out_feature_states,
+    std::vector<devtools::proto::BackgroundServiceEvent> feature_states) {
   *out_feature_states = std::move(feature_states);
   std::move(quit_closure).Run();
 }
 
 }  // namespace
 
-class DevToolsBackgroundServicesContextTest : public ::testing::Test {
+class DevToolsBackgroundServicesContextTest
+    : public ::testing::Test,
+      DevToolsBackgroundServicesContext::EventObserver {
  public:
   DevToolsBackgroundServicesContextTest()
       : thread_bundle_(TestBrowserThreadBundle::IO_MAINLOOP),
@@ -99,12 +107,30 @@ class DevToolsBackgroundServicesContextTest : public ::testing::Test {
     SimulateBrowserRestart();
   }
 
+  void TearDown() override { context_->RemoveObserver(this); }
+
  protected:
+  MOCK_METHOD1(OnEventReceived,
+               void(const devtools::proto::BackgroundServiceEvent& event));
+  MOCK_METHOD2(OnRecordingStateChanged,
+               void(bool shoul_record,
+                    devtools::proto::BackgroundService service));
+
   void SimulateBrowserRestart() {
+    if (context_)
+      context_->RemoveObserver(this);
     // Create |context_|.
     context_ = base::MakeRefCounted<DevToolsBackgroundServicesContext>(
         &browser_context_, embedded_worker_test_helper_.context_wrapper());
+    context_->AddObserver(this);
     ASSERT_TRUE(context_);
+  }
+
+  void SimulateOneWeekPassing() {
+    base::Time one_week_ago = base::Time::Now() - base::TimeDelta::FromDays(7);
+    context_->expiration_times_
+        [devtools::proto::BackgroundService::TEST_BACKGROUND_SERVICE] =
+        one_week_ago;
   }
 
   bool IsRecording() {
@@ -117,9 +143,9 @@ class DevToolsBackgroundServicesContextTest : public ::testing::Test {
         [devtools::proto::BackgroundService::TEST_BACKGROUND_SERVICE];
   }
 
-  std::vector<devtools::proto::BackgroundServiceState>
+  std::vector<devtools::proto::BackgroundServiceEvent>
   GetLoggedBackgroundServiceEvents() {
-    std::vector<devtools::proto::BackgroundServiceState> feature_states;
+    std::vector<devtools::proto::BackgroundServiceEvent> feature_states;
 
     base::RunLoop run_loop;
     context_->GetLoggedBackgroundServiceEvents(
@@ -132,14 +158,17 @@ class DevToolsBackgroundServicesContextTest : public ::testing::Test {
   }
 
   void LogTestBackgroundServiceEvent(const std::string& log_message) {
-    devtools::proto::TestBackgroundServiceEvent event;
-    event.set_value(log_message);
-
-    context_->LogTestBackgroundServiceEvent(service_worker_registration_id_,
-                                            origin_, std::move(event));
+    context_->LogBackgroundServiceEvent(
+        service_worker_registration_id_, origin_,
+        devtools::proto::BackgroundService::TEST_BACKGROUND_SERVICE, kEventName,
+        kInstanceId, {{"key", log_message}});
   }
 
   void StartRecording() {
+    EXPECT_CALL(
+        *this,
+        OnRecordingStateChanged(
+            true, devtools::proto::BackgroundService::TEST_BACKGROUND_SERVICE));
     context_->StartRecording(
         devtools::proto::BackgroundService::TEST_BACKGROUND_SERVICE);
 
@@ -148,6 +177,11 @@ class DevToolsBackgroundServicesContextTest : public ::testing::Test {
   }
 
   void StopRecording() {
+    EXPECT_CALL(
+        *this,
+        OnRecordingStateChanged(
+            false,
+            devtools::proto::BackgroundService::TEST_BACKGROUND_SERVICE));
     context_->StopRecording(
         devtools::proto::BackgroundService::TEST_BACKGROUND_SERVICE);
 
@@ -250,11 +284,13 @@ TEST_F(DevToolsBackgroundServicesContextTest, GetLoggedEvents) {
     EXPECT_EQ(feature_event.origin(), origin_.GetURL().spec());
     EXPECT_EQ(feature_event.service_worker_registration_id(),
               service_worker_registration_id_);
-    ASSERT_TRUE(feature_event.has_test_event());
+    EXPECT_EQ(feature_event.event_name(), kEventName);
+    EXPECT_EQ(feature_event.instance_id(), kInstanceId);
+    ASSERT_EQ(feature_event.event_metadata().size(), 1u);
   }
 
-  EXPECT_EQ(feature_events[0].test_event().value(), "f1");
-  EXPECT_EQ(feature_events[1].test_event().value(), "f2");
+  EXPECT_EQ(feature_events[0].event_metadata().at("key"), "f1");
+  EXPECT_EQ(feature_events[1].event_metadata().at("key"), "f2");
 
   EXPECT_LE(feature_events[0].timestamp(), feature_events[1].timestamp());
 }
@@ -297,6 +333,37 @@ TEST_F(DevToolsBackgroundServicesContextTest, DelegateExpirationTimes) {
   EXPECT_FALSE(IsRecording());
 }
 
+TEST_F(DevToolsBackgroundServicesContextTest, RecordingExpiration) {
+  // Initially expiration time is null.
+  EXPECT_FALSE(IsRecording());
+
+  // Toggle Recording mode, and now this should be non-null.
+  StartRecording();
+  EXPECT_TRUE(IsRecording());
+
+  SimulateOneWeekPassing();
+  EXPECT_FALSE(GetExpirationTime().is_null());
+
+  // Recording should be true, with an expired value.
+  EXPECT_TRUE(IsRecording());
+
+  // Logging should not happen.
+  EXPECT_CALL(*this, OnEventReceived(_)).Times(0);
+  LogTestBackgroundServiceEvent("f1");
+
+  // Observers should be informed that recording stopped.
+  EXPECT_CALL(
+      *this,
+      OnRecordingStateChanged(
+          false, devtools::proto::BackgroundService::TEST_BACKGROUND_SERVICE));
+
+  thread_bundle_.RunUntilIdle();
+
+  // The expiration time entry should be cleared.
+  EXPECT_TRUE(GetExpirationTime().is_null());
+  EXPECT_FALSE(IsRecording());
+}
+
 TEST_F(DevToolsBackgroundServicesContextTest, ClearLoggedEvents) {
   StartRecording();
 
@@ -313,6 +380,22 @@ TEST_F(DevToolsBackgroundServicesContextTest, ClearLoggedEvents) {
   // Should be empty now.
   feature_events = GetLoggedBackgroundServiceEvents();
   EXPECT_TRUE(feature_events.empty());
+}
+
+TEST_F(DevToolsBackgroundServicesContextTest, EventObserverCalled) {
+  {
+    EXPECT_CALL(*this, OnEventReceived(_)).Times(0);
+    LogTestBackgroundServiceEvent("f1");
+    thread_bundle_.RunUntilIdle();
+  }
+
+  StartRecording();
+
+  {
+    EXPECT_CALL(*this, OnEventReceived(_));
+    LogTestBackgroundServiceEvent("f2");
+    thread_bundle_.RunUntilIdle();
+  }
 }
 
 }  // namespace content

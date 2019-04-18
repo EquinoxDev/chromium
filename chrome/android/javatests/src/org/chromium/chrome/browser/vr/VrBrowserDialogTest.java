@@ -21,7 +21,7 @@ import org.junit.Rule;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 
-import org.chromium.base.ThreadUtils;
+import org.chromium.base.task.PostTask;
 import org.chromium.base.test.util.CommandLineFlags;
 import org.chromium.base.test.util.Feature;
 import org.chromium.base.test.util.Restriction;
@@ -34,6 +34,7 @@ import org.chromium.chrome.browser.vr.util.RenderTestUtils;
 import org.chromium.chrome.browser.vr.util.VrBrowserTransitionUtils;
 import org.chromium.chrome.test.ChromeJUnit4ClassRunner;
 import org.chromium.chrome.test.util.RenderTestRule;
+import org.chromium.content_public.browser.UiThreadTaskTraits;
 
 import java.io.IOException;
 import java.util.concurrent.TimeoutException;
@@ -84,7 +85,7 @@ public class VrBrowserDialogTest {
             PermissionInfo notificationSettings =
                     new PermissionInfo(PermissionInfo.Type.NOTIFICATION,
                             "http://127.0.0.1:" + String.valueOf(SERVER_PORT), null, false);
-            ThreadUtils.runOnUiThread(
+            PostTask.runOrPostTask(UiThreadTaskTraits.DEFAULT,
                     () -> notificationSettings.setContentSetting(ContentSettingValues.DEFAULT));
         }
     }
@@ -106,9 +107,8 @@ public class VrBrowserDialogTest {
         NativeUiUtils.performActionAndWaitForUiQuiescence(() -> {
             NativeUiUtils.performActionAndWaitForVisibilityStatus(
                     UserFriendlyElementName.BROWSING_DIALOG, true /* visible */, () -> {
-                        VrBrowserTestFramework.runJavaScriptOrFail(promptCommand,
-                                POLL_TIMEOUT_LONG_MS,
-                                mVrTestRule.getActivity().getActivityTab().getWebContents());
+                        mVrBrowserTestFramework.runJavaScriptOrFail(
+                                promptCommand, POLL_TIMEOUT_LONG_MS);
                     });
         });
     }
@@ -152,17 +152,12 @@ public class VrBrowserDialogTest {
         // Special case location because the callbacks never fire on swarming, likely because
         // location is disabled at the system level during device provisioning.
         if (!nameBase.equals("location_permission_prompt")) {
-            // We specify the web contents here so that it works in both regular and incognito mode.
-            // This can be removed as part of https://crbug.com/931420
-            VrBrowserTestFramework.waitOnJavaScriptStep(
-                    mVrTestRule.getActivity().getActivityTab().getWebContents());
+            mVrBrowserTestFramework.waitOnJavaScriptStep();
             Assert.assertEquals("Last permission interaction did not have expected grant result",
                     grant,
-                    Boolean.valueOf(VrBrowserTestFramework.runJavaScriptOrFail(
-                            "lastPermissionGranted", POLL_TIMEOUT_SHORT_MS,
-                            mVrTestRule.getActivity().getActivityTab().getWebContents())));
-            VrBrowserTestFramework.assertNoJavaScriptErrors(
-                    mVrTestRule.getActivity().getActivityTab().getWebContents());
+                    Boolean.valueOf(mVrBrowserTestFramework.runJavaScriptOrFail(
+                            "lastPermissionGranted", POLL_TIMEOUT_SHORT_MS)));
+            mVrBrowserTestFramework.assertNoJavaScriptErrors();
         }
     }
 
@@ -174,7 +169,7 @@ public class VrBrowserDialogTest {
     @Feature({"Browser", "RenderTest"})
     public void testMicrophonePermissionPrompt()
             throws InterruptedException, TimeoutException, IOException {
-        testMicrophonePermissionPromptImpl(false);
+        testMicrophonePermissionPromptImpl(false, false);
     }
 
     /**
@@ -187,13 +182,14 @@ public class VrBrowserDialogTest {
             throws InterruptedException, TimeoutException, IOException {
         // Create an incognito tab
         mVrBrowserTestFramework.openIncognitoTab("about:blank");
-        testMicrophonePermissionPromptImpl(true);
+        testMicrophonePermissionPromptImpl(true, false);
     }
 
-    private void testMicrophonePermissionPromptImpl(boolean incognito)
+    private void testMicrophonePermissionPromptImpl(boolean incognito, boolean reposition)
             throws InterruptedException, TimeoutException, IOException {
         permissionPromptTestImpl("navigator.getUserMedia({audio: true}, onGranted, onDenied)",
-                "microphone_permission_prompt" + (incognito ? "_incognito" : ""),
+                "microphone_permission_prompt" + (incognito ? "_incognito" : "")
+                        + (reposition ? "_reposition" : ""),
                 UserFriendlyElementName.MICROPHONE_PERMISSION_INDICATOR, true /* grant */);
         // Additionally, make sure that the permission indicator reacts properly to a hover.
         NativeUiUtils.hoverElement(
@@ -201,8 +197,32 @@ public class VrBrowserDialogTest {
         NativeUiUtils.waitForUiQuiescence();
         RenderTestUtils.dumpAndCompare(NativeUiUtils.FRAME_BUFFER_SUFFIX_BROWSER_UI,
                 "microphone_permission_indicator_hover" + (incognito ? "_incognito" : "")
-                        + "_browser_ui",
+                        + (reposition ? "_reposition" : "") + "_browser_ui",
                 mRenderTestRule);
+    }
+
+    /**
+     * Tests that permission prompts and permission usage indicators properly follow the content
+     * quad when it's repositioned and resized.
+     */
+    @Test
+    @LargeTest
+    @Feature({"Browser", "RenderTest"})
+    public void testMicrophonePermissionPromptRepositionResize()
+            throws InterruptedException, TimeoutException, IOException {
+        VrBrowserTransitionUtils.forceEnterVrBrowserOrFail(POLL_TIMEOUT_LONG_MS);
+        // Move the content quad a bit up and to the right and make it smaller.
+        NativeUiUtils.selectRepositionBar();
+        NativeUiUtils.hoverElement(UserFriendlyElementName.CONTENT_QUAD, new PointF(0.5f, 1.0f));
+        NativeUiUtils.scrollFling(NativeUiUtils.ScrollDirection.DOWN);
+        // We need to ensure that the scroll has finished, but we can't use waitForUiQuiescence()
+        // because the UI is never quiescent while the reposition bar is being used. So, wait a
+        // suitable number of frames.
+        NativeUiUtils.waitNumFrames(2 * NativeUiUtils.NUM_STEPS_FLING_SCROLL);
+        NativeUiUtils.deselectRepositionBar();
+        NativeUiUtils.waitForUiQuiescence();
+
+        testMicrophonePermissionPromptImpl(false, true);
     }
 
     /**

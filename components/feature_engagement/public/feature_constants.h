@@ -22,6 +22,7 @@ extern const base::Feature kIPHDummyFeature;
 // org.chromium.components.feature_engagement.FeatureConstants.
 #if defined(OS_ANDROID)
 extern const base::Feature kIPHDataSaverDetailFeature;
+extern const base::Feature kIPHDataSaverMilestonePromoFeature;
 extern const base::Feature kIPHDataSaverPreviewFeature;
 extern const base::Feature kIPHDownloadHomeFeature;
 extern const base::Feature kIPHDownloadPageFeature;
@@ -41,6 +42,9 @@ extern const base::Feature kIPHHomePageButtonFeature;
 extern const base::Feature kIPHHomepageTileFeature;
 extern const base::Feature kIPHNewTabPageButtonFeature;
 extern const base::Feature kIPHPreviewsOmniboxUIFeature;
+extern const base::Feature kIPHTabGroupsQuicklyComparePagesFeature;
+extern const base::Feature kIPHTabGroupsTapToSeeAnotherTabFeature;
+extern const base::Feature kIPHTabGroupsYourTabsAreTogetherFeature;
 extern const base::Feature kIPHTranslateMenuButtonFeature;
 #endif  // defined(OS_ANDROID)
 
@@ -57,6 +61,7 @@ extern const base::Feature kIPHLongPressToolbarTipFeature;
 extern const base::Feature kIPHNewTabTipFeature;
 extern const base::Feature kIPHNewIncognitoTabTipFeature;
 extern const base::Feature kIPHBadgedReadingListFeature;
+extern const base::Feature kIPHBadgedTranslateManualTriggerFeature;
 #endif  // defined(OS_IOS)
 
 }  // namespace feature_engagement

@@ -44,6 +44,7 @@ class GpuMemoryBufferFactory;
 class GpuWatchdogThread;
 class Scheduler;
 class SyncPointManager;
+class SharedImageManager;
 class VulkanImplementation;
 }  // namespace gpu
 
@@ -85,12 +86,11 @@ class VIZ_SERVICE_EXPORT GpuServiceImpl : public gpu::GpuChannelManagerDelegate,
       gpu::GpuProcessActivityFlags activity_flags,
       scoped_refptr<gl::GLSurface> default_offscreen_surface,
       gpu::SyncPointManager* sync_point_manager = nullptr,
+      gpu::SharedImageManager* shared_image_manager = nullptr,
       base::WaitableEvent* shutdown_event = nullptr);
   void Bind(mojom::GpuServiceRequest request);
 
-  scoped_refptr<gpu::SharedContextState> GetContextStateForGLSurface(
-      gl::GLSurface* surface);
-  scoped_refptr<gpu::SharedContextState> GetContextStateForVulkan();
+  scoped_refptr<gpu::SharedContextState> GetContextState();
 
   // Notifies the GpuHost to stop using GPU compositing. This should be called
   // in response to an error in the GPU process that occurred after
@@ -116,7 +116,7 @@ class VIZ_SERVICE_EXPORT GpuServiceImpl : public gpu::GpuChannelManagerDelegate,
       arc::mojom::ProtectedBufferManagerRequest pbm_request) override;
 #endif  // defined(OS_CHROMEOS)
   void CreateJpegDecodeAccelerator(
-      media::mojom::JpegDecodeAcceleratorRequest jda_request) override;
+      media::mojom::MjpegDecodeAcceleratorRequest jda_request) override;
   void CreateJpegEncodeAccelerator(
       media::mojom::JpegEncodeAcceleratorRequest jea_request) override;
   void CreateVideoEncodeAcceleratorProvider(
@@ -189,7 +189,9 @@ class VIZ_SERVICE_EXPORT GpuServiceImpl : public gpu::GpuChannelManagerDelegate,
     return gpu_channel_manager_->gr_shader_cache();
   }
 
-  gpu::SyncPointManager* sync_point_manager() { return sync_point_manager_; }
+  gpu::SyncPointManager* sync_point_manager() {
+    return gpu_channel_manager_->sync_point_manager();
+  }
   gpu::Scheduler* scheduler() { return scheduler_.get(); }
 
   gpu::GpuWatchdogThread* watchdog_thread() { return watchdog_thread_.get(); }
@@ -247,7 +249,6 @@ class VIZ_SERVICE_EXPORT GpuServiceImpl : public gpu::GpuChannelManagerDelegate,
   void SendCreatedChildWindow(gpu::SurfaceHandle parent_window,
                               gpu::SurfaceHandle child_window) override;
 #endif
-  void SetActiveURL(const GURL& url) override;
 
 #if defined(OS_CHROMEOS)
   void CreateArcVideoDecodeAcceleratorOnMainThread(
@@ -292,10 +293,11 @@ class VIZ_SERVICE_EXPORT GpuServiceImpl : public gpu::GpuChannelManagerDelegate,
   std::unique_ptr<gpu::GpuChannelManager> gpu_channel_manager_;
   std::unique_ptr<media::MediaGpuChannelManager> media_gpu_channel_manager_;
 
-  // On some platforms (e.g. android webview), the SyncPointManager comes from
-  // external sources.
+  // On some platforms (e.g. android webview), the SyncPointManager and
+  // SharedImageManager comes from external sources.
   std::unique_ptr<gpu::SyncPointManager> owned_sync_point_manager_;
-  gpu::SyncPointManager* sync_point_manager_ = nullptr;
+
+  std::unique_ptr<gpu::SharedImageManager> owned_shared_image_manager_;
 
   std::unique_ptr<gpu::Scheduler> scheduler_;
 

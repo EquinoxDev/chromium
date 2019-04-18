@@ -125,14 +125,12 @@ UnifiedVolumeView::UnifiedVolumeView(UnifiedVolumeSliderController* controller)
                         kSystemMenuVolumeHighIcon,
                         IDS_ASH_STATUS_TRAY_VOLUME),
       more_button_(new MoreButton(controller)) {
-  DCHECK(CrasAudioHandler::IsInitialized());
   CrasAudioHandler::Get()->AddAudioObserver(this);
   AddChildView(more_button_);
   Update(false /* by_user */);
 }
 
 UnifiedVolumeView::~UnifiedVolumeView() {
-  DCHECK(CrasAudioHandler::IsInitialized());
   CrasAudioHandler::Get()->RemoveAudioObserver(this);
 }
 
@@ -166,7 +164,7 @@ void UnifiedVolumeView::OnOutputNodeVolumeChanged(uint64_t node_id,
   Update(true /* by_user */);
 }
 
-void UnifiedVolumeView::OnOutputMuteChanged(bool mute_on, bool system_adjust) {
+void UnifiedVolumeView::OnOutputMuteChanged(bool mute_on) {
   Update(true /* by_user */);
 }
 

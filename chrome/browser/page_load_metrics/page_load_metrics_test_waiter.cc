@@ -65,6 +65,11 @@ bool PageLoadMetricsTestWaiter::DidObserveInPage(TimingField field) const {
   return observed_page_fields_.IsSet(field);
 }
 
+bool PageLoadMetricsTestWaiter::DidObserveWebFeature(
+    blink::mojom::WebFeature feature) const {
+  return observed_web_features_.test(static_cast<size_t>(feature));
+}
+
 void PageLoadMetricsTestWaiter::Wait() {
   if (ExpectationsSatisfied())
     return;
@@ -119,18 +124,11 @@ void PageLoadMetricsTestWaiter::OnLoadedResource(
 }
 
 void PageLoadMetricsTestWaiter::OnResourceDataUseObserved(
-    FrameTreeNodeId frame_tree_node_id,
+    content::RenderFrameHost* rfh,
     const std::vector<page_load_metrics::mojom::ResourceDataUpdatePtr>&
         resources) {
   for (auto const& resource : resources) {
-    auto it = page_resources_.find(resource->request_id);
-    if (it != page_resources_.end()) {
-      it->second = resource.Clone();
-    } else {
-      page_resources_.emplace(std::piecewise_construct,
-                              std::forward_as_tuple(resource->request_id),
-                              std::forward_as_tuple(resource->Clone()));
-    }
+    HandleResourceUpdate(resource);
     if (resource->is_complete) {
       current_complete_resources_++;
       if (!resource->was_fetched_via_cache)
@@ -161,7 +159,8 @@ void PageLoadMetricsTestWaiter::OnFeaturesUsageObserved(
 }
 
 void PageLoadMetricsTestWaiter::OnDidFinishSubFrameNavigation(
-    content::NavigationHandle* navigation_handle) {
+    content::NavigationHandle* navigation_handle,
+    const page_load_metrics::PageLoadExtraInfo& extra_info) {
   if (SubframeNavigationExpectationsSatisfied())
     return;
 
@@ -280,11 +279,11 @@ void PageLoadMetricsTestWaiter::WaiterMetricsObserver::OnLoadedResource(
 
 void PageLoadMetricsTestWaiter::WaiterMetricsObserver::
     OnResourceDataUseObserved(
-        FrameTreeNodeId frame_tree_node_id,
+        content::RenderFrameHost* rfh,
         const std::vector<page_load_metrics::mojom::ResourceDataUpdatePtr>&
             resources) {
   if (waiter_)
-    waiter_->OnResourceDataUseObserved(frame_tree_node_id, resources);
+    waiter_->OnResourceDataUseObserved(rfh, resources);
 }
 
 void PageLoadMetricsTestWaiter::WaiterMetricsObserver::OnFeaturesUsageObserved(
@@ -297,9 +296,10 @@ void PageLoadMetricsTestWaiter::WaiterMetricsObserver::OnFeaturesUsageObserved(
 
 void PageLoadMetricsTestWaiter::WaiterMetricsObserver::
     OnDidFinishSubFrameNavigation(
-        content::NavigationHandle* navigation_handle) {
+        content::NavigationHandle* navigation_handle,
+        const page_load_metrics::PageLoadExtraInfo& extra_info) {
   if (waiter_)
-    waiter_->OnDidFinishSubFrameNavigation(navigation_handle);
+    waiter_->OnDidFinishSubFrameNavigation(navigation_handle, extra_info);
 }
 
 }  // namespace page_load_metrics

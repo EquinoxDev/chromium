@@ -102,7 +102,7 @@ void InsertParagraphSeparatorCommand::CalculateStyleBeforeInsertion(
     return;
 
   DCHECK(pos.IsNotNull());
-  style_ = EditingStyle::Create(pos);
+  style_ = MakeGarbageCollected<EditingStyle>(pos);
   style_->MergeTypingStyle(pos.GetDocument());
 }
 
@@ -194,7 +194,7 @@ void InsertParagraphSeparatorCommand::DoApply(EditingState* editing_state) {
 
   // Delete the current selection.
   if (EndingSelection().IsRange()) {
-    GetDocument().UpdateStyleAndLayoutIgnorePendingStylesheets();
+    GetDocument().UpdateStyleAndLayout();
     CalculateStyleBeforeInsertion(insertion_position);
     if (!DeleteSelection(editing_state, DeleteSelectionOptions::NormalDelete()))
       return;
@@ -204,7 +204,7 @@ void InsertParagraphSeparatorCommand::DoApply(EditingState* editing_state) {
     affinity = visble_selection_after_delete.Affinity();
   }
 
-  GetDocument().UpdateStyleAndLayoutIgnorePendingStylesheets();
+  GetDocument().UpdateStyleAndLayout();
 
   // FIXME: The parentAnchoredEquivalent conversion needs to be moved into
   // enclosingBlock.
@@ -227,8 +227,9 @@ void InsertParagraphSeparatorCommand::DoApply(EditingState* editing_state) {
           IsDisplayInsideTable(canonical_pos.AnchorNode())) ||
       (!canonical_pos.IsNull() &&
        IsHTMLHRElement(*canonical_pos.AnchorNode()))) {
-    ApplyCommandToComposite(InsertLineBreakCommand::Create(GetDocument()),
-                            editing_state);
+    ApplyCommandToComposite(
+        MakeGarbageCollected<InsertLineBreakCommand>(GetDocument()),
+        editing_state);
     return;
   }
 
@@ -254,7 +255,7 @@ void InsertParagraphSeparatorCommand::DoApply(EditingState* editing_state) {
         ToHTMLElement(EnclosingAnchorElement(original_insertion_position));
   }
 
-  GetDocument().UpdateStyleAndLayoutIgnorePendingStylesheets();
+  GetDocument().UpdateStyleAndLayout();
   CalculateStyleBeforeInsertion(insertion_position);
 
   //---------------------------------------------------------------------
@@ -389,7 +390,7 @@ void InsertParagraphSeparatorCommand::DoApply(EditingState* editing_state) {
       ref_node = insertion_position.AnchorNode();
     }
 
-    GetDocument().UpdateStyleAndLayoutIgnorePendingStylesheets();
+    GetDocument().UpdateStyleAndLayout();
 
     // find ending selection position easily before inserting the paragraph
     insertion_position = MostForwardCaretPosition(insertion_position);
@@ -438,7 +439,7 @@ void InsertParagraphSeparatorCommand::DoApply(EditingState* editing_state) {
     InsertNodeAt(br, insertion_position, editing_state);
     if (editing_state->IsAborted())
       return;
-    GetDocument().UpdateStyleAndLayoutIgnorePendingStylesheets();
+    GetDocument().UpdateStyleAndLayout();
 
     insertion_position = Position::InParentAfterNode(*br);
     visible_pos = CreateVisiblePosition(insertion_position);
@@ -496,7 +497,7 @@ void InsertParagraphSeparatorCommand::DoApply(EditingState* editing_state) {
     ReplaceTextInNode(text_node,
                       leading_whitespace.ComputeOffsetInContainerNode(), 1,
                       NonBreakingSpaceString());
-    GetDocument().UpdateStyleAndLayoutIgnorePendingStylesheets();
+    GetDocument().UpdateStyleAndLayout();
   }
 
   // Split at pos if in the middle of a text node.
@@ -508,7 +509,7 @@ void InsertParagraphSeparatorCommand::DoApply(EditingState* editing_state) {
     bool at_end = static_cast<unsigned>(text_offset) >= text_node->length();
     if (text_offset > 0 && !at_end) {
       SplitTextNode(text_node, text_offset);
-      GetDocument().UpdateStyleAndLayoutIgnorePendingStylesheets();
+      GetDocument().UpdateStyleAndLayout();
 
       position_after_split = Position::FirstPositionInNode(*text_node);
       insertion_position = Position(text_node->previousSibling(), text_offset);
@@ -534,7 +535,7 @@ void InsertParagraphSeparatorCommand::DoApply(EditingState* editing_state) {
   if (editing_state->IsAborted())
     return;
 
-  GetDocument().UpdateStyleAndLayoutIgnorePendingStylesheets();
+  GetDocument().UpdateStyleAndLayout();
   visible_pos = CreateVisiblePosition(insertion_position);
 
   // If the paragraph separator was inserted at the end of a paragraph, an empty
@@ -547,7 +548,7 @@ void InsertParagraphSeparatorCommand::DoApply(EditingState* editing_state) {
                editing_state);
     if (editing_state->IsAborted())
       return;
-    GetDocument().UpdateStyleAndLayoutIgnorePendingStylesheets();
+    GetDocument().UpdateStyleAndLayout();
   }
 
   // Move the start node and the siblings of the start node.
@@ -565,7 +566,7 @@ void InsertParagraphSeparatorCommand::DoApply(EditingState* editing_state) {
       if (split_to)
         SplitTreeToNode(split_to, start_block);
 
-      GetDocument().UpdateStyleAndLayoutIgnorePendingStylesheets();
+      GetDocument().UpdateStyleAndLayout();
 
       for (n = start_block->firstChild(); n; n = n->nextSibling()) {
         VisiblePosition before_node_position = VisiblePosition::BeforeNode(*n);
@@ -584,7 +585,7 @@ void InsertParagraphSeparatorCommand::DoApply(EditingState* editing_state) {
 
   // Handle whitespace that occurs after the split
   if (position_after_split.IsNotNull()) {
-    GetDocument().UpdateStyleAndLayoutIgnorePendingStylesheets();
+    GetDocument().UpdateStyleAndLayout();
     if (!IsRenderedCharacter(position_after_split)) {
       // Clear out all whitespace and insert one non-breaking space
       DCHECK(!position_after_split.ComputeContainerNode()->GetLayoutObject() ||
@@ -607,7 +608,7 @@ void InsertParagraphSeparatorCommand::DoApply(EditingState* editing_state) {
   ApplyStyleAfterInsertion(start_block, editing_state);
 }
 
-void InsertParagraphSeparatorCommand::Trace(blink::Visitor* visitor) {
+void InsertParagraphSeparatorCommand::Trace(Visitor* visitor) {
   visitor->Trace(style_);
   CompositeEditCommand::Trace(visitor);
 }

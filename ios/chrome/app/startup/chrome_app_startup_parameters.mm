@@ -54,6 +54,8 @@ enum SearchExtensionAction {
   ACTION_NEW_VOICE_SEARCH,
   ACTION_NEW_QR_CODE_SEARCH,
   ACTION_OPEN_URL,
+  ACTION_SEARCH_TEXT,
+  ACTION_SEARCH_IMAGE,
   SEARCH_EXTENSION_ACTION_COUNT,
 };
 
@@ -170,9 +172,7 @@ enum SearchExtensionAction {
 + (instancetype)newExtensionCommandAppStartupParametersFromWithURL:(NSURL*)url
                                              fromSourceApplication:
                                                  (NSString*)appId {
-  NSString* appGroup = app_group::ApplicationGroup();
-  NSUserDefaults* sharedDefaults =
-      [[NSUserDefaults alloc] initWithSuiteName:appGroup];
+  NSUserDefaults* sharedDefaults = app_group::GetGroupUserDefaults();
 
   NSString* commandDictionaryPreference =
       base::SysUTF8ToNSString(app_group::kChromeAppGroupCommandPreference);
@@ -209,6 +209,11 @@ enum SearchExtensionAction {
   NSString* externalText = base::mac::ObjCCast<NSString>(
       [commandDictionary objectForKey:commandTextPreference]);
 
+  NSString* commandDataPreference =
+      base::SysUTF8ToNSString(app_group::kChromeAppGroupCommandDataPreference);
+  NSData* externalData = base::mac::ObjCCast<NSData>(
+      [commandDictionary objectForKey:commandDataPreference]);
+
   NSString* commandIndexPreference =
       base::SysUTF8ToNSString(app_group::kChromeAppGroupCommandIndexPreference);
   NSNumber* index = base::mac::ObjCCast<NSNumber>(
@@ -227,6 +232,7 @@ enum SearchExtensionAction {
   return [ChromeAppStartupParameters
       newAppStartupParametersForCommand:command
                        withExternalText:externalText
+                       withExternalData:externalData
                               withIndex:index
                                 withURL:url
                   fromSourceApplication:appId
@@ -235,6 +241,7 @@ enum SearchExtensionAction {
 
 + (instancetype)newAppStartupParametersForCommand:(NSString*)command
                                  withExternalText:(NSString*)externalText
+                                 withExternalData:(NSData*)externalData
                                         withIndex:(NSNumber*)index
                                           withURL:(NSURL*)url
                             fromSourceApplication:(NSString*)appId
@@ -307,7 +314,26 @@ enum SearchExtensionAction {
     params.textQuery = externalText;
     params.postOpeningAction = SEARCH_TEXT;
 
-    action = ACTION_NEW_SEARCH;
+    action = ACTION_SEARCH_TEXT;
+  }
+
+  if ([command
+          isEqualToString:base::SysUTF8ToNSString(
+                              app_group::kChromeAppGroupSearchImageCommand)]) {
+    if (!externalData) {
+      return nil;
+    }
+
+    params = [[ChromeAppStartupParameters alloc]
+        initWithExternalURL:GURL(kChromeUINewTabURL)
+          declaredSourceApp:appId
+            secureSourceApp:secureSourceApp
+                completeURL:url];
+
+    params.imageSearchData = externalData;
+    params.postOpeningAction = SEARCH_IMAGE;
+
+    action = ACTION_SEARCH_IMAGE;
   }
 
   if ([command

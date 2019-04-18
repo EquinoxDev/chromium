@@ -25,6 +25,7 @@
 #include "components/autofill/core/browser/test_autofill_client.h"
 #include "components/autofill/core/browser/test_autofill_driver.h"
 #include "components/autofill/core/common/autofill_features.h"
+#include "components/autofill/core/common/autofill_payments_features.h"
 #include "components/autofill/core/common/autofill_switches.h"
 #include "components/autofill/core/common/form_data.h"
 #include "components/autofill/core/common/form_field_data.h"
@@ -408,15 +409,16 @@ TEST_F(AutofillExternalDelegateUnitTest, UpdateDataListWhileShowingPopup) {
 TEST_F(AutofillExternalDelegateUnitTest, DuplicateAutofillDatalistValues) {
   IssueOnQuery(kQueryId);
 
-  std::vector<base::string16> data_list_items;
-  data_list_items.push_back(base::ASCIIToUTF16("Rick"));
-  data_list_items.push_back(base::ASCIIToUTF16("Deckard"));
+  std::vector<base::string16> data_list_values{base::ASCIIToUTF16("Rick"),
+                                               base::ASCIIToUTF16("Beyonce")};
+  std::vector<base::string16> data_list_labels{base::ASCIIToUTF16("Deckard"),
+                                               base::ASCIIToUTF16("Knowles")};
 
   EXPECT_CALL(autofill_client_, UpdateAutofillPopupDataListValues(
-                                    data_list_items, data_list_items));
+                                    data_list_values, data_list_labels));
 
-  external_delegate_->SetCurrentDataListValues(data_list_items,
-                                               data_list_items);
+  external_delegate_->SetCurrentDataListValues(data_list_values,
+                                               data_list_labels);
 
   // The enums must be cast to ints to prevent compile errors on linux_rel.
   auto element_ids = testing::ElementsAre(
@@ -434,6 +436,8 @@ TEST_F(AutofillExternalDelegateUnitTest, DuplicateAutofillDatalistValues) {
   std::vector<Suggestion> autofill_item;
   autofill_item.push_back(Suggestion());
   autofill_item[0].value = ASCIIToUTF16("Rick");
+  autofill_item[0].label = ASCIIToUTF16("Deckard");
+  autofill_item[0].additional_label = ASCIIToUTF16("Deckard");
   autofill_item[0].frontend_id = kAutofillProfileId;
   external_delegate_->OnSuggestionsReturned(
       kQueryId, autofill_item, /*autoselect_first_suggestion=*/false);
@@ -444,15 +448,16 @@ TEST_F(AutofillExternalDelegateUnitTest, DuplicateAutofillDatalistValues) {
 TEST_F(AutofillExternalDelegateUnitTest, DuplicateAutocompleteDatalistValues) {
   IssueOnQuery(kQueryId);
 
-  std::vector<base::string16> data_list_items;
-  data_list_items.push_back(base::ASCIIToUTF16("Rick"));
-  data_list_items.push_back(base::ASCIIToUTF16("Deckard"));
+  std::vector<base::string16> data_list_values{base::ASCIIToUTF16("Rick"),
+                                               base::ASCIIToUTF16("Beyonce")};
+  std::vector<base::string16> data_list_labels{base::ASCIIToUTF16("Deckard"),
+                                               base::ASCIIToUTF16("Knowles")};
 
   EXPECT_CALL(autofill_client_, UpdateAutofillPopupDataListValues(
-                                    data_list_items, data_list_items));
+                                    data_list_values, data_list_labels));
 
-  external_delegate_->SetCurrentDataListValues(data_list_items,
-                                               data_list_items);
+  external_delegate_->SetCurrentDataListValues(data_list_values,
+                                               data_list_labels);
 
   // The enums must be cast to ints to prevent compile errors on linux_rel.
   auto element_ids = testing::ElementsAre(

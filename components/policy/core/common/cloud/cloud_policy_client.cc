@@ -258,7 +258,8 @@ void CloudPolicyClient::RegisterWithCertificate(
     const std::string& pem_certificate_chain,
     const std::string& client_id,
     const std::string& requisition,
-    const std::string& current_state_key) {
+    const std::string& current_state_key,
+    const std::string& sub_organization) {
   DCHECK(signing_service_);
   DCHECK(service_);
   DCHECK(!is_registered());
@@ -288,6 +289,12 @@ void CloudPolicyClient::RegisterWithCertificate(
   if (license_type != em::LicenseType::UNDEFINED)
     request->mutable_license_type()->set_license_type(license_type);
   request->set_lifetime(lifetime);
+
+  if (!sub_organization.empty()) {
+    em::DeviceRegisterConfiguration* configuration =
+        data.mutable_device_register_configuration();
+    configuration->set_device_owner(sub_organization);
+  }
 
   signing_service_->SignData(
       data.SerializeAsString(),
@@ -549,10 +556,11 @@ void CloudPolicyClient::UploadEnterpriseEnrollmentId(
 void CloudPolicyClient::UploadDeviceStatus(
     const em::DeviceStatusReportRequest* device_status,
     const em::SessionStatusReportRequest* session_status,
+    const em::ChildStatusReportRequest* child_status,
     const CloudPolicyClient::StatusCallback& callback) {
   CHECK(is_registered());
   // Should pass in at least one type of status.
-  DCHECK(device_status || session_status);
+  DCHECK(device_status || session_status || child_status);
   std::unique_ptr<DeviceManagementRequestJob> request_job(service_->CreateJob(
       DeviceManagementRequestJob::TYPE_UPLOAD_STATUS, GetURLLoaderFactory()));
   request_job->SetAuthData(DMAuth::FromDMToken(dm_token_));
@@ -565,6 +573,8 @@ void CloudPolicyClient::UploadDeviceStatus(
     *request->mutable_device_status_report_request() = *device_status;
   if (session_status)
     *request->mutable_session_status_report_request() = *session_status;
+  if (child_status)
+    *request->mutable_child_status_report_request() = *child_status;
 
   const DeviceManagementRequestJob::Callback job_callback =
       base::AdaptCallbackForRepeating(base::BindOnce(
@@ -665,7 +675,9 @@ void CloudPolicyClient::GetDeviceAttributeUpdatePermission(
     std::unique_ptr<DMAuth> auth,
     const CloudPolicyClient::StatusCallback& callback) {
   CHECK(is_registered());
-  DCHECK(auth->has_oauth_token() || auth->has_enrollment_token());
+  // This condition is wrong in case of Attestation enrollment
+  // (https://crbug.com/942013).
+  // DCHECK(auth->has_oauth_token() || auth->has_enrollment_token());
 
   std::unique_ptr<DeviceManagementRequestJob> request_job(service_->CreateJob(
       DeviceManagementRequestJob::TYPE_ATTRIBUTE_UPDATE_PERMISSION,

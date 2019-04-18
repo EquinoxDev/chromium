@@ -76,6 +76,8 @@ inspector_protocol_generate("protocol_sources") {
 
   # These are relative to $target_gen_dir.
   outputs = [
+    "protocol/background_service.cc",
+    "protocol/background_service.h",
     "protocol/base_string_adapter.cc",
     "protocol/base_string_adapter.h",
     "protocol/browser.cc",
@@ -97,6 +99,8 @@ inspector_protocol_generate("protocol_sources") {
     "protocol/memory.h",
     "protocol/network.cc",
     "protocol/network.h",
+    "protocol/overlay.cc",
+    "protocol/overlay.h",
     "protocol/page.cc",
     "protocol/page.h",
     "protocol/protocol.cc",
@@ -125,5 +129,18 @@ inspector_protocol_generate("protocol_sources") {
 proto_library("devtools_background_services_proto") {
   sources = [
     "devtools_background_services.proto",
+  ]
+}
+
+source_set("inspector_protocol_encoding_test") {
+  testonly = true
+  sources = [
+    "../../../third_party/inspector_protocol/encoding/encoding_test.cc",
+  ]
+  deps = [
+    "//base",
+    "//testing/gmock",
+    "//testing/gtest",
+    "//third_party/inspector_protocol:encoding",
   ]
 }

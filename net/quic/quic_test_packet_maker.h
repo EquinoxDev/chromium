@@ -15,10 +15,11 @@
 
 #include "base/macros.h"
 #include "net/base/request_priority.h"
-#include "net/third_party/quic/core/quic_packets.h"
-#include "net/third_party/quic/platform/api/quic_string_piece.h"
-#include "net/third_party/quic/test_tools/mock_clock.h"
-#include "net/third_party/quic/test_tools/mock_random.h"
+#include "net/third_party/quiche/src/quic/core/quic_packets.h"
+#include "net/third_party/quiche/src/quic/core/quic_stream_frame_data_producer.h"
+#include "net/third_party/quiche/src/quic/platform/api/quic_string_piece.h"
+#include "net/third_party/quiche/src/quic/test_tools/mock_clock.h"
+#include "net/third_party/quiche/src/quic/test_tools/mock_random.h"
 #include "net/third_party/quiche/src/spdy/core/spdy_framer.h"
 #include "net/third_party/quiche/src/spdy/core/spdy_protocol.h"
 
@@ -368,8 +369,6 @@ class QuicTestPacketMaker {
 
   void SetEncryptionLevel(quic::EncryptionLevel level);
 
-  void SetLongHeaderType(quic::QuicLongHeaderType type);
-
   spdy::SpdyHeaderBlock GetRequestHeaders(const std::string& method,
                                           const std::string& scheme,
                                           const std::string& path);
@@ -390,7 +389,8 @@ class QuicTestPacketMaker {
       const quic::QuicFrame& frame);
   std::unique_ptr<quic::QuicReceivedPacket> MakeMultipleFramesPacket(
       const quic::QuicPacketHeader& header,
-      const quic::QuicFrames& frames);
+      const quic::QuicFrames& frames,
+      quic::QuicStreamFrameDataProducer* data_producer);
 
   void InitializeHeader(uint64_t packet_number, bool should_include_version);
 
@@ -405,9 +405,8 @@ class QuicTestPacketMaker {
 
   quic::QuicPacketNumberLength GetPacketNumberLength() const;
 
-  quic::QuicConnectionIdLength GetDestinationConnectionIdLength() const;
-
-  quic::QuicConnectionIdLength GetSourceConnectionIdLength() const;
+  quic::QuicConnectionIdIncluded HasDestinationConnectionId() const;
+  quic::QuicConnectionIdIncluded HasSourceConnectionId() const;
 
   quic::QuicTransportVersion version_;
   quic::QuicConnectionId connection_id_;

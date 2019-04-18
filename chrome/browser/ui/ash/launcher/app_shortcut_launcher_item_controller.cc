@@ -183,9 +183,16 @@ void AppShortcutLauncherItemController::ItemSelected(
     return;
   }
 
-  const ash::ShelfAction action = ActivateContent(content);
-  std::move(callback).Run(
-      action, GetAppMenuItems(event ? event->flags() : ui::EF_NONE));
+  ash::MenuItemList items =
+      GetAppMenuItems(event ? event->flags() : ui::EF_NONE);
+
+  if (items.size() == 1) {
+    std::move(callback).Run(ActivateContent(content), base::nullopt);
+  } else {
+    // Multiple items, a menu will be shown. No need to activate the most
+    // recently active item.
+    std::move(callback).Run(ash::SHELF_ACTION_NONE, std::move(items));
+  }
 }
 
 ash::MenuItemList AppShortcutLauncherItemController::GetAppMenuItems(
@@ -238,7 +245,7 @@ void AppShortcutLauncherItemController::ExecuteCommand(bool from_context_menu,
     } else {
       multi_user_util::MoveWindowToCurrentDesktop(
           browser->window()->GetNativeWindow());
-      tab_strip->ActivateTabAt(index, false);
+      tab_strip->ActivateTabAt(index);
       browser->window()->Show();
       browser->window()->Activate();
     }
@@ -332,7 +339,7 @@ ash::ShelfAction AppShortcutLauncherItemController::ActivateContent(
 
   int old_index = tab_strip->active_index();
   if (index != old_index)
-    tab_strip->ActivateTabAt(index, false);
+    tab_strip->ActivateTabAt(index);
   return ChromeLauncherController::instance()->ActivateWindowOrMinimizeIfActive(
       browser->window(),
       index == old_index && GetRunningApplications().size() == 1);

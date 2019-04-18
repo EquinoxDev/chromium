@@ -229,6 +229,7 @@ mojom::DisplayModePtr GetDisplayMode(
   result->device_scale_factor = display_mode.device_scale_factor();
   result->refresh_rate = display_mode.refresh_rate();
   result->is_native = display_mode.native();
+  result->is_interlaced = display_mode.is_interlaced();
   return result;
 }
 
@@ -408,7 +409,8 @@ void SetDisplayLayoutFromBounds(const gfx::Rect& primary_display_bounds,
 // Attempts to set the display mode for display |id|.
 mojom::DisplayConfigResult SetDisplayMode(
     int64_t id,
-    const mojom::DisplayMode& display_mode) {
+    const mojom::DisplayMode& display_mode,
+    mojom::DisplayConfigSource source) {
   display::DisplayManager* display_manager = GetDisplayManager();
 
   display::ManagedDisplayMode current_mode;
@@ -416,8 +418,8 @@ mojom::DisplayConfigResult SetDisplayMode(
     return mojom::DisplayConfigResult::kInvalidDisplayIdError;
 
   display::ManagedDisplayMode new_mode(
-      display_mode.size_in_native_pixels, current_mode.refresh_rate(),
-      current_mode.is_interlaced(), display_mode.is_native,
+      display_mode.size_in_native_pixels, display_mode.refresh_rate,
+      display_mode.is_interlaced, display_mode.is_native,
       display_mode.device_scale_factor);
 
   if (!new_mode.IsEquivalent(current_mode)) {
@@ -429,7 +431,7 @@ mojom::DisplayConfigResult SetDisplayMode(
     if (!Shell::Get()
              ->resolution_notification_controller()
              ->PrepareNotificationAndSetDisplayMode(
-                 id, current_mode, new_mode, base::BindOnce([]() {
+                 id, current_mode, new_mode, source, base::BindOnce([]() {
                    Shell::Get()->display_prefs()->MaybeStoreDisplayPrefs();
                  }))) {
       return mojom::DisplayConfigResult::kSetDisplayModeError;
@@ -633,6 +635,7 @@ void CrosDisplayConfig::GetDisplayUnitInfoList(
 void CrosDisplayConfig::SetDisplayProperties(
     const std::string& id,
     mojom::DisplayConfigPropertiesPtr properties,
+    mojom::DisplayConfigSource source,
     SetDisplayPropertiesCallback callback) {
   const display::Display display = GetDisplay(id);
   mojom::DisplayConfigResult result =
@@ -690,7 +693,7 @@ void CrosDisplayConfig::SetDisplayProperties(
   // will have already been applied. TODO(stevenjb): Validate the display mode
   // before applying any properties.
   if (properties->display_mode) {
-    result = SetDisplayMode(display.id(), *properties->display_mode);
+    result = SetDisplayMode(display.id(), *properties->display_mode, source);
     if (result != mojom::DisplayConfigResult::kSuccess) {
       std::move(callback).Run(result);
       return;

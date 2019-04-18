@@ -29,9 +29,9 @@ class MockPictureInPictureService
  public:
   MockPictureInPictureService() : binding_(this) {
     // Setup default implementations.
-    ON_CALL(*this, StartSession(_, _, _, _, _))
+    ON_CALL(*this, StartSession(_, _, _, _, _, _))
         .WillByDefault([](uint32_t, const base::Optional<viz::SurfaceId>&,
-                          const blink::WebSize&, bool,
+                          const blink::WebSize&, bool, bool,
                           StartSessionCallback callback) {
           std::move(callback).Run(WebSize());
         });
@@ -46,17 +46,19 @@ class MockPictureInPictureService
         mojom::blink::PictureInPictureServiceRequest(std::move(handle)));
   }
 
-  MOCK_METHOD5(StartSession,
+  MOCK_METHOD6(StartSession,
                void(uint32_t,
                     const base::Optional<viz::SurfaceId>&,
                     const blink::WebSize&,
                     bool,
+                    bool,
                     StartSessionCallback));
   MOCK_METHOD1(EndSession, void(EndSessionCallback));
-  MOCK_METHOD4(UpdateSession,
+  MOCK_METHOD5(UpdateSession,
                void(uint32_t,
                     const base::Optional<viz::SurfaceId>&,
                     const blink::WebSize&,
+                    bool,
                     bool));
   MOCK_METHOD1(SetDelegate, void(mojom::blink::PictureInPictureDelegatePtr));
 
@@ -161,13 +163,14 @@ TEST_F(PictureInPictureControllerTest, EnterPictureInPictureFiresEvent) {
   WebMediaPlayer* player = Video()->GetWebMediaPlayer();
   EXPECT_CALL(Service(),
               StartSession(player->GetDelegateId(), player->GetSurfaceId(),
-                           player->NaturalSize(), true, _));
+                           player->NaturalSize(), true, false, _));
   EXPECT_CALL(Service(), SetDelegate(_));
 
   PictureInPictureControllerImpl::From(GetDocument())
       .EnterPictureInPicture(Video(), nullptr);
 
-  WaitForEvent::Create(Video(), event_type_names::kEnterpictureinpicture);
+  MakeGarbageCollected<WaitForEvent>(Video(),
+                                     event_type_names::kEnterpictureinpicture);
 
   EXPECT_NE(nullptr, PictureInPictureControllerImpl::From(GetDocument())
                          .PictureInPictureElement());
@@ -183,17 +186,19 @@ TEST_F(PictureInPictureControllerTest, ExitPictureInPictureFiresEvent) {
   WebMediaPlayer* player = Video()->GetWebMediaPlayer();
   EXPECT_CALL(Service(),
               StartSession(player->GetDelegateId(), player->GetSurfaceId(),
-                           player->NaturalSize(), true, _));
+                           player->NaturalSize(), true, false, _));
   EXPECT_CALL(Service(), EndSession(_));
   EXPECT_CALL(Service(), SetDelegate(_));
 
   PictureInPictureControllerImpl::From(GetDocument())
       .EnterPictureInPicture(Video(), nullptr);
-  WaitForEvent::Create(Video(), event_type_names::kEnterpictureinpicture);
+  MakeGarbageCollected<WaitForEvent>(Video(),
+                                     event_type_names::kEnterpictureinpicture);
 
   PictureInPictureControllerImpl::From(GetDocument())
       .ExitPictureInPicture(Video(), nullptr);
-  WaitForEvent::Create(Video(), event_type_names::kLeavepictureinpicture);
+  MakeGarbageCollected<WaitForEvent>(Video(),
+                                     event_type_names::kLeavepictureinpicture);
 
   EXPECT_EQ(nullptr, PictureInPictureControllerImpl::From(GetDocument())
                          .PictureInPictureElement());
@@ -207,13 +212,14 @@ TEST_F(PictureInPictureControllerTest, StartObserving) {
   WebMediaPlayer* player = Video()->GetWebMediaPlayer();
   EXPECT_CALL(Service(),
               StartSession(player->GetDelegateId(), player->GetSurfaceId(),
-                           player->NaturalSize(), true, _));
+                           player->NaturalSize(), true, false, _));
   EXPECT_CALL(Service(), SetDelegate(_));
 
   PictureInPictureControllerImpl::From(GetDocument())
       .EnterPictureInPicture(Video(), nullptr);
 
-  WaitForEvent::Create(Video(), event_type_names::kEnterpictureinpicture);
+  MakeGarbageCollected<WaitForEvent>(Video(),
+                                     event_type_names::kEnterpictureinpicture);
 
   EXPECT_TRUE(PictureInPictureControllerImpl::From(GetDocument())
                   .GetDelegateBindingForTesting()
@@ -231,17 +237,19 @@ TEST_F(PictureInPictureControllerTest, StopObserving) {
   WebMediaPlayer* player = Video()->GetWebMediaPlayer();
   EXPECT_CALL(Service(),
               StartSession(player->GetDelegateId(), player->GetSurfaceId(),
-                           player->NaturalSize(), true, _));
+                           player->NaturalSize(), true, false, _));
   EXPECT_CALL(Service(), EndSession(_));
   EXPECT_CALL(Service(), SetDelegate(_));
 
   PictureInPictureControllerImpl::From(GetDocument())
       .EnterPictureInPicture(Video(), nullptr);
-  WaitForEvent::Create(Video(), event_type_names::kEnterpictureinpicture);
+  MakeGarbageCollected<WaitForEvent>(Video(),
+                                     event_type_names::kEnterpictureinpicture);
 
   PictureInPictureControllerImpl::From(GetDocument())
       .ExitPictureInPicture(Video(), nullptr);
-  WaitForEvent::Create(Video(), event_type_names::kLeavepictureinpicture);
+  MakeGarbageCollected<WaitForEvent>(Video(),
+                                     event_type_names::kLeavepictureinpicture);
 
   EXPECT_FALSE(PictureInPictureControllerImpl::From(GetDocument())
                    .GetDelegateBindingForTesting()
@@ -257,13 +265,14 @@ TEST_F(PictureInPictureControllerTest, PlayPauseButton_InfiniteDuration) {
   WebMediaPlayer* player = Video()->GetWebMediaPlayer();
   EXPECT_CALL(Service(),
               StartSession(player->GetDelegateId(), player->GetSurfaceId(),
-                           player->NaturalSize(), false, _));
+                           player->NaturalSize(), false, false, _));
   EXPECT_CALL(Service(), SetDelegate(_));
 
   PictureInPictureControllerImpl::From(GetDocument())
       .EnterPictureInPicture(Video(), nullptr);
 
-  WaitForEvent::Create(Video(), event_type_names::kEnterpictureinpicture);
+  MakeGarbageCollected<WaitForEvent>(Video(),
+                                     event_type_names::kEnterpictureinpicture);
 
   // `SetDelegate()` may or may not have been called yet. Waiting a bit for it.
   test::RunPendingTasks();
@@ -279,13 +288,14 @@ TEST_F(PictureInPictureControllerTest, PlayPauseButton_MediaSource) {
   WebMediaPlayer* player = Video()->GetWebMediaPlayer();
   EXPECT_CALL(Service(),
               StartSession(player->GetDelegateId(), player->GetSurfaceId(),
-                           player->NaturalSize(), false, _));
+                           player->NaturalSize(), false, false, _));
   EXPECT_CALL(Service(), SetDelegate(_));
 
   PictureInPictureControllerImpl::From(GetDocument())
       .EnterPictureInPicture(Video(), nullptr);
 
-  WaitForEvent::Create(Video(), event_type_names::kEnterpictureinpicture);
+  MakeGarbageCollected<WaitForEvent>(Video(),
+                                     event_type_names::kEnterpictureinpicture);
 
   // `SetDelegate()` may or may not have been called yet. Waiting a bit for it.
   test::RunPendingTasks();

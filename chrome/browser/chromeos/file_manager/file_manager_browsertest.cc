@@ -60,6 +60,22 @@ struct TestCase {
     return *this;
   }
 
+  TestCase& EnableDocumentsProvider() {
+    enable_arc = true;
+    enable_documents_provider.emplace(true);
+    return *this;
+  }
+
+  TestCase& DisableDocumentsProvider() {
+    enable_documents_provider.emplace(false);
+    return *this;
+  }
+
+  TestCase& EnableArc() {
+    enable_arc = true;
+    return *this;
+  }
+
   TestCase& Offline() {
     offline = true;
     return *this;
@@ -108,6 +124,9 @@ struct TestCase {
     if (test.enable_myfiles_volume.value_or(false))
       name.append("_MyFilesVolume");
 
+    if (test.enable_documents_provider.value_or(false))
+      name.append("_DocumentsProvider");
+
     return name;
   }
 
@@ -116,6 +135,8 @@ struct TestCase {
   bool tablet_mode = false;
   base::Optional<bool> enable_drivefs;
   base::Optional<bool> enable_myfiles_volume;
+  base::Optional<bool> enable_documents_provider;
+  bool enable_arc = false;
   bool with_browser = false;
   bool needs_zip = false;
   bool offline = false;
@@ -170,6 +191,13 @@ class FilesAppBrowserTest : public FileManagerBrowserTestBase,
     return GetParam().enable_drivefs.value_or(
         FileManagerBrowserTestBase::GetEnableDriveFs());
   }
+
+  bool GetEnableDocumentsProvider() const override {
+    return GetParam().enable_documents_provider.value_or(
+        FileManagerBrowserTestBase::GetEnableDocumentsProvider());
+  }
+
+  bool GetEnableArc() const override { return GetParam().enable_arc; }
 
   bool GetRequiresStartupBrowser() const override {
     return GetParam().with_browser;
@@ -264,7 +292,8 @@ WRAPPED_INSTANTIATE_TEST_SUITE_P(
         TestCase("fileDisplayUnmountFirstPartition"),
         TestCase("fileDisplayUnmountLastPartition"),
         TestCase("fileSearchCaseInsensitive"),
-        TestCase("fileSearchNotFound")));
+        TestCase("fileSearchNotFound"),
+        TestCase("fileDisplayDownloadsWithBlockedFileTaskRunner")));
 
 WRAPPED_INSTANTIATE_TEST_SUITE_P(
     OpenVideoFiles, /* open_video_files.js */
@@ -303,8 +332,18 @@ WRAPPED_INSTANTIATE_TEST_SUITE_P(
                       TestCase("imageOpenGalleryOpenDrive").DisableDriveFs(),
                       TestCase("imageOpenGalleryOpenDrive").EnableDriveFs()));
 
+WRAPPED_INSTANTIATE_TEST_SUITE_P(
+    OpenSniffedFiles, /* open_sniffed_files.js */
+    FilesAppBrowserTest,
+    ::testing::Values(TestCase("pdfOpenDownloads"),
+                      TestCase("pdfOpenDrive").EnableDriveFs(),
+                      TestCase("textOpenDownloads"),
+                      TestCase("textOpenDrive").EnableDriveFs()));
+
 // NaCl fails to compile zip plugin.pexe too often on ASAN, crbug.com/867738
-#if defined(ADDRESS_SANITIZER)
+// The tests are flaky on the debug bot and always time out first and then pass
+// on retry. Disabled for debug as per crbug.com/936429.
+#if defined(ADDRESS_SANITIZER) || defined(DEBUG)
 #define MAYBE_ZipFiles DISABLED_ZipFiles
 #else
 #define MAYBE_ZipFiles ZipFiles
@@ -378,7 +417,7 @@ WRAPPED_INSTANTIATE_TEST_SUITE_P(
                       TestCase("renameNewFolderDrive").EnableDriveFs()));
 
 WRAPPED_INSTANTIATE_TEST_SUITE_P(
-    ContextMenu, /* context_menu.js */
+    ContextMenu, /* context_menu.js for file list */
     FilesAppBrowserTest,
     ::testing::Values(
         TestCase("checkDeleteEnabledForReadWriteFile").DisableDriveFs(),
@@ -412,17 +451,10 @@ WRAPPED_INSTANTIATE_TEST_SUITE_P(
         TestCase("checkNewFolderEnabledInsideReadWriteFolder").DisableDriveFs(),
         TestCase("checkNewFolderDisabledInsideReadOnlyFolder").DisableDriveFs(),
         TestCase("checkPasteEnabledInsideReadWriteFolder").DisableDriveFs(),
-        TestCase("checkPasteDisabledInsideReadOnlyFolder").DisableDriveFs(),
-        TestCase("checkCopyEnabledForReadWriteFolderInTree").DisableDriveFs(),
-        TestCase("checkCopyEnabledForReadOnlyFolderInTree").DisableDriveFs(),
-        TestCase("checkCutEnabledForReadWriteFolderInTree").DisableDriveFs(),
-        TestCase("checkCutDisabledForReadOnlyFolderInTree").DisableDriveFs(),
-        TestCase("checkPasteEnabledForReadWriteFolderInTree").DisableDriveFs(),
-        TestCase("checkPasteDisabledForReadOnlyFolderInTree").DisableDriveFs(),
-        TestCase("checkContextMenuForTeamDriveRoot").DisableDriveFs()));
+        TestCase("checkPasteDisabledInsideReadOnlyFolder").DisableDriveFs()));
 
 WRAPPED_INSTANTIATE_TEST_SUITE_P(
-    ContextMenu2, /* context_menu.js */
+    ContextMenu2, /* context_menu.js for file list */
     FilesAppBrowserTest,
     ::testing::Values(
         TestCase("checkDeleteEnabledForReadWriteFile").EnableDriveFs(),
@@ -455,21 +487,11 @@ WRAPPED_INSTANTIATE_TEST_SUITE_P(
         TestCase("checkNewFolderDisabledInsideReadOnlyFolder").EnableDriveFs(),
         TestCase("checkPasteEnabledInsideReadWriteFolder").EnableDriveFs(),
         TestCase("checkPasteDisabledInsideReadOnlyFolder").EnableDriveFs(),
-        TestCase("checkCopyEnabledForReadWriteFolderInTree").EnableDriveFs(),
-        TestCase("checkCopyEnabledForReadOnlyFolderInTree").EnableDriveFs(),
-        TestCase("checkCutEnabledForReadWriteFolderInTree").EnableDriveFs(),
-        TestCase("checkCutDisabledForReadOnlyFolderInTree").EnableDriveFs(),
-        TestCase("checkPasteEnabledForReadWriteFolderInTree").EnableDriveFs(),
-        TestCase("checkPasteDisabledForReadOnlyFolderInTree").EnableDriveFs(),
-        TestCase("checkContextMenuForTeamDriveRoot").EnableDriveFs(),
         TestCase("checkDownloadsContextMenu").EnableMyFilesVolume(),
         TestCase("checkPlayFilesContextMenu"),
         TestCase("checkPlayFilesContextMenu").EnableMyFilesVolume(),
         TestCase("checkLinuxFilesContextMenu"),
-        TestCase("checkLinuxFilesContextMenu").EnableMyFilesVolume(),
-        TestCase("checkRemovableRootContextMenu"),
-        TestCase("checkUsbContextMenu"),
-        TestCase("checkPartitionContextMenu")));
+        TestCase("checkLinuxFilesContextMenu").EnableMyFilesVolume()));
 
 WRAPPED_INSTANTIATE_TEST_SUITE_P(
     Delete, /* delete.js */
@@ -481,32 +503,36 @@ WRAPPED_INSTANTIATE_TEST_SUITE_P(
 WRAPPED_INSTANTIATE_TEST_SUITE_P(
     QuickView, /* quick_view.js */
     FilesAppBrowserTest,
-    ::testing::Values(TestCase("openQuickView"),
-                      TestCase("openQuickView").InGuestMode(),
-                      TestCase("openQuickView").TabletMode(),
-                      TestCase("openQuickViewAudio"),
-                      TestCase("openQuickViewImage"),
-                      TestCase("openQuickViewVideo"),
+    ::testing::Values(
+        TestCase("openQuickView"),
+        TestCase("openQuickViewAndEscape"),
+        TestCase("openQuickView").InGuestMode(),
+        TestCase("openQuickView").TabletMode(),
+        TestCase("openQuickViewAudio"),
+        TestCase("openQuickViewImage"),
+        TestCase("openQuickViewVideo"),
 // QuickView PDF test fails on MSAN, crbug.com/768070
 #if !defined(MEMORY_SANITIZER)
-                      TestCase("openQuickViewPdf"),
+        TestCase("openQuickViewPdf"),
 #endif
-                      TestCase("openQuickViewKeyboardUpDownChangesView"),
-                      TestCase("openQuickViewKeyboardLeftRightChangesView"),
-                      TestCase("openQuickViewScrollText"),
-                      TestCase("openQuickViewScrollHtml"),
-                      TestCase("openQuickViewBackgroundColorText"),
-                      TestCase("openQuickViewBackgroundColorHtml"),
-                      TestCase("openQuickViewDrive").DisableDriveFs(),
-                      TestCase("openQuickViewDrive").EnableDriveFs(),
-                      TestCase("openQuickViewAndroid"),
-                      TestCase("openQuickViewCrostini"),
-                      TestCase("openQuickViewUsb"),
-                      TestCase("openQuickViewRemovablePartitions"),
-                      TestCase("openQuickViewMtp"),
-                      TestCase("pressEnterOnInfoBoxToOpenClose"),
-                      TestCase("closeQuickView"),
-                      TestCase("cantOpenQuickViewWithMultipleFiles")));
+        TestCase("openQuickViewKeyboardUpDownChangesView"),
+        TestCase("openQuickViewKeyboardLeftRightChangesView"),
+        TestCase("openQuickViewSniffedText"),
+        TestCase("openQuickViewScrollText"),
+        TestCase("openQuickViewScrollHtml"),
+        TestCase("openQuickViewBackgroundColorText"),
+        TestCase("openQuickViewBackgroundColorHtml"),
+        TestCase("openQuickViewDrive").DisableDriveFs(),
+        TestCase("openQuickViewDrive").EnableDriveFs(),
+        TestCase("openQuickViewAndroid"),
+        TestCase("openQuickViewDocumentsProvider").EnableDocumentsProvider(),
+        TestCase("openQuickViewCrostini"),
+        TestCase("openQuickViewUsb"),
+        TestCase("openQuickViewRemovablePartitions"),
+        TestCase("openQuickViewMtp"),
+        TestCase("pressEnterOnInfoBoxToOpenClose"),
+        TestCase("closeQuickView"),
+        TestCase("cantOpenQuickViewWithMultipleFiles")));
 
 WRAPPED_INSTANTIATE_TEST_SUITE_P(
     DirectoryTreeContextMenu, /* directory_tree_context_menu.js */
@@ -552,7 +578,27 @@ WRAPPED_INSTANTIATE_TEST_SUITE_P(
         TestCase("dirCreateWithKeyboard"),
         TestCase("dirCreateWithKeyboard").EnableMyFilesVolume(),
         TestCase("dirCreateWithoutChangingCurrent").EnableMyFilesVolume(),
-        TestCase("dirCreateWithoutChangingCurrent")));
+        TestCase("dirCreateWithoutChangingCurrent"),
+#if !(defined(ADDRESS_SANITIZER) || defined(DEBUG))
+        // Zip tests times out too often on ASAN and DEBUG.
+        ZipCase("dirContextMenuZip"),
+#endif
+        TestCase("dirContextMenuRecent"),
+        TestCase("dirContextMenuMyFiles").EnableMyFilesVolume(),
+        TestCase("dirContextMenuCrostini"),
+        TestCase("dirContextMenuPlayFiles"),
+        TestCase("dirContextMenuUsbs"),
+        TestCase("dirContextMenuFsp"),
+        TestCase("dirContextMenuDocumentsProvider").EnableDocumentsProvider(),
+        TestCase("dirContextMenuUsbDcim"),
+        TestCase("dirContextMenuMtp"),
+        TestCase("dirContextMenuMediaView").EnableArc(),
+        TestCase("dirContextMenuMyDrive"),
+        TestCase("dirContextMenuSharedDrive"),
+        TestCase("dirContextMenuSharedWithMe"),
+        TestCase("dirContextMenuOffline"),
+        TestCase("dirContextMenuComputers"),
+        TestCase("dirContextMenuShortcut")));
 
 WRAPPED_INSTANTIATE_TEST_SUITE_P(
     DriveSpecific, /* drive_specific.js */
@@ -607,7 +653,10 @@ WRAPPED_INSTANTIATE_TEST_SUITE_P(
         TestCase("transferFromDownloadsToTeamDrive").DisableDriveFs(),
         TestCase("transferFromDownloadsToTeamDrive").EnableDriveFs(),
         TestCase("transferBetweenTeamDrives").DisableDriveFs(),
-        TestCase("transferBetweenTeamDrives").EnableDriveFs()));
+        TestCase("transferBetweenTeamDrives").EnableDriveFs(),
+        TestCase("transferDragAndDrop"),
+        TestCase("transferDragAndHover"),
+        TestCase("transferFromDownloadsToDownloads")));
 
 WRAPPED_INSTANTIATE_TEST_SUITE_P(
     RestorePrefs, /* restore_prefs.js */
@@ -816,7 +865,9 @@ WRAPPED_INSTANTIATE_TEST_SUITE_P(
             .WithBrowser()
             .Offline()
             .EnableDriveFs(),
-        TestCase("saveFileDialogDriveOfflinePinned").WithBrowser().Offline()));
+        TestCase("saveFileDialogDriveOfflinePinned").WithBrowser().Offline(),
+        TestCase("openFileDialogDefaultFilter").WithBrowser(),
+        TestCase("saveFileDialogDefaultFilter").WithBrowser()));
 
 WRAPPED_INSTANTIATE_TEST_SUITE_P(
     CopyBetweenWindows, /* copy_between_windows.js */
@@ -872,6 +923,13 @@ WRAPPED_INSTANTIATE_TEST_SUITE_P(
         TestCase("showSendFeedbackAction")));
 
 WRAPPED_INSTANTIATE_TEST_SUITE_P(
+    FilesTooltip, /* files_tooltip.js */
+    FilesAppBrowserTest,
+    ::testing::Values(TestCase("filesTooltipFocus"),
+                      TestCase("filesTooltipMouseOver"),
+                      TestCase("filesTooltipClickHides")));
+
+WRAPPED_INSTANTIATE_TEST_SUITE_P(
     Crostini, /* crostini.js */
     FilesAppBrowserTest,
     ::testing::Values(TestCase("mountCrostini"),
@@ -892,7 +950,8 @@ WRAPPED_INSTANTIATE_TEST_SUITE_P(
         TestCase("myFilesFolderRename"),
         TestCase("myFilesFolderRename").EnableMyFilesVolume(),
         TestCase("myFilesUpdatesChildren"),
-        TestCase("myFilesUpdatesChildren").EnableMyFilesVolume()));
+        TestCase("myFilesUpdatesChildren").EnableMyFilesVolume(),
+        TestCase("myFilesAutoExpandOnce").EnableMyFilesVolume()));
 
 WRAPPED_INSTANTIATE_TEST_SUITE_P(
     InstallLinuxPackageDialog, /* install_linux_package_dialog.js */
@@ -902,7 +961,9 @@ WRAPPED_INSTANTIATE_TEST_SUITE_P(
 WRAPPED_INSTANTIATE_TEST_SUITE_P(
     LauncherSearch, /* launcher_search.js */
     FilesAppBrowserTest,
-    ::testing::Values(TestCase("launcherOpenSearchResult")));
+    ::testing::Values(TestCase("launcherOpenSearchResult"),
+                      TestCase("launcherSearch"),
+                      TestCase("launcherSearchOffline").Offline()));
 
 WRAPPED_INSTANTIATE_TEST_SUITE_P(
     Recents, /* recents.js */
@@ -911,6 +972,8 @@ WRAPPED_INSTANTIATE_TEST_SUITE_P(
         TestCase("recentsDownloads"),
         TestCase("recentsDrive").DisableDriveFs(),
         TestCase("recentsDrive").EnableDriveFs(),
+        TestCase("recentsCrostiniNotMounted"),
+        TestCase("recentsCrostiniMounted"),
         TestCase("recentsDownloadsAndDrive").DisableDriveFs(),
         TestCase("recentsDownloadsAndDrive").EnableDriveFs(),
         TestCase("recentsDownloadsAndDriveWithOverlap").DisableDriveFs(),
@@ -920,6 +983,7 @@ WRAPPED_INSTANTIATE_TEST_SUITE_P(
     Metadata, /* metadata.js */
     FilesAppBrowserTest,
     ::testing::Values(
+        TestCase("metadataDocumentsProvider").EnableDocumentsProvider(),
         TestCase("metadataDownloads"),
         TestCase("metadataDownloads").EnableMyFilesVolume(),
         TestCase("metadataDrive").DisableDriveFs(),
@@ -931,6 +995,11 @@ WRAPPED_INSTANTIATE_TEST_SUITE_P(
         TestCase("metadataLargeDrive").DisableDriveFs(),
         TestCase("metadataLargeDrive").EnableDriveFs(),
         TestCase("metadataLargeDrive").EnableDriveFs().EnableMyFilesVolume()));
+
+WRAPPED_INSTANTIATE_TEST_SUITE_P(
+    NavigationList, /* navigation_list.js */
+    FilesAppBrowserTest,
+    ::testing::Values(TestCase("navigationScrollsWhenClipped")));
 
 // Structure to describe an account info.
 struct TestAccountInfo {

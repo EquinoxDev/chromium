@@ -17,6 +17,10 @@ namespace gfx {
 class Rect;
 }
 
+namespace views {
+class FlexLayout;
+}
+
 class CustomTabBarTitleOriginView;
 class BrowserView;
 
@@ -52,7 +56,7 @@ class CustomTabBarView : public views::AccessiblePaneView,
 
   // LocationIconView::Delegate:
   content::WebContents* GetWebContents() override;
-  bool IsEditingOrEmpty() override;
+  bool IsEditingOrEmpty() const override;
   void OnLocationIconPressed(const ui::MouseEvent& event) override;
   void OnLocationIconDragged(const ui::MouseEvent& event) override;
   SkColor GetSecurityChipColor(
@@ -70,8 +74,12 @@ class CustomTabBarView : public views::AccessiblePaneView,
   base::string16 title_for_testing() const { return last_title_; }
   base::string16 location_for_testing() const { return last_location_; }
   views::Button* close_button_for_testing() const { return close_button_; }
+  void GoBackToAppForTesting();
 
  private:
+  // Takes the web contents for the custom tab bar back to the app scope.
+  void GoBackToApp();
+
   SkColor title_bar_color_;
 
   base::string16 last_title_;
@@ -82,6 +90,8 @@ class CustomTabBarView : public views::AccessiblePaneView,
   LocationIconView* location_icon_view_ = nullptr;
   CustomTabBarTitleOriginView* title_origin_view_ = nullptr;
   ScopedObserver<TabStripModel, CustomTabBarView> tab_strip_model_observer_;
+
+  views::FlexLayout* layout_manager_;
 
   DISALLOW_COPY_AND_ASSIGN(CustomTabBarView);
 };

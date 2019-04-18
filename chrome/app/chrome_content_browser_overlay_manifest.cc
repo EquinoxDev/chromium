@@ -42,17 +42,17 @@
 #include "services/image_annotation/public/mojom/image_annotation.mojom.h"
 #include "services/preferences/public/cpp/manifest.h"
 #include "services/service_manager/public/cpp/manifest_builder.h"
-#include "third_party/blink/public/platform/input_host.mojom.h"
-#include "third_party/blink/public/platform/modules/badging/badging.mojom.h"
-#include "third_party/blink/public/platform/modules/credentialmanager/credential_manager.mojom.h"
-#include "third_party/blink/public/platform/modules/installedapp/installed_app_provider.mojom.h"
-#include "third_party/blink/public/platform/modules/webshare/webshare.mojom.h"
+#include "third_party/blink/public/mojom/badging/badging.mojom.h"
+#include "third_party/blink/public/mojom/input/input_host.mojom.h"
+#include "third_party/blink/public/mojom/installedapp/installed_app_provider.mojom.h"
+#include "third_party/blink/public/mojom/webshare/webshare.mojom.h"
 
 #if defined(OS_CHROMEOS)
 #include "ash/components/shortcut_viewer/public/cpp/manifest.h"  // nogncheck
 #include "ash/components/shortcut_viewer/public/mojom/shortcut_viewer.mojom.h"  // nogncheck
 #include "ash/components/tap_visualizer/public/cpp/manifest.h"  // nogncheck
 #include "ash/components/tap_visualizer/public/mojom/tap_visualizer.mojom.h"  // nogncheck
+#include "chrome/browser/chromeos/kiosk_next_home/mojom/kiosk_next_home_interface_broker.mojom.h"  // nogncheck
 #include "chromeos/assistant/buildflags.h"  // nogncheck
 #include "chromeos/services/device_sync/public/cpp/manifest.h"
 #include "chromeos/services/ime/public/mojom/input_engine.mojom.h"
@@ -61,6 +61,7 @@
 #include "chromeos/services/multidevice_setup/public/mojom/multidevice_setup.mojom.h"
 #include "media/capture/video/chromeos/mojo/cros_image_capture.mojom.h"
 #include "services/ws/common/switches.h"
+#include "services/ws/public/mojom/constants.mojom.h"
 #include "ui/accessibility/mojom/ax_host.mojom.h"  // nogncheck
 #if BUILDFLAG(ENABLE_CROS_ASSISTANT)
 #include "chromeos/services/assistant/public/cpp/manifest.h"  // nogncheck
@@ -73,6 +74,7 @@
 
 #if defined(OS_ANDROID)
 #include "chrome/browser/ui/webui/eoc_internals/eoc_internals.mojom.h"
+#include "chrome/browser/ui/webui/explore_sites_internals/explore_sites_internals.mojom.h"
 #else
 #include "chrome/browser/ui/webui/app_management/app_management.mojom.h"
 #include "chrome/services/app_service/public/cpp/manifest.h"
@@ -87,6 +89,10 @@
 #if BUILDFLAG(ENABLE_EXTENSIONS)
 #include "extensions/common/api/mime_handler.mojom.h"  // nogncheck
 #include "extensions/common/mojo/keep_alive.mojom.h"   // nogncheck
+#endif
+
+#if defined(BROWSER_MEDIA_CONTROLS_MENU)
+#include "third_party/blink/public/mojom/media_controls/touchless/media_controls.mojom.h"
 #endif
 
 namespace {
@@ -152,7 +158,7 @@ const service_manager::Manifest& GetChromeContentBrowserOverlayManifest() {
             .RequireCapability("file_util", "zip_file")
             .RequireCapability("heap_profiling", "heap_profiler")
             .RequireCapability("heap_profiling", "profiling")
-            .RequireCapability("identity", "identity_manager")
+            .RequireCapability("identity", "identity_accessor")
             .RequireCapability(image_annotation::mojom::kServiceName,
                                image_annotation::mojom::kAnnotationCapability)
             .RequireCapability("ime", "input_engine")
@@ -185,6 +191,9 @@ const service_manager::Manifest& GetChromeContentBrowserOverlayManifest() {
 #if defined(OS_CHROMEOS)
             .RequireCapability(shortcut_viewer::mojom::kServiceName,
                                shortcut_viewer::mojom::kToggleUiCapability)
+            // This is required for remoting, which runs in the browser and
+            // injects events.
+            .RequireCapability(ws::mojom::kServiceName, "privileged")
             .RequireCapability(tap_visualizer::mojom::kServiceName,
                                tap_visualizer::mojom::kShowUiCapability)
             .ExposeInterfaceFilterCapability_Deprecated(
@@ -199,14 +208,19 @@ const service_manager::Manifest& GetChromeContentBrowserOverlayManifest() {
                 service_manager::Manifest::InterfaceList<
                     autofill::mojom::AutofillDriver,
                     autofill::mojom::PasswordManagerDriver,
-                    blink::mojom::BadgeService, blink::mojom::CredentialManager,
+                    blink::mojom::BadgeService,
                     blink::mojom::InstalledAppProvider,
                     blink::mojom::ShareService,
                     blink::mojom::TextSuggestionHost,
+#if defined(BROWSER_MEDIA_CONTROLS_MENU)
+                    blink::mojom::MediaControlsMenuHost,
+#endif
                     chrome::mojom::OfflinePageAutoFetcher,
                     chrome::mojom::PrerenderCanceler,
 #if defined(OS_CHROMEOS)
                     chromeos::ime::mojom::InputEngineManager,
+                    chromeos::kiosk_next_home::mojom::
+                        KioskNextHomeInterfaceBroker,
                     chromeos::media_perception::mojom::MediaPerception,
                     cros::mojom::CrosImageCapture,
 #endif
@@ -222,9 +236,6 @@ const service_manager::Manifest& GetChromeContentBrowserOverlayManifest() {
                     media::mojom::MediaEngagementScoreDetailsProvider,
                     media_router::mojom::MediaRouter,
                     page_load_metrics::mojom::PageLoadMetrics,
-#if defined(FULL_SAFE_BROWSING)
-                    safe_browsing::mojom::PhishingDetectorClient,
-#endif
                     translate::mojom::ContentTranslateDriver,
 
                     // WebUI-only interfaces go below this line. These should be
@@ -234,6 +245,7 @@ const service_manager::Manifest& GetChromeContentBrowserOverlayManifest() {
                     feed_internals::mojom::PageHandler,
 #if defined(OS_ANDROID)
                     eoc_internals::mojom::PageHandler,
+                    explore_sites_internals::mojom::PageHandler,
 #else
                     app_management::mojom::PageHandlerFactory,
 #endif

@@ -276,6 +276,7 @@ WebRequestInfo::WebRequestInfo(net::URLRequest* url_request)
       render_process_id = url_loader->GetProcessId();
       frame_id = url_loader->GetRenderFrameId();
     }
+    type = static_cast<content::ResourceType>(url_loader->GetResourceType());
   } else {
     // There may be basic process and frame info associated with the request
     // even when |info| is null. Attempt to grab it as a last ditch effort. If
@@ -308,6 +309,7 @@ WebRequestInfo::WebRequestInfo(
     int32_t routing_id,
     content::ResourceContext* resource_context,
     const network::ResourceRequest& request,
+    bool is_download,
     bool is_async)
     : id(request_id),
       url(request.url),
@@ -325,6 +327,8 @@ WebRequestInfo::WebRequestInfo(
       resource_context(resource_context) {
   if (url.SchemeIsWSOrWSS())
     web_request_type = WebRequestResourceType::WEB_SOCKET;
+  else if (is_download)
+    web_request_type = WebRequestResourceType::OTHER;
   else
     web_request_type = ToWebRequestResourceType(type.value());
 

@@ -53,7 +53,7 @@ class CORE_EXPORT PerformanceNavigationTiming final
   DOMHighResTimeStamp loadEventStart() const;
   DOMHighResTimeStamp loadEventEnd() const;
   AtomicString type() const;
-  unsigned short redirectCount() const;
+  uint16_t redirectCount() const;
 
   // PerformanceResourceTiming overrides:
   DOMHighResTimeStamp fetchStart() const override;
@@ -78,9 +78,9 @@ class CORE_EXPORT PerformanceNavigationTiming final
   ResourceLoadTiming* GetResourceLoadTiming() const override;
   bool AllowTimingDetails() const override;
   bool DidReuseConnection() const override;
-  unsigned long long GetTransferSize() const override;
-  unsigned long long GetEncodedBodySize() const override;
-  unsigned long long GetDecodedBodySize() const override;
+  uint64_t GetTransferSize() const override;
+  uint64_t GetEncodedBodySize() const override;
+  uint64_t GetDecodedBodySize() const override;
 
   bool GetAllowRedirectDetails() const;
 

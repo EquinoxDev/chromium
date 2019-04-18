@@ -20,12 +20,14 @@
 #include "base/command_line.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/stringprintf.h"
+#include "base/test/metrics/histogram_tester.h"
 #include "services/ws/public/mojom/window_tree_constants.mojom.h"
 #include "ui/aura/client/aura_constants.h"
 #include "ui/aura/test/test_window_delegate.h"
 #include "ui/aura/test/test_windows.h"
 #include "ui/aura/window_event_dispatcher.h"
 #include "ui/base/hit_test.h"
+#include "ui/compositor/test/test_utils.h"
 #include "ui/display/display_layout.h"
 #include "ui/display/manager/display_manager.h"
 #include "ui/display/screen.h"
@@ -39,6 +41,15 @@ namespace ash {
 namespace {
 
 const int kRootHeight = 600;
+
+gfx::Point CalculateDragPoint(const WindowResizer& resizer,
+                              int delta_x,
+                              int delta_y) {
+  gfx::Point location = resizer.GetInitialLocation();
+  location.set_x(location.x() + delta_x);
+  location.set_y(location.y() + delta_y);
+  return location;
+}
 
 // A simple window delegate that returns the specified min size.
 class TestWindowDelegate : public aura::test::TestWindowDelegate {
@@ -187,15 +198,6 @@ class WorkspaceWindowResizerTest : public AshTestBase {
 
   PhantomWindowController* snap_phantom_window_controller() const {
     return workspace_resizer_->snap_phantom_window_controller_.get();
-  }
-
-  gfx::Point CalculateDragPoint(const WindowResizer& resizer,
-                                int delta_x,
-                                int delta_y) const {
-    gfx::Point location = resizer.GetInitialLocation();
-    location.set_x(location.x() + delta_x);
-    location.set_y(location.y() + delta_y);
-    return location;
   }
 
   std::vector<aura::Window*> empty_windows() const {
@@ -1880,6 +1882,50 @@ TEST_F(WorkspaceWindowResizerTest, TouchResizeToEdge_BOTTOM) {
                                   base::TimeDelta::FromMilliseconds(10), 5);
   EXPECT_EQ(gfx::Rect(100, 100, 600, kRootHeight - 100).ToString(),
             touch_resize_window_->bounds().ToString());
+}
+
+TEST_F(WorkspaceWindowResizerTest, ResizeHistogram) {
+  base::HistogramTester histograms;
+  window_->SetBounds(gfx::Rect(20, 30, 400, 60));
+  std::unique_ptr<WindowResizer> resizer(
+      CreateResizerForTest(window_.get(), gfx::Point(), HTRIGHT));
+  ASSERT_TRUE(resizer.get());
+  resizer->Drag(gfx::Point(50, 50), 0);
+
+  // A resize should generate a histogram.
+  EXPECT_NE(gfx::Size(400, 60), window_->bounds().size());
+  ui::WaitForNextFrameToBePresented(window_->GetHost()->compositor());
+  histograms.ExpectTotalCount("Ash.InteractiveWindowResize.TimeToPresent", 1);
+
+  // Completing the drag should not generate another histogram.
+  resizer->CompleteDrag();
+  ui::WaitForNextFrameToBePresented(window_->GetHost()->compositor());
+  histograms.ExpectTotalCount("Ash.InteractiveWindowResize.TimeToPresent", 1);
+}
+
+using MultiDisplayWorkspaceWindowResizerTest = AshTestBase;
+
+// Makes sure that window drag magnetism still works when a window is dragged
+// between different displays.
+TEST_F(MultiDisplayWorkspaceWindowResizerTest, Magnetism) {
+  UpdateDisplay("800x600,500x500");
+  auto roots = Shell::GetAllRootWindows();
+  ASSERT_EQ(2u, roots.size());
+
+  // Create two windows one on the first display, and the other on the second.
+  auto win1 = CreateToplevelTestWindow(gfx::Rect(10, 10, 100, 100), /*id=*/1);
+  auto win2 = CreateToplevelTestWindow(gfx::Rect(1250, 100, 50, 50), /*id=*/2);
+  EXPECT_EQ(win1->GetRootWindow(), roots[0]);
+  EXPECT_EQ(win2->GetRootWindow(), roots[1]);
+
+  std::unique_ptr<WindowResizer> resizer = CreateWindowResizer(
+      win1.get(), gfx::Point(), HTCAPTION, ::wm::WINDOW_MOVE_SOURCE_MOUSE);
+  ASSERT_TRUE(resizer.get());
+
+  // Drag `win1` such that its right edge is 5 pixels from the left edge of
+  // `win2`. Expect that `win1` will snap to `win2` on its left edge.
+  resizer->Drag(CalculateDragPoint(*resizer, 1135, 0), /*event_flags=*/0);
+  EXPECT_EQ(gfx::Rect(1150, 10, 100, 100), win1->GetBoundsInScreen());
 }
 
 }  // namespace ash

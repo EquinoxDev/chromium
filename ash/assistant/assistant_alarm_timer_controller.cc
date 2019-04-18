@@ -4,6 +4,10 @@
 
 #include "ash/assistant/assistant_alarm_timer_controller.h"
 
+#include <map>
+#include <string>
+#include <utility>
+
 #include "ash/assistant/assistant_controller.h"
 #include "ash/assistant/assistant_notification_controller.h"
 #include "ash/assistant/util/deep_link_util.h"
@@ -18,13 +22,21 @@ namespace ash {
 
 namespace {
 
-// Grouping key for timer notifications.
+// Grouping key and ID prefix for timer notifications.
 constexpr char kTimerNotificationGroupingKey[] = "assistant/timer";
+constexpr char kTimerNotificationIdPrefix[] = "assistant/timer";
 
 // Interval at which alarms/timers are ticked.
 constexpr base::TimeDelta kTickInterval = base::TimeDelta::FromSeconds(1);
 
 // Helpers ---------------------------------------------------------------------
+
+// Creates a notification ID for the given |alarm_timer_id|. It is guaranteed
+// that this method will always return the same notification ID given the same
+// alarm/timer ID.
+std::string CreateTimerNotificationId(const std::string& alarm_timer_id) {
+  return std::string(kTimerNotificationIdPrefix) + alarm_timer_id;
+}
 
 std::string CreateTimerNotificationMessage(const AlarmTimer& alarm_timer,
                                            base::TimeDelta time_remaining) {
@@ -45,6 +57,7 @@ chromeos::assistant::mojom::AssistantNotificationPtr CreateTimerNotification(
   using chromeos::assistant::mojom::AssistantNotification;
   using chromeos::assistant::mojom::AssistantNotificationButton;
   using chromeos::assistant::mojom::AssistantNotificationPtr;
+  using chromeos::assistant::mojom::AssistantNotificationType;
 
   const std::string title =
       l10n_util::GetStringUTF8(IDS_ASSISTANT_TIMER_NOTIFICATION_TITLE);
@@ -55,11 +68,22 @@ chromeos::assistant::mojom::AssistantNotificationPtr CreateTimerNotification(
 
   AssistantNotificationPtr notification = AssistantNotification::New();
 
+  // If in-Assistant notifications are supported, we'll allow alarm/timer
+  // notifications to show in either Assistant UI or the Message Center.
+  // Otherwise, we'll only allow the notification to show in the Message Center.
+  notification->type =
+      chromeos::assistant::features::IsInAssistantNotificationsEnabled()
+          ? AssistantNotificationType::kPreferInAssistant
+          : AssistantNotificationType::kSystem;
+
   notification->title = title;
   notification->message = message;
   notification->action_url = action_url;
-  notification->client_id = alarm_timer.id;
+  notification->client_id = CreateTimerNotificationId(alarm_timer.id);
   notification->grouping_key = kTimerNotificationGroupingKey;
+
+  // This notification should be able to wake up the display if it was off.
+  notification->is_high_priority = true;
 
   // "STOP" button.
   notification->buttons.push_back(AssistantNotificationButton::New(
@@ -110,10 +134,8 @@ void AssistantAlarmTimerController::RemoveModelObserver(
 
 // TODO(dmblack): Remove method when the LibAssistant Alarm/Timer API is ready.
 void AssistantAlarmTimerController::OnTimerSoundingStarted() {
-  static constexpr char kIdPrefix[] = "assistant/timer";
-
   AlarmTimer timer;
-  timer.id = kIdPrefix + std::to_string(next_timer_id_++);
+  timer.id = std::to_string(next_timer_id_++);
   timer.type = AlarmTimerType::kTimer;
   timer.end_time = base::TimeTicks::Now();
   model_.AddAlarmTimer(timer);
@@ -152,7 +174,8 @@ void AssistantAlarmTimerController::OnAlarmsTimersTicked(
   for (auto& pair : times_remaining) {
     auto* notification_controller =
         assistant_controller_->notification_controller();
-    if (notification_controller->model()->HasNotificationForId(pair.first)) {
+    if (notification_controller->model()->HasNotificationForId(
+            CreateTimerNotificationId(/*alarm_timer_id=*/pair.first))) {
       notification_controller->AddOrUpdateNotification(CreateTimerNotification(
           *model_.GetAlarmTimerById(pair.first), pair.second));
     }

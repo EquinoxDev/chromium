@@ -28,9 +28,11 @@ AssistantNotificationOverlay::AssistantNotificationOverlay(
 
   // The AssistantViewDelegate outlives the Assistant view hierarchy.
   delegate_->AddNotificationModelObserver(this);
+  delegate_->AddUiModelObserver(this);
 }
 
 AssistantNotificationOverlay::~AssistantNotificationOverlay() {
+  delegate_->RemoveUiModelObserver(this);
   delegate_->RemoveNotificationModelObserver(this);
 }
 
@@ -49,15 +51,35 @@ AssistantOverlay::LayoutParams AssistantNotificationOverlay::GetLayoutParams()
 }
 
 void AssistantNotificationOverlay::ViewHierarchyChanged(
-    const ViewHierarchyChangedDetails& details) {
+    const views::ViewHierarchyChangedDetails& details) {
   if (details.parent == this)
     PreferredSizeChanged();
 }
 
+void AssistantNotificationOverlay::OnUiVisibilityChanged(
+    AssistantVisibility new_visibility,
+    AssistantVisibility old_visibility,
+    base::Optional<AssistantEntryPoint> entry_point,
+    base::Optional<AssistantExitPoint> exit_point) {
+  if (new_visibility != AssistantVisibility::kVisible)
+    return;
+
+  // We need to create views for any notifications that currently exist of type
+  // |kInAssistant| as they should be shown within Assistant UI.
+  using chromeos::assistant::mojom::AssistantNotificationType;
+  for (const auto* notification :
+       delegate_->GetNotificationModel()->GetNotificationsByType(
+           AssistantNotificationType::kInAssistant)) {
+    AddChildView(new AssistantNotificationView(delegate_, notification));
+  }
+}
+
 void AssistantNotificationOverlay::OnNotificationAdded(
     const AssistantNotification* notification) {
-  // TODO(dmblack): Only add views for notifications of the appropriate type.
-  AddChildView(new AssistantNotificationView(delegate_, notification));
+  // We only show notifications of type |kInAssistant| with Assistant UI.
+  using chromeos::assistant::mojom::AssistantNotificationType;
+  if (notification->type == AssistantNotificationType::kInAssistant)
+    AddChildView(new AssistantNotificationView(delegate_, notification));
 }
 
 void AssistantNotificationOverlay::InitLayout() {
@@ -67,4 +89,4 @@ void AssistantNotificationOverlay::InitLayout() {
   layer()->SetFillsBoundsOpaquely(false);
 }
 
-};  // namespace ash
+}  // namespace ash

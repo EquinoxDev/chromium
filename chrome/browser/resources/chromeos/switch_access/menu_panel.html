@@ -7,6 +7,7 @@
   <meta charset="utf-8">
   <title>Switch Access Menu</title>
   <script type="text/javascript" src="closure/base.js"></script>
+  <script type="text/javascript" src="switch_access_constants.js"></script>
   <script type="text/javascript" src="menu_panel.js"></script>
   <link rel="stylesheet" href="menu_panel.css">
 </head>
@@ -17,6 +18,10 @@
       <img src="icons/select.svg">
       <p>Select</p>
     </button>
+    <button class="action" id="keyboard">
+      <img src="icons/keyboard.svg">
+      <p>Keyboard</p>
+    </button>
     <button class="action" id="increment">
       <img src="icons/increment.svg">
       <p>Increment</p>
@@ -26,11 +31,11 @@
       <p>Decrement</p>
     </button>
     <button class="action" id="scrollDown">
-      <img src="icons/scrollDown.svg">
+      <img src="icons/scrollDownOrForward.svg">
       <p>Scroll down</p>
     </button>
     <button class="action" id="scrollUp">
-      <img src="icons/scrollUp.svg">
+      <img src="icons/scrollUpOrBackward.svg">
       <p>Scroll up</p>
     </button>
     <button class="action" id="scrollRight">
@@ -42,12 +47,12 @@
       <p>Scroll left</p>
     </button>
     <button class="action" id="scrollForward">
-      <img src="icons/scrollDown.svg">
-      <p>Scroll down</p>
+      <img src="icons/scrollDownOrForward.svg">
+      <p>Scroll forward</p>
     </button>
     <button class="action" id="scrollBackward">
-      <img src="icons/scrollUp.svg">
-      <p>Scroll up</p>
+      <img src="icons/scrollUpOrBackward.svg">
+      <p>Scroll backward</p>
     </button>
     <button class="action" id="dictation">
       <img src="icons/dictation.svg">
@@ -62,4 +67,7 @@
       <p>Options</p>
     </button>
   </div>
+  <button id="back">
+    <img src="icons/back.svg">
+  </button>
 </body>

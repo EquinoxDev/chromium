@@ -17,11 +17,7 @@ import org.junit.runner.RunWith;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
 
-import org.chromium.base.ThreadUtils;
-import org.chromium.base.metrics.RecordHistogram;
-import org.chromium.base.metrics.RecordUserAction;
 import org.chromium.base.test.util.Restriction;
-import org.chromium.chrome.R;
 import org.chromium.chrome.browser.ChromeFeatureList;
 import org.chromium.chrome.browser.UrlConstants;
 import org.chromium.chrome.browser.download.home.list.UiUtils;
@@ -31,10 +27,11 @@ import org.chromium.chrome.browser.feature_engagement.TrackerFactory;
 import org.chromium.chrome.browser.profiles.Profile;
 import org.chromium.chrome.browser.snackbar.SnackbarManager;
 import org.chromium.chrome.test.ChromeJUnit4ClassRunner;
-import org.chromium.chrome.test.ui.DummyUiActivity;
 import org.chromium.chrome.test.ui.DummyUiActivityTestCase;
 import org.chromium.components.feature_engagement.Tracker;
 import org.chromium.components.offline_items_collection.OfflineItem;
+import org.chromium.content_public.browser.test.util.TestThreadUtils;
+import org.chromium.ui.modaldialog.ModalDialogManager;
 import org.chromium.ui.test.util.UiRestriction;
 
 import java.util.HashMap;
@@ -50,21 +47,33 @@ public class DownloadActivityV2Test extends DummyUiActivityTestCase {
     private Tracker mTracker;
     @Mock
     private SnackbarManager mSnackbarManager;
+    @Mock
+    private ModalDialogManager.Presenter mAppModalPresenter;
+
+    private ModalDialogManager mModalDialogManager;
 
     private DownloadManagerCoordinator mDownloadCoordinator;
 
     @BeforeClass
     public static void setUpBeforeActivityLaunched() {
-        RecordUserAction.setDisabledForTests(true);
-        RecordHistogram.setDisabledForTests(true);
         UiUtils.setDisableUrlFormattingForTests(true);
-        DummyUiActivity.setTestTheme(R.style.Theme_Chromium_Activity_Fullscreen);
     }
 
     @Override
     public void setUpTest() throws Exception {
         super.setUpTest();
         MockitoAnnotations.initMocks(this);
+
+        Map<String, Boolean> features = new HashMap<>();
+        features.put(ChromeFeatureList.DOWNLOADS_LOCATION_CHANGE, true);
+        features.put(ChromeFeatureList.DOWNLOAD_HOME_SHOW_STORAGE_INFO, true);
+        features.put(ChromeFeatureList.DOWNLOAD_HOME_V2, true);
+        features.put(ChromeFeatureList.OFFLINE_PAGES_PREFETCHING, true);
+        features.put(ChromeFeatureList.OVERSCROLL_HISTORY_NAVIGATION, false);
+        features.put(ChromeFeatureList.DOWNLOAD_OFFLINE_CONTENT_PROVIDER, false);
+        features.put(ChromeFeatureList.DOWNLOAD_RENAME, true);
+        ChromeFeatureList.setTestFeatures(features);
+
         StubbedOfflineContentProvider stubbedOfflineContentProvider =
                 new StubbedOfflineContentProvider();
         OfflineContentAggregatorFactory.setOfflineContentProviderForTests(
@@ -81,14 +90,6 @@ public class DownloadActivityV2Test extends DummyUiActivityTestCase {
         stubbedOfflineContentProvider.addItem(item3);
 
         TrackerFactory.setTrackerForTests(mTracker);
-
-        Map<String, Boolean> features = new HashMap<>();
-        features.put(ChromeFeatureList.DOWNLOADS_LOCATION_CHANGE, true);
-        features.put(ChromeFeatureList.DOWNLOAD_HOME_SHOW_STORAGE_INFO, true);
-        features.put(ChromeFeatureList.DOWNLOAD_HOME_V2, true);
-        features.put(ChromeFeatureList.OFFLINE_PAGES_PREFETCHING, true);
-        features.put(ChromeFeatureList.OVERSCROLL_HISTORY_NAVIGATION, false);
-        ChromeFeatureList.setTestFeatures(features);
     }
 
     private void setUpUi() {
@@ -98,8 +99,12 @@ public class DownloadActivityV2Test extends DummyUiActivityTestCase {
                                                  .setUseNewDownloadPath(true)
                                                  .setUseNewDownloadPathThumbnails(true)
                                                  .build();
+
+        mModalDialogManager =
+                new ModalDialogManager(mAppModalPresenter, ModalDialogManager.ModalDialogType.APP);
+
         mDownloadCoordinator = new DownloadManagerCoordinatorImpl(
-                mProfile, getActivity(), config, mSnackbarManager);
+                mProfile, getActivity(), config, mSnackbarManager, mModalDialogManager);
         getActivity().setContentView(mDownloadCoordinator.getView());
 
         mDownloadCoordinator.updateForUrl(UrlConstants.DOWNLOADS_URL);
@@ -108,7 +113,7 @@ public class DownloadActivityV2Test extends DummyUiActivityTestCase {
     @Test
     @MediumTest
     public void testLaunchingActivity() throws Exception {
-        ThreadUtils.runOnUiThreadBlocking(() -> { setUpUi(); });
+        TestThreadUtils.runOnUiThreadBlocking(() -> { setUpUi(); });
 
         onView(withText("page 1")).check(matches(isDisplayed()));
         onView(withText("page 2")).check(matches(isDisplayed()));

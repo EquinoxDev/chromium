@@ -12,6 +12,7 @@
 #include "base/callback_forward.h"
 #include "components/autofill_assistant/browser/chip.h"
 #include "components/autofill_assistant/browser/details.h"
+#include "components/autofill_assistant/browser/info_box.h"
 #include "components/autofill_assistant/browser/metrics.h"
 #include "components/autofill_assistant/browser/payment_request.h"
 #include "components/autofill_assistant/browser/script.h"
@@ -42,8 +43,11 @@ class UiController {
   // returned.
   virtual void WillShutdown(Metrics::DropOutReason reason);
 
-  // Report that the set of chips has changed.
-  virtual void OnChipsChanged(const std::vector<Chip>& chips);
+  // Report that the set of suggestions has changed.
+  virtual void OnSuggestionsChanged(const std::vector<Chip>& suggestions);
+
+  // Report that the set of actions has changed.
+  virtual void OnActionsChanged(const std::vector<Chip>& actions);
 
   // Gets or clears request for payment information.
   virtual void OnPaymentRequestChanged(const PaymentRequestOptions* options);
@@ -52,16 +56,25 @@ class UiController {
   // cleared.
   virtual void OnDetailsChanged(const Details* details);
 
+  // Called when info box has changed. |info_box| will be null if it has been
+  // cleared.
+  virtual void OnInfoBoxChanged(const InfoBox* info_box);
+
   // Called when the current progress has changed. Progress, is expressed as a
   // percentage.
   virtual void OnProgressChanged(int progress);
 
+  // Called when the current progress bar visibility has changed. If |visible|
+  // is true, then the bar is now shown.
+  virtual void OnProgressVisibilityChanged(bool visible);
+
   // Updates the area of the visible viewport that is accessible when the
   // overlay state is OverlayState::PARTIAL.
   //
-  // |areas| is expressed in coordinates relative to the width or height of the
-  // visible viewport, as a number between 0 and 1. It can be empty.
-  virtual void OnTouchableAreaChanged(const std::vector<RectF>& areas);
+  // |rectangles| contains one element per configured rectangles, though these
+  // can correspond to empty rectangles. Coordinates are relative to the width
+  // or height of the visible viewport, as a number between 0 and 1.
+  virtual void OnTouchableAreaChanged(const std::vector<RectF>& rectangles);
 };
 }  // namespace autofill_assistant
 #endif  // COMPONENTS_AUTOFILL_ASSISTANT_BROWSER_UI_CONTROLLER_H_

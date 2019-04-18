@@ -15,9 +15,13 @@
 #include "build/build_config.h"
 #include "chrome/browser/browser_about_handler.h"
 #include "chrome/browser/chrome_notification_types.h"
+#include "chrome/browser/platform_util.h"
 #include "chrome/browser/prefs/incognito_mode_prefs.h"
 #include "chrome/browser/prerender/prerender_manager.h"
 #include "chrome/browser/prerender/prerender_manager_factory.h"
+#include "chrome/browser/previews/previews_lite_page_decider.h"
+#include "chrome/browser/previews/previews_service.h"
+#include "chrome/browser/previews/previews_service_factory.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/renderer_host/chrome_navigation_ui_data.h"
 #include "chrome/browser/signin/signin_promo.h"
@@ -335,9 +339,15 @@ void LoadURLInContents(WebContents* target_contents,
   // |frame_tree_node_id| is kNoFrameTreeNodeId for main frame navigations.
   if (params->frame_tree_node_id ==
       content::RenderFrameHost::kNoFrameTreeNodeId) {
+    PreviewsService* previews_service =
+        PreviewsServiceFactory::GetForProfile(GetSourceProfile(params));
+    uint64_t previews_page_id =
+        previews_service
+            ? previews_service->previews_lite_page_decider()->GeneratePageID()
+            : 0;
     load_url_params.navigation_ui_data =
         ChromeNavigationUIData::CreateForMainFrameNavigation(
-            target_contents, params->disposition);
+            target_contents, params->disposition, previews_page_id);
   }
 
   if (params->uses_post) {
@@ -467,6 +477,12 @@ void Navigate(NavigateParams* params) {
   if (extension && extension->is_platform_app())
     params->url = GURL(chrome::kExtensionInvalidRequestURL);
 #endif
+
+  if (source_browser &&
+      platform_util::IsBrowserLockedFullscreen(source_browser)) {
+    // Block any navigation requests in locked fullscreen mode.
+    return;
+  }
 
   // Trying to open a background tab when in an app browser results in
   // focusing a regular browser window an opening a tab in the background
@@ -659,7 +675,7 @@ void Navigate(NavigateParams* params) {
     // The navigation should insert a new tab into the target Browser.
     params->browser->tab_strip_model()->AddWebContents(
         std::move(contents_to_insert), params->tabstrip_index,
-        params->transition, params->tabstrip_add_types);
+        params->transition, params->tabstrip_add_types, params->group);
   }
 
   if (singleton_index >= 0) {
@@ -680,8 +696,10 @@ void Navigate(NavigateParams* params) {
     if (params->source_contents != contents_to_navigate_or_insert) {
       // Use the index before the potential close below, because it could
       // make the index refer to a different tab.
+      auto gesture_type = user_initiated ? TabStripModel::GestureType::kOther
+                                         : TabStripModel::GestureType::kNone;
       params->browser->tab_strip_model()->ActivateTabAt(singleton_index,
-                                                        user_initiated);
+                                                        {gesture_type});
       if (params->disposition == WindowOpenDisposition::SWITCH_TO_TAB) {
         // Close orphaned NTP (and the like) with no history when the user
         // switches away from them.
@@ -739,6 +757,7 @@ bool IsHostAllowedInIncognito(const GURL& url) {
   // chrome://extensions is on the list because it redirects to
   // chrome://settings.
   return host != chrome::kChromeUIAppLauncherPageHost &&
+         host != chrome::kChromeUIAppManagementHost &&
          host != chrome::kChromeUISettingsHost &&
          host != chrome::kChromeUIHelpHost &&
          host != chrome::kChromeUIHistoryHost &&

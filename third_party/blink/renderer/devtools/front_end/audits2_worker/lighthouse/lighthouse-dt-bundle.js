@@ -1,5 +1,54 @@
-// lighthouse, browserified. 4.0.0 (bfa10f1ac4ba8cdf95c809858d8bc4c8ac1c1da8)
-require=function(){function r(e,n,t){function o(i,f){if(!n[i]){if(!e[i]){var c="function"==typeof require&&require;if(!f&&c)return c(i,!0);if(u)return u(i,!0);var a=new Error("Cannot find module '"+i+"'");throw a.code="MODULE_NOT_FOUND",a;}var p=n[i]={exports:{}};e[i][0].call(p.exports,function(r){var n=e[i][1][r];return o(n||r);},p,p.exports,r,e,n,t);}return n[i].exports;}for(var u="function"==typeof require&&require,i=0;i<t.length;i++)o(t[i]);return o;}return r;}()({"../audits/accessibility/aria-allowed-attr":[function(require,module,exports){
+// lighthouse, browserified. 4.3.0 (01b217be64ddff7ca500ad0f787f914fa9900b73)
+require=function(){function r(e,n,t){function o(i,f){if(!n[i]){if(!e[i]){var c="function"==typeof require&&require;if(!f&&c)return c(i,!0);if(u)return u(i,!0);var a=new Error("Cannot find module '"+i+"'");throw a.code="MODULE_NOT_FOUND",a;}var p=n[i]={exports:{}};e[i][0].call(p.exports,function(r){var n=e[i][1][r];return o(n||r);},p,p.exports,r,e,n,t);}return n[i].exports;}for(var u="function"==typeof require&&require,i=0;i<t.length;i++)o(t[i]);return o;}return r;}()({"../audits/accessibility/accesskeys":[function(require,module,exports){
+(function(__filename){
+
+
+
+
+
+'use strict';
+
+
+
+
+
+
+const AxeAudit=require('./axe-audit.js');
+const i18n=require('../../lib/i18n/i18n.js');
+
+const UIStrings={
+
+title:'`[accesskey]` values are unique',
+
+failureTitle:'`[accesskey]` values are not unique',
+
+description:'Access keys let users quickly focus a part of the page. For proper '+
+'navigation, each access key must be unique. '+
+'[Learn more](https://dequeuniversity.com/rules/axe/3.1/accesskeys?application=lighthouse).'};
+
+
+const str_=i18n.createMessageInstanceIdFn(__filename,UIStrings);
+
+class Accesskeys extends AxeAudit{
+
+
+
+static get meta(){
+return{
+id:'accesskeys',
+title:str_(UIStrings.title),
+failureTitle:str_(UIStrings.failureTitle),
+description:str_(UIStrings.description),
+requiredArtifacts:['Accessibility']};
+
+}}
+
+
+module.exports=Accesskeys;
+module.exports.UIStrings=UIStrings;
+
+}).call(this,"/lighthouse-core/audits/accessibility/accesskeys.js");
+},{"../../lib/i18n/i18n.js":63,"./axe-audit.js":2}],"../audits/accessibility/aria-allowed-attr":[function(require,module,exports){
 (function(__filename){
 
 
@@ -48,7 +97,7 @@ module.exports=ARIAAllowedAttr;
 module.exports.UIStrings=UIStrings;
 
 }).call(this,"/lighthouse-core/audits/accessibility/aria-allowed-attr.js");
-},{"../../lib/i18n/i18n.js":59,"./axe-audit":2}],"../audits/accessibility/aria-required-attr":[function(require,module,exports){
+},{"../../lib/i18n/i18n.js":63,"./axe-audit":2}],"../audits/accessibility/aria-required-attr":[function(require,module,exports){
 (function(__filename){
 
 
@@ -96,7 +145,7 @@ module.exports=ARIARequiredAttr;
 module.exports.UIStrings=UIStrings;
 
 }).call(this,"/lighthouse-core/audits/accessibility/aria-required-attr.js");
-},{"../../lib/i18n/i18n.js":59,"./axe-audit":2}],"../audits/accessibility/aria-required-children":[function(require,module,exports){
+},{"../../lib/i18n/i18n.js":63,"./axe-audit":2}],"../audits/accessibility/aria-required-children":[function(require,module,exports){
 (function(__filename){
 
 
@@ -147,7 +196,7 @@ module.exports=AriaRequiredChildren;
 module.exports.UIStrings=UIStrings;
 
 }).call(this,"/lighthouse-core/audits/accessibility/aria-required-children.js");
-},{"../../lib/i18n/i18n.js":59,"./axe-audit":2}],"../audits/accessibility/aria-required-parent":[function(require,module,exports){
+},{"../../lib/i18n/i18n.js":63,"./axe-audit":2}],"../audits/accessibility/aria-required-parent":[function(require,module,exports){
 (function(__filename){
 
 
@@ -197,7 +246,7 @@ module.exports=AriaRequiredParent;
 module.exports.UIStrings=UIStrings;
 
 }).call(this,"/lighthouse-core/audits/accessibility/aria-required-parent.js");
-},{"../../lib/i18n/i18n.js":59,"./axe-audit":2}],"../audits/accessibility/aria-roles":[function(require,module,exports){
+},{"../../lib/i18n/i18n.js":63,"./axe-audit":2}],"../audits/accessibility/aria-roles":[function(require,module,exports){
 (function(__filename){
 
 
@@ -246,7 +295,7 @@ module.exports=AriaRoles;
 module.exports.UIStrings=UIStrings;
 
 }).call(this,"/lighthouse-core/audits/accessibility/aria-roles.js");
-},{"../../lib/i18n/i18n.js":59,"./axe-audit":2}],"../audits/accessibility/aria-valid-attr-value":[function(require,module,exports){
+},{"../../lib/i18n/i18n.js":63,"./axe-audit":2}],"../audits/accessibility/aria-valid-attr-value":[function(require,module,exports){
 (function(__filename){
 
 
@@ -295,7 +344,7 @@ module.exports=ARIAValidAttr;
 module.exports.UIStrings=UIStrings;
 
 }).call(this,"/lighthouse-core/audits/accessibility/aria-valid-attr-value.js");
-},{"../../lib/i18n/i18n.js":59,"./axe-audit":2}],"../audits/accessibility/aria-valid-attr":[function(require,module,exports){
+},{"../../lib/i18n/i18n.js":63,"./axe-audit":2}],"../audits/accessibility/aria-valid-attr":[function(require,module,exports){
 (function(__filename){
 
 
@@ -344,7 +393,7 @@ module.exports=ARIAValidAttr;
 module.exports.UIStrings=UIStrings;
 
 }).call(this,"/lighthouse-core/audits/accessibility/aria-valid-attr.js");
-},{"../../lib/i18n/i18n.js":59,"./axe-audit":2}],"../audits/accessibility/audio-caption":[function(require,module,exports){
+},{"../../lib/i18n/i18n.js":63,"./axe-audit":2}],"../audits/accessibility/audio-caption":[function(require,module,exports){
 (function(__filename){
 
 
@@ -395,7 +444,7 @@ module.exports=AudioCaption;
 module.exports.UIStrings=UIStrings;
 
 }).call(this,"/lighthouse-core/audits/accessibility/audio-caption.js");
-},{"../../lib/i18n/i18n.js":59,"./axe-audit":2}],"../audits/accessibility/button-name":[function(require,module,exports){
+},{"../../lib/i18n/i18n.js":63,"./axe-audit":2}],"../audits/accessibility/button-name":[function(require,module,exports){
 (function(__filename){
 
 
@@ -444,7 +493,7 @@ module.exports=ButtonName;
 module.exports.UIStrings=UIStrings;
 
 }).call(this,"/lighthouse-core/audits/accessibility/button-name.js");
-},{"../../lib/i18n/i18n.js":59,"./axe-audit":2}],"../audits/accessibility/bypass":[function(require,module,exports){
+},{"../../lib/i18n/i18n.js":63,"./axe-audit":2}],"../audits/accessibility/bypass":[function(require,module,exports){
 (function(__filename){
 
 
@@ -494,7 +543,7 @@ module.exports=Bypass;
 module.exports.UIStrings=UIStrings;
 
 }).call(this,"/lighthouse-core/audits/accessibility/bypass.js");
-},{"../../lib/i18n/i18n.js":59,"./axe-audit":2}],"../audits/accessibility/color-contrast":[function(require,module,exports){
+},{"../../lib/i18n/i18n.js":63,"./axe-audit":2}],"../audits/accessibility/color-contrast":[function(require,module,exports){
 (function(__filename){
 
 
@@ -544,7 +593,7 @@ module.exports=ColorContrast;
 module.exports.UIStrings=UIStrings;
 
 }).call(this,"/lighthouse-core/audits/accessibility/color-contrast.js");
-},{"../../lib/i18n/i18n.js":59,"./axe-audit":2}],"../audits/accessibility/definition-list":[function(require,module,exports){
+},{"../../lib/i18n/i18n.js":63,"./axe-audit":2}],"../audits/accessibility/definition-list":[function(require,module,exports){
 (function(__filename){
 
 
@@ -595,7 +644,7 @@ module.exports=DefinitionList;
 module.exports.UIStrings=UIStrings;
 
 }).call(this,"/lighthouse-core/audits/accessibility/definition-list.js");
-},{"../../lib/i18n/i18n.js":59,"./axe-audit":2}],"../audits/accessibility/dlitem":[function(require,module,exports){
+},{"../../lib/i18n/i18n.js":63,"./axe-audit":2}],"../audits/accessibility/dlitem":[function(require,module,exports){
 (function(__filename){
 
 
@@ -644,7 +693,7 @@ module.exports=DLItem;
 module.exports.UIStrings=UIStrings;
 
 }).call(this,"/lighthouse-core/audits/accessibility/dlitem.js");
-},{"../../lib/i18n/i18n.js":59,"./axe-audit":2}],"../audits/accessibility/document-title":[function(require,module,exports){
+},{"../../lib/i18n/i18n.js":63,"./axe-audit":2}],"../audits/accessibility/document-title":[function(require,module,exports){
 (function(__filename){
 
 
@@ -693,7 +742,7 @@ module.exports=DocumentTitle;
 module.exports.UIStrings=UIStrings;
 
 }).call(this,"/lighthouse-core/audits/accessibility/document-title.js");
-},{"../../lib/i18n/i18n.js":59,"./axe-audit":2}],"../audits/accessibility/duplicate-id":[function(require,module,exports){
+},{"../../lib/i18n/i18n.js":63,"./axe-audit":2}],"../audits/accessibility/duplicate-id":[function(require,module,exports){
 (function(__filename){
 
 
@@ -742,7 +791,7 @@ module.exports=DuplicateId;
 module.exports.UIStrings=UIStrings;
 
 }).call(this,"/lighthouse-core/audits/accessibility/duplicate-id.js");
-},{"../../lib/i18n/i18n.js":59,"./axe-audit":2}],"../audits/accessibility/frame-title":[function(require,module,exports){
+},{"../../lib/i18n/i18n.js":63,"./axe-audit":2}],"../audits/accessibility/frame-title":[function(require,module,exports){
 (function(__filename){
 
 
@@ -790,7 +839,7 @@ module.exports=FrameTitle;
 module.exports.UIStrings=UIStrings;
 
 }).call(this,"/lighthouse-core/audits/accessibility/frame-title.js");
-},{"../../lib/i18n/i18n.js":59,"./axe-audit":2}],"../audits/accessibility/html-has-lang":[function(require,module,exports){
+},{"../../lib/i18n/i18n.js":63,"./axe-audit":2}],"../audits/accessibility/html-has-lang":[function(require,module,exports){
 (function(__filename){
 
 
@@ -841,7 +890,7 @@ module.exports=HTMLHasLang;
 module.exports.UIStrings=UIStrings;
 
 }).call(this,"/lighthouse-core/audits/accessibility/html-has-lang.js");
-},{"../../lib/i18n/i18n.js":59,"./axe-audit":2}],"../audits/accessibility/html-lang-valid":[function(require,module,exports){
+},{"../../lib/i18n/i18n.js":63,"./axe-audit":2}],"../audits/accessibility/html-lang-valid":[function(require,module,exports){
 (function(__filename){
 
 
@@ -891,7 +940,7 @@ module.exports=HTMLLangValid;
 module.exports.UIStrings=UIStrings;
 
 }).call(this,"/lighthouse-core/audits/accessibility/html-lang-valid.js");
-},{"../../lib/i18n/i18n.js":59,"./axe-audit":2}],"../audits/accessibility/image-alt":[function(require,module,exports){
+},{"../../lib/i18n/i18n.js":63,"./axe-audit":2}],"../audits/accessibility/image-alt":[function(require,module,exports){
 (function(__filename){
 
 
@@ -940,7 +989,7 @@ module.exports=ImageAlt;
 module.exports.UIStrings=UIStrings;
 
 }).call(this,"/lighthouse-core/audits/accessibility/image-alt.js");
-},{"../../lib/i18n/i18n.js":59,"./axe-audit":2}],"../audits/accessibility/input-image-alt":[function(require,module,exports){
+},{"../../lib/i18n/i18n.js":63,"./axe-audit":2}],"../audits/accessibility/input-image-alt":[function(require,module,exports){
 (function(__filename){
 
 
@@ -989,7 +1038,7 @@ module.exports=InputImageAlt;
 module.exports.UIStrings=UIStrings;
 
 }).call(this,"/lighthouse-core/audits/accessibility/input-image-alt.js");
-},{"../../lib/i18n/i18n.js":59,"./axe-audit":2}],"../audits/accessibility/label":[function(require,module,exports){
+},{"../../lib/i18n/i18n.js":63,"./axe-audit":2}],"../audits/accessibility/label":[function(require,module,exports){
 (function(__filename){
 
 
@@ -1038,7 +1087,7 @@ module.exports=Label;
 module.exports.UIStrings=UIStrings;
 
 }).call(this,"/lighthouse-core/audits/accessibility/label.js");
-},{"../../lib/i18n/i18n.js":59,"./axe-audit":2}],"../audits/accessibility/layout-table":[function(require,module,exports){
+},{"../../lib/i18n/i18n.js":63,"./axe-audit":2}],"../audits/accessibility/layout-table":[function(require,module,exports){
 (function(__filename){
 
 
@@ -1091,7 +1140,7 @@ module.exports=LayoutTable;
 module.exports.UIStrings=UIStrings;
 
 }).call(this,"/lighthouse-core/audits/accessibility/layout-table.js");
-},{"../../lib/i18n/i18n.js":59,"./axe-audit":2}],"../audits/accessibility/link-name":[function(require,module,exports){
+},{"../../lib/i18n/i18n.js":63,"./axe-audit":2}],"../audits/accessibility/link-name":[function(require,module,exports){
 (function(__filename){
 
 
@@ -1141,7 +1190,7 @@ module.exports=LinkName;
 module.exports.UIStrings=UIStrings;
 
 }).call(this,"/lighthouse-core/audits/accessibility/link-name.js");
-},{"../../lib/i18n/i18n.js":59,"./axe-audit":2}],"../audits/accessibility/listitem":[function(require,module,exports){
+},{"../../lib/i18n/i18n.js":63,"./axe-audit":2}],"../audits/accessibility/listitem":[function(require,module,exports){
 (function(__filename){
 
 
@@ -1191,7 +1240,7 @@ module.exports=ListItem;
 module.exports.UIStrings=UIStrings;
 
 }).call(this,"/lighthouse-core/audits/accessibility/listitem.js");
-},{"../../lib/i18n/i18n.js":59,"./axe-audit":2}],"../audits/accessibility/list":[function(require,module,exports){
+},{"../../lib/i18n/i18n.js":63,"./axe-audit":2}],"../audits/accessibility/list":[function(require,module,exports){
 (function(__filename){
 
 
@@ -1242,60 +1291,7 @@ module.exports=List;
 module.exports.UIStrings=UIStrings;
 
 }).call(this,"/lighthouse-core/audits/accessibility/list.js");
-},{"../../lib/i18n/i18n.js":59,"./axe-audit":2}],"../audits/accessibility/manual/accesskeys":[function(require,module,exports){
-(function(__filename){
-
-
-
-
-
-'use strict';
-
-
-
-
-
-const Audit=require('../../audit.js');
-const i18n=require('../../../lib/i18n/i18n.js');
-
-const UIStrings={
-
-title:'`[accesskey]` values are unique',
-
-description:'Access keys let users quickly focus a part of the page. For proper '+
-'navigation, each access key must be unique. '+
-'[Learn more](https://dequeuniversity.com/rules/axe/3.1/accesskeys?application=lighthouse).'};
-
-
-const str_=i18n.createMessageInstanceIdFn(__filename,UIStrings);
-
-class Accesskeys extends Audit{
-
-
-
-static get meta(){
-return{
-id:'accesskeys',
-title:str_(UIStrings.title),
-description:str_(UIStrings.description),
-scoreDisplayMode:Audit.SCORING_MODES.MANUAL,
-requiredArtifacts:[]};
-
-}
-
-
-
-
-static audit(){
-return{rawValue:false};
-}}
-
-
-module.exports=Accesskeys;
-module.exports.UIStrings=UIStrings;
-
-}).call(this,"/lighthouse-core/audits/accessibility/manual/accesskeys.js");
-},{"../../../lib/i18n/i18n.js":59,"../../audit.js":3}],"../audits/accessibility/manual/custom-controls-labels":[function(require,module,exports){
+},{"../../lib/i18n/i18n.js":63,"./axe-audit":2}],"../audits/accessibility/manual/custom-controls-labels":[function(require,module,exports){
 
 
 
@@ -1676,7 +1672,7 @@ module.exports=MetaRefresh;
 module.exports.UIStrings=UIStrings;
 
 }).call(this,"/lighthouse-core/audits/accessibility/meta-refresh.js");
-},{"../../lib/i18n/i18n.js":59,"./axe-audit":2}],"../audits/accessibility/meta-viewport":[function(require,module,exports){
+},{"../../lib/i18n/i18n.js":63,"./axe-audit":2}],"../audits/accessibility/meta-viewport":[function(require,module,exports){
 (function(__filename){
 
 
@@ -1727,7 +1723,7 @@ module.exports=MetaViewport;
 module.exports.UIStrings=UIStrings;
 
 }).call(this,"/lighthouse-core/audits/accessibility/meta-viewport.js");
-},{"../../lib/i18n/i18n.js":59,"./axe-audit":2}],"../audits/accessibility/object-alt":[function(require,module,exports){
+},{"../../lib/i18n/i18n.js":63,"./axe-audit":2}],"../audits/accessibility/object-alt":[function(require,module,exports){
 (function(__filename){
 
 
@@ -1776,7 +1772,7 @@ module.exports=ObjectAlt;
 module.exports.UIStrings=UIStrings;
 
 }).call(this,"/lighthouse-core/audits/accessibility/object-alt.js");
-},{"../../lib/i18n/i18n.js":59,"./axe-audit":2}],"../audits/accessibility/tabindex":[function(require,module,exports){
+},{"../../lib/i18n/i18n.js":63,"./axe-audit":2}],"../audits/accessibility/tabindex":[function(require,module,exports){
 (function(__filename){
 
 
@@ -1825,7 +1821,7 @@ module.exports=TabIndex;
 module.exports.UIStrings=UIStrings;
 
 }).call(this,"/lighthouse-core/audits/accessibility/tabindex.js");
-},{"../../lib/i18n/i18n.js":59,"./axe-audit":2}],"../audits/accessibility/td-headers-attr":[function(require,module,exports){
+},{"../../lib/i18n/i18n.js":63,"./axe-audit":2}],"../audits/accessibility/td-headers-attr":[function(require,module,exports){
 (function(__filename){
 
 
@@ -1878,7 +1874,7 @@ module.exports=TDHeadersAttr;
 module.exports.UIStrings=UIStrings;
 
 }).call(this,"/lighthouse-core/audits/accessibility/td-headers-attr.js");
-},{"../../lib/i18n/i18n.js":59,"./axe-audit":2}],"../audits/accessibility/th-has-data-cells":[function(require,module,exports){
+},{"../../lib/i18n/i18n.js":63,"./axe-audit":2}],"../audits/accessibility/th-has-data-cells":[function(require,module,exports){
 (function(__filename){
 
 
@@ -1930,7 +1926,7 @@ module.exports=THHasDataCells;
 module.exports.UIStrings=UIStrings;
 
 }).call(this,"/lighthouse-core/audits/accessibility/th-has-data-cells.js");
-},{"../../lib/i18n/i18n.js":59,"./axe-audit":2}],"../audits/accessibility/valid-lang":[function(require,module,exports){
+},{"../../lib/i18n/i18n.js":63,"./axe-audit":2}],"../audits/accessibility/valid-lang":[function(require,module,exports){
 (function(__filename){
 
 
@@ -1979,7 +1975,7 @@ module.exports=ValidLang;
 module.exports.UIStrings=UIStrings;
 
 }).call(this,"/lighthouse-core/audits/accessibility/valid-lang.js");
-},{"../../lib/i18n/i18n.js":59,"./axe-audit":2}],"../audits/accessibility/video-caption":[function(require,module,exports){
+},{"../../lib/i18n/i18n.js":63,"./axe-audit":2}],"../audits/accessibility/video-caption":[function(require,module,exports){
 (function(__filename){
 
 
@@ -2029,7 +2025,7 @@ module.exports=VideoCaption;
 module.exports.UIStrings=UIStrings;
 
 }).call(this,"/lighthouse-core/audits/accessibility/video-caption.js");
-},{"../../lib/i18n/i18n.js":59,"./axe-audit":2}],"../audits/accessibility/video-description":[function(require,module,exports){
+},{"../../lib/i18n/i18n.js":63,"./axe-audit":2}],"../audits/accessibility/video-description":[function(require,module,exports){
 (function(__filename){
 
 
@@ -2079,7 +2075,7 @@ module.exports=VideoDescription;
 module.exports.UIStrings=UIStrings;
 
 }).call(this,"/lighthouse-core/audits/accessibility/video-description.js");
-},{"../../lib/i18n/i18n.js":59,"./axe-audit":2}],"../audits/bootup-time":[function(require,module,exports){
+},{"../../lib/i18n/i18n.js":63,"./axe-audit":2}],"../audits/bootup-time":[function(require,module,exports){
 (function(__filename){
 
 
@@ -2105,7 +2101,7 @@ description:'Consider reducing the time spent parsing, compiling, and executing 
 'You may find delivering smaller JS payloads helps with this. [Learn '+
 'more](https://developers.google.com/web/tools/lighthouse/audits/bootup).',
 
-columnTotal:'Total',
+columnTotal:'Total CPU Time',
 
 columnScriptEval:'Script Evaluation',
 
@@ -2172,8 +2168,9 @@ const result=new Map();
 for(const task of tasks){
 const jsURL=task.attributableURLs.find(url=>jsURLs.has(url));
 const fallbackURL=task.attributableURLs[0];
-const attributableURL=jsURL||fallbackURL;
-if(!attributableURL||attributableURL==='about:blank')continue;
+let attributableURL=jsURL||fallbackURL;
+
+if(!attributableURL||attributableURL==='about:blank')attributableURL='Other';
 
 const timingByGroupId=result.get(attributableURL)||{};
 const originalTime=timingByGroupId[task.group.id]||0;
@@ -2206,26 +2203,26 @@ let totalBootupTime=0;
 const results=Array.from(executionTimings).
 map(([url,timingByGroupId])=>{
 
-let bootupTimeForURL=0;
+let totalExecutionTimeForURL=0;
 for(const[groupId,timespanMs]of Object.entries(timingByGroupId)){
 timingByGroupId[groupId]=timespanMs*multiplier;
-bootupTimeForURL+=timespanMs*multiplier;
-}
-
-
-if(bootupTimeForURL>=context.options.thresholdInMs){
-totalBootupTime+=bootupTimeForURL;
+totalExecutionTimeForURL+=timespanMs*multiplier;
 }
 
 const scriptingTotal=timingByGroupId[taskGroups.scriptEvaluation.id]||0;
 const parseCompileTotal=timingByGroupId[taskGroups.scriptParseCompile.id]||0;
+
+
+if(totalExecutionTimeForURL>=context.options.thresholdInMs){
+totalBootupTime+=scriptingTotal+parseCompileTotal;
+}
 
 hadExcessiveChromeExtension=hadExcessiveChromeExtension||
 url.startsWith('chrome-extension:')&&scriptingTotal>100;
 
 return{
 url:url,
-total:bootupTimeForURL,
+total:totalExecutionTimeForURL,
 
 scripting:scriptingTotal,
 scriptParseCompile:parseCompileTotal};
@@ -2241,6 +2238,7 @@ context.LighthouseRunWarnings.push(str_(UIStrings.chromeExtensionsWarning));
 }
 
 const summary={wastedMs:totalBootupTime};
+
 
 const headings=[
 {key:'url',itemType:'url',text:str_(i18n.UIStrings.columnURL)},
@@ -2272,7 +2270,7 @@ module.exports=BootupTime;
 module.exports.UIStrings=UIStrings;
 
 }).call(this,"/lighthouse-core/audits/bootup-time.js");
-},{"../computed/main-thread-tasks.js":12,"../computed/network-records.js":29,"../lib/i18n/i18n.js":59,"../lib/network-request":67,"../lib/task-groups":71,"./audit":3}],"../audits/byte-efficiency/efficient-animated-content":[function(require,module,exports){
+},{"../computed/main-thread-tasks.js":12,"../computed/network-records.js":31,"../lib/i18n/i18n.js":63,"../lib/network-request":71,"../lib/task-groups":77,"./audit":3}],"../audits/byte-efficiency/efficient-animated-content":[function(require,module,exports){
 (function(__filename){
 
 
@@ -2368,7 +2366,7 @@ module.exports=EfficientAnimatedContent;
 module.exports.UIStrings=UIStrings;
 
 }).call(this,"/lighthouse-core/audits/byte-efficiency/efficient-animated-content.js");
-},{"../../lib/i18n/i18n.js":59,"../../lib/network-request":67,"./byte-efficiency-audit":4}],"../audits/byte-efficiency/offscreen-images":[function(require,module,exports){
+},{"../../lib/i18n/i18n.js":63,"../../lib/network-request":71,"./byte-efficiency-audit":4}],"../audits/byte-efficiency/offscreen-images":[function(require,module,exports){
 (function(__filename){
 
 
@@ -2419,7 +2417,7 @@ id:'offscreen-images',
 title:str_(UIStrings.title),
 description:str_(UIStrings.description),
 scoreDisplayMode:ByteEfficiencyAudit.SCORING_MODES.NUMERIC,
-requiredArtifacts:['ImageUsage','ViewportDimensions','devtoolsLogs','traces']};
+requiredArtifacts:['ImageElements','ViewportDimensions','devtoolsLogs','traces']};
 
 }
 
@@ -2445,17 +2443,19 @@ return Math.max(right-left,0)*Math.max(bottom-top,0);
 
 
 
-static computeWaste(image,viewportDimensions){
-if(!image.networkRecord){
+
+static computeWaste(image,viewportDimensions,networkRecords){
+const networkRecord=networkRecords.find(record=>record.url===image.src);
+if(!image.resourceSize||!networkRecord){
 return null;
 }
 
 const url=URL.elideDataURI(image.src);
-const totalPixels=image.clientWidth*image.clientHeight;
+const totalPixels=image.displayedWidth*image.displayedHeight;
 const visiblePixels=this.computeVisiblePixels(image.clientRect,viewportDimensions);
 
 const wastedRatio=totalPixels===0?1:1-visiblePixels/totalPixels;
-const totalBytes=image.networkRecord.resourceSize;
+const totalBytes=image.resourceSize;
 const wastedBytes=Math.round(totalBytes*wastedRatio);
 
 if(!Number.isFinite(wastedRatio)){
@@ -2464,7 +2464,7 @@ return new Error(`Invalid image sizing information ${url}`);
 
 return{
 url,
-requestStartTime:image.networkRecord.startTime,
+requestStartTime:networkRecord.startTime,
 totalBytes,
 wastedBytes,
 wastedPercent:100*wastedRatio};
@@ -2540,7 +2540,7 @@ return super.computeWasteWithTTIGraph(results,graph,simulator,
 
 
 static async audit_(artifacts,networkRecords,context){
-const images=artifacts.ImageUsage;
+const images=artifacts.ImageElements;
 const viewportDimensions=artifacts.ViewportDimensions;
 const trace=artifacts.traces[ByteEfficiencyAudit.DEFAULT_PASS];
 const devtoolsLog=artifacts.devtoolsLogs[ByteEfficiencyAudit.DEFAULT_PASS];
@@ -2548,7 +2548,7 @@ const devtoolsLog=artifacts.devtoolsLogs[ByteEfficiencyAudit.DEFAULT_PASS];
 
 const warnings=[];
 const resultsMap=images.reduce((results,image)=>{
-const processed=OffscreenImages.computeWaste(image,viewportDimensions);
+const processed=OffscreenImages.computeWaste(image,viewportDimensions,networkRecords);
 if(processed===null){
 return results;
 }
@@ -2613,7 +2613,7 @@ module.exports=OffscreenImages;
 module.exports.UIStrings=UIStrings;
 
 }).call(this,"/lighthouse-core/audits/byte-efficiency/offscreen-images.js");
-},{"../../computed/metrics/interactive.js":18,"../../computed/trace-of-tab.js":33,"../../lib/i18n/i18n.js":59,"../../lib/sentry":69,"../../lib/url-shim":"url","./byte-efficiency-audit":4}],"../audits/byte-efficiency/render-blocking-resources":[function(require,module,exports){
+},{"../../computed/metrics/interactive.js":18,"../../computed/trace-of-tab.js":35,"../../lib/i18n/i18n.js":63,"../../lib/sentry":74,"../../lib/url-shim":"url","./byte-efficiency-audit":4}],"../audits/byte-efficiency/render-blocking-resources":[function(require,module,exports){
 (function(__filename){
 
 
@@ -2726,8 +2726,6 @@ if(!nodesByUrl[resource.tag.url])continue;
 const{node,nodeTiming}=nodesByUrl[resource.tag.url];
 
 
-
-
 node.traverse(node=>deferredNodeIds.add(node.id));
 
 
@@ -2807,11 +2805,11 @@ return Math.round(Math.max(originalEstimate-estimateAfterInline,0));
 static async computeWastedCSSBytes(artifacts,context){
 const wastedBytesByUrl=new Map();
 try{
-
 const results=await UnusedCSS.audit(artifacts,context);
-
+if(results.details&&results.details.type==='opportunity'){
 for(const item of results.details.items){
 wastedBytesByUrl.set(item.url,item.wastedBytes);
+}
 }
 }catch(_){}
 
@@ -2853,7 +2851,7 @@ module.exports=RenderBlockingResources;
 module.exports.UIStrings=UIStrings;
 
 }).call(this,"/lighthouse-core/audits/byte-efficiency/render-blocking-resources.js");
-},{"../../computed/load-simulator.js":10,"../../computed/metrics/first-contentful-paint.js":15,"../../computed/trace-of-tab.js":33,"../../lib/dependency-graph/base-node":48,"../../lib/i18n/i18n.js":59,"../../lib/network-request":67,"../audit":3,"./byte-efficiency-audit":4,"./unused-css-rules":"../audits/byte-efficiency/unused-css-rules"}],"../audits/byte-efficiency/total-byte-weight":[function(require,module,exports){
+},{"../../computed/load-simulator.js":10,"../../computed/metrics/first-contentful-paint.js":15,"../../computed/trace-of-tab.js":35,"../../lib/dependency-graph/base-node":52,"../../lib/i18n/i18n.js":63,"../../lib/network-request":71,"../audit":3,"./byte-efficiency-audit":4,"./unused-css-rules":"../audits/byte-efficiency/unused-css-rules"}],"../audits/byte-efficiency/total-byte-weight":[function(require,module,exports){
 (function(__filename){
 
 
@@ -2935,12 +2933,16 @@ totalBytes+=result.totalBytes;
 results.push(result);
 });
 const totalCompletedRequests=results.length;
-results=results.sort((itemA,itemB)=>itemB.totalBytes-itemA.totalBytes).slice(0,10);
+results=results.sort((itemA,itemB)=>{
+return itemB.totalBytes-itemA.totalBytes||
+itemA.url.localeCompare(itemB.url);
+}).slice(0,10);
 
 const score=ByteEfficiencyAudit.computeLogNormalScore(
 totalBytes,
 context.options.scorePODR,
 context.options.scoreMedian);
+
 
 
 const headings=[
@@ -2969,7 +2971,7 @@ module.exports=TotalByteWeight;
 module.exports.UIStrings=UIStrings;
 
 }).call(this,"/lighthouse-core/audits/byte-efficiency/total-byte-weight.js");
-},{"../../computed/network-records.js":29,"../../lib/i18n/i18n.js":59,"./byte-efficiency-audit":4}],"../audits/byte-efficiency/unminified-css":[function(require,module,exports){
+},{"../../computed/network-records.js":31,"../../lib/i18n/i18n.js":63,"./byte-efficiency-audit":4}],"../audits/byte-efficiency/unminified-css":[function(require,module,exports){
 (function(__filename){
 
 
@@ -3090,7 +3092,7 @@ module.exports=UnminifiedCSS;
 module.exports.UIStrings=UIStrings;
 
 }).call(this,"/lighthouse-core/audits/byte-efficiency/unminified-css.js");
-},{"../../lib/i18n/i18n.js":59,"../../lib/minification-estimator":65,"./byte-efficiency-audit":4,"./unused-css-rules":"../audits/byte-efficiency/unused-css-rules"}],"../audits/byte-efficiency/unminified-javascript":[function(require,module,exports){
+},{"../../lib/i18n/i18n.js":63,"../../lib/minification-estimator":69,"./byte-efficiency-audit":4,"./unused-css-rules":"../audits/byte-efficiency/unused-css-rules"}],"../audits/byte-efficiency/unminified-javascript":[function(require,module,exports){
 (function(__filename){
 
 
@@ -3136,7 +3138,7 @@ id:'unminified-javascript',
 title:str_(UIStrings.title),
 description:str_(UIStrings.description),
 scoreDisplayMode:ByteEfficiencyAudit.SCORING_MODES.NUMERIC,
-requiredArtifacts:['Scripts','devtoolsLogs','traces']};
+requiredArtifacts:['ScriptElements','devtoolsLogs','traces']};
 
 }
 
@@ -3145,7 +3147,8 @@ requiredArtifacts:['Scripts','devtoolsLogs','traces']};
 
 
 
-static computeWaste(scriptContent,networkRecord){
+
+static computeWaste(scriptContent,displayUrl,networkRecord){
 const contentLength=scriptContent.length;
 const totalTokenLength=computeTokenLength(scriptContent);
 
@@ -3155,7 +3158,7 @@ const wastedRatio=1-totalTokenLength/contentLength;
 const wastedBytes=Math.round(totalBytes*wastedRatio);
 
 return{
-url:networkRecord.url,
+url:displayUrl,
 totalBytes,
 wastedBytes,
 wastedPercent:100*wastedRatio};
@@ -3171,13 +3174,15 @@ static audit_(artifacts,networkRecords){
 
 const items=[];
 const warnings=[];
-for(const requestId of Object.keys(artifacts.Scripts)){
-const scriptContent=artifacts.Scripts[requestId];
-const networkRecord=networkRecords.find(record=>record.requestId===requestId);
-if(!networkRecord||!scriptContent)continue;
+for(const{requestId,src,content}of artifacts.ScriptElements){
+if(!content)continue;
 
+const networkRecord=networkRecords.find(record=>record.requestId===requestId);
+const displayUrl=!src||!networkRecord?
+`inline: ${content.substr(0,40)}...`:
+networkRecord.url;
 try{
-const result=UnminifiedJavaScript.computeWaste(scriptContent,networkRecord);
+const result=UnminifiedJavaScript.computeWaste(content,displayUrl,networkRecord);
 
 
 if(result.wastedPercent<IGNORE_THRESHOLD_IN_PERCENT||
@@ -3185,7 +3190,8 @@ result.wastedBytes<IGNORE_THRESHOLD_IN_BYTES||
 !Number.isFinite(result.wastedBytes))continue;
 items.push(result);
 }catch(err){
-warnings.push(`Unable to process ${networkRecord.url}: ${err.message}`);
+const url=networkRecord?networkRecord.url:'?';
+warnings.push(`Unable to process script ${url}: ${err.message}`);
 }
 }
 
@@ -3208,7 +3214,7 @@ module.exports=UnminifiedJavaScript;
 module.exports.UIStrings=UIStrings;
 
 }).call(this,"/lighthouse-core/audits/byte-efficiency/unminified-javascript.js");
-},{"../../lib/i18n/i18n.js":59,"../../lib/minification-estimator":65,"./byte-efficiency-audit":4}],"../audits/byte-efficiency/unused-css-rules":[function(require,module,exports){
+},{"../../lib/i18n/i18n.js":63,"../../lib/minification-estimator":69,"./byte-efficiency-audit":4}],"../audits/byte-efficiency/unused-css-rules":[function(require,module,exports){
 (function(__filename){
 
 
@@ -3222,10 +3228,10 @@ const i18n=require('../../lib/i18n/i18n.js');
 
 const UIStrings={
 
-title:'Defer unused CSS',
+title:'Remove unused CSS',
 
-description:'Remove unused rules from stylesheets to reduce unnecessary '+
-'bytes consumed by network activity. '+
+description:'Remove dead rules from stylesheets and defer the loading of CSS not used for '+
+'above-the-fold content to reduce unnecessary bytes consumed by network activity. '+
 '[Learn more](https://developers.google.com/web/tools/lighthouse/audits/unused-css).'};
 
 
@@ -3363,8 +3369,7 @@ url=contentPreview;
 }
 
 const usage=UnusedCSSRules.computeUsage(stylesheetInfo);
-
-return Object.assign({url},usage);
+return{url,...usage};
 }
 
 
@@ -3404,7 +3409,7 @@ module.exports=UnusedCSSRules;
 module.exports.UIStrings=UIStrings;
 
 }).call(this,"/lighthouse-core/audits/byte-efficiency/unused-css-rules.js");
-},{"../../lib/i18n/i18n.js":59,"./byte-efficiency-audit":4}],"../audits/byte-efficiency/unused-javascript":[function(require,module,exports){
+},{"../../lib/i18n/i18n.js":63,"./byte-efficiency-audit":4}],"../audits/byte-efficiency/unused-javascript":[function(require,module,exports){
 (function(__filename){
 
 
@@ -3542,7 +3547,7 @@ module.exports=UnusedJavaScript;
 module.exports.UIStrings=UIStrings;
 
 }).call(this,"/lighthouse-core/audits/byte-efficiency/unused-javascript.js");
-},{"../../lib/i18n/i18n.js":59,"./byte-efficiency-audit":4}],"../audits/byte-efficiency/uses-long-cache-ttl":[function(require,module,exports){
+},{"../../lib/i18n/i18n.js":63,"./byte-efficiency-audit":4}],"../audits/byte-efficiency/uses-long-cache-ttl":[function(require,module,exports){
 (function(__filename){
 
 
@@ -3552,7 +3557,6 @@ module.exports.UIStrings=UIStrings;
 'use strict';
 
 const assert=require('assert');
-
 const parseCacheControl=require('parse-cache-control');
 const Audit=require('../audit');
 const NetworkRequest=require('../../lib/network-request');
@@ -3656,17 +3660,9 @@ maxAgeInHours);
 
 
 
-
-
 static computeCacheLifetimeInSeconds(headers,cacheControl){
-if(cacheControl){
-
-if(cacheControl['no-cache']||cacheControl['no-store'])return 0;
-const maxAge=cacheControl['max-age'];
-if(maxAge!==undefined&&Number.isFinite(maxAge))return Math.max(maxAge,0);
-}else if((headers.get('pragma')||'').includes('no-cache')){
-
-return 0;
+if(cacheControl&&cacheControl['max-age']!==undefined){
+return cacheControl['max-age'];
 }
 
 const expiresHeaders=headers.get('expires');
@@ -3674,7 +3670,7 @@ if(expiresHeaders){
 const expires=new Date(expiresHeaders).getTime();
 
 if(!expires)return 0;
-return Math.max(0,Math.ceil((expires-Date.now())/1000));
+return Math.ceil((expires-Date.now())/1000);
 }
 
 return null;
@@ -3720,6 +3716,31 @@ STATIC_RESOURCE_TYPES.has(record.resourceType||'Other')&&
 
 
 
+
+static shouldSkipRecord(headers,cacheControl){
+
+if(!cacheControl&&(headers.get('pragma')||'').includes('no-cache')){
+return true;
+}
+
+
+if(cacheControl&&(
+
+cacheControl['must-revalidate']||
+cacheControl['no-cache']||
+cacheControl['no-store']||
+cacheControl['private'])){
+return true;
+}
+
+return false;
+}
+
+
+
+
+
+
 static audit(artifacts,context){
 const devtoolsLogs=artifacts.devtoolsLogs[Audit.DEFAULT_PASS];
 return NetworkRecords.request(devtoolsLogs,context).then(records=>{
@@ -3743,14 +3764,19 @@ headers.set(header.name.toLowerCase(),header.value);
 }
 
 const cacheControl=parseCacheControl(headers.get('cache-control'));
+if(this.shouldSkipRecord(headers,cacheControl)){
+continue;
+}
+
+
 let cacheLifetimeInSeconds=CacheHeaders.computeCacheLifetimeInSeconds(
-headers,
-cacheControl);
-
-
-
-if(cacheLifetimeInSeconds===0)continue;
+headers,cacheControl);
+if(cacheLifetimeInSeconds!==null&&(
+!Number.isFinite(cacheLifetimeInSeconds)||cacheLifetimeInSeconds<=0)){
+continue;
+}
 cacheLifetimeInSeconds=cacheLifetimeInSeconds||0;
+
 
 const cacheHitProbability=CacheHeaders.getCacheHitProbability(cacheLifetimeInSeconds);
 if(cacheHitProbability>IGNORE_THRESHOLD_IN_PERCENT)continue;
@@ -3762,9 +3788,19 @@ const wastedBytes=(1-cacheHitProbability)*totalBytes;
 totalWastedBytes+=wastedBytes;
 if(url.includes('?'))queryStringCount++;
 
+
+
+let diagnostic;
+if(cacheControl){
+diagnostic={
+type:'diagnostic',
+...cacheControl};
+
+}
+
 results.push({
 url,
-cacheControl,
+diagnostic,
 cacheLifetimeMs:cacheLifetimeInSeconds*1000,
 cacheHitProbability,
 totalBytes,
@@ -3772,14 +3808,17 @@ wastedBytes});
 
 }
 
-results.sort(
-(a,b)=>a.cacheLifetimeMs-b.cacheLifetimeMs||b.totalBytes-a.totalBytes);
-
+results.sort((a,b)=>{
+return a.cacheLifetimeMs-b.cacheLifetimeMs||
+b.totalBytes-a.totalBytes||
+a.url.localeCompare(b.url);
+});
 
 const score=Audit.computeLogNormalScore(
 totalWastedBytes,
 context.options.scorePODR,
 context.options.scoreMedian);
+
 
 
 const headings=[
@@ -3814,7 +3853,7 @@ module.exports=CacheHeaders;
 module.exports.UIStrings=UIStrings;
 
 }).call(this,"/lighthouse-core/audits/byte-efficiency/uses-long-cache-ttl.js");
-},{"../../computed/network-records.js":29,"../../lib/i18n/i18n.js":59,"../../lib/network-request":67,"../../lib/statistics":70,"../../lib/url-shim":"url","../audit":3,"assert":78,"parse-cache-control":127}],"../audits/byte-efficiency/uses-optimized-images":[function(require,module,exports){
+},{"../../computed/network-records.js":31,"../../lib/i18n/i18n.js":63,"../../lib/network-request":71,"../../lib/statistics":75,"../../lib/url-shim":"url","../audit":3,"assert":84,"parse-cache-control":134}],"../audits/byte-efficiency/uses-optimized-images":[function(require,module,exports){
 (function(__filename){
 
 
@@ -3853,7 +3892,7 @@ id:'uses-optimized-images',
 title:str_(UIStrings.title),
 description:str_(UIStrings.description),
 scoreDisplayMode:ByteEfficiencyAudit.SCORING_MODES.NUMERIC,
-requiredArtifacts:['OptimizedImages','devtoolsLogs','traces']};
+requiredArtifacts:['OptimizedImages','ImageElements','devtoolsLogs','traces']};
 
 }
 
@@ -3871,8 +3910,27 @@ return{bytes,percent};
 
 
 
+static estimateJPEGSizeFromDimensions(imageElement){
+const totalPixels=imageElement.naturalWidth*imageElement.naturalHeight;
+
+
+
+
+const expectedBytesPerPixel=2*1/8;
+return Math.round(totalPixels*expectedBytesPerPixel);
+}
+
+
+
+
+
 static audit_(artifacts){
+const pageURL=artifacts.URL.finalUrl;
 const images=artifacts.OptimizedImages;
+const imageElements=artifacts.ImageElements;
+
+const imageElementsByURL=new Map();
+imageElements.forEach(img=>imageElementsByURL.set(img.src,img));
 
 
 const items=[];
@@ -3881,18 +3939,34 @@ for(const image of images){
 if(image.failed){
 warnings.push(`Unable to decode ${URL.getURLDisplayName(image.url)}`);
 continue;
-}else if(/(jpeg|bmp)/.test(image.mimeType)===false||
-image.originalSize<image.jpegSize+IGNORE_THRESHOLD_IN_BYTES){
+}else if(/(jpeg|bmp)/.test(image.mimeType)===false){
 continue;
 }
 
+let jpegSize=image.jpegSize;
+let fromProtocol=true;
+
+if(typeof jpegSize==='undefined'){
+const imageElement=imageElementsByURL.get(image.url);
+if(!imageElement){
+warnings.push(`Unable to locate resource ${URL.getURLDisplayName(image.url)}`);
+continue;
+}
+
+jpegSize=UsesOptimizedImages.estimateJPEGSizeFromDimensions(imageElement);
+fromProtocol=false;
+}
+
+if(image.originalSize<jpegSize+IGNORE_THRESHOLD_IN_BYTES)continue;
+
 const url=URL.elideDataURI(image.url);
-const jpegSavings=UsesOptimizedImages.computeSavings(image);
+const isCrossOrigin=!URL.originsMatch(pageURL,image.url);
+const jpegSavings=UsesOptimizedImages.computeSavings({...image,jpegSize});
 
 items.push({
 url,
-fromProtocol:image.fromProtocol,
-isCrossOrigin:!image.isSameOrigin,
+fromProtocol,
+isCrossOrigin,
 totalBytes:image.originalSize,
 wastedBytes:jpegSavings.bytes});
 
@@ -3918,7 +3992,7 @@ module.exports=UsesOptimizedImages;
 module.exports.UIStrings=UIStrings;
 
 }).call(this,"/lighthouse-core/audits/byte-efficiency/uses-optimized-images.js");
-},{"../../lib/i18n/i18n.js":59,"../../lib/url-shim":"url","./byte-efficiency-audit":4}],"../audits/byte-efficiency/uses-responsive-images":[function(require,module,exports){
+},{"../../lib/i18n/i18n.js":63,"../../lib/url-shim":"url","./byte-efficiency-audit":4}],"../audits/byte-efficiency/uses-responsive-images":[function(require,module,exports){
 (function(__filename){
 
 
@@ -3964,7 +4038,7 @@ id:'uses-responsive-images',
 title:str_(UIStrings.title),
 description:str_(UIStrings.description),
 scoreDisplayMode:ByteEfficiencyAudit.SCORING_MODES.NUMERIC,
-requiredArtifacts:['ImageUsage','ViewportDimensions','devtoolsLogs','traces']};
+requiredArtifacts:['ImageElements','ViewportDimensions','devtoolsLogs','traces']};
 
 }
 
@@ -3975,15 +4049,15 @@ requiredArtifacts:['ImageUsage','ViewportDimensions','devtoolsLogs','traces']};
 
 static computeWaste(image,DPR){
 
-if(!image.networkRecord){
+if(!image.resourceSize){
 return null;
 }
 
 const url=URL.elideDataURI(image.src);
 const actualPixels=image.naturalWidth*image.naturalHeight;
-const usedPixels=image.clientWidth*image.clientHeight*Math.pow(DPR,2);
+const usedPixels=image.displayedWidth*image.displayedHeight*Math.pow(DPR,2);
 const wastedRatio=1-usedPixels/actualPixels;
-const totalBytes=image.networkRecord.resourceSize;
+const totalBytes=image.resourceSize;
 const wastedBytes=Math.round(totalBytes*wastedRatio);
 
 
@@ -4009,7 +4083,7 @@ wastedPercent:100*wastedRatio};
 
 
 static audit_(artifacts){
-const images=artifacts.ImageUsage;
+const images=artifacts.ImageElements;
 const DPR=artifacts.ViewportDimensions.devicePixelRatio;
 
 
@@ -4018,7 +4092,7 @@ const warnings=[];
 const resultsMap=new Map();
 images.forEach(image=>{
 
-if(!image.networkRecord||image.networkRecord.mimeType==='image/svg+xml'){
+if(!image.resourceSize||image.mimeType==='image/svg+xml'){
 return;
 }
 
@@ -4061,7 +4135,7 @@ module.exports=UsesResponsiveImages;
 module.exports.UIStrings=UIStrings;
 
 }).call(this,"/lighthouse-core/audits/byte-efficiency/uses-responsive-images.js");
-},{"../../lib/i18n/i18n.js":59,"../../lib/sentry":69,"../../lib/url-shim":"url","./byte-efficiency-audit":4}],"../audits/byte-efficiency/uses-text-compression":[function(require,module,exports){
+},{"../../lib/i18n/i18n.js":63,"../../lib/sentry":74,"../../lib/url-shim":"url","./byte-efficiency-audit":4}],"../audits/byte-efficiency/uses-text-compression":[function(require,module,exports){
 (function(__filename){
 
 
@@ -4165,7 +4239,7 @@ module.exports=ResponsesAreCompressed;
 module.exports.UIStrings=UIStrings;
 
 }).call(this,"/lighthouse-core/audits/byte-efficiency/uses-text-compression.js");
-},{"../../lib/i18n/i18n.js":59,"../../lib/url-shim":"url","./byte-efficiency-audit":4}],"../audits/byte-efficiency/uses-webp-images":[function(require,module,exports){
+},{"../../lib/i18n/i18n.js":63,"../../lib/url-shim":"url","./byte-efficiency-audit":4}],"../audits/byte-efficiency/uses-webp-images":[function(require,module,exports){
 (function(__filename){
 
 
@@ -4222,8 +4296,28 @@ return{bytes,percent};
 
 
 
+static estimateWebPSizeFromDimensions(imageElement){
+const totalPixels=imageElement.naturalWidth*imageElement.naturalHeight;
+
+
+
+
+
+const expectedBytesPerPixel=2*1/10;
+return Math.round(totalPixels*expectedBytesPerPixel);
+}
+
+
+
+
+
 static audit_(artifacts){
+const pageURL=artifacts.URL.finalUrl;
 const images=artifacts.OptimizedImages;
+const imageElements=artifacts.ImageElements;
+
+const imageElementsByURL=new Map();
+imageElements.forEach(img=>imageElementsByURL.set(img.src,img));
 
 
 const items=[];
@@ -4232,17 +4326,32 @@ for(const image of images){
 if(image.failed){
 warnings.push(`Unable to decode ${URL.getURLDisplayName(image.url)}`);
 continue;
-}else if(image.originalSize<image.webpSize+IGNORE_THRESHOLD_IN_BYTES){
+}
+
+let webpSize=image.webpSize;
+let fromProtocol=true;
+
+if(typeof webpSize==='undefined'){
+const imageElement=imageElementsByURL.get(image.url);
+if(!imageElement){
+warnings.push(`Unable to locate resource ${URL.getURLDisplayName(image.url)}`);
 continue;
 }
 
+webpSize=UsesWebPImages.estimateWebPSizeFromDimensions(imageElement);
+fromProtocol=false;
+}
+
+if(image.originalSize<webpSize+IGNORE_THRESHOLD_IN_BYTES)continue;
+
 const url=URL.elideDataURI(image.url);
-const webpSavings=UsesWebPImages.computeSavings(image);
+const isCrossOrigin=!URL.originsMatch(pageURL,image.url);
+const webpSavings=UsesWebPImages.computeSavings({...image,webpSize:webpSize});
 
 items.push({
 url,
-fromProtocol:image.fromProtocol,
-isCrossOrigin:!image.isSameOrigin,
+fromProtocol,
+isCrossOrigin,
 totalBytes:image.originalSize,
 wastedBytes:webpSavings.bytes});
 
@@ -4268,7 +4377,7 @@ module.exports=UsesWebPImages;
 module.exports.UIStrings=UIStrings;
 
 }).call(this,"/lighthouse-core/audits/byte-efficiency/uses-webp-images.js");
-},{"../../lib/i18n/i18n.js":59,"../../lib/url-shim":"url","./byte-efficiency-audit":4}],"../audits/content-width":[function(require,module,exports){
+},{"../../lib/i18n/i18n.js":63,"../../lib/url-shim":"url","./byte-efficiency-audit":4}],"../audits/content-width":[function(require,module,exports){
 
 
 
@@ -4290,7 +4399,7 @@ failureTitle:'Content is not sized correctly for the viewport',
 description:'If the width of your app\'s content doesn\'t match the width '+
 'of the viewport, your app might not be optimized for mobile screens. '+
 '[Learn more](https://developers.google.com/web/tools/lighthouse/audits/content-sized-correctly-for-viewport).',
-requiredArtifacts:['ViewportDimensions','HostUserAgent']};
+requiredArtifacts:['ViewportDimensions','TestedAsMobileDevice']};
 
 }
 
@@ -4298,19 +4407,13 @@ requiredArtifacts:['ViewportDimensions','HostUserAgent']};
 
 
 
-
-static audit(artifacts,context){
-const userAgent=artifacts.HostUserAgent;
+static audit(artifacts){
+const IsMobile=artifacts.TestedAsMobileDevice;
 const viewportWidth=artifacts.ViewportDimensions.innerWidth;
 const windowWidth=artifacts.ViewportDimensions.outerWidth;
 const widthsMatch=viewportWidth===windowWidth;
 
-
-const isMobileHost=userAgent.includes('Android')||userAgent.includes('Mobile');
-const isMobile=context.settings.emulatedFormFactor==='mobile'||
-context.settings.emulatedFormFactor!=='desktop'&&isMobileHost;
-
-if(isMobile){
+if(IsMobile){
 return{
 rawValue:widthsMatch,
 explanation:this.createExplanation(widthsMatch,artifacts.ViewportDimensions)};
@@ -4568,7 +4671,7 @@ module.exports=CriticalRequestChains;
 module.exports.UIStrings=UIStrings;
 
 }).call(this,"/lighthouse-core/audits/critical-request-chains.js");
-},{"../computed/critical-request-chains.js":9,"../lib/i18n/i18n.js":59,"./audit":3}],"../audits/deprecations":[function(require,module,exports){
+},{"../computed/critical-request-chains.js":9,"../lib/i18n/i18n.js":63,"./audit":3}],"../audits/deprecations":[function(require,module,exports){
 
 
 
@@ -4616,6 +4719,7 @@ lineNumber:log.entry.lineNumber};
 
 });
 
+
 const headings=[
 {key:'value',itemType:'code',text:'Deprecation / Warning'},
 {key:'url',itemType:'url',text:'URL'},
@@ -4643,7 +4747,88 @@ details};
 
 module.exports=Deprecations;
 
-},{"../report/html/renderer/util":74,"./audit":3}],"../audits/dobetterweb/appcache-manifest":[function(require,module,exports){
+},{"../report/html/renderer/util":80,"./audit":3}],"../audits/diagnostics":[function(require,module,exports){
+
+
+
+
+
+'use strict';
+
+const Audit=require('./audit.js');
+const MainThreadTasksComputed=require('../computed/main-thread-tasks.js');
+const NetworkRecordsComputed=require('../computed/network-records.js');
+const NetworkAnalysisComputed=require('../computed/network-analysis.js');
+const NetworkAnalyzer=require('../lib/dependency-graph/simulator/network-analyzer.js');
+
+class Diagnostics extends Audit{
+
+
+
+static get meta(){
+return{
+id:'diagnostics',
+scoreDisplayMode:Audit.SCORING_MODES.INFORMATIVE,
+title:'Diagnostics',
+description:'Collection of useful page vitals.',
+requiredArtifacts:['traces','devtoolsLogs']};
+
+}
+
+
+
+
+
+
+static async audit(artifacts,context){
+const trace=artifacts.traces[Audit.DEFAULT_PASS];
+const devtoolsLog=artifacts.devtoolsLogs[Audit.DEFAULT_PASS];
+const tasks=await MainThreadTasksComputed.request(trace,context);
+const records=await NetworkRecordsComputed.request(devtoolsLog,context);
+const analysis=await NetworkAnalysisComputed.request(devtoolsLog,context);
+
+const toplevelTasks=tasks.filter(t=>!t.parent);
+const mainDocumentTransferSize=NetworkAnalyzer.findMainDocument(records).transferSize;
+const totalByteWeight=records.reduce((sum,r)=>sum+(r.transferSize||0),0);
+const totalTaskTime=toplevelTasks.reduce((sum,t)=>sum+(t.duration||0),0);
+const maxRtt=Math.max(...analysis.additionalRttByOrigin.values())+analysis.rtt;
+const maxServerLatency=Math.max(...analysis.serverResponseTimeByOrigin.values());
+
+const diagnostics={
+numRequests:records.length,
+numScripts:records.filter(r=>r.resourceType==='Script').length,
+numStylesheets:records.filter(r=>r.resourceType==='Stylesheet').length,
+numFonts:records.filter(r=>r.resourceType==='Font').length,
+numTasks:toplevelTasks.length,
+numTasksOver10ms:toplevelTasks.filter(t=>t.duration>10).length,
+numTasksOver25ms:toplevelTasks.filter(t=>t.duration>25).length,
+numTasksOver50ms:toplevelTasks.filter(t=>t.duration>50).length,
+numTasksOver100ms:toplevelTasks.filter(t=>t.duration>100).length,
+numTasksOver500ms:toplevelTasks.filter(t=>t.duration>500).length,
+rtt:analysis.rtt,
+throughput:analysis.throughput,
+maxRtt,
+maxServerLatency,
+totalByteWeight,
+totalTaskTime,
+mainDocumentTransferSize};
+
+
+return{
+score:1,
+rawValue:1,
+details:{
+type:'diagnostic',
+
+items:[diagnostics]}};
+
+
+}}
+
+
+module.exports=Diagnostics;
+
+},{"../computed/main-thread-tasks.js":12,"../computed/network-analysis.js":30,"../computed/network-records.js":31,"../lib/dependency-graph/simulator/network-analyzer.js":57,"./audit.js":3}],"../audits/dobetterweb/appcache-manifest":[function(require,module,exports){
 
 
 
@@ -4870,6 +5055,7 @@ context.options.scorePODR,
 context.options.scoreMedian);
 
 
+
 const headings=[
 {key:'statistic',itemType:'text',text:str_(UIStrings.columnStatistic)},
 {key:'element',itemType:'code',text:str_(UIStrings.columnElement)},
@@ -4917,7 +5103,7 @@ module.exports=DOMSize;
 module.exports.UIStrings=UIStrings;
 
 }).call(this,"/lighthouse-core/audits/dobetterweb/dom-size.js");
-},{"../../lib/i18n/i18n.js":59,"../../report/html/renderer/util.js":74,"../audit":3}],"../audits/dobetterweb/external-anchors-use-rel-noopener":[function(require,module,exports){
+},{"../../lib/i18n/i18n.js":63,"../../report/html/renderer/util.js":80,"../audit":3}],"../audits/dobetterweb/external-anchors-use-rel-noopener":[function(require,module,exports){
 
 
 
@@ -4940,7 +5126,7 @@ failureTitle:'Links to cross-origin destinations are unsafe',
 description:'Add `rel="noopener"` or `rel="noreferrer"` to any external links to improve '+
 'performance and prevent security vulnerabilities. '+
 '[Learn more](https://developers.google.com/web/tools/lighthouse/audits/noopener).',
-requiredArtifacts:['URL','AnchorsWithNoRelNoopener']};
+requiredArtifacts:['URL','AnchorElements']};
 
 }
 
@@ -4952,8 +5138,10 @@ static audit(artifacts){
 
 const warnings=[];
 const pageHost=new URL(artifacts.URL.finalUrl).host;
+const failingAnchors=artifacts.AnchorElements.
+filter(anchor=>anchor.target==='_blank'&&!anchor.rel.includes('noopener')&&
+!anchor.rel.includes('noreferrer')).
 
-const failingAnchors=artifacts.AnchorsWithNoRelNoopener.
 filter(anchor=>{
 try{
 return new URL(anchor.href).host!==pageHost;
@@ -4974,6 +5162,7 @@ rel:anchor.rel||'',
 outerHTML:anchor.outerHTML||''};
 
 });
+
 
 const headings=[
 {key:'href',itemType:'url',text:'URL'},
@@ -5036,6 +5225,7 @@ static audit(artifacts){
 
 const results=ViolationAudit.getViolationResults(artifacts,/geolocation/);
 
+
 const headings=[
 {key:'url',itemType:'url',text:'URL'},
 {key:'label',itemType:'text',text:'Location'}];
@@ -5091,8 +5281,9 @@ requiredArtifacts:['JSLibraries']};
 static audit(artifacts){
 const libDetails=artifacts.JSLibraries.map(lib=>({
 name:lib.name,
-version:lib.version,
-npm:lib.npmPkgName||null}));
+version:lib.version||undefined,
+npm:lib.npmPkgName||undefined}));
+
 
 
 const headings=[
@@ -5147,6 +5338,7 @@ requiredArtifacts:['ChromeConsoleMessages']};
 
 static audit(artifacts){
 const results=ViolationAudit.getViolationResults(artifacts,/document\.write/);
+
 
 const headings=[
 {key:'url',itemType:'url',text:'URL'},
@@ -5251,11 +5443,12 @@ return version;
 
 
 
-static getVulnerabilities(normalizedVersion,lib){
-const snykDB=NoVulnerableLibrariesAudit.snykDB;
+
+static getVulnerabilities(normalizedVersion,lib,snykDB){
 if(!lib.npmPkgName||!snykDB.npm[lib.npmPkgName]){
 return[];
 }
+
 
 try{
 semver.satisfies(normalizedVersion,'*');
@@ -5266,11 +5459,18 @@ Sentry.captureException(err,{level:'warning'});
 return[];
 }
 
-const snykInfo=snykDB.npm[lib.npmPkgName];
-const vulns=snykInfo.
-filter(vuln=>semver.satisfies(normalizedVersion,vuln.semver.vulnerable[0])).
 
-map(vuln=>{
+const vulnCandidatesForLib=snykDB.npm[lib.npmPkgName];
+const matchingVulns=vulnCandidatesForLib.filter(vulnCandidate=>{
+
+
+const hasMatchingVersion=vulnCandidate.semver.vulnerable.some(vulnSemverRange=>
+semver.satisfies(normalizedVersion,vulnSemverRange));
+
+return hasMatchingVersion;
+});
+
+const vulns=matchingVulns.map(vuln=>{
 return{
 severity:vuln.severity,
 numericSeverity:this.severityMap[vuln.severity],
@@ -5298,6 +5498,8 @@ return sortedVulns[0].severity;
 
 static audit(artifacts){
 const foundLibraries=artifacts.JSLibraries;
+const snykDB=NoVulnerableLibrariesAudit.snykDB;
+
 if(!foundLibraries.length){
 return{
 rawValue:true};
@@ -5310,7 +5512,7 @@ const vulnerabilityResults=[];
 
 const libraryVulns=foundLibraries.map(lib=>{
 const version=this.normalizeVersion(lib.version)||'';
-const vulns=this.getVulnerabilities(version,lib);
+const vulns=this.getVulnerabilities(version,lib,snykDB);
 const vulnCount=vulns.length;
 totalVulns+=vulnCount;
 
@@ -5345,6 +5547,7 @@ displayValue=`${totalVulns} vulnerabilities detected`;
 displayValue=`${totalVulns} vulnerability detected`;
 }
 
+
 const headings=[
 {key:'detectedLib',itemType:'link',text:'Library Version'},
 {key:'vulnCount',itemType:'text',text:'Vulnerability Count'},
@@ -5366,7 +5569,7 @@ details};
 
 module.exports=NoVulnerableLibrariesAudit;
 
-},{"../../../third-party/snyk/snapshot.json":161,"../../lib/sentry":69,"../audit":3,"semver":151}],"../audits/dobetterweb/notification-on-start":[function(require,module,exports){
+},{"../../../third-party/snyk/snapshot.json":168,"../../lib/sentry":74,"../audit":3,"semver":158}],"../audits/dobetterweb/notification-on-start":[function(require,module,exports){
 
 
 
@@ -5404,6 +5607,7 @@ requiredArtifacts:['ChromeConsoleMessages']};
 
 static audit(artifacts){
 const results=ViolationAudit.getViolationResults(artifacts,/notification permission/);
+
 
 const headings=[
 {key:'url',itemType:'url',text:'URL'},
@@ -5463,6 +5667,7 @@ items.push({
 node:{type:'node',snippet:input.snippet}});
 
 });
+
 
 const headings=[
 {key:'node',itemType:'node',text:'Failing Elements'}];
@@ -5528,6 +5733,9 @@ const seenURLs=new Set();
 
 const resources=networkRecords.filter(record=>{
 
+
+if(record.fetchedViaServiceWorker)return false;
+
 const isOldHttp=/HTTP\/[01][.\d]?/i.test(record.protocol);
 if(!isOldHttp)return false;
 const requestHost=new URL(record.url).host;
@@ -5551,6 +5759,7 @@ displayValue=
 displayValue=`${resources.length} request not served via HTTP/2`;
 }
 
+
 const headings=[
 {key:'url',itemType:'url',text:'URL'},
 {key:'protocol',itemType:'text',text:'Protocol'}];
@@ -5573,7 +5782,7 @@ details};
 
 module.exports=UsesHTTP2Audit;
 
-},{"../../computed/network-records.js":29,"../../lib/url-shim":"url","../../report/html/renderer/util.js":74,"../audit":3}],"../audits/dobetterweb/uses-passive-event-listeners":[function(require,module,exports){
+},{"../../computed/network-records.js":31,"../../lib/url-shim":"url","../../report/html/renderer/util.js":80,"../audit":3}],"../audits/dobetterweb/uses-passive-event-listeners":[function(require,module,exports){
 
 
 
@@ -5611,6 +5820,7 @@ requiredArtifacts:['ChromeConsoleMessages']};
 
 static audit(artifacts){
 const results=ViolationAudit.getViolationResults(artifacts,/passive event listener/);
+
 
 const headings=[
 {key:'url',itemType:'url',text:'URL'},
@@ -5694,6 +5904,7 @@ url:entry.exceptionDetails.url};
 
 const tableRows=consoleRows.concat(runtimeExRows);
 
+
 const headings=[
 {key:'url',itemType:'url',text:'URL'},
 {key:'description',itemType:'code',text:'Description'}];
@@ -5765,7 +5976,7 @@ data:finalScreenshot.datauri}};
 
 module.exports=FinalScreenshot;
 
-},{"../computed/screenshots.js":31,"../lib/lh-error":63,"./audit":3}],"../audits/font-display":[function(require,module,exports){
+},{"../computed/screenshots.js":33,"../lib/lh-error":67,"./audit":3}],"../audits/font-display":[function(require,module,exports){
 (function(__filename){
 
 
@@ -5776,7 +5987,7 @@ module.exports=FinalScreenshot;
 
 const Audit=require('./audit');
 const URL=require('../lib/url-shim').URL;
-const PASSING_FONT_DISPLAY_REGEX=/block|fallback|optional|swap/;
+const PASSING_FONT_DISPLAY_REGEX=/^(block|fallback|optional|swap)$/;
 const CSS_URL_REGEX=/url\((.*?)\)/;
 const CSS_URL_GLOBAL_REGEX=new RegExp(CSS_URL_REGEX,'g');
 const i18n=require('../lib/i18n/i18n.js');
@@ -5821,16 +6032,18 @@ const passingURLs=new Set();
 
 for(const stylesheet of artifacts.CSSUsage.stylesheets){
 
-const newlinesStripped=stylesheet.content.replace(/\n/g,' ');
+const newlinesStripped=stylesheet.content.replace(/(\r|\n)+/g,' ');
 
 const fontFaceDeclarations=newlinesStripped.match(/@font-face\s*{(.*?)}/g)||[];
 
 for(const declaration of fontFaceDeclarations){
-const rawFontDisplay=declaration.match(/font-display:(.*?);/);
+
+
+const rawFontDisplay=declaration.match(/font-display\s*:\s*(\w+)\s*(;|\})/);
 
 if(!rawFontDisplay)continue;
 
-const hasPassingFontDisplay=PASSING_FONT_DISPLAY_REGEX.test(rawFontDisplay[0]);
+const hasPassingFontDisplay=PASSING_FONT_DISPLAY_REGEX.test(rawFontDisplay[1]);
 if(!hasPassingFontDisplay)continue;
 
 
@@ -5881,6 +6094,8 @@ const results=networkRecords.
 filter(record=>record.resourceType==='Font').
 
 filter(record=>!passingFontURLs.has(record.url)).
+
+filter(record=>!/^data:/.test(record.url)).
 map(record=>{
 
 
@@ -5891,6 +6106,7 @@ url:record.url,
 wastedMs};
 
 });
+
 
 const headings=[
 {key:'url',itemType:'url',text:str_(i18n.UIStrings.columnURL)},
@@ -5911,7 +6127,7 @@ module.exports=FontDisplay;
 module.exports.UIStrings=UIStrings;
 
 }).call(this,"/lighthouse-core/audits/font-display.js");
-},{"../computed/network-records.js":29,"../lib/i18n/i18n.js":59,"../lib/sentry.js":69,"../lib/url-shim":"url","./audit":3}],"../audits/image-aspect-ratio":[function(require,module,exports){
+},{"../computed/network-records.js":31,"../lib/i18n/i18n.js":63,"../lib/sentry.js":74,"../lib/url-shim":"url","./audit":3}],"../audits/image-aspect-ratio":[function(require,module,exports){
 
 
 
@@ -5943,7 +6159,7 @@ title:'Displays images with correct aspect ratio',
 failureTitle:'Displays images with incorrect aspect ratio',
 description:'Image display dimensions should match natural aspect ratio. '+
 '[Learn more](https://developers.google.com/web/tools/lighthouse/audits/aspect-ratio).',
-requiredArtifacts:['ImageUsage']};
+requiredArtifacts:['ImageElements']};
 
 }
 
@@ -5954,10 +6170,10 @@ requiredArtifacts:['ImageUsage']};
 static computeAspectRatios(image){
 const url=URL.elideDataURI(image.src);
 const actualAspectRatio=image.naturalWidth/image.naturalHeight;
-const displayedAspectRatio=image.width/image.height;
+const displayedAspectRatio=image.displayedWidth/image.displayedHeight;
 
-const targetDisplayHeight=image.width/actualAspectRatio;
-const doRatiosMatch=Math.abs(targetDisplayHeight-image.height)<THRESHOLD_PX;
+const targetDisplayHeight=image.displayedWidth/actualAspectRatio;
+const doRatiosMatch=Math.abs(targetDisplayHeight-image.displayedHeight)<THRESHOLD_PX;
 
 if(!Number.isFinite(actualAspectRatio)||
 !Number.isFinite(displayedAspectRatio)){
@@ -5966,7 +6182,7 @@ return new Error(`Invalid image sizing information ${url}`);
 
 return{
 url,
-displayedAspectRatio:`${image.width} x ${image.height}
+displayedAspectRatio:`${image.displayedWidth} x ${image.displayedHeight}
         (${displayedAspectRatio.toFixed(2)})`,
 actualAspectRatio:`${image.naturalWidth} x ${image.naturalHeight}
         (${actualAspectRatio.toFixed(2)})`,
@@ -5979,7 +6195,7 @@ doRatiosMatch};
 
 
 static audit(artifacts){
-const images=artifacts.ImageUsage;
+const images=artifacts.ImageElements;
 
 
 const warnings=[];
@@ -5989,12 +6205,15 @@ images.filter(image=>{
 
 
 
-return image.networkRecord&&
-image.networkRecord.mimeType!=='image/svg+xml'&&
+
+
+return!image.isCss&&
+image.mimeType&&
+image.mimeType!=='image/svg+xml'&&
 image.naturalHeight>5&&
 image.naturalWidth>5&&
-image.width&&
-image.height&&
+image.displayedWidth&&
+image.displayedHeight&&
 !image.usesObjectFit;
 }).forEach(image=>{
 const wellDefinedImage=image;
@@ -6006,6 +6225,7 @@ return;
 
 if(!processed.doRatiosMatch)results.push(processed);
 });
+
 
 const headings=[
 {key:'url',itemType:'thumbnail',text:''},
@@ -6061,7 +6281,7 @@ failureTitle:'Web app manifest does not meet the installability requirements',
 description:'Browsers can proactively prompt users to add your app to their homescreen, '+
 'which can lead to higher engagement. '+
 '[Learn more](https://developers.google.com/web/tools/lighthouse/audits/install-prompt).',
-requiredArtifacts:['URL','Manifest']};
+requiredArtifacts:['URL','WebAppManifest']};
 
 }
 
@@ -6106,7 +6326,7 @@ return failures;
 
 
 static async audit_(artifacts,context){
-const manifestValues=await ManifestValues.request(artifacts.Manifest,context);
+const manifestValues=await ManifestValues.request(artifacts.WebAppManifest,context);
 const manifestFailures=InstallableManifest.assessManifest(manifestValues);
 
 return{
@@ -6185,6 +6405,7 @@ displayValue=`${insecureURLs.length} insecure request found`;
 
 const items=Array.from(new Set(insecureURLs)).map(url=>({url}));
 
+
 const headings=[
 {key:'url',itemType:'url',text:'Insecure URL'}];
 
@@ -6203,7 +6424,7 @@ details:Audit.makeTableDetails(headings,items)};
 
 module.exports=HTTPS;
 
-},{"../computed/network-records.js":29,"../lib/url-shim":"url","../report/html/renderer/util":74,"./audit":3}],"../audits/load-fast-enough-for-pwa":[function(require,module,exports){
+},{"../computed/network-records.js":31,"../lib/url-shim":"url","../report/html/renderer/util":80,"./audit":3}],"../audits/load-fast-enough-for-pwa":[function(require,module,exports){
 (function(__filename){
 
 
@@ -6311,7 +6532,69 @@ module.exports=LoadFastEnough4Pwa;
 module.exports.UIStrings=UIStrings;
 
 }).call(this,"/lighthouse-core/audits/load-fast-enough-for-pwa.js");
-},{"../computed/metrics/interactive.js":18,"../config/constants":36,"../lib/i18n/i18n.js":59,"./audit":3,"lodash.isequal":114}],"../audits/mainthread-work-breakdown":[function(require,module,exports){
+},{"../computed/metrics/interactive.js":18,"../config/constants":40,"../lib/i18n/i18n.js":63,"./audit":3,"lodash.isequal":121}],"../audits/main-thread-tasks":[function(require,module,exports){
+
+
+
+
+
+'use strict';
+
+const Audit=require('./audit.js');
+const MainThreadTasksComputed=require('../computed/main-thread-tasks.js');
+
+class MainThreadTasks extends Audit{
+
+
+
+static get meta(){
+return{
+id:'main-thread-tasks',
+scoreDisplayMode:Audit.SCORING_MODES.INFORMATIVE,
+title:'Tasks',
+description:'Lists the toplevel main thread tasks that executed during page load.',
+requiredArtifacts:['traces']};
+
+}
+
+
+
+
+
+
+static async audit(artifacts,context){
+const trace=artifacts.traces[Audit.DEFAULT_PASS];
+const tasks=await MainThreadTasksComputed.request(trace,context);
+
+const results=tasks.
+
+filter(task=>task.duration>5&&!task.parent).
+map(task=>{
+return{
+duration:task.duration,
+startTime:task.startTime};
+
+});
+
+
+const headings=[
+{key:'startTime',itemType:'ms',granularity:1,text:'Start Time'},
+{key:'duration',itemType:'ms',granularity:1,text:'End Time'}];
+
+
+const tableDetails=Audit.makeTableDetails(headings,results);
+
+return{
+score:1,
+rawValue:results.length,
+details:tableDetails};
+
+}}
+
+
+module.exports=MainThreadTasks;
+
+},{"../computed/main-thread-tasks.js":12,"./audit.js":3}],"../audits/mainthread-work-breakdown":[function(require,module,exports){
 (function(__filename){
 
 
@@ -6420,6 +6703,7 @@ duration:duration};
 
 });
 
+
 const headings=[
 {key:'groupLabel',itemType:'text',text:str_(UIStrings.columnCategory)},
 {key:'duration',itemType:'ms',granularity:1,text:str_(i18n.UIStrings.columnTimeSpent)}];
@@ -6447,7 +6731,7 @@ module.exports=MainThreadWorkBreakdown;
 module.exports.UIStrings=UIStrings;
 
 }).call(this,"/lighthouse-core/audits/mainthread-work-breakdown.js");
-},{"../computed/main-thread-tasks.js":12,"../lib/i18n/i18n.js":59,"../lib/task-groups":71,"./audit":3}],"../audits/manual/pwa-cross-browser":[function(require,module,exports){
+},{"../computed/main-thread-tasks.js":12,"../lib/i18n/i18n.js":63,"../lib/task-groups":77,"./audit":3}],"../audits/manual/pwa-cross-browser":[function(require,module,exports){
 
 
 
@@ -6618,7 +6902,73 @@ module.exports=EstimatedInputLatency;
 module.exports.UIStrings=UIStrings;
 
 }).call(this,"/lighthouse-core/audits/metrics/estimated-input-latency.js");
-},{"../../computed/metrics/estimated-input-latency.js":14,"../../lib/i18n/i18n.js":59,"../audit":3}],"../audits/metrics/first-contentful-paint":[function(require,module,exports){
+},{"../../computed/metrics/estimated-input-latency.js":14,"../../lib/i18n/i18n.js":63,"../audit":3}],"../audits/metrics/first-contentful-paint-3g":[function(require,module,exports){
+
+
+
+
+
+'use strict';
+
+const Audit=require('../audit.js');
+const regular3G=require('../../config/constants.js').throttling.mobileRegluar3G;
+const ComputedFcp=require('../../computed/metrics/first-contentful-paint.js');
+
+class FirstContentfulPaint3G extends Audit{
+
+
+
+static get meta(){
+return{
+id:'first-contentful-paint-3g',
+title:'First Contentful Paint (3G)',
+description:'First Contentful Paint 3G marks the time at which the first text or image is '+
+`painted while on a 3G network. [Learn more](https://developers.google.com/web/tools/lighthouse/audits/first-contentful-paint).`,
+scoreDisplayMode:Audit.SCORING_MODES.NUMERIC,
+requiredArtifacts:['traces','devtoolsLogs']};
+
+}
+
+
+
+
+static get defaultOptions(){
+return{
+
+
+scorePODR:3000,
+scoreMedian:6000};
+
+}
+
+
+
+
+
+
+static async audit(artifacts,context){
+const trace=artifacts.traces[Audit.DEFAULT_PASS];
+const devtoolsLog=artifacts.devtoolsLogs[Audit.DEFAULT_PASS];
+
+const settings={...context.settings,throttlingMethod:'simulate',throttling:regular3G};
+const metricComputationData={trace,devtoolsLog,settings};
+const metricResult=await ComputedFcp.request(metricComputationData,context);
+
+return{
+score:Audit.computeLogNormalScore(
+metricResult.timing,
+context.options.scorePODR,
+context.options.scoreMedian),
+
+rawValue:metricResult.timing,
+displayValue:`${metricResult.timing}\xa0ms`};
+
+}}
+
+
+module.exports=FirstContentfulPaint3G;
+
+},{"../../computed/metrics/first-contentful-paint.js":15,"../../config/constants.js":40,"../audit.js":3}],"../audits/metrics/first-contentful-paint":[function(require,module,exports){
 (function(__filename){
 
 
@@ -6695,7 +7045,7 @@ module.exports=FirstContentfulPaint;
 module.exports.UIStrings=UIStrings;
 
 }).call(this,"/lighthouse-core/audits/metrics/first-contentful-paint.js");
-},{"../../computed/metrics/first-contentful-paint.js":15,"../../lib/i18n/i18n.js":59,"../audit":3}],"../audits/metrics/first-cpu-idle":[function(require,module,exports){
+},{"../../computed/metrics/first-contentful-paint.js":15,"../../lib/i18n/i18n.js":63,"../audit":3}],"../audits/metrics/first-cpu-idle":[function(require,module,exports){
 (function(__filename){
 
 
@@ -6776,7 +7126,7 @@ module.exports=FirstCPUIdle;
 module.exports.UIStrings=UIStrings;
 
 }).call(this,"/lighthouse-core/audits/metrics/first-cpu-idle.js");
-},{"../../computed/metrics/first-cpu-idle.js":16,"../../lib/i18n/i18n.js":59,"../audit":3}],"../audits/metrics/first-meaningful-paint":[function(require,module,exports){
+},{"../../computed/metrics/first-cpu-idle.js":16,"../../lib/i18n/i18n.js":63,"../audit":3}],"../audits/metrics/first-meaningful-paint":[function(require,module,exports){
 (function(__filename){
 
 
@@ -6856,7 +7206,7 @@ module.exports=FirstMeaningfulPaint;
 module.exports.UIStrings=UIStrings;
 
 }).call(this,"/lighthouse-core/audits/metrics/first-meaningful-paint.js");
-},{"../../computed/metrics/first-meaningful-paint.js":17,"../../lib/i18n/i18n.js":59,"../audit":3}],"../audits/metrics/interactive":[function(require,module,exports){
+},{"../../computed/metrics/first-meaningful-paint.js":17,"../../lib/i18n/i18n.js":63,"../audit":3}],"../audits/metrics/interactive":[function(require,module,exports){
 (function(__filename){
 
 
@@ -6951,7 +7301,87 @@ module.exports=InteractiveMetric;
 module.exports.UIStrings=UIStrings;
 
 }).call(this,"/lighthouse-core/audits/metrics/interactive.js");
-},{"../../computed/metrics/interactive.js":18,"../../lib/i18n/i18n.js":59,"../audit":3}],"../audits/metrics/speed-index":[function(require,module,exports){
+},{"../../computed/metrics/interactive.js":18,"../../lib/i18n/i18n.js":63,"../audit":3}],"../audits/metrics/max-potential-fid":[function(require,module,exports){
+(function(__filename){
+
+
+
+
+
+'use strict';
+
+const Audit=require('../audit');
+const ComputedFid=require('../../computed/metrics/max-potential-fid.js');
+const i18n=require('../../lib/i18n/i18n');
+
+const UIStrings={
+
+title:'Max Potential FID',
+
+description:'The potential First Input Delay that your users could experience is the '+
+'duration, in milliseconds, of the longest task.'};
+
+
+const str_=i18n.createMessageInstanceIdFn(__filename,UIStrings);
+
+
+
+
+
+
+class MaxPotentialFID extends Audit{
+
+
+
+static get meta(){
+return{
+id:'max-potential-fid',
+title:str_(UIStrings.title),
+description:str_(UIStrings.description),
+scoreDisplayMode:Audit.SCORING_MODES.NUMERIC,
+requiredArtifacts:['traces']};
+
+}
+
+
+
+
+static get defaultOptions(){
+return{
+
+scorePODR:100,
+scoreMedian:250};
+
+}
+
+
+
+
+
+
+static async audit(artifacts,context){
+const trace=artifacts.traces[Audit.DEFAULT_PASS];
+const devtoolsLog=artifacts.devtoolsLogs[Audit.DEFAULT_PASS];
+const metricComputationData={trace,devtoolsLog,settings:context.settings};
+const metricResult=await ComputedFid.request(metricComputationData,context);
+
+return{
+score:Audit.computeLogNormalScore(
+metricResult.timing,
+context.options.scorePODR,
+context.options.scoreMedian),
+
+rawValue:metricResult.timing,
+displayValue:str_(i18n.UIStrings.ms,{timeInMs:metricResult.timing})};
+
+}}
+
+
+module.exports=MaxPotentialFID;
+module.exports.UIStrings=UIStrings;
+
+}).call(this,"/lighthouse-core/audits/metrics/max-potential-fid.js");
+},{"../../computed/metrics/max-potential-fid.js":27,"../../lib/i18n/i18n":63,"../audit":3}],"../audits/metrics/speed-index":[function(require,module,exports){
 (function(__filename){
 
 
@@ -7030,7 +7460,7 @@ module.exports=SpeedIndex;
 module.exports.UIStrings=UIStrings;
 
 }).call(this,"/lighthouse-core/audits/metrics/speed-index.js");
-},{"../../computed/metrics/speed-index.js":27,"../../lib/i18n/i18n.js":59,"../audit":3}],"../audits/metrics":[function(require,module,exports){
+},{"../../computed/metrics/speed-index.js":29,"../../lib/i18n/i18n.js":63,"../audit":3}],"../audits/metrics":[function(require,module,exports){
 
 
 
@@ -7072,13 +7502,25 @@ const trace=artifacts.traces[Audit.DEFAULT_PASS];
 const devtoolsLog=artifacts.devtoolsLogs[Audit.DEFAULT_PASS];
 const metricComputationData={trace,devtoolsLog,settings:context.settings};
 
+
+
+
+
+
+
+
+
+const requestOrUndefined=(Artifact,artifact)=>{
+return Artifact.request(artifact,context).catch(_=>undefined);
+};
+
 const traceOfTab=await TraceOfTab.request(trace,context);
 const speedline=await Speedline.request(trace,context);
 const firstContentfulPaint=await FirstContentfulPaint.request(metricComputationData,context);
 const firstMeaningfulPaint=await FirstMeaningfulPaint.request(metricComputationData,context);
-const firstCPUIdle=await FirstCPUIdle.request(metricComputationData,context);
-const interactive=await Interactive.request(metricComputationData,context);
-const speedIndex=await SpeedIndex.request(metricComputationData,context);
+const firstCPUIdle=await requestOrUndefined(FirstCPUIdle,metricComputationData);
+const interactive=await requestOrUndefined(Interactive,metricComputationData);
+const speedIndex=await requestOrUndefined(SpeedIndex,metricComputationData);
 const estimatedInputLatency=await EstimatedInputLatency.request(metricComputationData,context);
 
 
@@ -7088,12 +7530,12 @@ firstContentfulPaint:firstContentfulPaint.timing,
 firstContentfulPaintTs:firstContentfulPaint.timestamp,
 firstMeaningfulPaint:firstMeaningfulPaint.timing,
 firstMeaningfulPaintTs:firstMeaningfulPaint.timestamp,
-firstCPUIdle:firstCPUIdle.timing,
-firstCPUIdleTs:firstCPUIdle.timestamp,
-interactive:interactive.timing,
-interactiveTs:interactive.timestamp,
-speedIndex:speedIndex.timing,
-speedIndexTs:speedIndex.timestamp,
+firstCPUIdle:firstCPUIdle&&firstCPUIdle.timing,
+firstCPUIdleTs:firstCPUIdle&&firstCPUIdle.timestamp,
+interactive:interactive&&interactive.timing,
+interactiveTs:interactive&&interactive.timestamp,
+speedIndex:speedIndex&&speedIndex.timing,
+speedIndexTs:speedIndex&&speedIndex.timestamp,
 estimatedInputLatency:estimatedInputLatency.timing,
 estimatedInputLatencyTs:estimatedInputLatency.timestamp,
 
@@ -7130,11 +7572,15 @@ metrics[key]=Math.round(value);
 }
 
 
-const details={items:[metrics]};
+const details={
+type:'diagnostic',
+
+items:[metrics]};
+
 
 return{
 score:1,
-rawValue:interactive.timing,
+rawValue:interactive&&interactive.timing||0,
 details};
 
 }}
@@ -7176,11 +7622,9 @@ details};
 
 
 
-
-
 module.exports=Metrics;
 
-},{"../computed/metrics/estimated-input-latency.js":14,"../computed/metrics/first-contentful-paint.js":15,"../computed/metrics/first-cpu-idle.js":16,"../computed/metrics/first-meaningful-paint.js":17,"../computed/metrics/interactive.js":18,"../computed/metrics/speed-index.js":27,"../computed/speedline.js":32,"../computed/trace-of-tab.js":33,"./audit":3}],"../audits/mixed-content":[function(require,module,exports){
+},{"../computed/metrics/estimated-input-latency.js":14,"../computed/metrics/first-contentful-paint.js":15,"../computed/metrics/first-cpu-idle.js":16,"../computed/metrics/first-meaningful-paint.js":17,"../computed/metrics/interactive.js":18,"../computed/metrics/speed-index.js":29,"../computed/speedline.js":34,"../computed/trace-of-tab.js":35,"./audit":3}],"../audits/mixed-content":[function(require,module,exports){
 
 
 
@@ -7312,6 +7756,7 @@ upgradeableResources.push(resource);
 const displayValue=`${Util.formatNumber(upgradeableResources.length)}
           ${upgradeableResources.length===1?'request':'requests'}`;
 
+
 const headings=[
 {key:'fullUrl',itemType:'url',text:'URL'}];
 
@@ -7332,7 +7777,7 @@ details};
 
 module.exports=MixedContent;
 
-},{"../computed/network-records.js":29,"../lib/url-shim":"url","../report/html/renderer/util":74,"./audit":3}],"../audits/network-requests":[function(require,module,exports){
+},{"../computed/network-records.js":31,"../lib/url-shim":"url","../report/html/renderer/util":80,"./audit":3}],"../audits/network-requests":[function(require,module,exports){
 
 
 
@@ -7376,16 +7821,27 @@ const timeToMs=time=>time<earliestStartTime||!Number.isFinite(time)?
 undefined:(time-earliestStartTime)*1000;
 
 const results=records.map(record=>{
+const endTimeDeltaMs=record.lrStatistics&&record.lrStatistics.endTimeDeltaMs;
+const TCPMs=record.lrStatistics&&record.lrStatistics.TCPMs;
+const requestMs=record.lrStatistics&&record.lrStatistics.requestMs;
+const responseMs=record.lrStatistics&&record.lrStatistics.responseMs;
+
 return{
 url:URL.elideDataURI(record.url),
 startTime:timeToMs(record.startTime),
 endTime:timeToMs(record.endTime),
 transferSize:record.transferSize,
+resourceSize:record.resourceSize,
 statusCode:record.statusCode,
 mimeType:record.mimeType,
-resourceType:record.resourceType};
+resourceType:record.resourceType,
+lrEndTimeDeltaMs:endTimeDeltaMs,
+lrTCPMs:TCPMs,
+lrRequestMs:requestMs,
+lrResponseMs:responseMs};
 
 });
+
 
 const headings=[
 {key:'url',itemType:'url',text:'URL'},
@@ -7397,6 +7853,13 @@ itemType:'bytes',
 displayUnit:'kb',
 granularity:1,
 text:'Transfer Size'},
+
+{
+key:'resourceSize',
+itemType:'bytes',
+displayUnit:'kb',
+granularity:1,
+text:'Resource Size'},
 
 {key:'statusCode',itemType:'text',text:'Status Code'},
 {key:'mimeType',itemType:'text',text:'MIME Type'},
@@ -7416,7 +7879,174 @@ details:tableDetails};
 
 module.exports=NetworkRequests;
 
-},{"../computed/network-records.js":29,"../lib/url-shim":"url","./audit":3}],"../audits/offline-start-url":[function(require,module,exports){
+},{"../computed/network-records.js":31,"../lib/url-shim":"url","./audit":3}],"../audits/network-rtt":[function(require,module,exports){
+(function(__filename){
+
+
+
+
+
+'use strict';
+
+const Audit=require('./audit.js');
+const i18n=require('../lib/i18n/i18n.js');
+const NetworkAnalysisComputed=require('../computed/network-analysis.js');
+
+const UIStrings={
+
+title:'Network Round Trip Times',
+
+description:'Network round trip times (RTT) have a large impact on performance. '+
+'If the RTT to an origin is high, it\'s an indication that servers closer to the user could '+
+'improve performance. [Learn more](https://hpbn.co/primer-on-latency-and-bandwidth/).'};
+
+
+const str_=i18n.createMessageInstanceIdFn(__filename,UIStrings);
+
+class NetworkRTT extends Audit{
+
+
+
+static get meta(){
+return{
+id:'network-rtt',
+scoreDisplayMode:Audit.SCORING_MODES.INFORMATIVE,
+title:str_(UIStrings.title),
+description:str_(UIStrings.description),
+requiredArtifacts:['devtoolsLogs']};
+
+}
+
+
+
+
+
+
+static async audit(artifacts,context){
+const devtoolsLog=artifacts.devtoolsLogs[Audit.DEFAULT_PASS];
+const analysis=await NetworkAnalysisComputed.request(devtoolsLog,context);
+
+
+let maxRtt=0;
+const baseRtt=analysis.rtt;
+
+const results=[];
+for(const[origin,additionalRtt]of analysis.additionalRttByOrigin.entries()){
+
+if(!origin.startsWith('http'))continue;
+
+const rtt=additionalRtt+baseRtt;
+results.push({origin,rtt});
+maxRtt=Number.isFinite(rtt)?Math.max(rtt,maxRtt):maxRtt;
+}
+
+results.sort((a,b)=>b.rtt-a.rtt);
+
+
+const headings=[
+{key:'origin',itemType:'text',text:str_(i18n.UIStrings.columnURL)},
+{key:'rtt',itemType:'ms',granularity:1,text:str_(i18n.UIStrings.columnTimeSpent)}];
+
+
+const tableDetails=Audit.makeTableDetails(headings,results);
+
+return{
+score:1,
+rawValue:maxRtt,
+displayValue:str_(i18n.UIStrings.ms,{timeInMs:maxRtt}),
+details:tableDetails};
+
+}}
+
+
+module.exports=NetworkRTT;
+module.exports.UIStrings=UIStrings;
+
+}).call(this,"/lighthouse-core/audits/network-rtt.js");
+},{"../computed/network-analysis.js":30,"../lib/i18n/i18n.js":63,"./audit.js":3}],"../audits/network-server-latency":[function(require,module,exports){
+(function(__filename){
+
+
+
+
+
+'use strict';
+
+const Audit=require('./audit');
+const i18n=require('../lib/i18n/i18n.js');
+const NetworkAnalysisComputed=require('../computed/network-analysis.js');
+
+const UIStrings={
+
+title:'Server Backend Latencies',
+
+description:'Server latencies can impact web performance. '+
+'If the server latency of an origin is high, it\'s an indication the server is overloaded '+
+'or has poor backend performance. [Learn more](https://hpbn.co/primer-on-web-performance/#analyzing-the-resource-waterfall).'};
+
+
+const str_=i18n.createMessageInstanceIdFn(__filename,UIStrings);
+
+class NetworkServerLatency extends Audit{
+
+
+
+static get meta(){
+return{
+id:'network-server-latency',
+scoreDisplayMode:Audit.SCORING_MODES.INFORMATIVE,
+title:str_(UIStrings.title),
+description:str_(UIStrings.description),
+requiredArtifacts:['devtoolsLogs']};
+
+}
+
+
+
+
+
+
+static async audit(artifacts,context){
+const devtoolsLog=artifacts.devtoolsLogs[Audit.DEFAULT_PASS];
+const analysis=await NetworkAnalysisComputed.request(devtoolsLog,context);
+
+
+let maxLatency=0;
+
+const results=[];
+for(const[origin,serverReponseTime]of analysis.serverResponseTimeByOrigin.entries()){
+
+if(!origin.startsWith('http'))continue;
+
+maxLatency=Math.max(serverReponseTime,maxLatency);
+results.push({origin,serverReponseTime});
+}
+
+results.sort((a,b)=>b.serverReponseTime-a.serverReponseTime);
+
+
+const headings=[
+{key:'origin',itemType:'text',text:str_(i18n.UIStrings.columnURL)},
+{key:'serverReponseTime',itemType:'ms',granularity:1,
+text:str_(i18n.UIStrings.columnTimeSpent)}];
+
+
+const tableDetails=Audit.makeTableDetails(headings,results);
+
+return{
+score:Math.max(1-maxLatency/500,0),
+rawValue:maxLatency,
+displayValue:str_(i18n.UIStrings.ms,{timeInMs:maxLatency}),
+details:tableDetails};
+
+}}
+
+
+module.exports=NetworkServerLatency;
+module.exports.UIStrings=UIStrings;
+
+}).call(this,"/lighthouse-core/audits/network-server-latency.js");
+},{"../computed/network-analysis.js":30,"../lib/i18n/i18n.js":63,"./audit":3}],"../audits/offline-start-url":[function(require,module,exports){
 
 
 
@@ -7436,7 +8066,7 @@ id:'offline-start-url',
 title:'start_url responds with a 200 when offline',
 failureTitle:'start_url does not respond with a 200 when offline',
 description:'A service worker enables your web app to be reliable in unpredictable network conditions. [Learn more](https://developers.google.com/web/tools/lighthouse/audits/http-200-when-offline).',
-requiredArtifacts:['Manifest','StartUrl']};
+requiredArtifacts:['WebAppManifest','StartUrl']};
 
 }
 
@@ -7448,7 +8078,7 @@ static audit(artifacts){
 
 
 const warnings=[];
-const manifest=artifacts.Manifest;
+const manifest=artifacts.WebAppManifest;
 if(manifest&&manifest.value&&manifest.value.start_url.warning){
 const manifestWarning=manifest.value.start_url.warning;
 warnings.push('We couldn\'t read the start_url from the manifest. As a result, the '+
@@ -7560,14 +8190,18 @@ return{
 score,
 rawValue:values.roughEstimateOfTTI,
 displayValue:Util.formatMilliseconds(values.roughEstimateOfTTI),
-details:{items:[values]}};
+details:{
+type:'diagnostic',
+
+items:[values]}};
+
 
 }}
 
 
 module.exports=PredictivePerf;
 
-},{"../computed/metrics/lantern-estimated-input-latency.js":19,"../computed/metrics/lantern-first-contentful-paint.js":20,"../computed/metrics/lantern-first-cpu-idle.js":21,"../computed/metrics/lantern-first-meaningful-paint.js":22,"../computed/metrics/lantern-interactive.js":23,"../computed/metrics/lantern-speed-index.js":25,"../report/html/renderer/util":74,"./audit":3}],"../audits/redirects-http":[function(require,module,exports){
+},{"../computed/metrics/lantern-estimated-input-latency.js":19,"../computed/metrics/lantern-first-contentful-paint.js":20,"../computed/metrics/lantern-first-cpu-idle.js":21,"../computed/metrics/lantern-first-meaningful-paint.js":22,"../computed/metrics/lantern-interactive.js":23,"../computed/metrics/lantern-speed-index.js":26,"../report/html/renderer/util":80,"./audit":3}],"../audits/redirects-http":[function(require,module,exports){
 
 
 
@@ -7735,7 +8369,7 @@ module.exports=Redirects;
 module.exports.UIStrings=UIStrings;
 
 }).call(this,"/lighthouse-core/audits/redirects.js");
-},{"../computed/main-resource.js":11,"../computed/metrics/lantern-interactive.js":23,"../computed/network-records.js":29,"../computed/trace-of-tab.js":33,"../lib/i18n/i18n.js":59,"./audit":3,"./byte-efficiency/byte-efficiency-audit":4}],"../audits/screenshot-thumbnails":[function(require,module,exports){
+},{"../computed/main-resource.js":11,"../computed/metrics/lantern-interactive.js":23,"../computed/network-records.js":31,"../computed/trace-of-tab.js":35,"../lib/i18n/i18n.js":63,"./audit":3,"./byte-efficiency/byte-efficiency-audit":4}],"../audits/screenshot-thumbnails":[function(require,module,exports){
 
 
 
@@ -7855,8 +8489,9 @@ frameForTimestamp=frame;
 });
 }
 let base64Data;
-if(cachedThumbnails.has(frameForTimestamp)){
-base64Data=cachedThumbnails.get(frameForTimestamp);
+const cachedThumbnail=cachedThumbnails.get(frameForTimestamp);
+if(cachedThumbnail){
+base64Data=cachedThumbnail;
 }else{
 const imageData=frameForTimestamp.getParsedImage();
 const thumbnailImageData=ScreenshotThumbnails.scaleImageToThumbnail(imageData);
@@ -7884,7 +8519,8 @@ items:thumbnails}};
 
 module.exports=ScreenshotThumbnails;
 
-},{"../computed/metrics/interactive.js":18,"../computed/speedline.js":32,"../lib/lh-error":63,"./audit":3,"jpeg-js":110}],"../audits/seo/canonical":[function(require,module,exports){
+},{"../computed/metrics/interactive.js":18,"../computed/speedline.js":34,"../lib/lh-error":67,"./audit":3,"jpeg-js":117}],"../audits/seo/canonical":[function(require,module,exports){
+(function(__filename){
 
 
 
@@ -7893,44 +8529,34 @@ module.exports=ScreenshotThumbnails;
 'use strict';
 
 const Audit=require('../audit');
-const LinkHeader=require('http-link-header');
 const URL=require('../../lib/url-shim');
 const MainResource=require('../../computed/main-resource.js');
-const LINK_HEADER='link';
+const i18n=require('../../lib/i18n/i18n.js');
+
+const UIStrings={
+
+title:'Document has a valid `rel=canonical`',
+
+failureTitle:'Document does not have a valid `rel=canonical`',
+
+description:'Canonical links suggest which URL to show in search results. '+
+'[Learn more](https://developers.google.com/web/tools/lighthouse/audits/canonical).',
+
+explanationConflict:'Multiple conflicting URLs ({urlList})',
+
+explanationInvalid:'Invalid URL ({url})',
+
+explanationRelative:'Relative URL ({url})',
+
+explanationPointsElsewhere:'Points to another `hreflang` location ({url})',
+
+explanationDifferentDomain:'Points to a different domain ({url})',
+
+explanationRoot:'Points to the domain\'s root URL (the homepage), '+
+'instead of an equivalent page of content'};
 
 
-
-
-
-function getCanonicalLinksFromHeader(headerValue){
-const linkHeader=LinkHeader.parse(headerValue);
-
-return linkHeader.get('rel','canonical').map(c=>c.uri);
-}
-
-
-
-
-
-function getHreflangsFromHeader(headerValue){
-const linkHeader=LinkHeader.parse(headerValue);
-
-return linkHeader.get('rel','alternate').map(h=>h.uri);
-}
-
-
-
-
-
-
-function isValidRelativeOrAbsoluteURL(url){
-try{
-new URL(url,'https://example.com/');
-return true;
-}catch(e){
-return false;
-}
-}
+const str_=i18n.createMessageInstanceIdFn(__filename,UIStrings);
 
 
 
@@ -7939,8 +8565,19 @@ return false;
 
 
 function getPrimaryDomain(url){
-return url.hostname.split('.').slice(-2).join('.');
+return url.hostname.
+split('.').
+slice(-2).
+join('.');
 }
+
+
+
+
+
+
+
+
 
 class Canonical extends Audit{
 
@@ -7949,11 +8586,10 @@ class Canonical extends Audit{
 static get meta(){
 return{
 id:'canonical',
-title:'Document has a valid `rel=canonical`',
-failureTitle:'Document does not have a valid `rel=canonical`',
-description:'Canonical links suggest which URL to show in search results. '+
-'[Learn more](https://developers.google.com/web/tools/lighthouse/audits/canonical).',
-requiredArtifacts:['Canonical','Hreflang','URL']};
+title:str_(UIStrings.title),
+failureTitle:str_(UIStrings.failureTitle),
+description:str_(UIStrings.description),
+requiredArtifacts:['LinkElements','URL']};
 
 }
 
@@ -7961,78 +8597,100 @@ requiredArtifacts:['Canonical','Hreflang','URL']};
 
 
 
+static collectCanonicalURLs(linkElements){
 
-static audit(artifacts,context){
-const devtoolsLog=artifacts.devtoolsLogs[Audit.DEFAULT_PASS];
+const uniqueCanonicalURLs=new Set();
 
-return MainResource.request({devtoolsLog,URL:artifacts.URL},context).
-then(mainResource=>{
-const baseURL=new URL(mainResource.url);
+const hreflangURLs=new Set();
 
-let canonicals=[];
 
-let hreflangs=[];
+let invalidCanonicalLink;
 
-mainResource.responseHeaders&&mainResource.responseHeaders.
-filter(h=>h.name.toLowerCase()===LINK_HEADER).
-forEach(h=>{
-canonicals=canonicals.concat(getCanonicalLinksFromHeader(h.value));
-hreflangs=hreflangs.concat(getHreflangsFromHeader(h.value));
-});
+let relativeCanonicallink;
+for(const link of linkElements){
 
-for(const canonical of artifacts.Canonical){
-if(canonical!==null){
-canonicals.push(canonical);
+
+if(link.source==='body')continue;
+
+if(link.rel==='canonical'){
+
+if(!link.hrefRaw)continue;
+
+
+if(!link.href)invalidCanonicalLink=link;else
+
+if(!URL.isValid(link.hrefRaw))relativeCanonicallink=link;else
+
+uniqueCanonicalURLs.add(link.href);
+}else if(link.rel==='alternate'){
+if(link.href&&link.hreflang)hreflangURLs.add(link.href);
 }
 }
 
+return{uniqueCanonicalURLs,hreflangURLs,invalidCanonicalLink,relativeCanonicallink};
+}
 
-canonicals=Array.from(new Set(canonicals));
 
-artifacts.Hreflang.forEach(({href})=>hreflangs.push(href));
 
-hreflangs=hreflangs.
-filter(href=>isValidRelativeOrAbsoluteURL(href)).
-map(href=>new URL(href,baseURL).href);
 
-if(canonicals.length===0){
+
+static findInvalidCanonicalURLReason(canonicalURLData){
+const{uniqueCanonicalURLs,invalidCanonicalLink,relativeCanonicallink}=canonicalURLData;
+
+
+if(invalidCanonicalLink){
+return{
+rawValue:false,
+explanation:str_(UIStrings.explanationInvalid,{url:invalidCanonicalLink.hrefRaw})};
+
+}
+
+
+if(relativeCanonicallink){
+return{
+rawValue:false,
+explanation:str_(UIStrings.explanationRelative,{url:relativeCanonicallink.hrefRaw})};
+
+}
+
+
+const canonicalURLs=Array.from(uniqueCanonicalURLs);
+
+
+if(canonicalURLs.length===0){
 return{
 rawValue:true,
 notApplicable:true};
 
 }
 
-if(canonicals.length>1){
+
+if(canonicalURLs.length>1){
 return{
 rawValue:false,
-explanation:`Multiple conflicting URLs (${canonicals.join(', ')})`};
+explanation:str_(UIStrings.explanationConflict,{urlList:canonicalURLs.join(', ')})};
 
 }
-
-const canonical=canonicals[0];
-
-if(!isValidRelativeOrAbsoluteURL(canonical)){
-return{
-rawValue:false,
-explanation:`Invalid URL (${canonical})`};
-
 }
 
-if(!URL.isValid(canonical)){
+
+
+
+
+
+
+static findCommonCanonicalURLMistakes(canonicalURLData,canonicalURL,baseURL){
+const{hreflangURLs}=canonicalURLData;
+
+
+if(
+hreflangURLs.has(baseURL.href)&&
+hreflangURLs.has(canonicalURL.href)&&
+baseURL.href!==canonicalURL.href)
+{
 return{
 rawValue:false,
-explanation:`Relative URL (${canonical})`};
-
-}
-
-const canonicalURL=new URL(canonical);
-
-
-if(hreflangs.includes(baseURL.href)&&hreflangs.includes(canonicalURL.href)&&
-baseURL.href!==canonicalURL.href){
-return{
-rawValue:false,
-explanation:`Points to another hreflang location (${baseURL.href})`};
+explanation:str_(UIStrings.explanationPointsElsewhere,{url:baseURL.href})};
 
 }
 
@@ -8041,29 +8699,60 @@ explanation:`Points to another hreflang location (${baseURL.href})`};
 if(getPrimaryDomain(canonicalURL)!==getPrimaryDomain(baseURL)){
 return{
 rawValue:false,
-explanation:`Points to a different domain (${canonicalURL})`};
+explanation:str_(UIStrings.explanationDifferentDomain,{url:canonicalURL})};
 
 }
 
 
-if(canonicalURL.origin===baseURL.origin&&
-canonicalURL.pathname==='/'&&baseURL.pathname!=='/'){
+if(
+canonicalURL.origin===baseURL.origin&&
+canonicalURL.pathname==='/'&&
+baseURL.pathname!=='/')
+{
 return{
 rawValue:false,
-explanation:'Points to a root of the same origin'};
+explanation:str_(UIStrings.explanationRoot)};
 
 }
+}
+
+
+
+
+
+
+static async audit(artifacts,context){
+const devtoolsLog=artifacts.devtoolsLogs[Audit.DEFAULT_PASS];
+
+const mainResource=await MainResource.request({devtoolsLog,URL:artifacts.URL},context);
+const baseURL=new URL(mainResource.url);
+const canonicalURLData=Canonical.collectCanonicalURLs(artifacts.LinkElements);
+
+
+const invalidURLAuditProduct=Canonical.findInvalidCanonicalURLReason(canonicalURLData);
+if(invalidURLAuditProduct)return invalidURLAuditProduct;
+
+
+const canonicalURL=new URL([...canonicalURLData.uniqueCanonicalURLs][0]);
+const mistakeAuditProduct=Canonical.findCommonCanonicalURLMistakes(
+canonicalURLData,
+canonicalURL,
+baseURL);
+
+
+if(mistakeAuditProduct)return mistakeAuditProduct;
 
 return{
 rawValue:true};
 
-});
 }}
 
 
 module.exports=Canonical;
+module.exports.UIStrings=UIStrings;
 
-},{"../../computed/main-resource.js":11,"../../lib/url-shim":"url","../audit":3,"http-link-header":94}],"../audits/seo/font-size":[function(require,module,exports){
+}).call(this,"/lighthouse-core/audits/seo/canonical.js");
+},{"../../computed/main-resource.js":11,"../../lib/i18n/i18n.js":63,"../../lib/url-shim":"url","../audit":3}],"../audits/seo/font-size":[function(require,module,exports){
 (function(__filename){
 
 
@@ -8077,7 +8766,7 @@ module.exports=Canonical;
 const URL=require('../../lib/url-shim');
 const i18n=require('../../lib/i18n/i18n.js');
 const Audit=require('../audit');
-const ViewportAudit=require('../viewport');
+const ComputedViewportMeta=require('../../computed/viewport-meta.js');
 const MINIMAL_PERCENTAGE_OF_LEGIBLE_TEXT=60;
 
 const UIStrings={
@@ -8088,7 +8777,15 @@ failureTitle:'Document doesn\'t use legible font sizes',
 
 description:'Font sizes less than 12px are too small to be legible and require mobile visitors to “pinch to zoom” in order to read. Strive to have >60% of page text ≥12px. [Learn more](https://developers.google.com/web/tools/lighthouse/audits/font-sizes).',
 
-displayValue:'{decimalProportion, number, extendedPercent} legible text'};
+displayValue:'{decimalProportion, number, extendedPercent} legible text',
+
+explanationViewport:'Text is illegible because there\'s no viewport meta tag optimized '+
+'for mobile screens.',
+
+explanation:'{decimalProportion, number, extendedPercent} of text is too small.',
+
+explanationWithDisclaimer:'{decimalProportion, number, extendedPercent} of text is too '+
+'small (based on {decimalProportionVisited, number, extendedPercent} sample).'};
 
 
 const str_=i18n.createMessageInstanceIdFn(__filename,UIStrings);
@@ -8266,7 +8963,7 @@ id:'font-size',
 title:str_(UIStrings.title),
 failureTitle:str_(UIStrings.failureTitle),
 description:str_(UIStrings.description),
-requiredArtifacts:['FontSize','URL','Viewport']};
+requiredArtifacts:['FontSize','URL','MetaElements','TestedAsMobileDevice']};
 
 }
 
@@ -8274,12 +8971,21 @@ requiredArtifacts:['FontSize','URL','Viewport']};
 
 
 
-static audit(artifacts){
-const hasViewportSet=ViewportAudit.audit(artifacts).rawValue;
-if(!hasViewportSet){
+
+static async audit(artifacts,context){
+if(!artifacts.TestedAsMobileDevice){
+
+return{
+rawValue:true,
+notApplicable:true};
+
+}
+
+const viewportMeta=await ComputedViewportMeta.request(artifacts,context);
+if(!viewportMeta.isMobileOptimized){
 return{
 rawValue:false,
-explanation:'Text is illegible because of a missing viewport config'};
+explanation:str_(UIStrings.explanationViewport)};
 
 }
 
@@ -8301,6 +9007,7 @@ const failingRules=getUniqueFailingRules(analyzedFailingNodesData);
 const percentageOfPassingText=
 (visitedTextLength-failingTextLength)/visitedTextLength*100;
 const pageUrl=artifacts.URL.finalUrl;
+
 
 const headings=[
 {key:'source',itemType:'url',text:'Source'},
@@ -8345,23 +9052,26 @@ fontSize:'≥ 12px'});
 }
 
 const decimalProportion=percentageOfPassingText/100;
-
 const displayValue=str_(UIStrings.displayValue,{decimalProportion});
 const details=Audit.makeTableDetails(headings,tableData);
 const passed=percentageOfPassingText>=MINIMAL_PERCENTAGE_OF_LEGIBLE_TEXT;
 
 let explanation;
 if(!passed){
-const percentageOfFailingText=parseFloat((100-percentageOfPassingText).toFixed(2));
-let disclaimer='';
+const percentageOfFailingText=(100-percentageOfPassingText)/100;
 
 
 if(visitedTextLength<totalTextLength){
-const percentageOfVisitedText=visitedTextLength/totalTextLength*100;
-disclaimer=` (based on ${percentageOfVisitedText.toFixed()}% sample)`;
-}
+const percentageOfVisitedText=visitedTextLength/totalTextLength;
+explanation=str_(UIStrings.explanationWithDisclaimer,
+{
+decimalProportion:percentageOfFailingText,
+decimalProportionVisited:percentageOfVisitedText});
 
-explanation=`${percentageOfFailingText}% of text is too small${disclaimer}.`;
+}else{
+explanation=str_(UIStrings.explanation,
+{decimalProportion:percentageOfFailingText});
+}
 }
 
 return{
@@ -8377,8 +9087,8 @@ module.exports=FontSize;
 module.exports.UIStrings=UIStrings;
 
 }).call(this,"/lighthouse-core/audits/seo/font-size.js");
-},{"../../lib/i18n/i18n.js":59,"../../lib/url-shim":"url","../audit":3,"../viewport":"../audits/viewport"}],"../audits/seo/hreflang":[function(require,module,exports){
-(function(global){
+},{"../../computed/viewport-meta.js":37,"../../lib/i18n/i18n.js":63,"../../lib/url-shim":"url","../audit":3}],"../audits/seo/hreflang":[function(require,module,exports){
+(function(global,__filename){
 
 
 
@@ -8387,11 +9097,22 @@ module.exports.UIStrings=UIStrings;
 'use strict';
 
 const Audit=require('../audit');
-const LinkHeader=require('http-link-header');
-const MainResource=require('../../computed/main-resource.js');
 const VALID_LANGS=importValidLangs();
-const LINK_HEADER='link';
 const NO_LANGUAGE='x-default';
+const i18n=require('../../lib/i18n/i18n.js');
+
+const UIStrings={
+
+title:'Document has a valid `hreflang`',
+
+failureTitle:'Document doesn\'t have a valid `hreflang`',
+
+description:'hreflang links tell search engines what version of a page they should '+
+'list in search results for a given language or region. [Learn more]'+
+'(https://developers.google.com/web/tools/lighthouse/audits/hreflang).'};
+
+
+const str_=i18n.createMessageInstanceIdFn(__filename,UIStrings);
 
 
 
@@ -8428,17 +9149,6 @@ const[lang]=hreflang.split('-');
 return VALID_LANGS.includes(lang.toLowerCase());
 }
 
-
-
-
-
-function headerHasValidHreflangs(headerValue){
-const linkHeader=LinkHeader.parse(headerValue);
-
-return linkHeader.get('rel','alternate').
-every(link=>!!link.hreflang&&isValidHreflang(link.hreflang));
-}
-
 class Hreflang extends Audit{
 
 
@@ -8446,12 +9156,10 @@ class Hreflang extends Audit{
 static get meta(){
 return{
 id:'hreflang',
-title:'Document has a valid `hreflang`',
-failureTitle:'Document doesn\'t have a valid `hreflang`',
-description:'hreflang links tell search engines what version of a page they should '+
-'list in search results for a given language or region. [Learn more]'+
-'(https://developers.google.com/web/tools/lighthouse/audits/hreflang).',
-requiredArtifacts:['Hreflang','URL']};
+title:str_(UIStrings.title),
+failureTitle:str_(UIStrings.failureTitle),
+description:str_(UIStrings.description),
+requiredArtifacts:['LinkElements','URL']};
 
 }
 
@@ -8459,32 +9167,29 @@ requiredArtifacts:['Hreflang','URL']};
 
 
 
-
-static audit(artifacts,context){
-const devtoolsLog=artifacts.devtoolsLogs[Audit.DEFAULT_PASS];
-const URL=artifacts.URL;
-
-return MainResource.request({devtoolsLog,URL},context).
-then(mainResource=>{
+static audit(artifacts){
 
 const invalidHreflangs=[];
 
-if(artifacts.Hreflang){
-artifacts.Hreflang.forEach(({href,hreflang})=>{
-if(!isValidHreflang(hreflang)){
+for(const link of artifacts.LinkElements){
+if(link.rel!=='alternate')continue;
+if(!link.hreflang||isValidHreflang(link.hreflang))continue;
+if(link.source==='body')continue;
+
+if(link.source==='head'){
 invalidHreflangs.push({
 source:{
 type:'node',
-snippet:`<link name="alternate" hreflang="${hreflang}" href="${href}" />`}});
+snippet:`<link rel="alternate" hreflang="${link.hreflang}" href="${link.href}" />`}});
 
+
+}else if(link.source==='headers'){
+invalidHreflangs.push({
+source:`Link: <${link.href}>; rel="alternate"; hreflang="${link.hreflang}"`});
 
 }
-});
 }
 
-mainResource.responseHeaders&&mainResource.responseHeaders.
-filter(h=>h.name.toLowerCase()===LINK_HEADER&&!headerHasValidHreflangs(h.value)).
-forEach(h=>invalidHreflangs.push({source:`${h.name}: ${h.value}`}));
 
 const headings=[
 {key:'source',itemType:'code',text:'Source'}];
@@ -8495,14 +9200,15 @@ return{
 rawValue:invalidHreflangs.length===0,
 details};
 
-});
 }}
 
 
 module.exports=Hreflang;
+module.exports.UIStrings=UIStrings;
 
-}).call(this,typeof global!=="undefined"?global:typeof self!=="undefined"?self:typeof window!=="undefined"?window:{});
-},{"../../computed/main-resource.js":11,"../audit":3,"axe-core/lib/commons/utils/valid-langs.js":82,"http-link-header":94}],"../audits/seo/http-status-code":[function(require,module,exports){
+}).call(this,typeof global!=="undefined"?global:typeof self!=="undefined"?self:typeof window!=="undefined"?window:{},"/lighthouse-core/audits/seo/hreflang.js");
+},{"../../lib/i18n/i18n.js":63,"../audit":3,"axe-core/lib/commons/utils/valid-langs.js":88}],"../audits/seo/http-status-code":[function(require,module,exports){
+(function(__filename){
 
 
 
@@ -8514,6 +9220,20 @@ const Audit=require('../audit');
 const MainResource=require('../../computed/main-resource.js');
 const HTTP_UNSUCCESSFUL_CODE_LOW=400;
 const HTTP_UNSUCCESSFUL_CODE_HIGH=599;
+const i18n=require('../../lib/i18n/i18n.js');
+
+const UIStrings={
+
+title:'Page has successful HTTP status code',
+
+failureTitle:'Page has unsuccessful HTTP status code',
+
+description:'Pages with unsuccessful HTTP status codes may not be indexed properly. '+
+'[Learn more]'+
+'(https://developers.google.com/web/tools/lighthouse/audits/successful-http-code).'};
+
+
+const str_=i18n.createMessageInstanceIdFn(__filename,UIStrings);
 
 class HTTPStatusCode extends Audit{
 
@@ -8522,11 +9242,9 @@ class HTTPStatusCode extends Audit{
 static get meta(){
 return{
 id:'http-status-code',
-title:'Page has successful HTTP status code',
-failureTitle:'Page has unsuccessful HTTP status code',
-description:'Pages with unsuccessful HTTP status codes may not be indexed properly. '+
-'[Learn more]'+
-'(https://developers.google.com/web/tools/lighthouse/audits/successful-http-code).',
+title:str_(UIStrings.title),
+failureTitle:str_(UIStrings.failureTitle),
+description:str_(UIStrings.description),
 requiredArtifacts:['devtoolsLogs','URL']};
 
 }
@@ -8560,8 +9278,11 @@ rawValue:true};
 
 
 module.exports=HTTPStatusCode;
+module.exports.UIStrings=UIStrings;
 
-},{"../../computed/main-resource.js":11,"../audit":3}],"../audits/seo/is-crawlable":[function(require,module,exports){
+}).call(this,"/lighthouse-core/audits/seo/http-status-code.js");
+},{"../../computed/main-resource.js":11,"../../lib/i18n/i18n.js":63,"../audit":3}],"../audits/seo/is-crawlable":[function(require,module,exports){
+(function(__filename){
 
 
 
@@ -8579,6 +9300,20 @@ const BLOCKLIST=new Set([
 
 const ROBOTS_HEADER='x-robots-tag';
 const UNAVAILABLE_AFTER='unavailable_after';
+const i18n=require('../../lib/i18n/i18n.js');
+
+const UIStrings={
+
+title:'Page isn’t blocked from indexing',
+
+failureTitle:'Page is blocked from indexing',
+
+description:'Search engines are unable to include your pages in search results '+
+'if they don\'t have permission to crawl them. [Learn '+
+'more](https://developers.google.com/web/tools/lighthouse/audits/indexing).'};
+
+
+const str_=i18n.createMessageInstanceIdFn(__filename,UIStrings);
 
 
 
@@ -8628,12 +9363,10 @@ class IsCrawlable extends Audit{
 static get meta(){
 return{
 id:'is-crawlable',
-title:'Page isn’t blocked from indexing',
-failureTitle:'Page is blocked from indexing',
-description:'Search engines are unable to include your pages in search results '+
-'if they don\'t have permission to crawl them. [Learn '+
-'more](https://developers.google.com/web/tools/lighthouse/audits/indexing).',
-requiredArtifacts:['MetaRobots','RobotsTxt','URL']};
+title:str_(UIStrings.title),
+failureTitle:str_(UIStrings.failureTitle),
+description:str_(UIStrings.description),
+requiredArtifacts:['MetaElements','RobotsTxt','URL']};
 
 }
 
@@ -8644,20 +9377,22 @@ requiredArtifacts:['MetaRobots','RobotsTxt','URL']};
 
 static audit(artifacts,context){
 const devtoolsLog=artifacts.devtoolsLogs[Audit.DEFAULT_PASS];
+const metaRobots=artifacts.MetaElements.find(meta=>meta.name==='robots');
 
 return MainResource.request({devtoolsLog,URL:artifacts.URL},context).
 then(mainResource=>{
 
 const blockingDirectives=[];
 
-if(artifacts.MetaRobots){
-const isBlocking=hasBlockingDirective(artifacts.MetaRobots);
+if(metaRobots){
+const metaRobotsContent=metaRobots.content||'';
+const isBlocking=hasBlockingDirective(metaRobotsContent);
 
 if(isBlocking){
 blockingDirectives.push({
 source:{
 type:'node',
-snippet:`<meta name="robots" content="${artifacts.MetaRobots}" />`}});
+snippet:`<meta name="robots" content="${metaRobotsContent}" />`}});
 
 
 }
@@ -8682,6 +9417,7 @@ value:robotsFileUrl.href}});
 }
 }
 
+
 const headings=[
 {key:'source',itemType:'code',text:'Blocking Directive Source'}];
 
@@ -8696,8 +9432,11 @@ details};
 
 
 module.exports=IsCrawlable;
+module.exports.UIStrings=UIStrings;
 
-},{"../../computed/main-resource.js":11,"../../lib/url-shim":"url","../audit":3,"robots-parser":149}],"../audits/seo/link-text":[function(require,module,exports){
+}).call(this,"/lighthouse-core/audits/seo/is-crawlable.js");
+},{"../../computed/main-resource.js":11,"../../lib/i18n/i18n.js":63,"../../lib/url-shim":"url","../audit":3,"robots-parser":156}],"../audits/seo/link-text":[function(require,module,exports){
+(function(__filename){
 
 
 
@@ -8708,6 +9447,7 @@ module.exports=IsCrawlable;
 const Audit=require('../audit');
 const URL=require('../../lib/url-shim');
 const BLOCKLIST=new Set([
+
 'click here',
 'click this',
 'go',
@@ -8716,8 +9456,33 @@ const BLOCKLIST=new Set([
 'start',
 'right here',
 'more',
-'learn more']);
+'learn more',
 
+'ここをクリック',
+'こちらをクリック',
+'リンク',
+'続きを読む',
+'続く',
+'全文表示']);
+
+const i18n=require('../../lib/i18n/i18n.js');
+
+const UIStrings={
+
+title:'Links have descriptive text',
+
+failureTitle:'Links do not have descriptive text',
+
+description:'Descriptive link text helps search engines understand your content. '+
+'[Learn more](https://developers.google.com/web/tools/lighthouse/audits/descriptive-link-text).',
+
+displayValue:`{itemCount, plural,
+    =1 {1 link found}
+    other {# links found}
+    }`};
+
+
+const str_=i18n.createMessageInstanceIdFn(__filename,UIStrings);
 
 class LinkText extends Audit{
 
@@ -8726,11 +9491,10 @@ class LinkText extends Audit{
 static get meta(){
 return{
 id:'link-text',
-title:'Links have descriptive text',
-failureTitle:'Links do not have descriptive text',
-description:'Descriptive link text helps search engines understand your content. '+
-'[Learn more](https://developers.google.com/web/tools/lighthouse/audits/descriptive-link-text).',
-requiredArtifacts:['URL','CrawlableLinks']};
+title:str_(UIStrings.title),
+failureTitle:str_(UIStrings.failureTitle),
+description:str_(UIStrings.description),
+requiredArtifacts:['URL','AnchorElements']};
 
 }
 
@@ -8739,7 +9503,8 @@ requiredArtifacts:['URL','CrawlableLinks']};
 
 
 static audit(artifacts){
-const failingLinks=artifacts.CrawlableLinks.
+const failingLinks=artifacts.AnchorElements.
+filter(link=>link.href&&!link.rel.includes('nofollow')).
 filter(link=>{
 const href=link.href.toLowerCase();
 if(
@@ -8759,6 +9524,7 @@ text:link.text.trim()};
 
 });
 
+
 const headings=[
 {key:'href',itemType:'url',text:'Link destination'},
 {key:'text',itemType:'text',text:'Link Text'}];
@@ -8768,8 +9534,7 @@ const details=Audit.makeTableDetails(headings,failingLinks,{});
 let displayValue;
 
 if(failingLinks.length){
-displayValue=failingLinks.length>1?
-`${failingLinks.length} links found`:'1 link found';
+displayValue=str_(UIStrings.displayValue,{itemCount:failingLinks.length});
 }
 
 return{
@@ -8781,37 +9546,11 @@ displayValue};
 
 
 module.exports=LinkText;
+module.exports.UIStrings=UIStrings;
 
-},{"../../lib/url-shim":"url","../audit":3}],"../audits/seo/manual/mobile-friendly":[function(require,module,exports){
-
-
-
-
-
-'use strict';
-
-const ManualAudit=require('../../manual/manual-audit');
-
-
-
-
-
-class MobileFriendly extends ManualAudit{
-
-
-
-static get meta(){
-return Object.assign({
-id:'mobile-friendly',
-description:'Take the [Mobile-Friendly Test](https://search.google.com/test/mobile-friendly) to check for audits not covered by Lighthouse, like sizing tap targets appropriately. [Learn more](https://developers.google.com/search/mobile-sites/).',
-title:'Page is mobile friendly'},
-super.partialMeta);
-}}
-
-
-module.exports=MobileFriendly;
-
-},{"../../manual/manual-audit":5}],"../audits/seo/manual/structured-data":[function(require,module,exports){
+}).call(this,"/lighthouse-core/audits/seo/link-text.js");
+},{"../../lib/i18n/i18n.js":63,"../../lib/url-shim":"url","../audit":3}],"../audits/seo/manual/structured-data":[function(require,module,exports){
+(function(__filename){
 
 
 
@@ -8820,6 +9559,16 @@ module.exports=MobileFriendly;
 'use strict';
 
 const ManualAudit=require('../../manual/manual-audit');
+const i18n=require('../../../lib/i18n/i18n.js');
+
+const UIStrings={
+
+description:'Run the [Structured Data Testing Tool](https://search.google.com/structured-data/testing-tool/) and the [Structured Data Linter](http://linter.structured-data.org/) to validate structured data. [Learn more](https://developers.google.com/search/docs/guides/mark-up-content).',
+
+title:'Structured data is valid'};
+
+
+const str_=i18n.createMessageInstanceIdFn(__filename,UIStrings);
 
 
 
@@ -8832,15 +9581,18 @@ class StructuredData extends ManualAudit{
 static get meta(){
 return Object.assign({
 id:'structured-data',
-description:'Run the [Structured Data Testing Tool](https://search.google.com/structured-data/testing-tool/) and the [Structured Data Linter](http://linter.structured-data.org/) to validate structured data. [Learn more](https://developers.google.com/search/docs/guides/mark-up-content).',
-title:'Structured data is valid'},
+description:str_(UIStrings.description),
+title:str_(UIStrings.title)},
 super.partialMeta);
 }}
 
 
 module.exports=StructuredData;
+module.exports.UIStrings=UIStrings;
 
-},{"../../manual/manual-audit":5}],"../audits/seo/meta-description":[function(require,module,exports){
+}).call(this,"/lighthouse-core/audits/seo/manual/structured-data.js");
+},{"../../../lib/i18n/i18n.js":63,"../../manual/manual-audit":5}],"../audits/seo/meta-description":[function(require,module,exports){
+(function(__filename){
 
 
 
@@ -8849,6 +9601,22 @@ module.exports=StructuredData;
 'use strict';
 
 const Audit=require('../audit');
+const i18n=require('../../lib/i18n/i18n.js');
+
+const UIStrings={
+
+title:'Document has a meta description',
+
+failureTitle:'Document does not have a meta description',
+
+description:'Meta descriptions may be included in search results to concisely summarize '+
+'page content. '+
+'[Learn more](https://developers.google.com/web/tools/lighthouse/audits/description).',
+
+explanation:'Description text is empty.'};
+
+
+const str_=i18n.createMessageInstanceIdFn(__filename,UIStrings);
 
 class Description extends Audit{
 
@@ -8857,12 +9625,10 @@ class Description extends Audit{
 static get meta(){
 return{
 id:'meta-description',
-title:'Document has a meta description',
-failureTitle:'Document does not have a meta description',
-description:'Meta descriptions may be included in search results to concisely summarize '+
-'page content. '+
-'[Learn more](https://developers.google.com/web/tools/lighthouse/audits/description).',
-requiredArtifacts:['MetaDescription']};
+title:str_(UIStrings.title),
+failureTitle:str_(UIStrings.failureTitle),
+description:str_(UIStrings.description),
+requiredArtifacts:['MetaElements']};
 
 }
 
@@ -8871,16 +9637,18 @@ requiredArtifacts:['MetaDescription']};
 
 
 static audit(artifacts){
-if(artifacts.MetaDescription===null){
+const metaDescription=artifacts.MetaElements.find(meta=>meta.name==='description');
+if(!metaDescription){
 return{
 rawValue:false};
 
 }
 
-if(artifacts.MetaDescription.trim().length===0){
+const description=metaDescription.content||'';
+if(description.trim().length===0){
 return{
 rawValue:false,
-explanation:'Description text is empty.'};
+explanation:str_(UIStrings.explanation)};
 
 }
 
@@ -8891,8 +9659,11 @@ rawValue:true};
 
 
 module.exports=Description;
+module.exports.UIStrings=UIStrings;
 
-},{"../audit":3}],"../audits/seo/plugins":[function(require,module,exports){
+}).call(this,"/lighthouse-core/audits/seo/meta-description.js");
+},{"../../lib/i18n/i18n.js":63,"../audit":3}],"../audits/seo/plugins":[function(require,module,exports){
+(function(__filename){
 
 
 
@@ -8926,6 +9697,20 @@ const SOURCE_PARAMS=new Set([
 'source',
 'src']);
 
+const i18n=require('../../lib/i18n/i18n.js');
+
+const UIStrings={
+
+title:'Document avoids plugins',
+
+failureTitle:'Document uses plugins',
+
+description:'Search engines can\'t index plugin content, and '+
+'many devices restrict plugins or don\'t support them. '+
+'[Learn more](https://developers.google.com/web/tools/lighthouse/audits/plugins).'};
+
+
+const str_=i18n.createMessageInstanceIdFn(__filename,UIStrings);
 
 
 
@@ -8968,11 +9753,9 @@ class Plugins extends Audit{
 static get meta(){
 return{
 id:'plugins',
-title:'Document avoids plugins',
-failureTitle:'Document uses plugins',
-description:'Search engines can\'t index plugin content, and '+
-'many devices restrict plugins or don\'t support them. '+
-'[Learn more](https://developers.google.com/web/tools/lighthouse/audits/plugins).',
+title:str_(UIStrings.title),
+failureTitle:str_(UIStrings.failureTitle),
+description:str_(UIStrings.description),
 requiredArtifacts:['EmbeddedContent']};
 
 }
@@ -9035,6 +9818,7 @@ snippet:`<${tagName}${attributes}>${params}</${tagName}>`}};
 
 });
 
+
 const headings=[
 {key:'source',itemType:'code',text:'Element source'}];
 
@@ -9049,8 +9833,11 @@ details};
 
 
 module.exports=Plugins;
+module.exports.UIStrings=UIStrings;
 
-},{"../../lib/url-shim":"url","../audit":3}],"../audits/seo/robots-txt":[function(require,module,exports){
+}).call(this,"/lighthouse-core/audits/seo/plugins.js");
+},{"../../lib/i18n/i18n.js":63,"../../lib/url-shim":"url","../audit":3}],"../audits/seo/robots-txt":[function(require,module,exports){
+(function(__filename){
 
 
 
@@ -9084,6 +9871,28 @@ DIRECTIVE_ALLOW,DIRECTIVE_SITEMAP,
 'request-rate','visit-time','noindex']);
 
 const SITEMAP_VALID_PROTOCOLS=new Set(['https:','http:','ftp:']);
+const i18n=require('../../lib/i18n/i18n.js');
+
+const UIStrings={
+
+title:'robots.txt is valid',
+
+failureTitle:'robots.txt is not valid',
+
+description:'If your robots.txt file is malformed, crawlers may not be able to understand '+
+'how you want your website to be crawled or indexed.',
+
+displayValueHttpBadCode:'request for robots.txt returned HTTP status: {statusCode}',
+
+displayValueValidationError:`{itemCount, plural,
+    =1 {1 error found}
+    other {# errors found}
+    }`,
+
+explanation:'Lighthouse was unable to download a robots.txt file'};
+
+
+const str_=i18n.createMessageInstanceIdFn(__filename,UIStrings);
 
 
 
@@ -9214,10 +10023,9 @@ class RobotsTxt extends Audit{
 static get meta(){
 return{
 id:'robots-txt',
-title:'robots.txt is valid',
-failureTitle:'robots.txt is not valid',
-description:'If your robots.txt file is malformed, crawlers may not be able to understand '+
-'how you want your website to be crawled or indexed.',
+title:str_(UIStrings.title),
+failureTitle:str_(UIStrings.failureTitle),
+description:str_(UIStrings.description),
 requiredArtifacts:['RobotsTxt']};
 
 }
@@ -9235,14 +10043,14 @@ artifacts.RobotsTxt;
 if(!status){
 return{
 rawValue:false,
-explanation:'Lighthouse was unable to download your robots.txt file'};
+explanation:str_(UIStrings.explanation)};
 
 }
 
 if(status>=HTTP_SERVER_ERROR_CODE_LOW){
 return{
 rawValue:false,
-displayValue:`request for robots.txt returned HTTP${status}`};
+displayValue:str_(UIStrings.displayValueHttpBadCode,{statusCode:status})};
 
 }else if(status>=HTTP_CLIENT_ERROR_CODE_LOW||content===''){
 return{
@@ -9258,6 +10066,7 @@ throw new Error(`Status ${status} was valid, but content was null`);
 
 const validationErrors=validateRobots(content);
 
+
 const headings=[
 {key:'index',itemType:'text',text:'Line #'},
 {key:'line',itemType:'code',text:'Content'},
@@ -9268,8 +10077,8 @@ const details=Audit.makeTableDetails(headings,validationErrors,{});
 let displayValue;
 
 if(validationErrors.length){
-displayValue=validationErrors.length>1?
-`${validationErrors.length} errors found`:'1 error found';
+displayValue=
+str_(UIStrings.displayValueValidationError,{itemCount:validationErrors.length});
 }
 
 return{
@@ -9281,8 +10090,382 @@ displayValue};
 
 
 module.exports=RobotsTxt;
+module.exports.UIStrings=UIStrings;
 
-},{"../../lib/url-shim":"url","../audit":3}],"../audits/service-worker":[function(require,module,exports){
+}).call(this,"/lighthouse-core/audits/seo/robots-txt.js");
+},{"../../lib/i18n/i18n.js":63,"../../lib/url-shim":"url","../audit":3}],"../audits/seo/tap-targets":[function(require,module,exports){
+(function(__filename){
+
+
+
+
+
+'use strict';
+
+
+
+
+
+const Audit=require('../audit');
+const ComputedViewportMeta=require('../../computed/viewport-meta.js');
+const{
+rectsTouchOrOverlap,
+getRectOverlapArea,
+getRectAtCenter,
+allRectsContainedWithinEachOther,
+getLargestRect,
+getBoundingRectWithPadding}=
+require('../../lib/rect-helpers');
+const{getTappableRectsFromClientRects}=require('../../lib/tappable-rects');
+const i18n=require('../../lib/i18n/i18n.js');
+
+const UIStrings={
+
+title:'Tap targets are sized appropriately',
+
+failureTitle:'Tap targets are not sized appropriately',
+
+description:'Interactive elements like buttons and links should be large enough (48x48px), and have enough space around them, to be easy enough to tap without overlapping onto other elements. [Learn more](https://developers.google.com/web/fundamentals/accessibility/accessible-styles#multi-device_responsive_design).',
+
+tapTargetHeader:'Tap Target',
+
+sizeHeader:'Size',
+
+overlappingTargetHeader:'Overlapping Target',
+
+
+explanationViewportMetaNotOptimized:'Tap targets are too small because there\'s no viewport meta tag optimized for mobile screens',
+
+displayValue:'{decimalProportion, number, percent} appropriately sized tap targets'};
+
+
+const str_=i18n.createMessageInstanceIdFn(__filename,UIStrings);
+
+const FINGER_SIZE_PX=48;
+
+
+const MAX_ACCEPTABLE_OVERLAP_SCORE_RATIO=0.25;
+
+
+
+
+
+
+
+function getBoundedTapTargets(targets){
+return targets.map(tapTarget=>{
+return{
+tapTarget,
+paddedBoundsRect:getBoundingRectWithPadding(tapTarget.clientRects,FINGER_SIZE_PX)};
+
+});
+}
+
+
+
+
+function clientRectBelowMinimumSize(cr){
+return cr.width<FINGER_SIZE_PX||cr.height<FINGER_SIZE_PX;
+}
+
+
+
+
+
+
+function getTooSmallTargets(targets){
+return targets.filter(target=>{
+return target.tapTarget.clientRects.every(clientRectBelowMinimumSize);
+});
+}
+
+
+
+
+
+
+function getAllOverlapFailures(tooSmallTargets,allTargets){
+
+const failures=[];
+
+tooSmallTargets.forEach(target=>{
+
+const tappableRects=getTappableRectsFromClientRects(target.tapTarget.clientRects);
+
+for(const maybeOverlappingTarget of allTargets){
+if(maybeOverlappingTarget===target){
+
+continue;
+}
+
+if(!rectsTouchOrOverlap(target.paddedBoundsRect,maybeOverlappingTarget.paddedBoundsRect)){
+
+continue;
+}
+
+if(target.tapTarget.href===maybeOverlappingTarget.tapTarget.href){
+const isHttpOrHttpsLink=/https?:\/\//.test(target.tapTarget.href);
+if(isHttpOrHttpsLink){
+
+continue;
+}
+}
+
+const maybeOverlappingRects=maybeOverlappingTarget.tapTarget.clientRects;
+if(allRectsContainedWithinEachOther(tappableRects,maybeOverlappingRects)){
+
+
+
+
+continue;
+}
+
+const rectFailure=getOverlapFailureForTargetPair(tappableRects,maybeOverlappingRects);
+if(rectFailure){
+failures.push({
+...rectFailure,
+tapTarget:target.tapTarget,
+overlappingTarget:maybeOverlappingTarget.tapTarget});
+
+}
+}
+});
+
+return failures;
+}
+
+
+
+
+
+
+function getOverlapFailureForTargetPair(tappableRects,maybeOverlappingRects){
+
+let greatestFailure=null;
+
+for(const targetCR of tappableRects){
+const fingerRect=getRectAtCenter(targetCR,FINGER_SIZE_PX);
+
+
+const tapTargetScore=getRectOverlapArea(fingerRect,targetCR);
+
+for(const maybeOverlappingCR of maybeOverlappingRects){
+const overlappingTargetScore=getRectOverlapArea(fingerRect,maybeOverlappingCR);
+
+const overlapScoreRatio=overlappingTargetScore/tapTargetScore;
+if(overlapScoreRatio<MAX_ACCEPTABLE_OVERLAP_SCORE_RATIO){
+
+
+continue;
+}
+
+
+if(!greatestFailure||overlapScoreRatio>greatestFailure.overlapScoreRatio){
+greatestFailure={
+overlapScoreRatio,
+tapTargetScore,
+overlappingTargetScore};
+
+}
+}
+}
+return greatestFailure;
+}
+
+
+
+
+
+
+function mergeSymmetricFailures(overlapFailures){
+
+const failuresAfterMerging=[];
+
+overlapFailures.forEach((failure,overlapFailureIndex)=>{
+const symmetricFailure=overlapFailures.find(f=>
+f.tapTarget===failure.overlappingTarget&&
+f.overlappingTarget===failure.tapTarget);
+
+
+if(!symmetricFailure){
+failuresAfterMerging.push(failure);
+return;
+}
+
+const{overlapScoreRatio:failureOSR}=failure;
+const{overlapScoreRatio:symmetricOSR}=symmetricFailure;
+
+
+
+
+if(failureOSR>symmetricOSR||
+failureOSR===symmetricOSR&&
+overlapFailureIndex<overlapFailures.indexOf(symmetricFailure))
+{
+failuresAfterMerging.push(failure);
+}
+});
+
+return failuresAfterMerging;
+}
+
+
+
+
+
+function getTableItems(overlapFailures){
+const tableItems=overlapFailures.map(failure=>{
+const largestCR=getLargestRect(failure.tapTarget.clientRects);
+const width=Math.floor(largestCR.width);
+const height=Math.floor(largestCR.height);
+const size=width+'x'+height;
+return{
+tapTarget:targetToTableNode(failure.tapTarget),
+overlappingTarget:targetToTableNode(failure.overlappingTarget),
+tapTargetScore:failure.tapTargetScore,
+overlappingTargetScore:failure.overlappingTargetScore,
+overlapScoreRatio:failure.overlapScoreRatio,
+size,
+width,
+height};
+
+});
+
+tableItems.sort((a,b)=>{
+return b.overlapScoreRatio-a.overlapScoreRatio;
+});
+
+return tableItems;
+}
+
+
+
+
+
+function targetToTableNode(target){
+return{
+type:'node',
+snippet:target.snippet,
+path:target.path,
+selector:target.selector};
+
+}
+
+class TapTargets extends Audit{
+
+
+
+static get meta(){
+return{
+id:'tap-targets',
+title:str_(UIStrings.title),
+failureTitle:str_(UIStrings.failureTitle),
+description:str_(UIStrings.description),
+requiredArtifacts:['MetaElements','TapTargets','TestedAsMobileDevice']};
+
+}
+
+
+
+
+
+
+static async audit(artifacts,context){
+if(!artifacts.TestedAsMobileDevice){
+
+
+return{
+rawValue:true,
+notApplicable:true};
+
+}
+
+const viewportMeta=await ComputedViewportMeta.request(artifacts,context);
+if(!viewportMeta.isMobileOptimized){
+return{
+rawValue:false,
+explanation:str_(UIStrings.explanationViewportMetaNotOptimized)};
+
+}
+
+
+const boundedTapTargets=getBoundedTapTargets(artifacts.TapTargets);
+
+const tooSmallTargets=getTooSmallTargets(boundedTapTargets);
+const overlapFailures=getAllOverlapFailures(tooSmallTargets,boundedTapTargets);
+const overlapFailuresForDisplay=mergeSymmetricFailures(overlapFailures);
+const tableItems=getTableItems(overlapFailuresForDisplay);
+
+
+const headings=[
+{key:'tapTarget',itemType:'node',text:str_(UIStrings.tapTargetHeader)},
+{key:'size',itemType:'text',text:str_(UIStrings.sizeHeader)},
+{key:'overlappingTarget',itemType:'node',text:str_(UIStrings.overlappingTargetHeader)}];
+
+
+const details=Audit.makeTableDetails(headings,tableItems);
+
+const tapTargetCount=artifacts.TapTargets.length;
+const failingTapTargetCount=new Set(overlapFailures.map(f=>f.tapTarget)).size;
+const passingTapTargetCount=tapTargetCount-failingTapTargetCount;
+
+let score=1;
+let passingTapTargetRatio=1;
+if(failingTapTargetCount>0){
+passingTapTargetRatio=passingTapTargetCount/tapTargetCount;
+
+
+score=passingTapTargetRatio*0.89;
+}
+const displayValue=str_(UIStrings.displayValue,{decimalProportion:passingTapTargetRatio});
+
+return{
+rawValue:tableItems.length===0,
+score,
+details,
+displayValue};
+
+}}
+
+
+TapTargets.FINGER_SIZE_PX=FINGER_SIZE_PX;
+
+module.exports=TapTargets;
+module.exports.UIStrings=UIStrings;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+}).call(this,"/lighthouse-core/audits/seo/tap-targets.js");
+},{"../../computed/viewport-meta.js":37,"../../lib/i18n/i18n.js":63,"../../lib/rect-helpers":73,"../../lib/tappable-rects":76,"../audit":3}],"../audits/service-worker":[function(require,module,exports){
 
 
 
@@ -9305,7 +10488,7 @@ failureTitle:'Does not register a service worker that controls page and start_ur
 description:'The service worker is the technology that enables your app to use many '+
 'Progressive Web App features, such as offline, add to homescreen, and push '+
 'notifications. [Learn more](https://developers.google.com/web/tools/lighthouse/audits/registered-service-worker).',
-requiredArtifacts:['URL','ServiceWorker','Manifest']};
+requiredArtifacts:['URL','ServiceWorker','WebAppManifest']};
 
 }
 
@@ -9392,7 +10575,8 @@ explanation:`This origin has one or more service workers, however the page ("${p
 
 }
 
-const startUrlFailure=ServiceWorker.checkStartUrl(artifacts.Manifest,controllingScopeUrl);
+const startUrlFailure=ServiceWorker.checkStartUrl(artifacts.WebAppManifest,
+controllingScopeUrl);
 if(startUrlFailure){
 return{
 rawValue:false,
@@ -9445,7 +10629,7 @@ failureTitle:'Is not configured for a custom splash screen',
 description:'A themed splash screen ensures a high-quality experience when '+
 'users launch your app from their homescreens. [Learn '+
 'more](https://developers.google.com/web/tools/lighthouse/audits/custom-splash-screen).',
-requiredArtifacts:['Manifest']};
+requiredArtifacts:['WebAppManifest']};
 
 }
 
@@ -9484,7 +10668,7 @@ static async audit_(artifacts,context){
 
 const failures=[];
 
-const manifestValues=await ManifestValues.request(artifacts.Manifest,context);
+const manifestValues=await ManifestValues.request(artifacts.WebAppManifest,context);
 SplashScreen.assessManifest(manifestValues,failures);
 
 return{
@@ -9529,7 +10713,7 @@ title:'Sets an address-bar theme color',
 failureTitle:'Does not set an address-bar theme color',
 description:'The browser address bar can be themed to match your site. '+
 '[Learn more](https://developers.google.com/web/tools/lighthouse/audits/address-bar).',
-requiredArtifacts:['Manifest','ThemeColor']};
+requiredArtifacts:['WebAppManifest','MetaElements']};
 
 }
 
@@ -9546,9 +10730,9 @@ return cssParsers.valueType(color)===cssParsers.TYPES.COLOR;
 
 
 static assessMetaThemecolor(themeColorMeta,failures){
-if(themeColorMeta===null){
+if(!themeColorMeta){
 failures.push('No `<meta name="theme-color">` tag found');
-}else if(!ThemedOmnibox.isValidColor(themeColorMeta)){
+}else if(!ThemedOmnibox.isValidColor(themeColorMeta.content||'')){
 failures.push('The theme-color meta tag did not contain a valid CSS color');
 }
 }
@@ -9578,21 +10762,22 @@ static async audit_(artifacts,context){
 
 const failures=[];
 
-const manifestValues=await ManifestValues.request(artifacts.Manifest,context);
+const themeColorMeta=artifacts.MetaElements.find(meta=>meta.name==='theme-color');
+const manifestValues=await ManifestValues.request(artifacts.WebAppManifest,context);
 ThemedOmnibox.assessManifest(manifestValues,failures);
-ThemedOmnibox.assessMetaThemecolor(artifacts.ThemeColor,failures);
+ThemedOmnibox.assessMetaThemecolor(themeColorMeta,failures);
 
 return{
 failures,
 manifestValues,
-themeColor:artifacts.ThemeColor};
+themeColor:themeColorMeta&&themeColorMeta.content||null};
 
 }}
 
 
 module.exports=ThemedOmnibox;
 
-},{"../computed/manifest-values.js":13,"./multi-check-audit":6,"cssstyle/lib/parsers":90}],"../audits/time-to-first-byte":[function(require,module,exports){
+},{"../computed/manifest-values.js":13,"./multi-check-audit":6,"cssstyle/lib/parsers":97}],"../audits/time-to-first-byte":[function(require,module,exports){
 (function(__filename){
 
 
@@ -9682,7 +10867,7 @@ module.exports=TTFBMetric;
 module.exports.UIStrings=UIStrings;
 
 }).call(this,"/lighthouse-core/audits/time-to-first-byte.js");
-},{"../computed/main-resource.js":11,"../lib/i18n/i18n.js":59,"./audit":3}],"../audits/user-timings":[function(require,module,exports){
+},{"../computed/main-resource.js":11,"../lib/i18n/i18n.js":63,"./audit":3}],"../audits/user-timings":[function(require,module,exports){
 (function(__filename){
 
 
@@ -9780,6 +10965,7 @@ return 1;
 }
 });
 
+
 const headings=[
 {key:'name',itemType:'text',text:str_(UIStrings.columnName)},
 {key:'timingType',itemType:'text',text:str_(UIStrings.columnType)},
@@ -9814,7 +11000,7 @@ module.exports=UserTimings;
 module.exports.UIStrings=UIStrings;
 
 }).call(this,"/lighthouse-core/audits/user-timings.js");
-},{"../computed/user-timings.js":34,"../lib/i18n/i18n.js":59,"./audit":3}],"../audits/uses-rel-preconnect":[function(require,module,exports){
+},{"../computed/user-timings.js":36,"../lib/i18n/i18n.js":63,"./audit":3}],"../audits/uses-rel-preconnect":[function(require,module,exports){
 (function(__filename){
 
 
@@ -10023,7 +11209,7 @@ module.exports=UsesRelPreconnectAudit;
 module.exports.UIStrings=UIStrings;
 
 }).call(this,"/lighthouse-core/audits/uses-rel-preconnect.js");
-},{"../computed/load-simulator.js":10,"../computed/main-resource.js":11,"../computed/network-records.js":29,"../lib/i18n/i18n.js":59,"../lib/url-shim.js":"url","./audit":3,"./byte-efficiency/byte-efficiency-audit":4}],"../audits/uses-rel-preload":[function(require,module,exports){
+},{"../computed/load-simulator.js":10,"../computed/main-resource.js":11,"../computed/network-records.js":31,"../lib/i18n/i18n.js":63,"../lib/url-shim.js":"url","./audit":3,"./byte-efficiency/byte-efficiency-audit":4}],"../audits/uses-rel-preload":[function(require,module,exports){
 (function(__filename){
 
 
@@ -10266,7 +11452,7 @@ module.exports=UsesRelPreloadAudit;
 module.exports.UIStrings=UIStrings;
 
 }).call(this,"/lighthouse-core/audits/uses-rel-preload.js");
-},{"../computed/critical-request-chains.js":9,"../computed/load-simulator.js":10,"../computed/main-resource.js":11,"../computed/page-dependency-graph.js":30,"../lib/i18n/i18n.js":59,"../lib/url-shim":"url","./audit":3,"./byte-efficiency/byte-efficiency-audit":4}],"../audits/viewport":[function(require,module,exports){
+},{"../computed/critical-request-chains.js":9,"../computed/load-simulator.js":10,"../computed/main-resource.js":11,"../computed/page-dependency-graph.js":32,"../lib/i18n/i18n.js":63,"../lib/url-shim":"url","./audit":3,"./byte-efficiency/byte-efficiency-audit":4}],"../audits/viewport":[function(require,module,exports){
 
 
 
@@ -10275,7 +11461,7 @@ module.exports.UIStrings=UIStrings;
 'use strict';
 
 const Audit=require('./audit');
-const Parser=require('metaviewport-parser');
+const ComputedViewportMeta=require('../computed/viewport-meta.js');
 
 class Viewport extends Audit{
 
@@ -10289,7 +11475,7 @@ failureTitle:'Does not have a `<meta name="viewport">` tag with `width` '+
 'or `initial-scale`',
 description:'Add a viewport meta tag to optimize your app for mobile screens. '+
 '[Learn more](https://developers.google.com/web/tools/lighthouse/audits/has-viewport-meta-tag).',
-requiredArtifacts:['Viewport']};
+requiredArtifacts:['MetaElements']};
 
 }
 
@@ -10297,37 +11483,27 @@ requiredArtifacts:['Viewport']};
 
 
 
-static audit(artifacts){
-if(artifacts.Viewport===null){
+
+static async audit(artifacts,context){
+const viewportMeta=await ComputedViewportMeta.request(artifacts,context);
+
+if(!viewportMeta.hasViewportTag){
 return{
-explanation:'No viewport meta tag found',
-rawValue:false};
+rawValue:false,
+explanation:'No viewport meta tag found'};
 
 }
-
-const warnings=[];
-const parsedProps=Parser.parseMetaViewPortContent(artifacts.Viewport);
-
-if(Object.keys(parsedProps.unknownProperties).length){
-warnings.push(`Invalid properties found: ${JSON.stringify(parsedProps.unknownProperties)}`);
-}
-if(Object.keys(parsedProps.invalidValues).length){
-warnings.push(`Invalid values found: ${JSON.stringify(parsedProps.invalidValues)}`);
-}
-
-const viewportProps=parsedProps.validProperties;
-const hasMobileViewport=viewportProps.width||viewportProps['initial-scale'];
 
 return{
-rawValue:!!hasMobileViewport,
-warnings};
+rawValue:viewportMeta.isMobileOptimized,
+warnings:viewportMeta.parserWarnings};
 
 }}
 
 
 module.exports=Viewport;
 
-},{"./audit":3,"metaviewport-parser":117}],"../audits/without-javascript":[function(require,module,exports){
+},{"../computed/viewport-meta.js":37,"./audit":3}],"../audits/without-javascript":[function(require,module,exports){
 
 
 
@@ -10462,6 +11638,7 @@ values:[
 resultTypes:['violations','inapplicable'],
 rules:{
 'tabindex':{enabled:true},
+'accesskeys':{enabled:true},
 'table-fake-caption':{enabled:false},
 'td-has-header':{enabled:false},
 'marquee':{enabled:false},
@@ -10516,7 +11693,89 @@ return returnedValue;
 
 module.exports=Accessibility;
 
-},{"../../lib/page-functions":68,"./gatherer":44}],"../gather/gatherers/cache-contents":[function(require,module,exports){
+},{"../../lib/page-functions":72,"./gatherer":48}],"../gather/gatherers/anchor-elements":[function(require,module,exports){
+
+
+
+
+
+'use strict';
+
+const Gatherer=require('./gatherer.js');
+const pageFunctions=require('../../lib/page-functions.js');
+
+
+
+
+
+
+
+
+
+
+
+
+
+function collectAnchorElements(){
+
+const resolveURLOrEmpty=url=>{
+try{
+return new URL(url,window.location.href).href;
+}catch(_){
+return'';
+}
+};
+
+
+
+const anchorElements=getElementsInDocument('a');
+
+return anchorElements.map(node=>{
+
+const outerHTML=getOuterHTMLSnippet(node);
+
+if(node instanceof HTMLAnchorElement){
+return{
+href:node.href,
+text:node.innerText,
+rel:node.rel,
+target:node.target,
+outerHTML};
+
+}
+
+return{
+href:resolveURLOrEmpty(node.href.baseVal),
+text:node.textContent||'',
+rel:'',
+target:node.target.baseVal||'',
+outerHTML};
+
+});
+}
+
+class AnchorElements extends Gatherer{
+
+
+
+
+async afterPass(passContext){
+const driver=passContext.driver;
+const expression=`(() => {
+      ${pageFunctions.getOuterHTMLSnippetString};
+      ${pageFunctions.getElementsInDocumentString};
+
+      return (${collectAnchorElements})();
+    })()`;
+
+
+return driver.evaluateAsync(expression,{useIsolation:true});
+}}
+
+
+module.exports=AnchorElements;
+
+},{"../../lib/page-functions.js":72,"./gatherer.js":48}],"../gather/gatherers/cache-contents":[function(require,module,exports){
 
 
 
@@ -10577,7 +11836,7 @@ return cacheUrls;
 
 module.exports=CacheContents;
 
-},{"./gatherer":44}],"../gather/gatherers/chrome-console-messages":[function(require,module,exports){
+},{"./gatherer":48}],"../gather/gatherers/chrome-console-messages":[function(require,module,exports){
 
 
 
@@ -10633,7 +11892,7 @@ return this._logEntries;
 
 module.exports=ChromeConsoleMessages;
 
-},{"./gatherer":44}],"../gather/gatherers/css-usage":[function(require,module,exports){
+},{"./gatherer":48}],"../gather/gatherers/css-usage":[function(require,module,exports){
 
 
 
@@ -10694,43 +11953,7 @@ stylesheets:Array.from(dedupedStylesheets.values())};
 
 module.exports=CSSUsage;
 
-},{"./gatherer":44}],"../gather/gatherers/dobetterweb/anchors-with-no-rel-noopener":[function(require,module,exports){
-
-
-
-
-
-'use strict';
-
-const Gatherer=require('../gatherer');
-const pageFunctions=require('../../../lib/page-functions.js');
-
-class AnchorsWithNoRelNoopener extends Gatherer{
-
-
-
-
-afterPass(passContext){
-const expression=`(function() {
-      ${pageFunctions.getOuterHTMLSnippetString};
-      ${pageFunctions.getElementsInDocumentString}; // define function on page
-      const selector = 'a[target="_blank"]:not([rel~="noopener"]):not([rel~="noreferrer"])';
-      const elements = getElementsInDocument(selector);
-      return elements.map(node => ({
-        href: node.href,
-        rel: node.getAttribute('rel'),
-        target: node.getAttribute('target'),
-        outerHTML: getOuterHTMLSnippet(node),
-      }));
-    })()`;
-
-return passContext.driver.evaluateAsync(expression);
-}}
-
-
-module.exports=AnchorsWithNoRelNoopener;
-
-},{"../../../lib/page-functions.js":68,"../gatherer":44}],"../gather/gatherers/dobetterweb/appcache":[function(require,module,exports){
+},{"./gatherer":48}],"../gather/gatherers/dobetterweb/appcache":[function(require,module,exports){
 
 
 
@@ -10757,7 +11980,7 @@ then(node=>node&&node.getAttribute('manifest'));
 
 module.exports=AppCacheManifest;
 
-},{"../gatherer":44}],"../gather/gatherers/dobetterweb/doctype":[function(require,module,exports){
+},{"../gatherer":48}],"../gather/gatherers/dobetterweb/doctype":[function(require,module,exports){
 
 
 
@@ -10795,7 +12018,7 @@ return driver.evaluateAsync(`(${getDoctype.toString()}())`);
 
 module.exports=Doctype;
 
-},{"../gatherer":44}],"../gather/gatherers/dobetterweb/domstats":[function(require,module,exports){
+},{"../gatherer":48}],"../gather/gatherers/dobetterweb/domstats":[function(require,module,exports){
 
 
 
@@ -10955,7 +12178,7 @@ return passContext.driver.sendCommand('DOM.disable').then(()=>results);
 
 module.exports=DOMStats;
 
-},{"../../../lib/page-functions":68,"../gatherer":44}],"../gather/gatherers/dobetterweb/js-libraries":[function(require,module,exports){
+},{"../../../lib/page-functions":72,"../gatherer":48}],"../gather/gatherers/dobetterweb/js-libraries":[function(require,module,exports){
 
 
 
@@ -11019,7 +12242,7 @@ return passContext.driver.evaluateAsync(expression);
 
 module.exports=JSLibraries;
 
-},{"../gatherer":44}],"../gather/gatherers/dobetterweb/optimized-images":[function(require,module,exports){
+},{"../gatherer":48}],"../gather/gatherers/dobetterweb/optimized-images":[function(require,module,exports){
 
 
 
@@ -11038,6 +12261,12 @@ const NetworkRequest=require('../../../lib/network-request');
 const Sentry=require('../../../lib/sentry');
 const Driver=require('../../driver.js');
 
+
+
+const MAX_TIME_TO_SPEND_ENCODING=5000;
+
+const MAX_RESOURCE_SIZE_TO_ENCODE=2000*1024;
+
 const JPEG_QUALITY=0.92;
 const WEBP_QUALITY=0.85;
 
@@ -11047,79 +12276,32 @@ const IMAGE_REGEX=/^image\/((x|ms|x-ms)-)?(png|bmp|jpeg)$/;
 
 
 
-
-
-
-
-
-
-
-
-function getOptimizedNumBytes(url){
-return new Promise(function(resolve,reject){
-const img=new Image();
-const canvas=document.createElement('canvas');
-const context=canvas.getContext('2d');
-if(!context){
-return reject(new Error('unable to create canvas context'));
-}
-
-
-
-
-
-
-function getTypeStats(type,quality){
-const dataURI=canvas.toDataURL(type,quality);
-const base64=dataURI.slice(dataURI.indexOf(',')+1);
-return{base64:base64.length,binary:atob(base64).length};
-}
-
-img.addEventListener('error',reject);
-img.addEventListener('load',()=>{
-try{
-canvas.height=img.height;
-canvas.width=img.width;
-context.drawImage(img,0,0);
-
-const jpeg=getTypeStats('image/jpeg',0.92);
-const webp=getTypeStats('image/webp',0.85);
-
-resolve({jpeg,webp});
-}catch(err){
-reject(err);
-}
-},false);
-
-img.src=url;
-});
-}
-
 class OptimizedImages extends Gatherer{
+constructor(){
+super();
+this._encodingStartAt=0;
+}
 
 
 
 
 
-static filterImageRequests(pageUrl,networkRecords){
+static filterImageRequests(networkRecords){
 
 const seenUrls=new Set();
 return networkRecords.reduce((prev,record)=>{
-if(seenUrls.has(record.url)||!record.finished){
+
+if(seenUrls.has(record.url)||!record.finished||record.sessionId){
 return prev;
 }
 
 seenUrls.add(record.url);
 const isOptimizableImage=record.resourceType===NetworkRequest.TYPES.Image&&
 IMAGE_REGEX.test(record.mimeType);
-const isSameOrigin=URL.originsMatch(pageUrl,record.url);
-const isBase64DataUri=/^data:.{2,40}base64\s*,/.test(record.url);
 
 const actualResourceSize=Math.min(record.resourceSize||0,record.transferSize||0);
 if(isOptimizableImage&&actualResourceSize>MINIMUM_IMAGE_SIZE){
 prev.push({
-isSameOrigin,
-isBase64DataUri,
 requestId:record.requestId,
 url:record.url,
 mimeType:record.mimeType,
@@ -11150,48 +12332,23 @@ return driver.sendCommand('Audits.getEncodedResponse',params);
 
 
 
-calculateImageStats(driver,networkRecord){
+async calculateImageStats(driver,networkRecord){
+const originalSize=networkRecord.resourceSize;
 
 
-return Promise.resolve(networkRecord.requestId).then(requestId=>{
-if(this._getEncodedResponseUnsupported)return;
-return this._getEncodedResponse(driver,requestId,'jpeg').then(jpegData=>{
-return this._getEncodedResponse(driver,requestId,'webp').then(webpData=>{
+if(Date.now()-this._encodingStartAt>MAX_TIME_TO_SPEND_ENCODING||
+originalSize>MAX_RESOURCE_SIZE_TO_ENCODE){
+return{originalSize,jpegSize:undefined,webpSize:undefined};
+}
+
+const jpegData=await this._getEncodedResponse(driver,networkRecord.requestId,'jpeg');
+const webpData=await this._getEncodedResponse(driver,networkRecord.requestId,'webp');
+
 return{
-fromProtocol:true,
-originalSize:networkRecord.resourceSize,
+originalSize,
 jpegSize:jpegData.encodedSize,
 webpSize:webpData.encodedSize};
 
-});
-}).catch(err=>{
-if(/wasn't found/.test(err.message)){
-
-this._getEncodedResponseUnsupported=true;
-}else{
-throw err;
-}
-});
-}).then(result=>{
-if(result)return result;
-
-
-
-if(!networkRecord.isSameOrigin&&!networkRecord.isBase64DataUri)return null;
-
-const script=`(${getOptimizedNumBytes.toString()})(${JSON.stringify(networkRecord.url)})`;
-return driver.evaluateAsync(script).then(stats=>{
-if(!stats)return null;
-const isBase64DataUri=networkRecord.isBase64DataUri;
-const base64Length=networkRecord.url.length-networkRecord.url.indexOf(',')-1;
-return{
-fromProtocol:false,
-originalSize:isBase64DataUri?base64Length:networkRecord.resourceSize,
-jpegSize:isBase64DataUri?stats.jpeg.base64:stats.jpeg.binary,
-webpSize:isBase64DataUri?stats.webp.base64:stats.webp.binary};
-
-});
-});
 }
 
 
@@ -11200,16 +12357,14 @@ webpSize:isBase64DataUri?stats.webp.base64:stats.webp.binary};
 
 
 async computeOptimizedImages(driver,imageRecords){
+this._encodingStartAt=Date.now();
+
 
 const results=[];
 
 for(const record of imageRecords){
 try{
 const stats=await this.calculateImageStats(driver,record);
-if(stats===null){
-continue;
-}
-
 
 const image={failed:false,...stats,...record};
 results.push(image);
@@ -11238,7 +12393,9 @@ return results;
 
 afterPass(passContext,loadData){
 const networkRecords=loadData.networkRecords;
-const imageRecords=OptimizedImages.filterImageRequests(passContext.url,networkRecords);
+const imageRecords=OptimizedImages.
+filterImageRequests(networkRecords).
+sort((a,b)=>b.resourceSize-a.resourceSize);
 
 return Promise.resolve().
 then(_=>this.computeOptimizedImages(passContext.driver,imageRecords)).
@@ -11255,7 +12412,7 @@ return results;
 
 module.exports=OptimizedImages;
 
-},{"../../../lib/network-request":67,"../../../lib/sentry":69,"../../../lib/url-shim":"url","../../driver.js":42,"../gatherer":44}],"../gather/gatherers/dobetterweb/password-inputs-with-prevented-paste":[function(require,module,exports){
+},{"../../../lib/network-request":71,"../../../lib/sentry":74,"../../../lib/url-shim":"url","../../driver.js":46,"../gatherer":48}],"../gather/gatherers/dobetterweb/password-inputs-with-prevented-paste":[function(require,module,exports){
 
 
 
@@ -11302,7 +12459,7 @@ return passContext.driver.evaluateAsync(`(() => {
 
 module.exports=PasswordInputsWithPreventedPaste;
 
-},{"../../../lib/page-functions":68,"../gatherer":44}],"../gather/gatherers/dobetterweb/response-compression":[function(require,module,exports){
+},{"../../../lib/page-functions":72,"../gatherer":48}],"../gather/gatherers/dobetterweb/response-compression":[function(require,module,exports){
 (function(Buffer){
 
 
@@ -11346,6 +12503,9 @@ static filterUnoptimizedResponses(networkRecords){
 const unoptimizedResponses=[];
 
 networkRecords.forEach(record=>{
+
+if(record.sessionId)return;
+
 const mimeType=record.mimeType;
 const resourceType=record.resourceType||NetworkRequest.TYPES.Other;
 const resourceSize=record.resourceSize;
@@ -11425,7 +12585,7 @@ return record;
 module.exports=ResponseCompression;
 
 }).call(this,require("buffer").Buffer);
-},{"../../../lib/network-request":67,"../../../lib/sentry":69,"../../../lib/url-shim":"url","../gatherer":44,"buffer":88,"zlib":86}],"../gather/gatherers/dobetterweb/tags-blocking-first-paint":[function(require,module,exports){
+},{"../../../lib/network-request":71,"../../../lib/sentry":74,"../../../lib/url-shim":"url","../gatherer":48,"buffer":94,"zlib":92}],"../gather/gatherers/dobetterweb/tags-blocking-first-paint":[function(require,module,exports){
 
 
 
@@ -11617,7 +12777,7 @@ return TagsBlockingFirstPaint.findBlockingTags(passContext.driver,loadData.netwo
 
 module.exports=TagsBlockingFirstPaint;
 
-},{"../../driver.js":42,"../gatherer":44}],"../gather/gatherers/html-without-javascript":[function(require,module,exports){
+},{"../../driver.js":46,"../gatherer":48}],"../gather/gatherers/html-without-javascript":[function(require,module,exports){
 
 
 
@@ -11675,7 +12835,7 @@ hasNoScript};
 
 module.exports=HTMLWithoutJavaScript;
 
-},{"./gatherer":44}],"../gather/gatherers/http-redirect":[function(require,module,exports){
+},{"./gatherer":48}],"../gather/gatherers/http-redirect":[function(require,module,exports){
 
 
 
@@ -11722,7 +12882,7 @@ value:isHttps};
 
 module.exports=HTTPRedirect;
 
-},{"./gatherer":44}],"../gather/gatherers/image-usage":[function(require,module,exports){
+},{"./gatherer":48}],"../gather/gatherers/image-elements":[function(require,module,exports){
 
 
 
@@ -11769,14 +12929,13 @@ return{
 
 
 src:element.currentSrc,
-width:element.width,
-height:element.height,
-clientWidth:element.clientWidth,
-clientHeight:element.clientHeight,
+displayedWidth:element.width,
+displayedHeight:element.height,
 clientRect:getClientRect(element),
 naturalWidth:element.naturalWidth,
 naturalHeight:element.naturalHeight,
 isCss:false,
+resourceSize:0,
 isPicture:!!element.parentElement&&element.parentElement.tagName==='PICTURE',
 usesObjectFit:['cover','contain','scale-down','none'].includes(
 computedStyle.getPropertyValue('object-fit'))};
@@ -11809,15 +12968,16 @@ return differentImages;
 
 images.push({
 src:url,
-clientWidth:element.clientWidth,
-clientHeight:element.clientHeight,
+displayedWidth:element.clientWidth,
+displayedHeight:element.clientHeight,
 clientRect:getClientRect(element),
 
-naturalWidth:Number.MAX_VALUE,
-naturalHeight:Number.MAX_VALUE,
+naturalWidth:0,
+naturalHeight:0,
 isCss:true,
 isPicture:false,
-usesObjectFit:false});
+usesObjectFit:false,
+resourceSize:0});
 
 
 return images;
@@ -11846,7 +13006,7 @@ img.src=url;
 });
 }
 
-class ImageUsage extends Gatherer{
+class ImageElements extends Gatherer{
 
 
 
@@ -11856,11 +13016,13 @@ async fetchElementWithSizeInformation(driver,element){
 const url=JSON.stringify(element.src);
 try{
 
+driver.setNextProtocolTimeout(250);
+
 const size=await driver.evaluateAsync(`(${determineNaturalSize.toString()})(${url})`);
 return Object.assign(element,size);
 }catch(_){
 
-return Object.assign(element,{naturalWidth:0,naturalHeight:0});
+return element;
 }
 }
 
@@ -11872,15 +13034,10 @@ return Object.assign(element,{naturalWidth:0,naturalHeight:0});
 async afterPass(passContext,loadData){
 const driver=passContext.driver;
 const indexedNetworkRecords=loadData.networkRecords.reduce((map,record)=>{
-if(/^image/.test(record.mimeType)&&record.finished){
-map[record.url]={
-url:record.url,
-resourceSize:Math.min(record.resourceSize||0,record.transferSize),
-startTime:record.startTime,
-endTime:record.endTime,
-responseReceivedTime:record.responseReceivedTime,
-mimeType:record.mimeType};
 
+
+if(/^image/.test(record.mimeType)&&record.finished&&record.statusCode===200){
+map[record.url]=record;
 }
 
 return map;
@@ -11895,14 +13052,30 @@ const expression=`(function() {
 const elements=await driver.evaluateAsync(expression);
 
 const imageUsage=[];
+const top50Images=Object.values(indexedNetworkRecords).
+sort((a,b)=>b.resourceSize-a.resourceSize).
+slice(0,50);
 for(let element of elements){
 
-element.networkRecord=indexedNetworkRecords[element.src];
+const networkRecord=indexedNetworkRecords[element.src]||{};
+element.mimeType=networkRecord.mimeType;
 
 
 
 
-if((element.isPicture||element.isCss)&&element.networkRecord){
+
+const{resourceSize=0,transferSize=0}=networkRecord;
+element.resourceSize=Math.min(resourceSize,transferSize);
+
+
+
+
+
+if(
+(element.isPicture||element.isCss)&&
+networkRecord&&
+top50Images.includes(networkRecord))
+{
 element=await this.fetchElementWithSizeInformation(driver,element);
 }
 
@@ -11913,9 +13086,9 @@ return imageUsage;
 }}
 
 
-module.exports=ImageUsage;
+module.exports=ImageElements;
 
-},{"../../lib/page-functions.js":68,"../driver.js":42,"./gatherer":44}],"../gather/gatherers/js-usage":[function(require,module,exports){
+},{"../../lib/page-functions.js":72,"../driver.js":46,"./gatherer":48}],"../gather/gatherers/js-usage":[function(require,module,exports){
 
 
 
@@ -11953,7 +13126,130 @@ return coverageResponse.result;
 
 module.exports=JsUsage;
 
-},{"./gatherer":44}],"../gather/gatherers/link-elements":[function(require,module,exports){
+},{"./gatherer":48}],"../gather/gatherers/link-elements":[function(require,module,exports){
+
+
+
+
+
+'use strict';
+
+const Gatherer=require('./gatherer.js');
+const URL=require('../../lib/url-shim.js').URL;
+const NetworkAnalyzer=require('../../lib/dependency-graph/simulator/network-analyzer.js');
+const LinkHeader=require('http-link-header');
+const getElementsInDocumentString=require('../../lib/page-functions.js').
+getElementsInDocumentString;
+
+
+
+
+
+
+
+
+
+
+
+
+
+function normalizeUrlOrNull(url,finalUrl){
+try{
+return new URL(url,finalUrl).href;
+}catch(_){
+return null;
+}
+}
+
+
+
+
+
+function getCrossoriginFromHeader(value){
+if(value==='anonymous')return'anonymous';
+if(value==='use-credentials')return'use-credentials';
+return null;
+}
+
+class LinkElements extends Gatherer{
+
+
+
+
+static getLinkElementsInDOM(passContext){
+
+
+return passContext.driver.evaluateAsync(`(() => {
+      ${getElementsInDocumentString};
+
+      return getElementsInDocument('link').map(link => {
+        return {
+          rel: link.rel,
+          href: link.href,
+          hrefRaw: link.href,
+          hreflang: link.hreflang,
+          as: link.as,
+          crossOrigin: link.crossOrigin,
+          source: link.closest('head') ? 'head' : 'body',
+        };
+      });
+    })()`,{useIsolation:true});
+}
+
+
+
+
+
+
+static getLinkElementsInHeaders(passContext,loadData){
+const finalUrl=passContext.url;
+const records=loadData.networkRecords;
+const mainDocument=NetworkAnalyzer.findMainDocument(records,finalUrl);
+
+
+const linkElements=[];
+
+for(const header of mainDocument.responseHeaders){
+if(header.name.toLowerCase()!=='link')continue;
+
+for(const link of LinkHeader.parse(header.value).refs){
+linkElements.push({
+rel:link.rel||'',
+href:normalizeUrlOrNull(link.uri,finalUrl),
+hrefRaw:link.uri||'',
+hreflang:link.hreflang||'',
+as:link.as||'',
+crossOrigin:getCrossoriginFromHeader(link.crossorigin),
+source:'headers'});
+
+}
+}
+
+return linkElements;
+}
+
+
+
+
+
+
+async afterPass(passContext,loadData){
+const fromDOM=await LinkElements.getLinkElementsInDOM(passContext);
+const fromHeaders=LinkElements.getLinkElementsInHeaders(passContext,loadData);
+const linkElements=fromDOM.concat(fromHeaders);
+
+for(const link of linkElements){
+
+link.rel=link.rel.toLowerCase();
+}
+
+return linkElements;
+}}
+
+
+module.exports=LinkElements;
+
+},{"../../lib/dependency-graph/simulator/network-analyzer.js":57,"../../lib/page-functions.js":72,"../../lib/url-shim.js":"url","./gatherer.js":48,"http-link-header":101}],"../gather/gatherers/meta-elements":[function(require,module,exports){
 
 
 
@@ -11964,7 +13260,7 @@ module.exports=JsUsage;
 const Gatherer=require('./gatherer.js');
 const getElementsInDocumentString=require('../../lib/page-functions.js').getElementsInDocumentString;
 
-class LinkElements extends Gatherer{
+class MetaElements extends Gatherer{
 
 
 
@@ -11974,75 +13270,22 @@ const driver=passContext.driver;
 
 
 
-
 return driver.evaluateAsync(`(() => {
       ${getElementsInDocumentString};
 
-      return getElementsInDocument('link').map(link => {
+      return getElementsInDocument('head meta').map(meta => {
         return {
-          rel: link.rel,
-          href: link.href,
-          as: link.as,
-          crossOrigin: link.crossOrigin,
+          name: meta.name.toLowerCase(),
+          content: meta.content,
         };
       });
     })()`,{useIsolation:true});
 }}
 
 
-module.exports=LinkElements;
+module.exports=MetaElements;
 
-},{"../../lib/page-functions.js":68,"./gatherer.js":44}],"../gather/gatherers/manifest":[function(require,module,exports){
-(function(Buffer){
-
-
-
-
-
-'use strict';
-
-const Gatherer=require('./gatherer');
-const manifestParser=require('../../lib/manifest-parser');
-const BOM_LENGTH=3;
-const BOM_FIRSTCHAR=65279;
-
-
-
-
-
-
-
-class Manifest extends Gatherer{
-
-
-
-
-
-
-
-async afterPass(passContext){
-const manifestPromise=passContext.driver.getAppManifest();
-
-const timeoutPromise=new Promise(resolve=>setTimeout(resolve,3000));
-
-const response=await Promise.race([manifestPromise,timeoutPromise]);
-if(!response){
-return null;
-}
-
-const isBomEncoded=response.data.charCodeAt(0)===BOM_FIRSTCHAR;
-if(isBomEncoded){
-response.data=Buffer.from(response.data).slice(BOM_LENGTH).toString();
-}
-
-return manifestParser(response.data,response.url,passContext.url);
-}}
-
-
-module.exports=Manifest;
-
-}).call(this,require("buffer").Buffer);
-},{"../../lib/manifest-parser":64,"./gatherer":44,"buffer":88}],"../gather/gatherers/mixed-content":[function(require,module,exports){
+},{"../../lib/page-functions.js":72,"./gatherer.js":48}],"../gather/gatherers/mixed-content":[function(require,module,exports){
 (function(Buffer){
 
 
@@ -12166,7 +13409,7 @@ return{url:passContext.url};
 module.exports=MixedContent;
 
 }).call(this,require("buffer").Buffer);
-},{"../../lib/url-shim":"url","../driver.js":42,"./gatherer":44,"buffer":88}],"../gather/gatherers/offline":[function(require,module,exports){
+},{"../../lib/url-shim":"url","../driver.js":46,"./gatherer":48,"buffer":94}],"../gather/gatherers/offline":[function(require,module,exports){
 
 
 
@@ -12203,7 +13446,7 @@ then(_=>navigationRecord?navigationRecord.statusCode:-1);
 
 module.exports=Offline;
 
-},{"../../lib/url-shim":"url","./gatherer":44}],"../gather/gatherers/runtime-exceptions":[function(require,module,exports){
+},{"../../lib/url-shim":"url","./gatherer":48}],"../gather/gatherers/runtime-exceptions":[function(require,module,exports){
 
 
 
@@ -12253,7 +13496,7 @@ return this._exceptions;
 
 module.exports=RuntimeExceptions;
 
-},{"./gatherer":44}],"../gather/gatherers/scripts":[function(require,module,exports){
+},{"./gatherer":48}],"../gather/gatherers/script-elements":[function(require,module,exports){
 
 
 
@@ -12261,13 +13504,37 @@ module.exports=RuntimeExceptions;
 
 'use strict';
 
-const Gatherer=require('./gatherer');
-const NetworkRequest=require('../../lib/network-request');
+const Gatherer=require('./gatherer.js');
+const NetworkAnalyzer=require('../../lib/dependency-graph/simulator/network-analyzer.js');
+const NetworkRequest=require('../../lib/network-request.js');
+const getElementsInDocumentString=require('../../lib/page-functions.js').getElementsInDocumentString;
 
 
 
 
-class Scripts extends Gatherer{
+
+function collectAllScriptElements(){
+
+
+const scripts=getElementsInDocument('script');
+
+return scripts.map(script=>{
+return{
+type:script.type||null,
+src:script.src||null,
+async:script.async,
+defer:script.defer,
+source:script.closest('head')?'head':'body',
+content:script.src?null:script.text,
+requestId:null};
+
+});
+}
+
+
+
+
+class ScriptElements extends Gatherer{
 
 
 
@@ -12275,100 +13542,54 @@ class Scripts extends Gatherer{
 
 async afterPass(passContext,loadData){
 const driver=passContext.driver;
+const mainResource=NetworkAnalyzer.findMainDocument(loadData.networkRecords,passContext.url);
 
 
-const scriptContentMap={};
+const scripts=await driver.evaluateAsync(`(() => {
+      ${getElementsInDocumentString}
+      return (${collectAllScriptElements.toString()})();
+    })()`,{useIsolation:true});
+
+for(const script of scripts){
+if(script.content)script.requestId=mainResource.requestId;
+}
+
 const scriptRecords=loadData.networkRecords.
+
+filter(record=>!record.sessionId).
+
 filter(record=>record.resourceType===NetworkRequest.TYPES.Script);
 
 for(const record of scriptRecords){
 try{
 const content=await driver.getRequestContent(record.requestId);
-if(content){
-scriptContentMap[record.requestId]=content;
+if(!content)continue;
+
+const matchedScriptElement=scripts.find(script=>script.src===record.url);
+if(matchedScriptElement){
+matchedScriptElement.requestId=record.requestId;
+matchedScriptElement.content=content;
+}else{
+scripts.push({
+type:null,
+src:record.url,
+async:false,
+defer:false,
+source:'network',
+requestId:record.requestId,
+content});
+
 }
 }catch(e){}
 }
 
-return scriptContentMap;
+return scripts;
 }}
 
 
-module.exports=Scripts;
+module.exports=ScriptElements;
 
-},{"../../lib/network-request":67,"./gatherer":44}],"../gather/gatherers/seo/canonical":[function(require,module,exports){
-
-
-
-
-
-'use strict';
-
-const Gatherer=require('../gatherer');
-
-class Canonical extends Gatherer{
-
-
-
-
-afterPass(passContext){
-const driver=passContext.driver;
-
-return driver.querySelectorAll('head link[rel="canonical" i]').
-then(nodes=>Promise.all(nodes.map(node=>node.getAttribute('href'))));
-}}
-
-
-module.exports=Canonical;
-
-
-},{"../gatherer":44}],"../gather/gatherers/seo/crawlable-links":[function(require,module,exports){
-
-
-
-
-
-'use strict';
-
-const Gatherer=require('../gatherer');
-const pageFunctions=require('../../../lib/page-functions.js');
-
-class CrawlableLinks extends Gatherer{
-
-
-
-
-async afterPass(passContext){
-const expression=`(function() {
-      ${pageFunctions.getElementsInDocumentString}; // define function on page
-      const resolveURLOrNull = url => {
-        try { return new URL(url, window.location.href).href; }
-        catch (_) { return null; }
-      };
-
-      const selector = 'a[href]:not([rel~="nofollow"])';
-      const elements = getElementsInDocument(selector);
-      return elements
-        .map(node => ({
-          href: node.href instanceof SVGAnimatedString ?
-            resolveURLOrNull(node.href.baseVal) :
-            node.href,
-          text: node.href instanceof SVGAnimatedString ?
-            node.textContent :
-            node.innerText,
-        }));
-    })()`;
-
-
-const links=await passContext.driver.evaluateAsync(expression,{useIsolation:true});
-return links.filter(link=>typeof link.href==='string'&&link.href);
-}}
-
-
-module.exports=CrawlableLinks;
-
-
-},{"../../../lib/page-functions.js":68,"../gatherer":44}],"../gather/gatherers/seo/embedded-content":[function(require,module,exports){
+},{"../../lib/dependency-graph/simulator/network-analyzer.js":57,"../../lib/network-request.js":71,"../../lib/page-functions.js":72,"./gatherer.js":48}],"../gather/gatherers/seo/embedded-content":[function(require,module,exports){
 
 
 
@@ -12411,7 +13632,7 @@ return passContext.driver.evaluateAsync(expression);
 
 module.exports=EmbeddedContent;
 
-},{"../../../lib/page-functions.js":68,"../gatherer":44}],"../gather/gatherers/seo/font-size":[function(require,module,exports){
+},{"../../../lib/page-functions.js":72,"../gatherer":48}],"../gather/gatherers/seo/font-size":[function(require,module,exports){
 
 
 
@@ -12596,7 +13817,8 @@ return undefined;
 
 
 function getNodeTextLength(node){
-return!node.nodeValue?0:node.nodeValue.trim().length;
+
+return!node.nodeValue?0:Array.from(node.nodeValue.trim()).length;
 }
 
 
@@ -12773,95 +13995,7 @@ module.exports.TEXT_NODE_TYPE=TEXT_NODE_TYPE;
 module.exports.computeSelectorSpecificity=computeSelectorSpecificity;
 module.exports.getEffectiveFontRule=getEffectiveFontRule;
 
-},{"../../../lib/sentry.js":69,"../gatherer":44}],"../gather/gatherers/seo/hreflang":[function(require,module,exports){
-
-
-
-
-
-'use strict';
-
-const Gatherer=require('../gatherer');
-
-class Hreflang extends Gatherer{
-
-
-
-
-afterPass(passContext){
-const driver=passContext.driver;
-
-return driver.querySelectorAll('head link[rel="alternate" i][hreflang]').
-then(nodes=>Promise.all(nodes.map(node=>
-Promise.all([node.getAttribute('href'),node.getAttribute('hreflang')])))).
-
-then(attributeValues=>attributeValues&&
-attributeValues.map(values=>{
-const[href,hreflang]=values;
-return{
-href:href||'',
-hreflang:hreflang||''};
-
-}));
-
-}}
-
-
-module.exports=Hreflang;
-
-
-},{"../gatherer":44}],"../gather/gatherers/seo/meta-description":[function(require,module,exports){
-
-
-
-
-
-'use strict';
-
-const Gatherer=require('../gatherer');
-
-class MetaDescription extends Gatherer{
-
-
-
-
-afterPass(passContext){
-const driver=passContext.driver;
-
-return driver.querySelector('head meta[name="description" i]').
-then(node=>node&&node.getAttribute('content'));
-}}
-
-
-module.exports=MetaDescription;
-
-
-},{"../gatherer":44}],"../gather/gatherers/seo/meta-robots":[function(require,module,exports){
-
-
-
-
-
-'use strict';
-
-const Gatherer=require('../gatherer');
-
-class MetaRobots extends Gatherer{
-
-
-
-
-afterPass(passContext){
-const driver=passContext.driver;
-
-return driver.querySelector('head meta[name="robots" i]').
-then(node=>node&&node.getAttribute('content'));
-}}
-
-
-module.exports=MetaRobots;
-
-},{"../gatherer":44}],"../gather/gatherers/seo/robots-txt":[function(require,module,exports){
+},{"../../../lib/sentry.js":74,"../gatherer":48}],"../gather/gatherers/seo/robots-txt":[function(require,module,exports){
 
 
 
@@ -12902,7 +14036,344 @@ return passContext.driver.evaluateAsync(`(${getRobotsTxtContent.toString()}())`)
 
 module.exports=RobotsTxt;
 
-},{"../gatherer":44}],"../gather/gatherers/service-worker":[function(require,module,exports){
+},{"../gatherer":48}],"../gather/gatherers/seo/tap-targets":[function(require,module,exports){
+
+
+
+
+
+'use strict';
+
+
+
+const Gatherer=require('../gatherer');
+const pageFunctions=require('../../../lib/page-functions.js');
+const{rectContainsString,rectContains}=require('../../../lib/rect-helpers');
+
+const TARGET_SELECTORS=[
+'button',
+'a',
+'input',
+'textarea',
+'select',
+'option',
+'[role=button]',
+'[role=checkbox]',
+'[role=link]',
+'[role=menuitem]',
+'[role=menuitemcheckbox]',
+'[role=menuitemradio]',
+'[role=option]',
+'[role=scrollbar]',
+'[role=slider]',
+'[role=spinbutton]'];
+
+const tapTargetsSelector=TARGET_SELECTORS.join(',');
+
+
+
+
+
+
+function elementIsVisible(element){
+const{overflowX,overflowY,display,visibility}=getComputedStyle(element);
+
+if(
+display==='none'||
+visibility==='collapse'&&['TR','TBODY','COL','COLGROUP'].includes(element.tagName))
+{
+
+return false;
+}
+
+
+if(display==='block'||display==='inline-block'){
+
+
+if(element.clientWidth===0&&overflowX==='hidden'||
+element.clientHeight===0&&overflowY==='hidden'){
+return false;
+}
+}
+
+const parent=element.parentElement;
+if(parent&&parent.tagName!=='BODY'){
+
+return elementIsVisible(parent);
+}
+
+return true;
+}
+
+
+
+
+
+function allClientRectsEmpty(clientRects){
+return clientRects.every(cr=>cr.width===0&&cr.height===0);
+}
+
+
+
+
+
+function getVisibleClientRects(element){
+if(!elementIsVisible(element)){
+return[];
+}
+
+let clientRects=getClientRects(element);
+
+if(allClientRectsEmpty(clientRects)){
+return[];
+}
+
+
+
+
+
+
+clientRects=filterClientRectsWithinAncestorsVisibleScrollArea(element,clientRects);
+
+return clientRects;
+}
+
+
+
+
+
+
+
+
+function filterClientRectsWithinAncestorsVisibleScrollArea(element,clientRects){
+const parent=element.parentElement;
+if(!parent){
+return clientRects;
+}
+if(getComputedStyle(parent).overflowY!=='visible'){
+const parentBCR=parent.getBoundingClientRect();
+clientRects=clientRects.filter(cr=>rectContains(parentBCR,cr));
+}
+if(parent.parentElement&&parent.parentElement.tagName!=='BODY'){
+return filterClientRectsWithinAncestorsVisibleScrollArea(
+parent,
+clientRects);
+
+}
+return clientRects;
+}
+
+
+
+
+
+
+function getClientRects(element){
+const clientRects=Array.from(
+element.getClientRects()).
+map(clientRect=>{
+
+
+const{width,height,left,top,right,bottom}=clientRect;
+return{width,height,left,top,right,bottom};
+});
+
+for(const child of element.children){
+clientRects.push(...getClientRects(child));
+}
+
+return clientRects;
+}
+
+
+
+
+
+
+function elementHasAncestorTapTarget(element){
+if(!element.parentElement){
+return false;
+}
+if(element.parentElement.matches(tapTargetsSelector)){
+return true;
+}
+return elementHasAncestorTapTarget(element.parentElement);
+}
+
+
+
+
+
+function hasTextNodeSiblingsFormingTextBlock(element){
+if(!element.parentElement){
+return false;
+}
+
+const parentElement=element.parentElement;
+
+const nodeText=element.textContent||'';
+const parentText=parentElement.textContent||'';
+if(parentText.length-nodeText.length<5){
+
+
+return false;
+}
+
+for(const sibling of element.parentElement.childNodes){
+if(sibling===element){
+continue;
+}
+const siblingTextContent=(sibling.textContent||'').trim();
+
+
+
+
+if(sibling.nodeType===Node.TEXT_NODE&&siblingTextContent.length>0){
+return true;
+}
+}
+
+return false;
+}
+
+
+
+
+
+
+
+
+
+function elementIsInTextBlock(element){
+const{display}=getComputedStyle(element);
+if(display!=='inline'&&display!=='inline-block'){
+return false;
+}
+
+if(hasTextNodeSiblingsFormingTextBlock(element)){
+return true;
+}else if(element.parentElement){
+return elementIsInTextBlock(element.parentElement);
+}else{
+return false;
+}
+}
+
+
+
+
+
+
+function elementIsPositionFixedStickyOrAbsolute(element){
+const{position}=getComputedStyle(element);
+if(position==='fixed'||position==='absolute'||position==='sticky'){
+return true;
+}
+if(element.parentElement){
+return elementIsPositionFixedStickyOrAbsolute(element.parentElement);
+}
+return false;
+}
+
+
+
+
+
+
+
+function truncate(str,maxLength){
+if(str.length<=maxLength){
+return str;
+}
+return str.slice(0,maxLength-1)+'…';
+}
+
+
+
+
+
+function gatherTapTargets(){
+
+const targets=[];
+
+
+
+const tapTargetElements=getElementsInDocument(tapTargetsSelector);
+
+tapTargetElements.forEach(tapTargetElement=>{
+
+if(elementHasAncestorTapTarget(tapTargetElement)){
+
+
+return;
+}
+if(elementIsInTextBlock(tapTargetElement)){
+
+
+return;
+}
+if(elementIsPositionFixedStickyOrAbsolute(tapTargetElement)){
+
+
+
+
+
+return;
+}
+
+const visibleClientRects=getVisibleClientRects(tapTargetElement);
+if(visibleClientRects.length===0){
+return;
+}
+
+targets.push({
+clientRects:visibleClientRects,
+snippet:truncate(tapTargetElement.outerHTML,300),
+
+path:getNodePath(tapTargetElement),
+
+selector:getNodeSelector(tapTargetElement),
+href:tapTargetElement['href']||''});
+
+});
+
+return targets;
+}
+
+class TapTargets extends Gatherer{
+
+
+
+
+afterPass(passContext){
+const expression=`(function() {
+      const tapTargetsSelector = "${tapTargetsSelector}";
+      ${pageFunctions.getElementsInDocumentString};
+      ${filterClientRectsWithinAncestorsVisibleScrollArea.toString()};
+      ${elementIsPositionFixedStickyOrAbsolute.toString()};
+      ${elementIsVisible.toString()};
+      ${elementHasAncestorTapTarget.toString()};
+      ${getVisibleClientRects.toString()};
+      ${truncate.toString()};
+      ${getClientRects.toString()};
+      ${hasTextNodeSiblingsFormingTextBlock.toString()};
+      ${elementIsInTextBlock.toString()};
+      ${allClientRectsEmpty.toString()};
+      ${rectContainsString};
+      ${pageFunctions.getNodePathString};
+      ${pageFunctions.getNodeSelectorString};
+      ${gatherTapTargets.toString()};
+
+      return gatherTapTargets();
+    })()`;
+
+return passContext.driver.evaluateAsync(expression,{useIsolation:true});
+}}
+
+
+module.exports=TapTargets;
+
+},{"../../../lib/page-functions.js":72,"../../../lib/rect-helpers":73,"../gatherer":48}],"../gather/gatherers/service-worker":[function(require,module,exports){
 
 
 
@@ -12930,7 +14401,7 @@ registrations};
 
 module.exports=ServiceWorker;
 
-},{"./gatherer":44}],"../gather/gatherers/start-url":[function(require,module,exports){
+},{"./gatherer":48}],"../gather/gatherers/start-url":[function(require,module,exports){
 
 
 
@@ -12939,7 +14410,6 @@ module.exports=ServiceWorker;
 'use strict';
 
 const Gatherer=require('./gatherer');
-const manifestParser=require('../../lib/manifest-parser');
 
 
 
@@ -12949,20 +14419,14 @@ class StartUrl extends Gatherer{
 
 
 
-afterPass(passContext){
-const driver=passContext.driver;
-return driver.goOnline(passContext).
-then(()=>driver.getAppManifest()).
-then(response=>driver.goOffline().then(()=>response)).
-then(response=>response&&manifestParser(response.data,response.url,passContext.url)).
-then(manifest=>{
+async afterPass(passContext){
+const manifest=passContext.baseArtifacts.WebAppManifest;
 const startUrlInfo=this._readManifestStartUrl(manifest);
 if(startUrlInfo.isReadFailure){
 return{statusCode:-1,explanation:startUrlInfo.reason};
 }
 
-return this._attemptManifestFetch(passContext.driver,startUrlInfo.startUrl);
-}).catch(()=>{
+return this._attemptStartURLFetch(passContext.driver,startUrlInfo.startUrl).catch(()=>{
 return{statusCode:-1,explanation:'Unable to fetch start URL via service worker.'};
 });
 }
@@ -12994,7 +14458,8 @@ return{isReadFailure:false,startUrl:manifest.value.start_url.value};
 
 
 
-_attemptManifestFetch(driver,startUrl){
+_attemptStartURLFetch(driver,startUrl){
+
 
 const timeoutPromise=new Promise(resolve=>
 setTimeout(
@@ -13032,32 +14497,7 @@ then(()=>Promise.race([fetchPromise,timeoutPromise]));
 
 module.exports=StartUrl;
 
-},{"../../lib/manifest-parser":64,"./gatherer":44}],"../gather/gatherers/theme-color":[function(require,module,exports){
-
-
-
-
-
-'use strict';
-
-const Gatherer=require('./gatherer');
-
-class ThemeColor extends Gatherer{
-
-
-
-
-async afterPass(passContext){
-const driver=passContext.driver;
-
-const metaEl=await driver.querySelector('head meta[name="theme-color" i]');
-return metaEl&&metaEl.getAttribute('content');
-}}
-
-
-module.exports=ThemeColor;
-
-},{"./gatherer":44}],"../gather/gatherers/viewport-dimensions":[function(require,module,exports){
+},{"./gatherer":48}],"../gather/gatherers/viewport-dimensions":[function(require,module,exports){
 
 
 
@@ -13110,32 +14550,7 @@ return dimensions;
 
 module.exports=ViewportDimensions;
 
-},{"./gatherer":44}],"../gather/gatherers/viewport":[function(require,module,exports){
-
-
-
-
-
-'use strict';
-
-const Gatherer=require('./gatherer');
-
-class Viewport extends Gatherer{
-
-
-
-
-async afterPass(passContext){
-const driver=passContext.driver;
-
-const metaEl=await driver.querySelector('head meta[name="viewport" i]');
-return metaEl&&metaEl.getAttribute('content');
-}}
-
-
-module.exports=Viewport;
-
-},{"./gatherer":44}],1:[function(require,module,exports){
+},{"./gatherer":48}],1:[function(require,module,exports){
 
 
 
@@ -13174,6 +14589,7 @@ onlyCategories:categoryIDs}};
 function runLighthouseInWorker(port,url,flags,categoryIDs){
 
 flags.logLevel=flags.logLevel||'info';
+flags.channel='devtools';
 const config=getDefaultConfigForCategories(categoryIDs);
 const connection=new RawProtocol(port);
 
@@ -13202,7 +14618,7 @@ self.runLighthouseInWorker=runLighthouseInWorker;
 self.listenForStatus=listenForStatus;
 }
 
-},{"../lighthouse-core/gather/connections/raw.js":40,"../lighthouse-core/index.js":45,"lighthouse-logger":113}],2:[function(require,module,exports){
+},{"../lighthouse-core/gather/connections/raw.js":44,"../lighthouse-core/index.js":49,"lighthouse-logger":120}],2:[function(require,module,exports){
 (function(__filename){
 
 
@@ -13264,16 +14680,27 @@ explanation:node.failureSummary}}));
 
 }
 
+
 const headings=[
 {key:'node',itemType:'node',text:str_(UIStrings.failingElementsHeader)}];
 
+
+
+let diagnostic;
+if(impact||tags){
+diagnostic={
+type:'diagnostic',
+impact,
+tags};
+
+}
 
 return{
 rawValue:typeof rule==='undefined',
 extendedInfo:{
 value:rule},
 
-details:{...Audit.makeTableDetails(headings,items),impact,tags}};
+details:{...Audit.makeTableDetails(headings,items),diagnostic}};
 
 }}
 
@@ -13282,7 +14709,7 @@ module.exports=AxeAudit;
 module.exports.UIStrings=UIStrings;
 
 }).call(this,"/lighthouse-core/audits/accessibility/axe-audit.js");
-},{"../../lib/i18n/i18n.js":59,"../audit":3}],3:[function(require,module,exports){
+},{"../../lib/i18n/i18n.js":63,"../audit":3}],3:[function(require,module,exports){
 
 
 
@@ -13414,6 +14841,72 @@ summary};
 
 
 
+static makeListDetails(items){
+return{
+type:'list',
+items:items};
+
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+static makeSnippetDetails({
+content,
+title,
+lineMessages,
+generalMessages,
+node,
+maxLineLength=200,
+maxLinesAroundMessage=20})
+{
+const allLines=Audit._makeSnippetLinesArray(content,maxLineLength);
+const lines=Util.filterRelevantLines(allLines,lineMessages,maxLinesAroundMessage);
+return{
+type:'snippet',
+lines,
+title,
+lineMessages,
+generalMessages,
+lineCount:allLines.length,
+node};
+
+}
+
+
+
+
+
+
+static _makeSnippetLinesArray(content,maxLineLength){
+return content.split('\n').map((line,lineIndex)=>{
+const lineNumber=lineIndex+1;
+
+const lineDetail={
+content:line.slice(0,maxLineLength),
+lineNumber};
+
+if(line.length>maxLineLength){
+lineDetail.truncated=true;
+}
+return lineDetail;
+});
+}
+
+
+
+
+
 
 
 
@@ -13506,7 +14999,7 @@ details:result.details};
 
 module.exports=Audit;
 
-},{"../lib/statistics":70,"../report/html/renderer/util":74}],4:[function(require,module,exports){
+},{"../lib/statistics":75,"../report/html/renderer/util":80}],4:[function(require,module,exports){
 (function(__filename){
 
 
@@ -13578,13 +15071,24 @@ linearInterpolation(WASTED_MS_FOR_POOR,0.5,WASTED_MS_FOR_SCORE_OF_ZERO,0,wastedM
 
 
 
-
-static estimateTransferSize(networkRecord,totalBytes,resourceType,compressionRatio=0.5){
+static estimateTransferSize(networkRecord,totalBytes,resourceType){
 if(!networkRecord){
 
 
 
-return Math.round(totalBytes*compressionRatio);
+
+switch(resourceType){
+case'Stylesheet':
+
+return Math.round(totalBytes*0.2);
+case'Script':
+case'Document':
+
+return Math.round(totalBytes*0.33);
+default:
+
+return Math.round(totalBytes*0.5);}
+
 }else if(networkRecord.resourceType===resourceType){
 
 return networkRecord.transferSize||0;
@@ -13696,7 +15200,6 @@ const wastedBytes=results.reduce((sum,item)=>sum+item.wastedBytes,0);
 const wastedKb=Math.round(wastedBytes/KB_IN_BYTES);
 const wastedMs=this.computeWasteWithTTIGraph(results,graph,simulator);
 
-
 let displayValue=result.displayValue||'';
 if(typeof result.displayValue==='undefined'&&wastedBytes){
 displayValue=str_(i18n.UIStrings.displayValueByteSavings,{wastedBytes});
@@ -13739,7 +15242,7 @@ throw new Error('audit_ unimplemented');
 module.exports=UnusedBytes;
 
 }).call(this,"/lighthouse-core/audits/byte-efficiency/byte-efficiency-audit.js");
-},{"../../computed/load-simulator.js":10,"../../computed/metrics/lantern-interactive.js":23,"../../computed/network-records.js":29,"../../computed/page-dependency-graph.js":30,"../../lib/i18n/i18n.js":59,"../../lib/statistics":70,"../audit":3}],5:[function(require,module,exports){
+},{"../../computed/load-simulator.js":10,"../../computed/metrics/lantern-interactive.js":23,"../../computed/network-records.js":31,"../../computed/page-dependency-graph.js":32,"../../lib/i18n/i18n.js":63,"../../lib/statistics":75,"../audit":3}],5:[function(require,module,exports){
 
 
 
@@ -13822,7 +15325,13 @@ detailsItem[check.id]=check.passing;
 });
 }
 
-const details={items:[detailsItem]};
+
+
+const details={
+type:'diagnostic',
+
+items:[detailsItem]};
+
 
 
 if(result.failures.length>0){
@@ -13947,7 +15456,7 @@ return Object.assign(computableArtifact,{request});
 
 module.exports=makeComputedArtifact;
 
-},{"../lib/arbitrary-equality-map.js":46,"lighthouse-logger":113}],9:[function(require,module,exports){
+},{"../lib/arbitrary-equality-map.js":50,"lighthouse-logger":120}],9:[function(require,module,exports){
 
 
 
@@ -14108,7 +15617,7 @@ return CriticalRequestChains.extractChain(networkRecords,mainResource);
 
 module.exports=makeComputedArtifact(CriticalRequestChains);
 
-},{"../lib/network-request.js":67,"./computed-artifact.js":8,"./main-resource.js":11,"./network-records.js":29,"assert":78}],10:[function(require,module,exports){
+},{"../lib/network-request.js":71,"./computed-artifact.js":8,"./main-resource.js":11,"./network-records.js":31,"assert":84}],10:[function(require,module,exports){
 
 
 
@@ -14128,7 +15637,7 @@ class LoadSimulator{
 
 
 static async compute_(data,context){
-const{throttlingMethod,throttling}=data.settings;
+const{throttlingMethod,throttling,precomputedLanternData}=data.settings;
 const networkAnalysis=await NetworkAnalysis.request(data.devtoolsLog,context);
 
 
@@ -14136,6 +15645,15 @@ const options={
 additionalRttByOrigin:networkAnalysis.additionalRttByOrigin,
 serverResponseTimeByOrigin:networkAnalysis.serverResponseTimeByOrigin};
 
+
+
+
+if(precomputedLanternData){
+options.additionalRttByOrigin=new Map(Object.entries(
+precomputedLanternData.additionalRttByOrigin));
+options.serverResponseTimeByOrigin=new Map(Object.entries(
+precomputedLanternData.serverResponseTimeByOrigin));
+}
 
 switch(throttlingMethod){
 case'provided':
@@ -14169,12 +15687,30 @@ break;}
 
 
 return new Simulator(options);
+}
+
+
+
+
+
+static convertAnalysisToSaveableLanternData(networkAnalysis){
+
+const lanternData={additionalRttByOrigin:{},serverResponseTimeByOrigin:{}};
+for(const[origin,value]of networkAnalysis.additionalRttByOrigin.entries()){
+if(origin.startsWith('http'))lanternData.additionalRttByOrigin[origin]=value;
+}
+
+for(const[origin,value]of networkAnalysis.serverResponseTimeByOrigin.entries()){
+if(origin.startsWith('http'))lanternData.serverResponseTimeByOrigin[origin]=value;
+}
+
+return lanternData;
 }}
 
 
 module.exports=makeComputedArtifact(LoadSimulator);
 
-},{"../config/constants.js":36,"../lib/dependency-graph/simulator/simulator.js":54,"./computed-artifact.js":8,"./network-analysis.js":28}],11:[function(require,module,exports){
+},{"../config/constants.js":40,"../lib/dependency-graph/simulator/simulator.js":58,"./computed-artifact.js":8,"./network-analysis.js":30}],11:[function(require,module,exports){
 
 
 
@@ -14183,7 +15719,7 @@ module.exports=makeComputedArtifact(LoadSimulator);
 'use strict';
 
 const makeComputedArtifact=require('./computed-artifact.js');
-const URL=require('../lib/url-shim.js');
+const NetworkAnalyzer=require('../lib/dependency-graph/simulator/network-analyzer.js');
 const NetworkRecords=require('./network-records.js');
 
 
@@ -14199,10 +15735,7 @@ class MainResource{
 static async compute_(data,context){
 const finalUrl=data.URL.finalUrl;
 const requests=await NetworkRecords.request(data.devtoolsLog,context);
-
-const mainResource=requests.find(request=>finalUrl.startsWith(request.url)&&
-URL.equalWithExcludedFragments(request.url,finalUrl));
-
+const mainResource=NetworkAnalyzer.findMainDocument(requests,finalUrl);
 if(!mainResource){
 throw new Error('Unable to identify the main resource');
 }
@@ -14213,7 +15746,7 @@ return mainResource;
 
 module.exports=makeComputedArtifact(MainResource);
 
-},{"../lib/url-shim.js":"url","./computed-artifact.js":8,"./network-records.js":29}],12:[function(require,module,exports){
+},{"../lib/dependency-graph/simulator/network-analyzer.js":57,"./computed-artifact.js":8,"./network-records.js":31}],12:[function(require,module,exports){
 
 
 
@@ -14224,6 +15757,8 @@ module.exports=makeComputedArtifact(MainResource);
 const makeComputedArtifact=require('./computed-artifact.js');
 const{taskGroups,taskNameToGroup}=require('../lib/task-groups.js');
 const TraceOfTab=require('./trace-of-tab.js');
+
+
 
 
 
@@ -14289,13 +15824,23 @@ return newTask;
 
 
 
-static _createTasksFromEvents(mainThreadEvents){
+
+
+static _createTasksFromEvents(mainThreadEvents,priorTaskData,traceEndTs){
 
 const tasks=[];
 
 let currentTask;
 
 for(const event of mainThreadEvents){
+
+if(event.name==='TimerInstall'&&currentTask){
+
+
+const timerId=event.args.data.timerId;
+priorTaskData.timers.set(timerId,currentTask);
+}
+
 
 if(event.ph!=='X'&&event.ph!=='B'&&event.ph!=='E')continue;
 
@@ -14313,7 +15858,7 @@ currentTask=currentTask.parent;
 if(!currentTask){
 
 if(event.ph==='E'){
-throw new Error('Fatal trace logic error');
+throw new Error('Fatal trace logic error - unexpected end event');
 }
 
 currentTask=MainThreadTasks._createNewTaskNode(event);
@@ -14329,7 +15874,8 @@ tasks.push(newTask);
 currentTask=newTask;
 }else{
 if(currentTask.event.ph!=='B'){
-throw new Error('Fatal trace logic error');
+throw new Error(
+`Fatal trace logic error - expected start event, got ${currentTask.event.ph}`);
 }
 
 
@@ -14338,6 +15884,14 @@ currentTask=currentTask.parent;
 }
 }
 
+
+while(currentTask&&!Number.isFinite(currentTask.endTime)){
+
+currentTask.endTime=traceEndTs;
+currentTask=currentTask.parent;
+}
+
+
 return tasks;
 }
 
@@ -14345,9 +15899,14 @@ return tasks;
 
 
 
-static _computeRecursiveSelfTime(task){
+
+static _computeRecursiveSelfTime(task,parent){
+if(parent&&task.endTime>parent.endTime){
+throw new Error('Fatal trace logic error - child cannot end after parent');
+}
+
 const childTime=task.children.
-map(MainThreadTasks._computeRecursiveSelfTime).
+map(child=>MainThreadTasks._computeRecursiveSelfTime(child,task)).
 reduce((sum,child)=>sum+child,0);
 task.duration=task.endTime-task.startTime;
 task.selfTime=task.duration-childTime;
@@ -14358,9 +15917,11 @@ return task.duration;
 
 
 
-static _computeRecursiveAttributableURLs(task,parentURLs){
+
+static _computeRecursiveAttributableURLs(task,parentURLs,priorTaskData){
 const argsData=task.event.args.data||{};
 const stackFrameURLs=(argsData.stackTrace||[]).map(entry=>entry.url);
+
 
 let taskURLs=[];
 switch(task.event.name){
@@ -14377,6 +15938,15 @@ break;
 case'v8.compileModule':
 taskURLs=[task.event.args.fileName].concat(stackFrameURLs);
 break;
+case'TimerFire':{
+
+
+const timerId=task.event.args.data.timerId;
+const timerInstallerTaskNode=priorTaskData.timers.get(timerId);
+if(!timerInstallerTaskNode)break;
+taskURLs=timerInstallerTaskNode.attributableURLs.concat(stackFrameURLs);
+break;
+}
 default:
 taskURLs=stackFrameURLs;
 break;}
@@ -14394,7 +15964,7 @@ attributableURLs.push(url);
 
 task.attributableURLs=attributableURLs;
 task.children.forEach(child=>
-MainThreadTasks._computeRecursiveAttributableURLs(child,attributableURLs));
+MainThreadTasks._computeRecursiveAttributableURLs(child,attributableURLs,priorTaskData));
 }
 
 
@@ -14411,15 +15981,18 @@ task.children.forEach(child=>MainThreadTasks._computeRecursiveTaskGroup(child,ta
 
 
 
-static getMainThreadTasks(traceEvents){
-const tasks=MainThreadTasks._createTasksFromEvents(traceEvents);
+
+static getMainThreadTasks(traceEvents,traceEndTs){
+const timers=new Map();
+const priorTaskData={timers};
+const tasks=MainThreadTasks._createTasksFromEvents(traceEvents,priorTaskData,traceEndTs);
 
 
 for(const task of tasks){
 if(task.parent)continue;
 
-MainThreadTasks._computeRecursiveSelfTime(task);
-MainThreadTasks._computeRecursiveAttributableURLs(task,[]);
+MainThreadTasks._computeRecursiveSelfTime(task,undefined);
+MainThreadTasks._computeRecursiveAttributableURLs(task,[],priorTaskData);
 MainThreadTasks._computeRecursiveTaskGroup(task);
 }
 
@@ -14446,14 +16019,14 @@ return tasks;
 
 
 static async compute_(trace,context){
-const{mainThreadEvents}=await TraceOfTab.request(trace,context);
-return MainThreadTasks.getMainThreadTasks(mainThreadEvents);
+const{mainThreadEvents,timestamps}=await TraceOfTab.request(trace,context);
+return MainThreadTasks.getMainThreadTasks(mainThreadEvents,timestamps.traceEnd);
 }}
 
 
 module.exports=makeComputedArtifact(MainThreadTasks);
 
-},{"../lib/task-groups.js":71,"./computed-artifact.js":8,"./trace-of-tab.js":33}],13:[function(require,module,exports){
+},{"../lib/task-groups.js":77,"./computed-artifact.js":8,"./trace-of-tab.js":35}],13:[function(require,module,exports){
 
 
 
@@ -14572,7 +16145,7 @@ allChecks:remainingChecks};
 
 module.exports=makeComputedArtifact(ManifestValues);
 
-},{"../lib/icons.js":61,"./computed-artifact.js":8}],14:[function(require,module,exports){
+},{"../lib/icons.js":65,"./computed-artifact.js":8}],14:[function(require,module,exports){
 
 
 
@@ -14648,7 +16221,7 @@ timing:EstimatedInputLatency.calculateRollingWindowEIL(events)});
 
 module.exports=makeComputedArtifact(EstimatedInputLatency);
 
-},{"../../lib/lh-error.js":63,"../../lib/traces/tracing-processor.js":73,"../computed-artifact.js":8,"./lantern-estimated-input-latency.js":19,"./metric.js":26}],15:[function(require,module,exports){
+},{"../../lib/lh-error.js":67,"../../lib/traces/tracing-processor.js":79,"../computed-artifact.js":8,"./lantern-estimated-input-latency.js":19,"./metric.js":28}],15:[function(require,module,exports){
 
 
 
@@ -14686,7 +16259,7 @@ timestamp:traceOfTab.timestamps.firstContentfulPaint};
 
 module.exports=makeComputedArtifact(FirstContentfulPaint);
 
-},{"../computed-artifact.js":8,"./lantern-first-contentful-paint.js":20,"./metric.js":26}],16:[function(require,module,exports){
+},{"../computed-artifact.js":8,"./lantern-first-contentful-paint.js":20,"./metric.js":28}],16:[function(require,module,exports){
 
 
 
@@ -14902,7 +16475,7 @@ timestamp:valueInMs*1000+navStart});
 
 module.exports=makeComputedArtifact(FirstCPUIdle);
 
-},{"../../lib/lh-error.js":63,"../../lib/traces/tracing-processor.js":73,"../computed-artifact.js":8,"./lantern-first-cpu-idle.js":21,"./metric.js":26}],17:[function(require,module,exports){
+},{"../../lib/lh-error.js":67,"../../lib/traces/tracing-processor.js":79,"../computed-artifact.js":8,"./lantern-first-cpu-idle.js":21,"./metric.js":28}],17:[function(require,module,exports){
 
 
 
@@ -14945,7 +16518,7 @@ timestamp:traceOfTab.timestamps.firstMeaningfulPaint};
 
 module.exports=makeComputedArtifact(FirstMeaningfulPaint);
 
-},{"../../lib/lh-error.js":63,"../computed-artifact.js":8,"./lantern-first-meaningful-paint.js":22,"./metric.js":26}],18:[function(require,module,exports){
+},{"../../lib/lh-error.js":67,"../computed-artifact.js":8,"./lantern-first-meaningful-paint.js":22,"./metric.js":28}],18:[function(require,module,exports){
 
 
 
@@ -15136,7 +16709,7 @@ module.exports=makeComputedArtifact(Interactive);
 
 
 
-},{"../../lib/lh-error.js":63,"../../lib/network-recorder.js":66,"../../lib/traces/tracing-processor.js":73,"../computed-artifact.js":8,"./lantern-interactive.js":23,"./metric.js":26}],19:[function(require,module,exports){
+},{"../../lib/lh-error.js":67,"../../lib/network-recorder.js":70,"../../lib/traces/tracing-processor.js":79,"../computed-artifact.js":8,"./lantern-interactive.js":23,"./metric.js":28}],19:[function(require,module,exports){
 
 
 
@@ -15239,7 +16812,7 @@ return events.sort((a,b)=>a.start-b.start);
 
 module.exports=makeComputedArtifact(LanternEstimatedInputLatency);
 
-},{"../../lib/dependency-graph/base-node.js":48,"../computed-artifact.js":8,"./estimated-input-latency.js":14,"./lantern-first-meaningful-paint.js":22,"./lantern-metric.js":24}],20:[function(require,module,exports){
+},{"../../lib/dependency-graph/base-node.js":52,"../computed-artifact.js":8,"./estimated-input-latency.js":14,"./lantern-first-meaningful-paint.js":22,"./lantern-metric.js":25}],20:[function(require,module,exports){
 
 
 
@@ -15316,7 +16889,7 @@ return node.hasRenderBlockingPriority();
 
 module.exports=makeComputedArtifact(LanternFirstContentfulPaint);
 
-},{"../../lib/dependency-graph/base-node.js":48,"../computed-artifact.js":8,"./lantern-metric.js":24}],21:[function(require,module,exports){
+},{"../../lib/dependency-graph/base-node.js":52,"../computed-artifact.js":8,"./lantern-metric.js":25}],21:[function(require,module,exports){
 
 
 
@@ -15389,7 +16962,7 @@ return super.compute_(data,context);
 
 module.exports=makeComputedArtifact(LanternFirstCPUIdle);
 
-},{"../../lib/dependency-graph/base-node.js":48,"../computed-artifact.js":8,"./first-cpu-idle":16,"./lantern-interactive.js":23}],22:[function(require,module,exports){
+},{"../../lib/dependency-graph/base-node.js":52,"../computed-artifact.js":8,"./first-cpu-idle":16,"./lantern-interactive.js":23}],22:[function(require,module,exports){
 
 
 
@@ -15489,7 +17062,7 @@ return metricResult;
 
 module.exports=makeComputedArtifact(LanternFirstMeaningfulPaint);
 
-},{"../../lib/dependency-graph/base-node.js":48,"../../lib/lh-error.js":63,"../computed-artifact.js":8,"./lantern-first-contentful-paint.js":20,"./lantern-metric.js":24}],23:[function(require,module,exports){
+},{"../../lib/dependency-graph/base-node.js":52,"../../lib/lh-error.js":67,"../computed-artifact.js":8,"./lantern-first-contentful-paint.js":20,"./lantern-metric.js":25}],23:[function(require,module,exports){
 
 
 
@@ -15599,7 +17172,97 @@ reduce((max,x)=>Math.max(max||0,x||0),0);
 
 module.exports=makeComputedArtifact(LanternInteractive);
 
-},{"../../lib/dependency-graph/base-node.js":48,"../../lib/network-request.js":67,"../computed-artifact.js":8,"./lantern-first-meaningful-paint.js":22,"./lantern-metric.js":24}],24:[function(require,module,exports){
+},{"../../lib/dependency-graph/base-node.js":52,"../../lib/network-request.js":71,"../computed-artifact.js":8,"./lantern-first-meaningful-paint.js":22,"./lantern-metric.js":25}],24:[function(require,module,exports){
+
+
+
+
+
+'use strict';
+
+const makeComputedArtifact=require('../computed-artifact.js');
+const LanternMetricArtifact=require('./lantern-metric');
+const BaseNode=require('../../lib/dependency-graph/base-node');
+const LanternFirstContentfulPaint=require('./lantern-first-contentful-paint.js');
+
+
+
+class LanternMaxPotentialFID extends LanternMetricArtifact{
+
+
+
+static get COEFFICIENTS(){
+return{
+intercept:0,
+optimistic:0.5,
+pessimistic:0.5};
+
+}
+
+
+
+
+
+static getOptimisticGraph(dependencyGraph){
+return dependencyGraph;
+}
+
+
+
+
+
+static getPessimisticGraph(dependencyGraph){
+return dependencyGraph;
+}
+
+
+
+
+
+
+static getEstimateFromSimulation(simulation,extras){
+
+
+const fcpTimeInMs=extras.optimistic?
+extras.fcpResult.pessimisticEstimate.timeInMs:
+extras.fcpResult.optimisticEstimate.timeInMs;
+
+const timings=LanternMaxPotentialFID.getTimingsAfterFCP(
+simulation.nodeTimings,
+fcpTimeInMs);
+
+
+return{
+timeInMs:Math.max(...timings.map(timing=>timing.duration),16),
+nodeTimings:simulation.nodeTimings};
+
+}
+
+
+
+
+
+
+static async compute_(data,context){
+const fcpResult=await LanternFirstContentfulPaint.request(data,context);
+return super.computeMetricWithGraphs(data,context,{fcpResult});
+}
+
+
+
+
+
+
+static getTimingsAfterFCP(nodeTimings,fcpTimeInMs){
+return Array.from(nodeTimings.entries()).
+filter(([node,timing])=>node.type===BaseNode.TYPES.CPU&&timing.endTime>fcpTimeInMs).
+map(([_,timing])=>timing);
+}}
+
+
+module.exports=makeComputedArtifact(LanternMaxPotentialFID);
+
+},{"../../lib/dependency-graph/base-node":52,"../computed-artifact.js":8,"./lantern-first-contentful-paint.js":20,"./lantern-metric":25}],25:[function(require,module,exports){
 
 
 
@@ -15752,7 +17415,7 @@ return this.computeMetricWithGraphs(data,context);
 
 module.exports=LanternMetricArtifact;
 
-},{"../../lib/dependency-graph/base-node.js":48,"../../lib/network-request.js":67,"../load-simulator.js":10,"../page-dependency-graph.js":30,"../trace-of-tab.js":33}],25:[function(require,module,exports){
+},{"../../lib/dependency-graph/base-node.js":52,"../../lib/network-request.js":71,"../load-simulator.js":10,"../page-dependency-graph.js":32,"../trace-of-tab.js":35}],26:[function(require,module,exports){
 
 
 
@@ -15900,7 +17563,54 @@ return totalWeightedTime/totalWeight;
 
 module.exports=makeComputedArtifact(LanternSpeedIndex);
 
-},{"../../config/constants.js":36,"../../lib/dependency-graph/base-node.js":48,"../computed-artifact.js":8,"../speedline.js":32,"./lantern-first-contentful-paint.js":20,"./lantern-metric.js":24}],26:[function(require,module,exports){
+},{"../../config/constants.js":40,"../../lib/dependency-graph/base-node.js":52,"../computed-artifact.js":8,"../speedline.js":34,"./lantern-first-contentful-paint.js":20,"./lantern-metric.js":25}],27:[function(require,module,exports){
+
+
+
+
+
+'use strict';
+
+const makeComputedArtifact=require('../computed-artifact.js');
+const MetricArtifact=require('./metric');
+const LanternMaxPotentialFID=require('./lantern-max-potential-fid.js');
+const LHError=require('../../lib/lh-error');
+const TracingProcessor=require('../../lib/traces/tracing-processor');
+
+class MaxPotentialFID extends MetricArtifact{
+
+
+
+
+
+static computeSimulatedMetric(data,context){
+return LanternMaxPotentialFID.request(data,context);
+}
+
+
+
+
+
+static computeObservedMetric(data){
+const{firstContentfulPaint}=data.traceOfTab.timings;
+if(!firstContentfulPaint){
+throw new LHError(LHError.errors.NO_FCP);
+}
+
+const events=TracingProcessor.getMainThreadTopLevelEvents(
+data.traceOfTab,
+firstContentfulPaint).
+filter(evt=>evt.duration>=1);
+
+return Promise.resolve({
+timing:Math.max(...events.map(evt=>evt.duration),16)});
+
+}}
+
+
+module.exports=makeComputedArtifact(MaxPotentialFID);
+
+},{"../../lib/lh-error":67,"../../lib/traces/tracing-processor":79,"../computed-artifact.js":8,"./lantern-max-potential-fid.js":24,"./metric":28}],28:[function(require,module,exports){
 
 
 
@@ -15974,7 +17684,7 @@ throw new TypeError(`Unrecognized throttling method: ${settings.throttlingMethod
 
 module.exports=ComputedMetric;
 
-},{"../../lib/traces/tracing-processor.js":73,"../network-records.js":29,"../trace-of-tab.js":33}],27:[function(require,module,exports){
+},{"../../lib/traces/tracing-processor.js":79,"../network-records.js":31,"../trace-of-tab.js":35}],29:[function(require,module,exports){
 
 
 
@@ -16012,7 +17722,7 @@ return Promise.resolve({timing,timestamp});
 
 module.exports=makeComputedArtifact(SpeedIndex);
 
-},{"../computed-artifact.js":8,"../speedline.js":32,"./lantern-speed-index.js":25,"./metric.js":26}],28:[function(require,module,exports){
+},{"../computed-artifact.js":8,"../speedline.js":34,"./lantern-speed-index.js":26,"./metric.js":28}],30:[function(require,module,exports){
 
 
 
@@ -16051,8 +17761,7 @@ const additionalRttByOrigin=new Map();
 const serverResponseTimeByOrigin=new Map();
 for(const[origin,summary]of responseTimeSummaries.entries()){
 
-
-const rttForOrigin=rttByOrigin.get(origin);
+const rttForOrigin=rttByOrigin.get(origin)||minimumRtt;
 additionalRttByOrigin.set(origin,rttForOrigin-minimumRtt);
 serverResponseTimeByOrigin.set(origin,summary.median);
 }
@@ -16073,13 +17782,13 @@ static async compute_(devtoolsLog,context){
 const records=await NetworkRecords.request(devtoolsLog,context);
 const throughput=NetworkAnalyzer.estimateThroughput(records);
 const rttAndServerResponseTime=NetworkAnalysis.computeRTTAndServerResponseTime(records);
-return{records,throughput,...rttAndServerResponseTime};
+return{throughput,...rttAndServerResponseTime};
 }}
 
 
 module.exports=makeComputedArtifact(NetworkAnalysis);
 
-},{"../lib/dependency-graph/simulator/network-analyzer.js":53,"./computed-artifact.js":8,"./network-records.js":29}],29:[function(require,module,exports){
+},{"../lib/dependency-graph/simulator/network-analyzer.js":57,"./computed-artifact.js":8,"./network-records.js":31}],31:[function(require,module,exports){
 
 
 
@@ -16102,7 +17811,7 @@ return NetworkRecorder.recordsFromLogs(devtoolsLog);
 
 module.exports=makeComputedArtifact(NetworkRecords);
 
-},{"../lib/network-recorder.js":66,"./computed-artifact.js":8}],30:[function(require,module,exports){
+},{"../lib/network-recorder.js":70,"./computed-artifact.js":8}],32:[function(require,module,exports){
 
 
 
@@ -16238,9 +17947,9 @@ node.addDependency(parent);
 rootNode.addDependent(node);
 }
 
-const redirects=Array.from(node.record.redirects||[]);
-redirects.push(node.record);
+if(!node.record.redirects)return;
 
+const redirects=[...node.record.redirects,node.record];
 for(let i=1;i<redirects.length;i++){
 const redirectNode=networkNodeOutput.idToNodeMap.get(redirects[i-1].requestId);
 const actualNode=networkNodeOutput.idToNodeMap.get(redirects[i].requestId);
@@ -16462,7 +18171,7 @@ module.exports=makeComputedArtifact(PageDependencyGraph);
 
 
 
-},{"../lib/dependency-graph/cpu-node.js":49,"../lib/dependency-graph/network-node.js":50,"../lib/dependency-graph/simulator/network-analyzer.js":53,"../lib/network-request.js":67,"../lib/traces/tracing-processor.js":73,"./computed-artifact.js":8,"./network-records.js":29,"./trace-of-tab.js":33}],31:[function(require,module,exports){
+},{"../lib/dependency-graph/cpu-node.js":53,"../lib/dependency-graph/network-node.js":54,"../lib/dependency-graph/simulator/network-analyzer.js":57,"../lib/network-request.js":71,"../lib/traces/tracing-processor.js":79,"./computed-artifact.js":8,"./network-records.js":31,"./trace-of-tab.js":35}],33:[function(require,module,exports){
 
 
 
@@ -16493,7 +18202,7 @@ datauri:`data:image/jpeg;base64,${evt.args.snapshot}`};
 
 module.exports=makeComputedArtifact(Screenshots);
 
-},{"./computed-artifact.js":8}],32:[function(require,module,exports){
+},{"./computed-artifact.js":8}],34:[function(require,module,exports){
 
 
 
@@ -16549,7 +18258,7 @@ return speedline;
 
 module.exports=makeComputedArtifact(Speedline);
 
-},{"../lib/lh-error.js":63,"./computed-artifact.js":8,"./trace-of-tab.js":33,"speedline-core":153}],33:[function(require,module,exports){
+},{"../lib/lh-error.js":67,"./computed-artifact.js":8,"./trace-of-tab.js":35,"speedline-core":160}],35:[function(require,module,exports){
 
 
 
@@ -16743,7 +18452,7 @@ fmpFellBack};
 
 module.exports=makeComputedArtifact(TraceOfTab);
 
-},{"../lib/lh-error.js":63,"../lib/sentry.js":69,"../lib/traces/tracing-processor.js":73,"./computed-artifact.js":8,"lighthouse-logger":113}],34:[function(require,module,exports){
+},{"../lib/lh-error.js":67,"../lib/sentry.js":74,"../lib/traces/tracing-processor.js":79,"./computed-artifact.js":8,"lighthouse-logger":120}],36:[function(require,module,exports){
 
 
 
@@ -16828,7 +18537,290 @@ return userTimings;
 
 module.exports=makeComputedArtifact(UserTimings);
 
-},{"./computed-artifact.js":8,"./trace-of-tab.js":33}],35:[function(require,module,exports){
+},{"./computed-artifact.js":8,"./trace-of-tab.js":35}],37:[function(require,module,exports){
+
+
+
+
+
+'use strict';
+
+const Parser=require('metaviewport-parser');
+
+const makeComputedArtifact=require('./computed-artifact.js');
+
+class ViewportMeta{
+
+
+
+
+static async compute_({MetaElements}){
+const viewportMeta=MetaElements.find(meta=>meta.name==='viewport');
+
+if(!viewportMeta){
+return{
+hasViewportTag:false,
+isMobileOptimized:false,
+parserWarnings:[]};
+
+}
+
+const warnings=[];
+const parsedProps=Parser.parseMetaViewPortContent(viewportMeta.content||'');
+
+if(Object.keys(parsedProps.unknownProperties).length){
+warnings.push(`Invalid properties found: ${JSON.stringify(parsedProps.unknownProperties)}`);
+}
+if(Object.keys(parsedProps.invalidValues).length){
+warnings.push(`Invalid values found: ${JSON.stringify(parsedProps.invalidValues)}`);
+}
+
+const viewportProps=parsedProps.validProperties;
+const isMobileOptimized=Boolean(viewportProps.width||viewportProps['initial-scale']);
+
+return{
+hasViewportTag:true,
+isMobileOptimized,
+parserWarnings:warnings};
+
+}}
+
+
+module.exports=makeComputedArtifact(ViewportMeta);
+
+
+
+
+
+
+
+
+},{"./computed-artifact.js":8,"metaviewport-parser":124}],38:[function(require,module,exports){
+
+
+
+
+
+'use strict';
+
+
+
+
+
+function isArrayOfUnknownObjects(arr){
+return Array.isArray(arr)&&arr.every(isObjectOfUnknownProperties);
+}
+
+
+
+
+
+function isObjectOfUnknownProperties(val){
+return typeof val==='object'&&val!==null&&!Array.isArray(val);
+}
+
+
+
+
+
+
+
+
+function assertNoExcessProperties(obj,pluginName,objectName=''){
+if(objectName){
+objectName+=' ';
+}
+
+const invalidKeys=Object.keys(obj);
+if(invalidKeys.length>0){
+const keys=invalidKeys.join(', ');
+throw new Error(`${pluginName} has unrecognized ${objectName}properties: [${keys}]`);
+}
+}
+
+
+
+
+class ConfigPlugin{
+
+
+
+
+
+
+
+static _parseAuditsList(auditsJson,pluginName){
+
+if(auditsJson===undefined){
+return undefined;
+}else if(!isArrayOfUnknownObjects(auditsJson)){
+throw new Error(`${pluginName} has an invalid audits array.`);
+}
+
+return auditsJson.map(auditDefnJson=>{
+const{path,...invalidRest}=auditDefnJson;
+assertNoExcessProperties(invalidRest,pluginName,'audit');
+
+if(typeof path!=='string'){
+throw new Error(`${pluginName} has a missing audit path.`);
+}
+return{
+path};
+
+});
+}
+
+
+
+
+
+
+
+static _parseAuditRefsList(auditRefsJson,pluginName){
+if(!isArrayOfUnknownObjects(auditRefsJson)){
+throw new Error(`${pluginName} has no valid auditsRefs.`);
+}
+
+return auditRefsJson.map(auditRefJson=>{
+const{id,weight,group,...invalidRest}=auditRefJson;
+assertNoExcessProperties(invalidRest,pluginName,'auditRef');
+
+if(typeof id!=='string'){
+throw new Error(`${pluginName} has an invalid auditRef id.`);
+}
+if(typeof weight!=='number'){
+throw new Error(`${pluginName} has an invalid auditRef weight.`);
+}
+if(typeof group!=='string'&&typeof group!=='undefined'){
+throw new Error(`${pluginName} has an invalid auditRef group.`);
+}
+
+const prependedGroup=group?`${pluginName}-${group}`:group;
+return{
+id,
+weight,
+group:prependedGroup};
+
+});
+}
+
+
+
+
+
+
+
+static _parseCategory(categoryJson,pluginName){
+if(!isObjectOfUnknownProperties(categoryJson)){
+throw new Error(`${pluginName} has no valid category.`);
+}
+
+const{
+title,
+description,
+manualDescription,
+auditRefs:auditRefsJson,
+...invalidRest}=
+categoryJson;
+
+assertNoExcessProperties(invalidRest,pluginName,'category');
+
+if(typeof title!=='string'){
+throw new Error(`${pluginName} has an invalid category tile.`);
+}
+if(typeof description!=='string'&&typeof description!=='undefined'){
+throw new Error(`${pluginName} has an invalid category description.`);
+}
+if(typeof manualDescription!=='string'&&typeof manualDescription!=='undefined'){
+throw new Error(`${pluginName} has an invalid category manualDescription.`);
+}
+const auditRefs=ConfigPlugin._parseAuditRefsList(auditRefsJson,pluginName);
+
+return{
+title,
+auditRefs,
+description:description,
+manualDescription:manualDescription};
+
+}
+
+
+
+
+
+
+
+
+static _parseGroups(groupsJson,pluginName){
+if(groupsJson===undefined){
+return undefined;
+}
+
+if(!isObjectOfUnknownProperties(groupsJson)){
+throw new Error(`${pluginName} groups json is not defined as an object.`);
+}
+
+const groups=Object.entries(groupsJson);
+
+
+const parsedGroupsJson={};
+groups.forEach(([groupId,groupJson])=>{
+if(!isObjectOfUnknownProperties(groupJson)){
+throw new Error(`${pluginName} has a group not defined as an object.`);
+}
+const{title,description,...invalidRest}=groupJson;
+assertNoExcessProperties(invalidRest,pluginName,'group');
+
+if(typeof title!=='string'){
+throw new Error(`${pluginName} has an invalid group title.`);
+}
+if(typeof description!=='string'&&typeof description!=='undefined'){
+throw new Error(`${pluginName} has an invalid group description.`);
+}
+parsedGroupsJson[`${pluginName}-${groupId}`]={
+title,
+description};
+
+});
+return parsedGroupsJson;
+}
+
+
+
+
+
+
+
+
+static parsePlugin(pluginJson,pluginName){
+
+pluginJson=JSON.parse(JSON.stringify(pluginJson));
+if(!isObjectOfUnknownProperties(pluginJson)){
+throw new Error(`${pluginName} is not defined as an object.`);
+}
+
+const{
+audits:pluginAuditsJson,
+category:pluginCategoryJson,
+groups:pluginGroupsJson,
+...invalidRest}=
+pluginJson;
+
+assertNoExcessProperties(invalidRest,pluginName);
+
+return{
+audits:ConfigPlugin._parseAuditsList(pluginAuditsJson,pluginName),
+categories:{
+[pluginName]:ConfigPlugin._parseCategory(pluginCategoryJson,pluginName)},
+
+groups:ConfigPlugin._parseGroups(pluginGroupsJson,pluginName)};
+
+}}
+
+
+module.exports=ConfigPlugin;
+
+},{}],39:[function(require,module,exports){
 (function(process,__dirname){
 
 
@@ -16848,6 +18840,7 @@ const log=require('lighthouse-logger');
 const path=require('path');
 const Audit=require('../audits/audit.js');
 const Runner=require('../runner.js');
+const ConfigPlugin=require('./config-plugin.js');
 
 
 
@@ -17000,6 +18993,22 @@ throw new Error(`${gathererName} has no afterPass() method.`);
 
 
 
+function assertValidPluginName(configJSON,pluginName){
+if(!pluginName.startsWith('lighthouse-plugin-')){
+throw new Error(`plugin name '${pluginName}' does not start with 'lighthouse-plugin-'`);
+}
+
+if(configJSON.categories&&configJSON.categories[pluginName]){
+throw new Error(`plugin name '${pluginName}' not allowed because it is the id of a category already found in config`);
+}
+}
+
+
+
+
+
+
+
 function cleanFlagsForSettings(flags={}){
 
 const settings={};
@@ -17015,7 +19024,6 @@ settings[safekey]=flags[safekey];
 
 return settings;
 }
-
 
 
 
@@ -17177,6 +19185,9 @@ configJSON=Config.extendConfigJSON(deepCloneConfigJson(defaultConfig),configJSON
 
 const configDir=configPath?path.dirname(configPath):undefined;
 
+
+configJSON=Config.mergePlugins(configJSON,flags,configDir);
+
 const settings=Config.initSettings(configJSON.settings,flags);
 
 
@@ -17268,6 +19279,30 @@ delete extendJSON.passes;
 }
 
 return merge(baseJSON,extendJSON);
+}
+
+
+
+
+
+
+
+static mergePlugins(configJSON,flags,configDir){
+const configPlugins=configJSON.plugins||[];
+const flagPlugins=flags&&flags.plugins||[];
+const pluginNames=new Set([...configPlugins,...flagPlugins]);
+
+for(const pluginName of pluginNames){
+assertValidPluginName(configJSON,pluginName);
+
+const pluginPath=Config.resolveModule(pluginName,configDir,'plugin');
+const rawPluginJson=require(pluginPath);
+const pluginJson=ConfigPlugin.parsePlugin(rawPluginJson,pluginName);
+
+configJSON=Config.extendConfigJSON(configJSON,pluginJson);
+}
+
+return configJSON;
 }
 
 
@@ -17752,7 +19787,7 @@ throw new Error(errorString+` and '${relativePath}')`);
 module.exports=Config;
 
 }).call(this,require('_process'),"/lighthouse-core/config");
-},{"../audits/audit.js":3,"../runner.js":76,"./../lib/i18n/i18n.js":59,"./constants.js":36,"./default-config.js":37,"./full-config.js":38,"_process":130,"lighthouse-logger":113,"lodash.isequal":114,"path":128}],36:[function(require,module,exports){
+},{"../audits/audit.js":3,"../runner.js":82,"./../lib/i18n/i18n.js":63,"./config-plugin.js":38,"./constants.js":40,"./default-config.js":41,"./full-config.js":42,"_process":137,"lighthouse-logger":120,"lodash.isequal":121,"path":135}],40:[function(require,module,exports){
 
 
 
@@ -17765,18 +19800,32 @@ module.exports=Config;
 
 
 
+
 const DEVTOOLS_RTT_ADJUSTMENT_FACTOR=3.75;
 const DEVTOOLS_THROUGHPUT_ADJUSTMENT_FACTOR=0.9;
 
 const throttling={
 DEVTOOLS_RTT_ADJUSTMENT_FACTOR,
 DEVTOOLS_THROUGHPUT_ADJUSTMENT_FACTOR,
+
+
 mobileSlow4G:{
 rttMs:150,
 throughputKbps:1.6*1024,
 requestLatencyMs:150*DEVTOOLS_RTT_ADJUSTMENT_FACTOR,
 downloadThroughputKbps:1.6*1024*DEVTOOLS_THROUGHPUT_ADJUSTMENT_FACTOR,
 uploadThroughputKbps:750*DEVTOOLS_THROUGHPUT_ADJUSTMENT_FACTOR,
+cpuSlowdownMultiplier:4},
+
+
+
+
+mobileRegluar3G:{
+rttMs:300,
+throughputKbps:700,
+requestLatencyMs:300*DEVTOOLS_RTT_ADJUSTMENT_FACTOR,
+downloadThroughputKbps:700*DEVTOOLS_THROUGHPUT_ADJUSTMENT_FACTOR,
+uploadThroughputKbps:700*DEVTOOLS_THROUGHPUT_ADJUSTMENT_FACTOR,
 cpuSlowdownMultiplier:4}};
 
 
@@ -17784,6 +19833,7 @@ cpuSlowdownMultiplier:4}};
 
 const defaultSettings={
 output:'json',
+maxWaitForFcp:15*1000,
 maxWaitForLoad:45*1000,
 throttlingMethod:'simulate',
 throttling:throttling.mobileSlow4G,
@@ -17792,6 +19842,7 @@ gatherMode:false,
 disableStorageReset:false,
 disableDeviceEmulation:false,
 emulatedFormFactor:'mobile',
+channel:'node',
 
 
 
@@ -17799,6 +19850,7 @@ locale:'en-US',
 blockedUrlPatterns:null,
 additionalTraceCategories:null,
 extraHeaders:null,
+precomputedLanternData:null,
 onlyAudits:null,
 onlyCategories:null,
 skipAudits:null};
@@ -17830,7 +19882,7 @@ defaultPassConfig,
 nonSimulatedPassConfigOverrides};
 
 
-},{}],37:[function(require,module,exports){
+},{}],41:[function(require,module,exports){
 (function(__filename){
 
 
@@ -17866,37 +19918,51 @@ diagnosticsGroupTitle:'Diagnostics',
 
 diagnosticsGroupDescription:'More information about the performance of your application.',
 
-a11yColorContrastGroupTitle:'Color Contrast Is Satisfactory',
+a11yCategoryTitle:'Accessibility',
+
+a11yCategoryDescription:'These checks highlight opportunities to [improve the accessibility of your web app](https://developers.google.com/web/fundamentals/accessibility). Only a subset of accessibility issues can be automatically detected so manual testing is also encouraged.',
+
+a11yCategoryManualDescription:'These items address areas which an automated testing tool cannot cover. Learn more in our guide on [conducting an accessibility review](https://developers.google.com/web/fundamentals/accessibility/how-to-review).',
+
+a11yBestPracticesGroupTitle:'Best practices',
+
+a11yBestPracticesGroupDescription:'These items highlight common accessibility best practices.',
+
+a11yColorContrastGroupTitle:'Contrast',
 
 a11yColorContrastGroupDescription:'These are opportunities to improve the legibility of your content.',
 
-a11yDescribeContentsGroupTitle:'Elements Describe Contents Well',
+a11yNamesLabelsGroupTitle:'Names and labels',
 
-a11yDescribeContentsGroupDescription:'These are opportunities to make your content easier to understand for a user of assistive technology, like a screen reader.',
+a11yNamesLabelsGroupDescription:'These are opportunities to improve the semantics of the controls in your application. This may enhance the experience for users of assistive technology, like a screen reader.',
 
-a11yWellStructuredGroupTitle:'Elements Are Well Structured',
+a11yNavigationGroupTitle:'Navigation',
 
-a11yWellStructuredGroupDescription:'These are opportunities to make sure your HTML is appropriately structured.',
+a11yNavigationGroupDescription:'These are opportunities to improve keyboard navigation in your application.',
 
-a11yAriaGroupTitle:'ARIA Attributes Follow Best Practices',
+a11yAriaGroupTitle:'ARIA',
 
 a11yAriaGroupDescription:'These are opportunities to improve the usage of ARIA in your application which may enhance the experience for users of assistive technology, like a screen reader.',
 
-a11yCorrectAttributesGroupTitle:'Elements Use Attributes Correctly',
-
-a11yCorrectAttributesGroupDescription:'These are opportunities to improve the configuration of your HTML elements.',
-
-a11yElementNamesGroupTitle:'Elements Have Discernible Names',
-
-a11yElementNamesGroupDescription:'These are opportunities to improve the semantics of the controls in your application. This may enhance the experience for users of assistive technology, like a screen reader.',
-
-a11yLanguageGroupTitle:'Page Specifies Valid Language',
+a11yLanguageGroupTitle:'Internationalization and localization',
 
 a11yLanguageGroupDescription:'These are opportunities to improve the interpretation of your content by users in different locales.',
 
-a11yMetaGroupTitle:'Meta Tags Used Properly',
+a11yAudioVideoGroupTitle:'Audio and video',
 
-a11yMetaGroupDescription:'These are opportunities to improve the user experience of your site.',
+a11yAudioVideoGroupDescription:'These are opportunities to provide alternative content for audio and video. This may improve the experience for users with hearing or vision impairments.',
+
+a11yTablesListsVideoGroupTitle:'Tables and lists',
+
+a11yTablesListsVideoGroupDescription:'These are opportunities to to improve the experience of reading tabular or list data using assistive technology, like a screen reader.',
+
+seoCategoryTitle:'SEO',
+
+seoCategoryDescription:'These checks ensure that your page is optimized for search engine results ranking. '+
+'There are additional factors Lighthouse does not check that may affect your search ranking. '+
+'[Learn more](https://support.google.com/webmasters/answer/35769).',
+
+seoCategoryManualDescription:'Run these additional validators on your site to check additional SEO best practices.',
 
 pwaFastReliableGroupTitle:'Fast and reliable',
 
@@ -17918,18 +19984,16 @@ pauseAfterLoadMs:1000,
 networkQuietThresholdMs:1000,
 cpuQuietThresholdMs:1000,
 gatherers:[
-'scripts',
 'css-usage',
-'viewport',
 'viewport-dimensions',
-'theme-color',
-'manifest',
 'runtime-exceptions',
 'chrome-console-messages',
-'image-usage',
 'accessibility',
+'anchor-elements',
+'image-elements',
 'link-elements',
-'dobetterweb/anchors-with-no-rel-noopener',
+'meta-elements',
+'script-elements',
 'dobetterweb/appcache',
 'dobetterweb/doctype',
 'dobetterweb/domstats',
@@ -17938,14 +20002,10 @@ gatherers:[
 'dobetterweb/password-inputs-with-prevented-paste',
 'dobetterweb/response-compression',
 'dobetterweb/tags-blocking-first-paint',
-'seo/meta-description',
 'seo/font-size',
-'seo/crawlable-links',
-'seo/meta-robots',
-'seo/hreflang',
 'seo/embedded-content',
-'seo/canonical',
-'seo/robots-txt']},
+'seo/robots-txt',
+'seo/tap-targets']},
 
 
 {
@@ -17979,6 +20039,7 @@ audits:[
 'screenshot-thumbnails',
 'final-screenshot',
 'metrics/estimated-input-latency',
+'metrics/max-potential-fid',
 'errors-in-console',
 'time-to-first-byte',
 'metrics/first-cpu-idle',
@@ -17997,12 +20058,17 @@ audits:[
 'uses-rel-preload',
 'uses-rel-preconnect',
 'font-display',
+'diagnostics',
 'network-requests',
+'network-rtt',
+'network-server-latency',
+'main-thread-tasks',
 'metrics',
 'offline-start-url',
 'manual/pwa-cross-browser',
 'manual/pwa-page-transitions',
 'manual/pwa-each-page-has-url',
+'accessibility/accesskeys',
 'accessibility/aria-allowed-attr',
 'accessibility/aria-required-attr',
 'accessibility/aria-required-children',
@@ -18037,7 +20103,6 @@ audits:[
 'accessibility/valid-lang',
 'accessibility/video-caption',
 'accessibility/video-description',
-'accessibility/manual/accesskeys',
 'accessibility/manual/custom-controls-labels',
 'accessibility/manual/custom-controls-roles',
 'accessibility/manual/focus-traps',
@@ -18079,10 +20144,10 @@ audits:[
 'seo/link-text',
 'seo/is-crawlable',
 'seo/robots-txt',
+'seo/tap-targets',
 'seo/hreflang',
 'seo/plugins',
 'seo/canonical',
-'seo/manual/mobile-friendly',
 'seo/manual/structured-data'],
 
 
@@ -18107,37 +20172,37 @@ title:str_(UIStrings.pwaInstallableGroupTitle)},
 'pwa-optimized':{
 title:str_(UIStrings.pwaOptimizedGroupTitle)},
 
+'a11y-best-practices':{
+title:str_(UIStrings.a11yBestPracticesGroupTitle),
+description:str_(UIStrings.a11yBestPracticesGroupDescription)},
+
 'a11y-color-contrast':{
 title:str_(UIStrings.a11yColorContrastGroupTitle),
 description:str_(UIStrings.a11yColorContrastGroupDescription)},
 
-'a11y-describe-contents':{
-title:str_(UIStrings.a11yDescribeContentsGroupTitle),
-description:str_(UIStrings.a11yDescribeContentsGroupDescription)},
+'a11y-names-labels':{
+title:str_(UIStrings.a11yNamesLabelsGroupTitle),
+description:str_(UIStrings.a11yNamesLabelsGroupDescription)},
 
-'a11y-well-structured':{
-title:str_(UIStrings.a11yWellStructuredGroupTitle),
-description:str_(UIStrings.a11yWellStructuredGroupDescription)},
+'a11y-navigation':{
+title:str_(UIStrings.a11yNavigationGroupTitle),
+description:str_(UIStrings.a11yNavigationGroupDescription)},
 
 'a11y-aria':{
 title:str_(UIStrings.a11yAriaGroupTitle),
 description:str_(UIStrings.a11yAriaGroupDescription)},
 
-'a11y-correct-attributes':{
-title:str_(UIStrings.a11yCorrectAttributesGroupTitle),
-description:str_(UIStrings.a11yCorrectAttributesGroupDescription)},
-
-'a11y-element-names':{
-title:str_(UIStrings.a11yElementNamesGroupTitle),
-description:str_(UIStrings.a11yElementNamesGroupDescription)},
-
 'a11y-language':{
 title:str_(UIStrings.a11yLanguageGroupTitle),
 description:str_(UIStrings.a11yLanguageGroupDescription)},
 
-'a11y-meta':{
-title:str_(UIStrings.a11yMetaGroupTitle),
-description:str_(UIStrings.a11yMetaGroupDescription)},
+'a11y-audio-video':{
+title:str_(UIStrings.a11yAudioVideoGroupTitle),
+description:str_(UIStrings.a11yAudioVideoGroupDescription)},
+
+'a11y-tables-lists':{
+title:str_(UIStrings.a11yTablesListsVideoGroupTitle),
+description:str_(UIStrings.a11yTablesListsVideoGroupDescription)},
 
 'seo-mobile':{
 title:'Mobile Friendly',
@@ -18163,6 +20228,7 @@ auditRefs:[
 {id:'interactive',weight:5,group:'metrics'},
 {id:'first-cpu-idle',weight:2,group:'metrics'},
 {id:'estimated-input-latency',weight:0,group:'metrics'},
+{id:'max-potential-fid',weight:0},
 
 {id:'render-blocking-resources',weight:0,group:'load-opportunities'},
 {id:'uses-responsive-images',weight:0,group:'load-opportunities'},
@@ -18182,21 +20248,27 @@ auditRefs:[
 {id:'uses-long-cache-ttl',weight:0,group:'diagnostics'},
 {id:'dom-size',weight:0,group:'diagnostics'},
 {id:'critical-request-chains',weight:0,group:'diagnostics'},
-{id:'network-requests',weight:0},
-{id:'metrics',weight:0},
 {id:'user-timings',weight:0,group:'diagnostics'},
 {id:'bootup-time',weight:0,group:'diagnostics'},
-{id:'screenshot-thumbnails',weight:0},
-{id:'final-screenshot',weight:0},
 {id:'mainthread-work-breakdown',weight:0,group:'diagnostics'},
-{id:'font-display',weight:0,group:'diagnostics'}]},
+{id:'font-display',weight:0,group:'diagnostics'},
+
+{id:'network-requests',weight:0},
+{id:'network-rtt',weight:0},
+{id:'network-server-latency',weight:0},
+{id:'main-thread-tasks',weight:0},
+{id:'diagnostics',weight:0},
+{id:'metrics',weight:0},
+{id:'screenshot-thumbnails',weight:0},
+{id:'final-screenshot',weight:0}]},
 
 
 'accessibility':{
-title:'Accessibility',
-description:'These checks highlight opportunities to [improve the accessibility of your web app](https://developers.google.com/web/fundamentals/accessibility). Only a subset of accessibility issues can be automatically detected so manual testing is also encouraged.',
-manualDescription:'These items address areas which an automated testing tool cannot cover. Learn more in our guide on [conducting an accessibility review](https://developers.google.com/web/fundamentals/accessibility/how-to-review).',
+title:str_(UIStrings.a11yCategoryTitle),
+description:str_(UIStrings.a11yCategoryDescription),
+manualDescription:str_(UIStrings.a11yCategoryManualDescription),
 auditRefs:[
+{id:'accesskeys',weight:3,group:'a11y-navigation'},
 {id:'aria-allowed-attr',weight:3,group:'a11y-aria'},
 {id:'aria-required-attr',weight:2,group:'a11y-aria'},
 {id:'aria-required-children',weight:5,group:'a11y-aria'},
@@ -18204,35 +20276,34 @@ auditRefs:[
 {id:'aria-roles',weight:3,group:'a11y-aria'},
 {id:'aria-valid-attr-value',weight:2,group:'a11y-aria'},
 {id:'aria-valid-attr',weight:5,group:'a11y-aria'},
-{id:'audio-caption',weight:4,group:'a11y-correct-attributes'},
-{id:'button-name',weight:10,group:'a11y-element-names'},
-{id:'bypass',weight:10,group:'a11y-describe-contents'},
+{id:'audio-caption',weight:4,group:'a11y-audio-video'},
+{id:'button-name',weight:10,group:'a11y-names-labels'},
+{id:'bypass',weight:10,group:'a11y-navigation'},
 {id:'color-contrast',weight:6,group:'a11y-color-contrast'},
-{id:'definition-list',weight:1,group:'a11y-well-structured'},
-{id:'dlitem',weight:1,group:'a11y-well-structured'},
-{id:'document-title',weight:2,group:'a11y-describe-contents'},
-{id:'duplicate-id',weight:5,group:'a11y-well-structured'},
-{id:'frame-title',weight:5,group:'a11y-describe-contents'},
+{id:'definition-list',weight:1,group:'a11y-tables-lists'},
+{id:'dlitem',weight:1,group:'a11y-tables-lists'},
+{id:'document-title',weight:2,group:'a11y-names-labels'},
+{id:'duplicate-id',weight:5,group:'a11y-best-practices'},
+{id:'frame-title',weight:5,group:'a11y-names-labels'},
 {id:'html-has-lang',weight:4,group:'a11y-language'},
 {id:'html-lang-valid',weight:1,group:'a11y-language'},
-{id:'image-alt',weight:8,group:'a11y-correct-attributes'},
-{id:'input-image-alt',weight:1,group:'a11y-correct-attributes'},
-{id:'label',weight:10,group:'a11y-describe-contents'},
-{id:'layout-table',weight:1,group:'a11y-describe-contents'},
-{id:'link-name',weight:9,group:'a11y-element-names'},
-{id:'list',weight:5,group:'a11y-well-structured'},
-{id:'listitem',weight:4,group:'a11y-well-structured'},
-{id:'meta-refresh',weight:1,group:'a11y-meta'},
-{id:'meta-viewport',weight:3,group:'a11y-meta'},
-{id:'object-alt',weight:4,group:'a11y-describe-contents'},
-{id:'tabindex',weight:4,group:'a11y-correct-attributes'},
-{id:'td-headers-attr',weight:1,group:'a11y-correct-attributes'},
-{id:'th-has-data-cells',weight:1,group:'a11y-correct-attributes'},
+{id:'image-alt',weight:8,group:'a11y-names-labels'},
+{id:'input-image-alt',weight:1,group:'a11y-names-labels'},
+{id:'label',weight:10,group:'a11y-names-labels'},
+{id:'layout-table',weight:1,group:'a11y-tables-lists'},
+{id:'link-name',weight:9,group:'a11y-names-labels'},
+{id:'list',weight:5,group:'a11y-tables-lists'},
+{id:'listitem',weight:4,group:'a11y-tables-lists'},
+{id:'meta-refresh',weight:1,group:'a11y-best-practices'},
+{id:'meta-viewport',weight:3,group:'a11y-best-practices'},
+{id:'object-alt',weight:4,group:'a11y-names-labels'},
+{id:'tabindex',weight:4,group:'a11y-navigation'},
+{id:'td-headers-attr',weight:1,group:'a11y-tables-lists'},
+{id:'th-has-data-cells',weight:1,group:'a11y-tables-lists'},
 {id:'valid-lang',weight:1,group:'a11y-language'},
-{id:'video-caption',weight:4,group:'a11y-describe-contents'},
-{id:'video-description',weight:3,group:'a11y-describe-contents'},
+{id:'video-caption',weight:4,group:'a11y-audio-video'},
+{id:'video-description',weight:3,group:'a11y-audio-video'},
 
-{id:'accesskeys',weight:0},
 {id:'logical-tab-order',weight:0},
 {id:'focusable-controls',weight:0},
 {id:'interactive-element-affordance',weight:0},
@@ -18267,11 +20338,9 @@ auditRefs:[
 
 
 'seo':{
-title:'SEO',
-description:'These checks ensure that your page is optimized for search engine results ranking. '+
-'There are additional factors Lighthouse does not check that may affect your search ranking. '+
-'[Learn more](https://support.google.com/webmasters/answer/35769).',
-manualDescription:'Run these additional validators on your site to check additional SEO best practices.',
+title:str_(UIStrings.seoCategoryTitle),
+description:str_(UIStrings.seoCategoryDescription),
+manualDescription:str_(UIStrings.seoCategoryManualDescription),
 auditRefs:[
 {id:'viewport',weight:1,group:'seo-mobile'},
 {id:'document-title',weight:1,group:'seo-content'},
@@ -18284,8 +20353,8 @@ auditRefs:[
 {id:'canonical',weight:1,group:'seo-content'},
 {id:'font-size',weight:1,group:'seo-mobile'},
 {id:'plugins',weight:1,group:'seo-content'},
+{id:'tap-targets',weight:1,group:'seo-mobile'},
 
-{id:'mobile-friendly',weight:0},
 {id:'structured-data',weight:0}]},
 
 
@@ -18329,7 +20398,7 @@ get:()=>UIStrings});
 
 
 }).call(this,"/lighthouse-core/config/default-config.js");
-},{"../lib/i18n/i18n.js":59,"./constants":36}],38:[function(require,module,exports){
+},{"../lib/i18n/i18n.js":63,"./constants":40}],42:[function(require,module,exports){
 
 
 
@@ -18364,7 +20433,7 @@ auditRefs:[
 
 module.exports=fullConfig;
 
-},{}],39:[function(require,module,exports){
+},{}],43:[function(require,module,exports){
 
 
 
@@ -18527,7 +20596,7 @@ this._eventEmitter=null;
 
 module.exports=Connection;
 
-},{"../../lib/lh-error":63,"events":93,"lighthouse-logger":113}],40:[function(require,module,exports){
+},{"../../lib/lh-error":67,"events":100,"lighthouse-logger":120}],44:[function(require,module,exports){
 
 
 
@@ -18587,7 +20656,7 @@ this._port.send(message);
 
 module.exports=RawConnection;
 
-},{"./connection.js":39}],41:[function(require,module,exports){
+},{"./connection.js":43}],45:[function(require,module,exports){
 
 
 
@@ -18644,7 +20713,8 @@ this._messages.push(message);
 
 module.exports=DevtoolsLog;
 
-},{}],42:[function(require,module,exports){
+},{}],46:[function(require,module,exports){
+(function(Buffer){
 
 
 
@@ -18716,17 +20786,24 @@ this._networkStatusMonitor=null;
 
 this._monitoredUrl=null;
 
-connection.on('protocolevent',event=>{
-this._devtoolsLog.record(event);
-if(this._networkStatusMonitor){
-this._networkStatusMonitor.dispatch(event);
-}
 
 
 
 
-this._eventEmitter.emit(event.method,event.params);
+
+
+
+this._targetProxyMessageId=0;
+
+this.on('Target.attachedToTarget',event=>{
+this._handleTargetAttached(event,[]).catch(this._handleEventError);
 });
+
+this.on('Target.receivedMessageFromTarget',event=>{
+this._handleReceivedMessageFromTarget(event,[]).catch(this._handleEventError);
+});
+
+connection.on('protocolevent',this._handleProtocolEvent.bind(this));
 
 
 
@@ -18911,6 +20988,121 @@ this._nextProtocolTimeout=timeout;
 
 
 
+_handleProtocolEvent(event){
+this._devtoolsLog.record(event);
+if(this._networkStatusMonitor){
+this._networkStatusMonitor.dispatch(event);
+}
+
+
+
+
+this._eventEmitter.emit(event.method,event.params);
+}
+
+
+
+
+_handleEventError(error){
+log.error('Driver','Unhandled event error',error.message);
+}
+
+
+
+
+
+async _handleReceivedMessageFromTarget(event,parentSessionIds){
+const{targetId,sessionId,message}=event;
+
+const protocolMessage=JSON.parse(message);
+
+
+if('id'in protocolMessage)return;
+
+
+
+const sessionIdPath=[sessionId,...parentSessionIds];
+
+if(protocolMessage.method==='Target.receivedMessageFromTarget'){
+
+await this._handleReceivedMessageFromTarget(protocolMessage.params,sessionIdPath);
+}
+
+if(protocolMessage.method==='Target.attachedToTarget'){
+
+await this._handleTargetAttached(protocolMessage.params,sessionIdPath);
+}
+
+if(protocolMessage.method.startsWith('Network')){
+this._handleProtocolEvent({...protocolMessage,source:{targetId,sessionId}});
+}
+}
+
+
+
+
+
+async _handleTargetAttached(event,parentSessionIds){
+const sessionIdPath=[event.sessionId,...parentSessionIds];
+
+
+
+if(event.targetInfo.type!=='iframe'){
+
+await this.sendMessageToTarget(sessionIdPath,'Runtime.runIfWaitingForDebugger');
+return;
+}
+
+
+
+await this.sendMessageToTarget(sessionIdPath,'Network.enable');
+
+await this.sendMessageToTarget(sessionIdPath,'Target.setAutoAttach',{
+autoAttach:true,
+
+waitForDebuggerOnStart:true});
+
+
+
+await this.sendMessageToTarget(sessionIdPath,'Runtime.runIfWaitingForDebugger');
+}
+
+
+
+
+
+
+
+
+
+
+
+sendMessageToTarget(sessionIdPath,method,...params){
+this._targetProxyMessageId++;
+
+let payload={
+sessionId:sessionIdPath[0],
+message:JSON.stringify({id:this._targetProxyMessageId,method,params:params[0]})};
+
+
+for(const sessionId of sessionIdPath.slice(1)){
+this._targetProxyMessageId++;
+payload={
+sessionId,
+message:JSON.stringify({
+id:this._targetProxyMessageId,
+method:'Target.sendMessageToTarget',
+params:payload})};
+
+
+}
+
+return this.sendCommand('Target.sendMessageToTarget',payload);
+}
+
+
+
+
 
 
 
@@ -18987,14 +21179,9 @@ scriptSource});
 
 
 
-evaluateAsync(expression,options={}){
-
-
-
-const contextIdPromise=options.useIsolation?
-this._getOrCreateIsolatedContextId():
-Promise.resolve(undefined);
-return contextIdPromise.then(contextId=>this._evaluateInContext(expression,contextId));
+async evaluateAsync(expression,options={}){
+const contextId=options.useIsolation?await this._getOrCreateIsolatedContextId():undefined;
+return this._evaluateInContext(expression,contextId);
 }
 
 
@@ -19005,6 +21192,10 @@ return contextIdPromise.then(contextId=>this._evaluateInContext(expression,conte
 
 
 async _evaluateInContext(expression,contextId){
+
+
+const timeout=this._nextProtocolTimeout===DEFAULT_PROTOCOL_TIMEOUT?
+60000:this._nextProtocolTimeout;
 const evaluationParams={
 
 
@@ -19024,11 +21215,11 @@ expression:`(function wrapInNativePromise() {
 includeCommandLineAPI:true,
 awaitPromise:true,
 returnByValue:true,
-timeout:60000,
+timeout,
 contextId};
 
 
-this.setNextProtocolTimeout(60000);
+this.setNextProtocolTimeout(timeout);
 const response=await this.sendCommand('Runtime.evaluate',evaluationParams);
 if(response.exceptionDetails){
 
@@ -19050,19 +21241,41 @@ return value;
 
 
 
-getAppManifest(){
-return this.sendCommand('Page.getAppManifest').
-then(response=>{
+async getAppManifest(){
+this.setNextProtocolTimeout(3000);
+let response;
+try{
+response=await this.sendCommand('Page.getAppManifest');
+}catch(err){
+if(err.code==='PROTOCOL_TIMEOUT'){
+
+
+log.error('Driver','Failed fetching manifest',err);
+return null;
+}
+
+throw err;
+}
+
+let data=response.data;
 
 
 
-if(!response.data){
+
+if(!data){
 
 return null;
 }
 
-return response;
-});
+const BOM_LENGTH=3;
+const BOM_FIRSTCHAR=65279;
+const isBomEncoded=data.charCodeAt(0)===BOM_FIRSTCHAR;
+
+if(isBomEncoded){
+data=Buffer.from(data).slice(BOM_LENGTH).toString();
+}
+
+return{...response,data};
 }
 
 
@@ -19176,18 +21389,23 @@ this.once('Page.frameNavigated',resolve);
 
 
 
-_waitForFCP(){
+
+_waitForFCP(maxWaitForFCPMs){
 
 let cancel=()=>{
 throw new Error('_waitForFCP.cancel() called before it was defined');
 };
 
-const promise=new Promise(resolve=>{
+const promise=new Promise((resolve,reject)=>{
+const maxWaitTimeout=setTimeout(()=>{
+reject(new LHError(LHError.errors.NO_FCP));
+},maxWaitForFCPMs);
+
 
 const lifecycleListener=e=>{
 if(e.name==='firstContentfulPaint'){
-cancel();
 resolve();
+cancel();
 }
 };
 
@@ -19198,6 +21416,8 @@ cancel=()=>{
 if(canceled)return;
 canceled=true;
 this.off('Page.lifecycleEvent',lifecycleListener);
+maxWaitTimeout&&clearTimeout(maxWaitTimeout);
+reject(new Error('Wait for FCP canceled'));
 };
 });
 
@@ -19474,12 +21694,12 @@ return true;
 
 
 async _waitForFullyLoaded(pauseAfterLoadMs,networkQuietThresholdMs,cpuQuietThresholdMs,
-maxWaitForLoadedMs,shouldWaitForFCP){
+maxWaitForLoadedMs,maxWaitForFCPMs){
 
 let maxTimeoutHandle;
 
 
-const waitForFCP=shouldWaitForFCP?this._waitForFCP():this._waitForNothing();
+const waitForFCP=maxWaitForFCPMs?this._waitForFCP(maxWaitForFCPMs):this._waitForNothing();
 
 const waitForLoadEvent=this._waitForLoadEvent(pauseAfterLoadMs);
 
@@ -19506,6 +21726,11 @@ return waitForCPUIdle.promise;
 }).then(()=>{
 return function(){
 log.verbose('Driver','loadEventFired and network considered idle');
+};
+}).catch(err=>{
+
+return function(){
+throw err;
 };
 });
 
@@ -19641,6 +21866,13 @@ throw new Error('Cannot use both waitForNavigated and another event, pick just o
 await this._beginNetworkStatusMonitoring(url);
 await this._clearIsolatedContextId();
 
+
+await this.sendCommand('Target.setAutoAttach',{
+autoAttach:true,
+
+waitForDebuggerOnStart:true});
+
+
 await this.sendCommand('Page.enable');
 await this.sendCommand('Page.setLifecycleEventsEnabled',{enabled:true});
 await this.sendCommand('Emulation.setScriptExecutionDisabled',{value:disableJS});
@@ -19653,16 +21885,19 @@ await this._waitForFrameNavigated();
 const passConfig=passContext.passConfig||{};
 let{pauseAfterLoadMs,networkQuietThresholdMs,cpuQuietThresholdMs}=passConfig;
 let maxWaitMs=passContext.settings&&passContext.settings.maxWaitForLoad;
+let maxFCPMs=passContext.settings&&passContext.settings.maxWaitForFcp;
 
 
 if(typeof pauseAfterLoadMs!=='number')pauseAfterLoadMs=DEFAULT_PAUSE_AFTER_LOAD;
 if(typeof networkQuietThresholdMs!=='number')networkQuietThresholdMs=DEFAULT_NETWORK_QUIET_THRESHOLD;
 if(typeof cpuQuietThresholdMs!=='number')cpuQuietThresholdMs=DEFAULT_CPU_QUIET_THRESHOLD;
 if(typeof maxWaitMs!=='number')maxWaitMs=constants.defaultSettings.maxWaitForLoad;
+if(typeof maxFCPMs!=='number')maxFCPMs=constants.defaultSettings.maxWaitForFcp;
 
 
+if(!waitForFCP)maxFCPMs=undefined;
 await this._waitForFullyLoaded(pauseAfterLoadMs,networkQuietThresholdMs,cpuQuietThresholdMs,
-maxWaitMs,waitForFCP);
+maxWaitMs,maxFCPMs);
 }
 
 
@@ -19888,7 +22123,6 @@ return this.sendCommand('Runtime.enable');
 
 
 async beginEmulation(settings){
-
 if(!settings.disableDeviceEmulation){
 if(settings.emulatedFormFactor==='mobile'){
 await emulation.enableNexus5X(this);
@@ -20050,7 +22284,8 @@ await this.sendCommand('Page.enable');
 
 module.exports=Driver;
 
-},{"../config/constants":36,"../lib/element":56,"../lib/emulation":57,"../lib/lh-error":63,"../lib/network-recorder":66,"../lib/network-request":67,"../lib/page-functions.js":68,"../lib/url-shim":"url","./connections/connection.js":39,"./devtools-log":41,"events":93,"lighthouse-logger":113}],43:[function(require,module,exports){
+}).call(this,require("buffer").Buffer);
+},{"../config/constants":40,"../lib/element":60,"../lib/emulation":61,"../lib/lh-error":67,"../lib/network-recorder":70,"../lib/network-request":71,"../lib/page-functions.js":72,"../lib/url-shim":"url","./connections/connection.js":43,"./devtools-log":45,"buffer":94,"events":100,"lighthouse-logger":120}],47:[function(require,module,exports){
 
 
 
@@ -20059,10 +22294,11 @@ module.exports=Driver;
 'use strict';
 
 const log=require('lighthouse-logger');
-const LHError=require('../lib/lh-error');
-const URL=require('../lib/url-shim');
+const manifestParser=require('../lib/manifest-parser.js');
+const LHError=require('../lib/lh-error.js');
+const URL=require('../lib/url-shim.js');
 const NetworkRecorder=require('../lib/network-recorder.js');
-const constants=require('../config/constants');
+const constants=require('../config/constants.js');
 
 const Driver=require('../gather/driver.js');
 
@@ -20180,7 +22416,7 @@ await driver.disconnect();
 }catch(err){
 
 
-if(!/close\/.*status: 500$/.test(err.message)){
+if(!/close\/.*status: (500|404)$/.test(err.message)){
 log.error('GatherRunner disconnect',err.message);
 }
 }
@@ -20447,18 +22683,46 @@ return{...baseArtifacts,...gathererArtifacts};
 
 
 static async getBaseArtifacts(options){
+const hostUserAgent=(await options.driver.getBrowserVersion()).userAgent;
+
+const{emulatedFormFactor}=options.settings;
+
+const IsMobileHost=hostUserAgent.includes('Android')||hostUserAgent.includes('Mobile');
+const TestedAsMobileDevice=emulatedFormFactor==='mobile'||
+emulatedFormFactor!=='desktop'&&IsMobileHost;
+
 return{
 fetchTime:new Date().toJSON(),
 LighthouseRunWarnings:[],
-HostUserAgent:(await options.driver.getBrowserVersion()).userAgent,
+TestedAsMobileDevice,
+HostUserAgent:hostUserAgent,
 NetworkUserAgent:'',
 BenchmarkIndex:0,
+WebAppManifest:null,
 traces:{},
 devtoolsLogs:{},
 settings:options.settings,
 URL:{requestedUrl:options.requestedUrl,finalUrl:''},
 Timing:[]};
 
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+static async getWebAppManifest(passContext){
+const response=await passContext.driver.getAppManifest();
+if(!response)return null;
+return manifestParser(response.data,response.url,passContext.url);
 }
 
 
@@ -20490,6 +22754,7 @@ driver:options.driver,
 url:options.requestedUrl,
 settings:options.settings,
 passConfig,
+baseArtifacts,
 
 LighthouseRunWarnings:baseArtifacts.LighthouseRunWarnings};
 
@@ -20501,6 +22766,9 @@ await GatherRunner.loadBlank(driver,passConfig.blankPage);
 }
 await GatherRunner.beforePass(passContext,gathererResults);
 await GatherRunner.pass(passContext,gathererResults);
+if(isFirstPass){
+baseArtifacts.WebAppManifest=await GatherRunner.getWebAppManifest(passContext);
+}
 const passData=await GatherRunner.afterPass(passContext,gathererResults);
 
 
@@ -20541,7 +22809,7 @@ throw err;
 
 module.exports=GatherRunner;
 
-},{"../config/constants":36,"../gather/driver.js":42,"../lib/lh-error":63,"../lib/network-recorder.js":66,"../lib/url-shim":"url","lighthouse-logger":113}],44:[function(require,module,exports){
+},{"../config/constants.js":40,"../gather/driver.js":46,"../lib/lh-error.js":67,"../lib/manifest-parser.js":68,"../lib/network-recorder.js":70,"../lib/url-shim.js":"url","lighthouse-logger":120}],48:[function(require,module,exports){
 
 
 
@@ -20602,7 +22870,7 @@ afterPass(passContext,loadData){}}
 
 module.exports=Gatherer;
 
-},{}],45:[function(require,module,exports){
+},{}],49:[function(require,module,exports){
 
 
 
@@ -20681,7 +22949,7 @@ lighthouse.Gatherer=require('./gather/gatherers/gatherer');
 
 module.exports=lighthouse;
 
-},{"./audits/audit":3,"./config/config":35,"./gather/connections/cri.js":87,"./gather/driver":42,"./gather/gatherers/gatherer":44,"./lib/lh-error.js":63,"./lib/url-shim.js":"url","./runner":76,"lighthouse-logger":113}],46:[function(require,module,exports){
+},{"./audits/audit":3,"./config/config":39,"./gather/connections/cri.js":93,"./gather/driver":46,"./gather/gatherers/gatherer":48,"./lib/lh-error.js":67,"./lib/url-shim.js":"url","./runner":82,"lighthouse-logger":120}],50:[function(require,module,exports){
 
 
 
@@ -20764,7 +23032,7 @@ return isEqual(objA,objB);
 
 module.exports=ArbitraryEqualityMap;
 
-},{"lodash.isequal":114}],47:[function(require,module,exports){
+},{"lodash.isequal":121}],51:[function(require,module,exports){
 (function(process){
 
 
@@ -20777,11 +23045,13 @@ module.exports=ArbitraryEqualityMap;
 const path=require('path');
 const log=require('lighthouse-logger');
 const stream=require('stream');
-const Simulator=require('./dependency-graph/simulator/simulator');
-const lanternTraceSaver=require('./lantern-trace-saver');
-const Metrics=require('./traces/pwmetrics-events');
+const Simulator=require('./dependency-graph/simulator/simulator.js');
+const lanternTraceSaver=require('./lantern-trace-saver.js');
+const Metrics=require('./traces/pwmetrics-events.js');
 const rimraf=require('rimraf');
 const mkdirp=require('mkdirp');
+const NetworkAnalysisComputed=require('../computed/network-analysis.js');
+const LoadSimulatorComputed=require('../computed/load-simulator.js');
 
 const artifactsFilename='artifacts.json';
 const traceSuffix='.trace.json';
@@ -21040,17 +23310,31 @@ console.log(`loggedAsset %%% trace-${passAssets.passName}.json %%% ${traceJson}`
 });
 }
 
+
+
+
+
+
+async function saveLanternNetworkData(devtoolsLog,outputPath){
+const context={computedCache:new Map()};
+const networkAnalysis=await NetworkAnalysisComputed.request(devtoolsLog,context);
+const lanternData=LoadSimulatorComputed.convertAnalysisToSaveableLanternData(networkAnalysis);
+
+fs.writeFileSync(outputPath,JSON.stringify(lanternData));
+}
+
 module.exports={
 saveArtifacts,
 loadArtifacts,
 saveAssets,
 prepareAssets,
 saveTrace,
-logAssets};
+logAssets,
+saveLanternNetworkData};
 
 
 }).call(this,require('_process'));
-},{"./dependency-graph/simulator/simulator":54,"./lantern-trace-saver":62,"./traces/pwmetrics-events":72,"_process":130,"lighthouse-logger":113,"mkdirp":87,"path":128,"rimraf":87,"stream":155}],48:[function(require,module,exports){
+},{"../computed/load-simulator.js":10,"../computed/network-analysis.js":30,"./dependency-graph/simulator/simulator.js":58,"./lantern-trace-saver.js":66,"./traces/pwmetrics-events.js":78,"_process":137,"lighthouse-logger":120,"mkdirp":93,"path":135,"rimraf":93,"stream":162}],52:[function(require,module,exports){
 
 
 
@@ -21230,40 +23514,43 @@ cloneWithRelationships(predicate){
 const rootNode=this.getRootNode();
 
 
-let shouldIncludeNode=()=>true;
-if(predicate){
-const idsToInclude=new Set();
+const idsToIncludedClones=new Map();
+
+
 rootNode.traverse(node=>{
+if(idsToIncludedClones.has(node.id))return;
+
+if(predicate===undefined){
+
+idsToIncludedClones.set(node.id,node.cloneWithoutRelationships());
+return;
+}
+
 if(predicate(node)){
+
 node.traverse(
-node=>idsToInclude.add(node.id),
-node=>node._dependencies.filter(parent=>!idsToInclude.has(parent)));
+node=>idsToIncludedClones.set(node.id,node.cloneWithoutRelationships()),
+
+node=>node._dependencies.filter(parent=>!idsToIncludedClones.has(parent.id)));
 
 }
 });
 
-shouldIncludeNode=node=>idsToInclude.has(node.id);
-}
-
-const idToNodeMap=new Map();
-rootNode.traverse(originalNode=>{
-if(!shouldIncludeNode(originalNode))return;
-const clonedNode=originalNode.cloneWithoutRelationships();
-idToNodeMap.set(clonedNode.id,clonedNode);
-});
 
 rootNode.traverse(originalNode=>{
-if(!shouldIncludeNode(originalNode))return;
-const clonedNode=idToNodeMap.get(originalNode.id);
+const clonedNode=idsToIncludedClones.get(originalNode.id);
+if(!clonedNode)return;
 
 for(const dependency of originalNode._dependencies){
-const clonedDependency=idToNodeMap.get(dependency.id);
+const clonedDependency=idsToIncludedClones.get(dependency.id);
+if(!clonedDependency)throw new Error('Dependency somehow not cloned');
 clonedNode.addDependency(clonedDependency);
 }
 });
 
-if(!idToNodeMap.has(this.id))throw new Error('Cloned graph missing node');
-return idToNodeMap.get(this.id);
+const clonedThisNode=idsToIncludedClones.get(this.id);
+if(!clonedThisNode)throw new Error('Cloned graph missing node');
+return clonedThisNode;
 }
 
 
@@ -21272,45 +23559,34 @@ return idToNodeMap.get(this.id);
 
 
 
-_traversePaths(iterator,getNext){
-const stack=[[this]];
-while(stack.length){
 
 
-const path=stack.shift();
-const node=path[0];
-iterator(node,path);
 
-const nodesToAdd=getNext(node);
-for(const nextNode of nodesToAdd){
-stack.push([nextNode].concat(path));
-}
-}
+
+traverse(callback,getNextNodes){
+if(!getNextNodes){
+getNextNodes=node=>node.getDependents();
 }
 
 
 
+const queue=[[this]];
+const visited=new Set([this.id]);
+
+while(queue.length){
 
 
+const traversalPath=queue.shift();
+const node=traversalPath[0];
+callback(node,traversalPath);
 
+for(const nextNode of getNextNodes(node)){
+if(visited.has(nextNode.id))continue;
+visited.add(nextNode.id);
 
-traverse(iterator,getNext){
-if(!getNext){
-getNext=node=>node.getDependents();
+queue.push([nextNode,...traversalPath]);
 }
-
-const visited=new Set();
-const originalGetNext=getNext;
-
-getNext=node=>{
-visited.add(node.id);
-const allNodesToVisit=originalGetNext(node);
-const nodesToVisit=allNodesToVisit.filter(nextNode=>!visited.has(nextNode.id));
-nodesToVisit.forEach(nextNode=>visited.add(nextNode.id));
-return nodesToVisit;
-};
-
-this._traversePaths(iterator,getNext);
+}
 }
 
 
@@ -21373,7 +23649,7 @@ CPU:'cpu'};
 
 module.exports=BaseNode;
 
-},{}],49:[function(require,module,exports){
+},{}],53:[function(require,module,exports){
 
 
 
@@ -21459,7 +23735,7 @@ return new CPUNode(this._event,this._childEvents);
 
 module.exports=CPUNode;
 
-},{"./base-node":48}],50:[function(require,module,exports){
+},{"./base-node":52}],54:[function(require,module,exports){
 
 
 
@@ -21543,7 +23819,7 @@ return node;
 
 module.exports=NetworkNode;
 
-},{"../network-request":67,"./base-node":48}],51:[function(require,module,exports){
+},{"../network-request":71,"./base-node":52}],55:[function(require,module,exports){
 
 
 
@@ -21567,19 +23843,7 @@ module.exports=class ConnectionPool{
 
 
 constructor(records,options){
-this._options=Object.assign(
-{
-rtt:undefined,
-throughput:undefined,
-additionalRttByOrigin:new Map(),
-serverResponseTimeByOrigin:new Map()},
-
-options);
-
-
-if(!this._options.rtt||!this._options.throughput){
-throw new Error('Cannot create pool with no rtt or throughput');
-}
+this._options=options;
 
 this._records=records;
 
@@ -21685,14 +23949,10 @@ return maxConnection;
 
 
 acquire(record,options={}){
-if(this._connectionsByRecord.has(record)){
+if(this._connectionsByRecord.has(record))throw new Error('Record already has a connection');
 
-return this._connectionsByRecord.get(record);
-}
-
-const origin=String(record.parsedURL.securityOrigin);
+const origin=record.parsedURL.securityOrigin;
 const observedConnectionWasReused=!!this._connectionReusedByRequestId.get(record.requestId);
-
 const connections=this._connectionsByOrigin.get(origin)||[];
 const connectionToUse=this._findAvailableConnectionWithLargestCongestionWindow(connections,{
 ignoreConnectionReused:options.ignoreConnectionReused,
@@ -21709,6 +23969,20 @@ return connectionToUse;
 
 
 
+
+
+
+
+acquireActiveConnectionFromRecord(record){
+const activeConnection=this._connectionsByRecord.get(record);
+if(!activeConnection)throw new Error('Could not find an active connection for record');
+
+return activeConnection;
+}
+
+
+
+
 release(record){
 const connection=this._connectionsByRecord.get(record);
 this._connectionsByRecord.delete(record);
@@ -21716,7 +23990,7 @@ this._connectionsInUse.delete(connection);
 }};
 
 
-},{"./network-analyzer":53,"./tcp-connection":55}],52:[function(require,module,exports){
+},{"./network-analyzer":57,"./tcp-connection":59}],56:[function(require,module,exports){
 
 
 
@@ -21735,19 +24009,9 @@ class DNSCache{
 
 
 
-constructor(options){
-this._options=Object.assign(
-{
-rtt:undefined},
+constructor({rtt}){
+this._rtt=rtt;
 
-options);
-
-
-if(!this._options.rtt){
-throw new Error('Cannot create DNS cache with no rtt');
-}
-
-this._rtt=this._options.rtt;
 
 this._resolvedDomainNames=new Map();
 }
@@ -21801,7 +24065,7 @@ DNSCache.RTT_MULTIPLIER=DNS_RESOLUTION_RTT_MULTIPLIER;
 
 module.exports=DNSCache;
 
-},{}],53:[function(require,module,exports){
+},{}],57:[function(require,module,exports){
 
 
 
@@ -21810,7 +24074,8 @@ module.exports=DNSCache;
 'use strict';
 
 const INITIAL_CWD=14*1024;
-const NetworkRequest=require('../../network-request');
+const NetworkRequest=require('../../network-request.js');
+const URL=require('../../url-shim.js');
 
 
 const DEFAULT_SERVER_RESPONSE_PERCENTAGE=0.4;
@@ -22067,10 +24332,10 @@ return Array.from(connectionIdWasStarted.values()).every(started=>started);
 
 
 static estimateIfConnectionWasReused(records,options){
-options=Object.assign({forceCoarseEstimates:false},options);
+const{forceCoarseEstimates=false}=options||{};
 
 
-if(!options.forceCoarseEstimates&&NetworkAnalyzer.canTrustConnectionInformation(records)){
+if(!forceCoarseEstimates&&NetworkAnalyzer.canTrustConnectionInformation(records)){
 
 return new Map(records.map(record=>[record.requestId,!!record.connectionReused]));
 }
@@ -22093,8 +24358,6 @@ record.startTime>=earliestReusePossible||record.protocol==='h2');
 
 }
 
-
-
 const firstRecord=originRecords.reduce((a,b)=>a.startTime>b.startTime?b:a);
 connectionWasReused.set(firstRecord.requestId,false);
 }
@@ -22112,48 +24375,42 @@ return connectionWasReused;
 
 
 static estimateRTTByOrigin(records,options){
-options=Object.assign(
-{
+const{
+forceCoarseEstimates=false,
 
 
-forceCoarseEstimates:false,
-
-
-coarseEstimateMultiplier:0.3,
-
-useDownloadEstimates:true,
-useSendStartEstimates:true,
-useHeadersEndEstimates:true},
-
-options);
-
+coarseEstimateMultiplier=0.3,
+useDownloadEstimates=true,
+useSendStartEstimates=true,
+useHeadersEndEstimates=true}=
+options||{};
 
 let estimatesByOrigin=NetworkAnalyzer._estimateRTTByOriginViaTCPTiming(records);
-if(!estimatesByOrigin.size||options.forceCoarseEstimates){
+if(!estimatesByOrigin.size||forceCoarseEstimates){
 estimatesByOrigin=new Map();
 const estimatesViaDownload=NetworkAnalyzer._estimateRTTByOriginViaDownloadTiming(records);
 const estimatesViaSendStart=NetworkAnalyzer._estimateRTTByOriginViaSendStartTiming(records);
 const estimatesViaTTFB=NetworkAnalyzer._estimateRTTByOriginViaHeadersEndTiming(records);
 
 for(const[origin,estimates]of estimatesViaDownload.entries()){
-if(!options.useDownloadEstimates)continue;
+if(!useDownloadEstimates)continue;
 estimatesByOrigin.set(origin,estimates);
 }
 
 for(const[origin,estimates]of estimatesViaSendStart.entries()){
-if(!options.useSendStartEstimates)continue;
+if(!useSendStartEstimates)continue;
 const existing=estimatesByOrigin.get(origin)||[];
 estimatesByOrigin.set(origin,existing.concat(estimates));
 }
 
 for(const[origin,estimates]of estimatesViaTTFB.entries()){
-if(!options.useHeadersEndEstimates)continue;
+if(!useHeadersEndEstimates)continue;
 const existing=estimatesByOrigin.get(origin)||[];
 estimatesByOrigin.set(origin,existing.concat(estimates));
 }
 
 for(const estimates of estimatesByOrigin.values()){
-estimates.forEach((x,i)=>estimates[i]=x*options.coarseEstimateMultiplier);
+estimates.forEach((x,i)=>estimates[i]=x*coarseEstimateMultiplier);
 }
 }
 
@@ -22170,17 +24427,13 @@ return NetworkAnalyzer.summarize(estimatesByOrigin);
 
 
 static estimateServerResponseTimeByOrigin(records,options){
-options=Object.assign(
-{
-rttByOrigin:null},
-
-options);
-
-
-let rttByOrigin=options.rttByOrigin;
+let rttByOrigin=(options||{}).rttByOrigin;
 if(!rttByOrigin){
-rttByOrigin=NetworkAnalyzer.estimateRTTByOrigin(records,options);
-for(const[origin,summary]of rttByOrigin.entries()){
+
+rttByOrigin=new Map();
+
+const rttSummaryByOrigin=NetworkAnalyzer.estimateRTTByOrigin(records,options);
+for(const[origin,summary]of rttSummaryByOrigin.entries()){
 rttByOrigin.set(origin,summary.min);
 }
 }
@@ -22251,10 +24504,20 @@ return totalBytes*8/totalDuration;
 
 
 
-static findMainDocument(records){
+
+static findMainDocument(records,finalURL){
+
+if(finalURL){
+
+const mainResource=records.find(request=>finalURL.startsWith(request.url)&&
+URL.equalWithExcludedFragments(request.url,finalURL));
+if(mainResource)return mainResource;
+
+}
 
 const documentRequests=records.filter(record=>record.resourceType===
 NetworkRequest.TYPES.Document);
+if(!documentRequests.length)throw new Error('Unable to identify the main resource');
 
 return documentRequests.reduce((min,r)=>r.startTime<min.startTime?r:min);
 }}
@@ -22270,7 +24533,16 @@ module.exports=NetworkAnalyzer;
 
 
 
-},{"../../network-request":67}],54:[function(require,module,exports){
+
+
+
+
+
+
+
+
+
+},{"../../network-request.js":71,"../../url-shim.js":"url"}],58:[function(require,module,exports){
 
 
 
@@ -22377,7 +24649,6 @@ this._numberInProgressByType=new Map();
 
 this._nodes={};
 this._cachedNodeListByStartTime=[];
-
 
 
 for(const state of Object.values(NodeState)){
@@ -22574,8 +24845,7 @@ if(networkNode.fromDiskCache){
 const sizeInMb=(record.resourceSize||0)/1024/1024;
 timeElapsed=8+20*sizeInMb-timingData.timeElapsed;
 }else{
-
-const connection=this._acquireConnection(record);
+const connection=this._connectionPool.acquireActiveConnectionFromRecord(record);
 const dnsResolutionTime=this._dns.getTimeUntilResolution(record,{
 requestedAt:timingData.startTime,
 shouldUpdateCache:true});
@@ -22626,8 +24896,7 @@ timingData.timeElapsed+=timePeriodLength;
 if(node.type!==BaseNode.TYPES.NETWORK)throw new Error('Unsupported');
 
 const record=node.record;
-
-const connection=this._acquireConnection(record);
+const connection=this._connectionPool.acquireActiveConnectionFromRecord(record);
 const dnsResolutionTime=this._dns.getTimeUntilResolution(record,{
 requestedAt:timingData.startTime,
 shouldUpdateCache:true});
@@ -22784,7 +25053,7 @@ module.exports=Simulator;
 
 
 
-},{"../../../config/constants":36,"../base-node":48,"./connection-pool":51,"./dns-cache":52,"./tcp-connection":55}],55:[function(require,module,exports){
+},{"../../../config/constants":40,"../base-node":52,"./connection-pool":55,"./dns-cache":56,"./tcp-connection":59}],59:[function(require,module,exports){
 
 
 
@@ -22992,7 +25261,7 @@ module.exports=TcpConnection;
 
 
 
-},{}],56:[function(require,module,exports){
+},{}],60:[function(require,module,exports){
 
 
 
@@ -23065,7 +25334,7 @@ catch(()=>null);
 
 module.exports=Element;
 
-},{"../gather/driver.js":42}],57:[function(require,module,exports){
+},{"../gather/driver.js":46}],61:[function(require,module,exports){
 
 
 
@@ -23106,15 +25375,10 @@ height:940,
 deviceScaleFactor:1};
 
 
-const NEXUS5X_USERAGENT={
 
-userAgent:'Mozilla/5.0 (Linux; Android 6.0.1; Nexus 5 Build/MRA58N) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/71.0.3559.0 Mobile Safari/537.36'};
+const NEXUS5X_USERAGENT='Mozilla/5.0 (Linux; Android 6.0.1; Nexus 5 Build/MRA58N) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/74.0.3694.0 Mobile Safari/537.36 Chrome-Lighthouse';
 
-
-const DESKTOP_USERAGENT={
-
-userAgent:'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_12_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/71.0.3559.0 Safari/537.36'};
-
+const DESKTOP_USERAGENT='Mozilla/5.0 (Macintosh; Intel Mac OS X 10_13_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/74.0.3694.0 Safari/537.36 Chrome-Lighthouse';
 
 const OFFLINE_METRICS={
 offline:true,
@@ -23144,7 +25408,7 @@ await Promise.all([
 driver.sendCommand('Emulation.setDeviceMetricsOverride',NEXUS5X_EMULATION_METRICS),
 
 driver.sendCommand('Network.enable'),
-driver.sendCommand('Network.setUserAgentOverride',NEXUS5X_USERAGENT),
+driver.sendCommand('Network.setUserAgentOverride',{userAgent:NEXUS5X_USERAGENT}),
 driver.sendCommand('Emulation.setTouchEmulationEnabled',{enabled:true})]);
 
 }
@@ -23158,7 +25422,7 @@ await Promise.all([
 driver.sendCommand('Emulation.setDeviceMetricsOverride',DESKTOP_EMULATION_METRICS),
 
 driver.sendCommand('Network.enable'),
-driver.sendCommand('Network.setUserAgentOverride',DESKTOP_USERAGENT),
+driver.sendCommand('Network.setUserAgentOverride',{userAgent:DESKTOP_USERAGENT}),
 driver.sendCommand('Emulation.setTouchEmulationEnabled',{enabled:false})]);
 
 }
@@ -23224,11 +25488,25 @@ enableNetworkThrottling,
 clearAllNetworkEmulation,
 enableCPUThrottling,
 disableCPUThrottling,
-goOffline};
+goOffline,
+MOBILE_USERAGENT:NEXUS5X_USERAGENT,
+DESKTOP_USERAGENT};
 
 
-},{}],58:[function(require,module,exports){
+},{}],62:[function(require,module,exports){
 module.exports={
+"lighthouse-core/audits/accessibility/accesskeys.js | description":{
+"message":"Access keys let users quickly focus a part of the page. For proper navigation, each access key must be unique. [Learn more](https://dequeuniversity.com/rules/axe/3.1/accesskeys?application=lighthouse).",
+"description":"Description of a Lighthouse audit that tells the user *why* they should try to pass. This is displayed after a user expands the section to see more. No character length limits. 'Learn More' becomes link text to additional documentation."},
+
+"lighthouse-core/audits/accessibility/accesskeys.js | failureTitle":{
+"message":"`[accesskey]` values are not unique",
+"description":"Title of an accesibility audit that evaluates if the ARIA HTML attributes are misaligned with the aria-role HTML attribute specificed on the element, such mismatches are invalid. This title is descriptive of the failing state and is shown to users when there is a failure that needs to be addressed."},
+
+"lighthouse-core/audits/accessibility/accesskeys.js | title":{
+"message":"`[accesskey]` values are unique",
+"description":"Title of an accesibility audit that evaluates if the accesskey HTML attribute values are unique across all elements. This title is descriptive of the successful state and is shown to users when no user action is required."},
+
 "lighthouse-core/audits/accessibility/aria-allowed-attr.js | description":{
 "message":"Each ARIA `role` supports a specific subset of `aria-*` attributes. Mismatching these invalidates the `aria-*` attributes. [Learn more](https://dequeuniversity.com/rules/axe/3.1/aria-allowed-attr?application=lighthouse).",
 "description":"Description of a Lighthouse audit that tells the user *why* they should try to pass. This is displayed after a user expands the section to see more. No character length limits. 'Learn More' becomes link text to additional documentation."},
@@ -23533,14 +25811,6 @@ module.exports={
 "message":"List items (`<li>`) are contained within `<ul>` or `<ol>` parent elements",
 "description":"Title of an accesibility audit that evaluates if any list item elements do not have list parent elements. This title is descriptive of the successful state and is shown to users when no user action is required."},
 
-"lighthouse-core/audits/accessibility/manual/accesskeys.js | description":{
-"message":"Access keys let users quickly focus a part of the page. For proper navigation, each access key must be unique. [Learn more](https://dequeuniversity.com/rules/axe/3.1/accesskeys?application=lighthouse).",
-"description":"Description of a Lighthouse audit that tells the user *why* they should try to pass. This is displayed after a user expands the section to see more. No character length limits. 'Learn More' becomes link text to additional documentation."},
-
-"lighthouse-core/audits/accessibility/manual/accesskeys.js | title":{
-"message":"`[accesskey]` values are unique",
-"description":"Title of an accesibility audit that evaluates if the accesskey HTML attribute values are unique across all elements. This title is descriptive of the successful state and is shown to users when no user action is required."},
-
 "lighthouse-core/audits/accessibility/meta-refresh.js | description":{
 "message":"Users do not expect a page to refresh automatically, and doing so will move focus back to the top of the page. This may create a frustrating or confusing experience. [Learn more](https://dequeuniversity.com/rules/axe/3.1/meta-refresh?application=lighthouse).",
 "description":"Description of a Lighthouse audit that tells the user *why* they should try to pass. This is displayed after a user expands the section to see more. No character length limits. 'Learn More' becomes link text to additional documentation."},
@@ -23662,7 +25932,7 @@ module.exports={
 "description":"Label for a time column in a data table; entries will be the number of milliseconds spent parsing script files for every script loaded by the page."},
 
 "lighthouse-core/audits/bootup-time.js | columnTotal":{
-"message":"Total",
+"message":"Total CPU Time",
 "description":"Label for the total time column in a data table; entries will be the number of milliseconds spent executing per resource loaded by the page."},
 
 "lighthouse-core/audits/bootup-time.js | description":{
@@ -23734,11 +26004,11 @@ module.exports={
 "description":"Imperative title of a Lighthouse audit that tells the user to minify the page’s JS code to reduce file size. This is displayed in a list of audit titles that Lighthouse generates."},
 
 "lighthouse-core/audits/byte-efficiency/unused-css-rules.js | description":{
-"message":"Remove unused rules from stylesheets to reduce unnecessary bytes consumed by network activity. [Learn more](https://developers.google.com/web/tools/lighthouse/audits/unused-css).",
+"message":"Remove dead rules from stylesheets and defer the loading of CSS not used for above-the-fold content to reduce unnecessary bytes consumed by network activity. [Learn more](https://developers.google.com/web/tools/lighthouse/audits/unused-css).",
 "description":"Description of a Lighthouse audit that tells the user *why* they should defer loading any content in CSS that isn’t needed at page load. This is displayed after a user expands the section to see more. No word length limits. 'Learn More' becomes link text to additional documentation."},
 
 "lighthouse-core/audits/byte-efficiency/unused-css-rules.js | title":{
-"message":"Defer unused CSS",
+"message":"Remove unused CSS",
 "description":"Imperative title of a Lighthouse audit that tells the user to remove content from their CSS that isn’t needed immediately and instead load that content at a later time. This is displayed in a list of audit titles that Lighthouse generates."},
 
 "lighthouse-core/audits/byte-efficiency/unused-javascript.js | description":{
@@ -23867,11 +26137,11 @@ module.exports={
 
 "lighthouse-core/audits/load-fast-enough-for-pwa.js | displayValueText":{
 "message":"Interactive at {timeInMs, number, seconds} s",
-"description":"[ICU Syntax] Label for the audit identifying the time it took for the page to become interactive."},
+"description":"Label for the audit identifying the time it took for the page to become interactive."},
 
 "lighthouse-core/audits/load-fast-enough-for-pwa.js | displayValueTextWithOverride":{
 "message":"Interactive on simulated mobile network at {timeInMs, number, seconds} s",
-"description":"[ICU Syntax] Label for the audit identifying the time it took for the page to become interactive on a mobile network."},
+"description":"Label for the audit identifying the time it took for the page to become interactive on a mobile network."},
 
 "lighthouse-core/audits/load-fast-enough-for-pwa.js | failureTitle":{
 "message":"Page load is not fast enough on mobile networks",
@@ -23937,6 +26207,14 @@ module.exports={
 "message":"Time to Interactive",
 "description":"The name of the metric that marks the time at which the page is fully loaded and is able to quickly respond to user input (clicks, taps, and keypresses feel responsive). Shown to users as the label for the numeric metric value. Ideally fits within a ~40 character limit."},
 
+"lighthouse-core/audits/metrics/max-potential-fid.js | description":{
+"message":"The potential First Input Delay that your users could experience is the duration, in milliseconds, of the longest task.",
+"description":"Description of the Maximum Potential First Input Delay metric that marks the maximum estimated time between the page receiving input (a user clicking, tapping, or typing) and the page responding. This description is displayed within a tooltip when the user hovers on the metric name to see more. No character length limits. 'Learn More' becomes link text to additional documentation."},
+
+"lighthouse-core/audits/metrics/max-potential-fid.js | title":{
+"message":"Max Potential FID",
+"description":"The name of the metric \"Maximum Potential First Input Delay\" that marks the maximum estimated time between the page receiving input (a user clicking, tapping, or typing) and the page responding. Shown to users as the label for the numeric metric value. Ideally fits within a ~40 character limit."},
+
 "lighthouse-core/audits/metrics/speed-index.js | description":{
 "message":"Speed Index shows how quickly the contents of a page are visibly populated. [Learn more](https://developers.google.com/web/tools/lighthouse/audits/speed-index).",
 "description":"Description of the Speed Index metric, which summarizes how quickly the page looked visually complete. This is displayed within a tooltip when the user hovers on the metric name to see more. No character length limits. 'Learn More' becomes link text to additional documentation."},
@@ -23944,6 +26222,22 @@ module.exports={
 "lighthouse-core/audits/metrics/speed-index.js | title":{
 "message":"Speed Index",
 "description":"The name of the metric that summarizes how quickly the page looked visually complete. The name of this metric is largely abstract and can be loosely translated. Shown to users as the label for the numeric metric value. Ideally fits within a ~40 character limit."},
+
+"lighthouse-core/audits/network-rtt.js | description":{
+"message":"Network round trip times (RTT) have a large impact on performance. If the RTT to an origin is high, it's an indication that servers closer to the user could improve performance. [Learn more](https://hpbn.co/primer-on-latency-and-bandwidth/).",
+"description":"Description of a Lighthouse audit that tells the user that a high network round trip time (RTT) can effect their website's performance because the server is physically far away from them thus making the RTT high. This is displayed after a user expands the section to see more. No character length limits. 'Learn More' becomes link text to additional documentation."},
+
+"lighthouse-core/audits/network-rtt.js | title":{
+"message":"Network Round Trip Times",
+"description":"Descriptive title of a Lighthouse audit that tells the user the round trip times to each origin the page connected to. This is displayed in a list of audit titles that Lighthouse generates."},
+
+"lighthouse-core/audits/network-server-latency.js | description":{
+"message":"Server latencies can impact web performance. If the server latency of an origin is high, it's an indication the server is overloaded or has poor backend performance. [Learn more](https://hpbn.co/primer-on-web-performance/#analyzing-the-resource-waterfall).",
+"description":"Description of a Lighthouse audit that tells the user that server latency can effect their website's performance negatively. This is displayed after a user expands the section to see more. No character length limits. 'Learn More' becomes link text to additional documentation."},
+
+"lighthouse-core/audits/network-server-latency.js | title":{
+"message":"Server Backend Latencies",
+"description":"Descriptive title of a Lighthouse audit that tells the user the server latencies observed from each origin the page connected to. This is displayed in a list of audit titles that Lighthouse generates."},
 
 "lighthouse-core/audits/redirects.js | description":{
 "message":"Redirects introduce additional delays before the page can be loaded. [Learn more](https://developers.google.com/web/tools/lighthouse/audits/redirects).",
@@ -23953,21 +26247,213 @@ module.exports={
 "message":"Avoid multiple page redirects",
 "description":"Imperative title of a Lighthouse audit that tells the user to eliminate the redirects taken through multiple URLs to load the page. This is shown in a list of audits that Lighthouse generates."},
 
+"lighthouse-core/audits/seo/canonical.js | description":{
+"message":"Canonical links suggest which URL to show in search results. [Learn more](https://developers.google.com/web/tools/lighthouse/audits/canonical).",
+"description":"Description of a Lighthouse audit that tells the user *why* they need to have a valid rel=canonical link. This is displayed after a user expands the section to see more. No character length limits. 'Learn More' becomes link text to additional documentation."},
+
+"lighthouse-core/audits/seo/canonical.js | explanationConflict":{
+"message":"Multiple conflicting URLs ({urlList})",
+"description":"Explanatory message stating that there was a failure in an audit caused by multiple URLs conflicting with each other. \"urlList\" will be replaced by a list of URLs (e.g. https://example.com, https://example2.com, etc )."},
+
+"lighthouse-core/audits/seo/canonical.js | explanationDifferentDomain":{
+"message":"Points to a different domain ({url})",
+"description":"Explanatory message stating that there was a failure in an audit caused by a URL pointing to a different domain. \"url\" will be replaced by the invalid URL (e.g. https://example.com)."},
+
+"lighthouse-core/audits/seo/canonical.js | explanationInvalid":{
+"message":"Invalid URL ({url})",
+"description":"Explanatory message stating that there was a failure in an audit caused by a URL being invalid. \"url\" will be replaced by the invalid URL (e.g. https://example.com)."},
+
+"lighthouse-core/audits/seo/canonical.js | explanationPointsElsewhere":{
+"message":"Points to another `hreflang` location ({url})",
+"description":"Explanatory message stating that there was a failure in an audit caused by a URL pointing to a different hreflang than the current context. \"url\" will be replaced by the invalid URL (e.g. https://example.com). 'hreflang' is an HTML attribute and should not be translated."},
+
+"lighthouse-core/audits/seo/canonical.js | explanationRelative":{
+"message":"Relative URL ({url})",
+"description":"Explanatory message stating that there was a failure in an audit caused by a URL being relative instead of absolute. \"url\" will be replaced by the invalid URL (e.g. https://example.com)."},
+
+"lighthouse-core/audits/seo/canonical.js | explanationRoot":{
+"message":"Points to the domain's root URL (the homepage), instead of an equivalent page of content",
+"description":"Explanatory message stating that the page's canonical URL was pointing to the domain's root URL, which is a common mistake. \"points\" refers to the action of the 'rel=canonical' referencing another link. \"root\" refers to the starting/home page of the website. \"domain\" refers to the registered domain name of the website."},
+
+"lighthouse-core/audits/seo/canonical.js | failureTitle":{
+"message":"Document does not have a valid `rel=canonical`",
+"description":"Title of a Lighthouse audit that provides detail on a page's rel=canonical link. This descriptive title is shown to users when the rel=canonical link is invalid and should be fixed. \"rel=canonical\" is an HTML attribute and value and so should not be translated."},
+
+"lighthouse-core/audits/seo/canonical.js | title":{
+"message":"Document has a valid `rel=canonical`",
+"description":"Title of a Lighthouse audit that provides detail on a page's rel=canonical link. This descriptive title is shown to users when the rel=canonical link is valid. \"rel=canonical\" is an HTML attribute and value and so should not be translated."},
+
 "lighthouse-core/audits/seo/font-size.js | description":{
 "message":"Font sizes less than 12px are too small to be legible and require mobile visitors to “pinch to zoom” in order to read. Strive to have >60% of page text ≥12px. [Learn more](https://developers.google.com/web/tools/lighthouse/audits/font-sizes).",
 "description":"Description of a Lighthouse audit that tells the user *why* they need to use a larger font size. This is displayed after a user expands the section to see more. No character length limits. 'Learn More' becomes link text to additional documentation."},
 
 "lighthouse-core/audits/seo/font-size.js | displayValue":{
 "message":"{decimalProportion, number, extendedPercent} legible text",
-"description":"[ICU Syntax] Label for the audit identifying font sizes that are too small."},
+"description":"Label for the audit identifying font sizes that are too small."},
+
+"lighthouse-core/audits/seo/font-size.js | explanation":{
+"message":"{decimalProportion, number, extendedPercent} of text is too small.",
+"description":"Explanatory message stating that there was a failure in an audit caused by a certain percentage of the text on the page being too small. \"decimalProportion\" will be replaced by a percentage between 0 and 100%."},
+
+"lighthouse-core/audits/seo/font-size.js | explanationViewport":{
+"message":"Text is illegible because there's no viewport meta tag optimized for mobile screens.",
+"description":"Explanatory message stating that there was a failure in an audit caused by a missing page viewport meta tag configuration. \"viewport\" and \"meta\" are HTML terms and should not be translated."},
+
+"lighthouse-core/audits/seo/font-size.js | explanationWithDisclaimer":{
+"message":"{decimalProportion, number, extendedPercent} of text is too small (based on {decimalProportionVisited, number, extendedPercent} sample).",
+"description":"Explanatory message stating that there was a failure in an audit caused by a certain percentage of the text on the page being too small, based on a sample size of text that was less than 100% of the text on the page. \"decimalProportion\" will be replaced by a percentage between 0 and 100%."},
 
 "lighthouse-core/audits/seo/font-size.js | failureTitle":{
 "message":"Document doesn't use legible font sizes",
-"description":"Imperative title of a Lighthouse audit that tells the user that they should use font sizes that are easily read by the user. This imperative title is shown to users when there is a font that is too small to be read by the user."},
+"description":"Title of a Lighthouse audit that provides detail on the font sizes used on the page. This descriptive title is shown to users when there is a font that may be too small to be read by users."},
 
 "lighthouse-core/audits/seo/font-size.js | title":{
 "message":"Document uses legible font sizes",
-"description":"Imperative title of a Lighthouse audit that tells the user that they should use font sizes that are easily read by the user. This is displayed in a list of audit titles that Lighthouse generates."},
+"description":"Title of a Lighthouse audit that provides detail on the font sizes used on the page. This descriptive title is shown to users when the fonts used on the page are large enough to be considered legible."},
+
+"lighthouse-core/audits/seo/hreflang.js | description":{
+"message":"hreflang links tell search engines what version of a page they should list in search results for a given language or region. [Learn more](https://developers.google.com/web/tools/lighthouse/audits/hreflang).",
+"description":"Description of a Lighthouse audit that tells the user *why* they need to have an hreflang link on their page. This is displayed after a user expands the section to see more. No character length limits. 'Learn More' becomes link text to additional documentation. \"hreflang\" is an HTML attribute and should not be translated."},
+
+"lighthouse-core/audits/seo/hreflang.js | failureTitle":{
+"message":"Document doesn't have a valid `hreflang`",
+"description":"Title of a Lighthouse audit that provides detail on the `hreflang` attribute on a page. This descriptive title is shown when the page's `hreflang` attribute is not valid and needs to be fixed. \"hreflang\" is an HTML attribute and should not be translated."},
+
+"lighthouse-core/audits/seo/hreflang.js | title":{
+"message":"Document has a valid `hreflang`",
+"description":"Title of a Lighthouse audit that provides detail on the `hreflang` attribute on a page. This descriptive title is shown when the page's `hreflang` attribute is configured correctly. \"hreflang\" is an HTML attribute and should not be translated."},
+
+"lighthouse-core/audits/seo/http-status-code.js | description":{
+"message":"Pages with unsuccessful HTTP status codes may not be indexed properly. [Learn more](https://developers.google.com/web/tools/lighthouse/audits/successful-http-code).",
+"description":"Description of a Lighthouse audit that tells the user *why* they need to serve pages with a valid HTTP status code. This is displayed after a user expands the section to see more. No character length limits. 'Learn More' becomes link text to additional documentation."},
+
+"lighthouse-core/audits/seo/http-status-code.js | failureTitle":{
+"message":"Page has unsuccessful HTTP status code",
+"description":"Descriptive title of a Lighthouse audit that provides detail on the HTTP status code a page responds with. This descriptive title is shown when the page responds to requests with an HTTP status code that indicates the request was unsuccessful."},
+
+"lighthouse-core/audits/seo/http-status-code.js | title":{
+"message":"Page has successful HTTP status code",
+"description":"Title of a Lighthouse audit that provides detail on the HTTP status code a page responds with. This descriptive title is shown when the page has responded with a valid HTTP status code."},
+
+"lighthouse-core/audits/seo/is-crawlable.js | description":{
+"message":"Search engines are unable to include your pages in search results if they don't have permission to crawl them. [Learn more](https://developers.google.com/web/tools/lighthouse/audits/indexing).",
+"description":"Description of a Lighthouse audit that tells the user *why* allowing search-engine crawling of their page is beneficial. This is displayed after a user expands the section to see more. No character length limits. 'Learn More' becomes link text to additional documentation."},
+
+"lighthouse-core/audits/seo/is-crawlable.js | failureTitle":{
+"message":"Page is blocked from indexing",
+"description":"Title of a Lighthouse audit that provides detail on if search-engine crawlers are blocked from indexing the page. This title is shown when the page has been configured to block indexing and therefore cannot be indexed by search engines."},
+
+"lighthouse-core/audits/seo/is-crawlable.js | title":{
+"message":"Page isn’t blocked from indexing",
+"description":"Title of a Lighthouse audit that provides detail on if search-engine crawlers are blocked from indexing the page. This title is shown when the page is not blocked from indexing and can be crawled."},
+
+"lighthouse-core/audits/seo/link-text.js | description":{
+"message":"Descriptive link text helps search engines understand your content. [Learn more](https://developers.google.com/web/tools/lighthouse/audits/descriptive-link-text).",
+"description":"Description of a Lighthouse audit that tells the user *why* they need to have descriptive text on the links in their page. This is displayed after a user expands the section to see more. No character length limits. 'Learn More' becomes link text to additional documentation."},
+
+"lighthouse-core/audits/seo/link-text.js | displayValue":{
+"message":"{itemCount, plural,\n    =1 {1 link found}\n    other {# links found}\n    }",
+"description":"[ICU Syntax] Label for the audit identifying the number of links found. \"link\" here refers to the links in a web page to other web pages."},
+
+"lighthouse-core/audits/seo/link-text.js | failureTitle":{
+"message":"Links do not have descriptive text",
+"description":"Title of a Lighthouse audit that tests if each link on a page contains a sufficient description of what a user will find when they click it. Generic, non-descriptive text like \"click here\" doesn't give an indication of what the link leads to. This descriptive title is shown when one or more links on the page contain generic, non-descriptive text."},
+
+"lighthouse-core/audits/seo/link-text.js | title":{
+"message":"Links have descriptive text",
+"description":"Title of a Lighthouse audit that tests if each link on a page contains a sufficient description of what a user will find when they click it. Generic, non-descriptive text like \"click here\" doesn't give an indication of what the link leads to. This descriptive title is shown when all links on the page have sufficient textual descriptions."},
+
+"lighthouse-core/audits/seo/manual/structured-data.js | description":{
+"message":"Run the [Structured Data Testing Tool](https://search.google.com/structured-data/testing-tool/) and the [Structured Data Linter](http://linter.structured-data.org/) to validate structured data. [Learn more](https://developers.google.com/search/docs/guides/mark-up-content).",
+"description":"Description of a Lighthouse audit that provides detail on the structured data in a page. \"Structured data\" is a standardized data format on a page that helps a search engine categorize and understand its contents. This description is displayed after a user expands the section to see more. No character length limits. 'Learn More' becomes link text to additional documentation."},
+
+"lighthouse-core/audits/seo/manual/structured-data.js | title":{
+"message":"Structured data is valid",
+"description":"Title of a Lighthouse audit that prompts users to manually check their page for valid structured data. \"Structured data\" is a standardized data format on a page that helps a search engine categorize and understand its contents."},
+
+"lighthouse-core/audits/seo/meta-description.js | description":{
+"message":"Meta descriptions may be included in search results to concisely summarize page content. [Learn more](https://developers.google.com/web/tools/lighthouse/audits/description).",
+"description":"Description of a Lighthouse audit that tells the user *why* they need to have meta descriptions on their page. This is displayed after a user expands the section to see more. No character length limits. 'Learn More' becomes link text to additional documentation."},
+
+"lighthouse-core/audits/seo/meta-description.js | explanation":{
+"message":"Description text is empty.",
+"description":"Explanatory message stating that there was a failure in an audit caused by the page's meta description text being empty."},
+
+"lighthouse-core/audits/seo/meta-description.js | failureTitle":{
+"message":"Document does not have a meta description",
+"description":"Title of a Lighthouse audit that provides detail on the web page's document meta description. This descriptive title is shown when the document does not have a meta description. \"meta\" should be left untranslated because it refers to an HTML element."},
+
+"lighthouse-core/audits/seo/meta-description.js | title":{
+"message":"Document has a meta description",
+"description":"Title of a Lighthouse audit that provides detail on the web page's document meta description. This descriptive title is shown when the document has a meta description. \"meta\" should be left untranslated because it refers to an HTML element."},
+
+"lighthouse-core/audits/seo/plugins.js | description":{
+"message":"Search engines can't index plugin content, and many devices restrict plugins or don't support them. [Learn more](https://developers.google.com/web/tools/lighthouse/audits/plugins).",
+"description":"Description of a Lighthouse audit that tells the user *why* they need to avoid using browser plugins in their content. This is displayed after a user expands the section to see more. No character length limits. 'Learn More' becomes link text to additional documentation."},
+
+"lighthouse-core/audits/seo/plugins.js | failureTitle":{
+"message":"Document uses plugins",
+"description":"Descriptive title of a Lighthouse audit that provides detail on the browser plugins used by the page. This title is shown when there is plugin content on the page."},
+
+"lighthouse-core/audits/seo/plugins.js | title":{
+"message":"Document avoids plugins",
+"description":"Title of a Lighthouse audit that provides detail on the browser plugins used by the page. This descriptive title is shown when there is no plugin content on the page that would restrict search indexing."},
+
+"lighthouse-core/audits/seo/robots-txt.js | description":{
+"message":"If your robots.txt file is malformed, crawlers may not be able to understand how you want your website to be crawled or indexed.",
+"description":"Description of a Lighthouse audit that tells the user *why* they need to have a valid robots.txt file. Note: \"robots.txt\" is a canonical filename and should not be translated. This is displayed after a user expands the section to see more. No character length limits."},
+
+"lighthouse-core/audits/seo/robots-txt.js | displayValueHttpBadCode":{
+"message":"request for robots.txt returned HTTP status: {statusCode}",
+"description":"Label for the audit identifying that the robots.txt request has returned a specific HTTP status code. Note: \"robots.txt\" is a canonical filename and should not be translated. \"statusCode\" will be replaced with a 3 digit integer which represents the status of the HTTP connectiong for this page."},
+
+"lighthouse-core/audits/seo/robots-txt.js | displayValueValidationError":{
+"message":"{itemCount, plural,\n    =1 {1 error found}\n    other {# errors found}\n    }",
+"description":"[ICU Syntax] Label for the audit identifying the number of errors that occured while validating the robots.txt file. \"itemCount\" will be replaced by the integer count of errors encountered."},
+
+"lighthouse-core/audits/seo/robots-txt.js | explanation":{
+"message":"Lighthouse was unable to download a robots.txt file",
+"description":"Explanatory message stating that there was a failure in an audit caused by Lighthouse not being able to download the robots.txt file for the site.  Note: \"robots.txt\" is a canonical filename and should not be translated."},
+
+"lighthouse-core/audits/seo/robots-txt.js | failureTitle":{
+"message":"robots.txt is not valid",
+"description":"Title of a Lighthouse audit that provides detail on the site's robots.txt file. Note: \"robots.txt\" is a canonical filename and should not be translated. This descriptive title is shown when the robots.txt file is misconfigured, which makes the page hard or impossible to scan via web crawler."},
+
+"lighthouse-core/audits/seo/robots-txt.js | title":{
+"message":"robots.txt is valid",
+"description":"Title of a Lighthouse audit that provides detail on the site's robots.txt file. Note: \"robots.txt\" is a canonical filename and should not be translated. This descriptive title is shown when the robots.txt file is present and configured correctly."},
+
+"lighthouse-core/audits/seo/tap-targets.js | description":{
+"message":"Interactive elements like buttons and links should be large enough (48x48px), and have enough space around them, to be easy enough to tap without overlapping onto other elements. [Learn more](https://developers.google.com/web/fundamentals/accessibility/accessible-styles#multi-device_responsive_design).",
+"description":"Description of a Lighthouse audit that tells the user why buttons and links need to be big enough and what 'big enough' means. This is displayed after a user expands the section to see more. No character length limits. 'Learn More' becomes link text to additional documentation."},
+
+"lighthouse-core/audits/seo/tap-targets.js | displayValue":{
+"message":"{decimalProportion, number, percent} appropriately sized tap targets",
+"description":"Explanatory message stating that a certain percentage of the tap targets (like buttons and links) on the page are of an appropriately large size."},
+
+"lighthouse-core/audits/seo/tap-targets.js | explanationViewportMetaNotOptimized":{
+"message":"Tap targets are too small because there's no viewport meta tag optimized for mobile screens",
+"description":"Explanatory message stating that there was a failure in an audit caused by the viewport meta tag not being optimized for mobile screens, which caused tap targets like buttons and links to be too small to tap on."},
+
+"lighthouse-core/audits/seo/tap-targets.js | failureTitle":{
+"message":"Tap targets are not sized appropriately",
+"description":"Descriptive title of a Lighthouse audit that provides detail on whether tap targets (like buttons and links) on a page are big enough so they can easily be tapped on a mobile device. This descriptive title is shown when tap targets are not easy to tap on."},
+
+"lighthouse-core/audits/seo/tap-targets.js | overlappingTargetHeader":{
+"message":"Overlapping Target",
+"description":"Label of a table column that identifies a tap target (like a link or button) that overlaps with another tap target."},
+
+"lighthouse-core/audits/seo/tap-targets.js | sizeHeader":{
+"message":"Size",
+"description":"Label of a table column that specifies the size of tap targets like buttons and links."},
+
+"lighthouse-core/audits/seo/tap-targets.js | tapTargetHeader":{
+"message":"Tap Target",
+"description":"Label of a table column that identifies tap targets (like buttons and links) that have failed the audit and aren't easy to tap on."},
+
+"lighthouse-core/audits/seo/tap-targets.js | title":{
+"message":"Tap targets are sized appropriately",
+"description":"Title of a Lighthouse audit that provides detail on whether tap targets (like buttons and links) on a page are big enough so they can easily be tapped on a mobile device. This descriptive title is shown when tap targets are easy to tap on."},
 
 "lighthouse-core/audits/time-to-first-byte.js | description":{
 "message":"Time To First Byte identifies the time at which your server sends a response. [Learn more](https://developers.google.com/web/tools/lighthouse/audits/ttfb).",
@@ -24042,64 +26528,76 @@ module.exports={
 "description":"Description of the ARIA validity section within the Accessibility category. Within this section are audits with descriptive titles that highlight if whether all the aria- HTML attributes have been used properly."},
 
 "lighthouse-core/config/default-config.js | a11yAriaGroupTitle":{
-"message":"ARIA Attributes Follow Best Practices",
+"message":"ARIA",
 "description":"Title of the ARIA validity section within the Accessibility category. Within this section are audits with descriptive titles that highlight if whether all the aria- HTML attributes have been used properly."},
+
+"lighthouse-core/config/default-config.js | a11yAudioVideoGroupDescription":{
+"message":"These are opportunities to provide alternative content for audio and video. This may improve the experience for users with hearing or vision impairments.",
+"description":"Description of the navigation section within the Accessibility category. Within this section are audits with descriptive titles that highlight opportunities to provide alternative content for audio and video."},
+
+"lighthouse-core/config/default-config.js | a11yAudioVideoGroupTitle":{
+"message":"Audio and video",
+"description":"Title of the navigation section within the Accessibility category. Within this section are audits with descriptive titles that highlight opportunities to provide alternative content for audio and video."},
+
+"lighthouse-core/config/default-config.js | a11yBestPracticesGroupDescription":{
+"message":"These items highlight common accessibility best practices.",
+"description":"Description of the best practices section within the Accessibility category. Within this section are audits with descriptive titles that highlight common accessibility best practices."},
+
+"lighthouse-core/config/default-config.js | a11yBestPracticesGroupTitle":{
+"message":"Best practices",
+"description":"Title of the best practices section of the Accessibility category. Within this section are audits with descriptive titles that highlight common accessibility best practices."},
+
+"lighthouse-core/config/default-config.js | a11yCategoryDescription":{
+"message":"These checks highlight opportunities to [improve the accessibility of your web app](https://developers.google.com/web/fundamentals/accessibility). Only a subset of accessibility issues can be automatically detected so manual testing is also encouraged.",
+"description":"Description of the Accessibility category. This is displayed at the top of a list of audits focused on making web content accessible to all users. No character length limits. 'improve the accessibility of your web app' becomes link text to additional documentation."},
+
+"lighthouse-core/config/default-config.js | a11yCategoryManualDescription":{
+"message":"These items address areas which an automated testing tool cannot cover. Learn more in our guide on [conducting an accessibility review](https://developers.google.com/web/fundamentals/accessibility/how-to-review).",
+"description":"Description of the Accessibility manual checks category. This description is displayed above a list of accessibility audits that currently have no automated test and so must be verified manually by the user. No character length limits. 'conducting an accessibility review' becomes link text to additional documentation."},
+
+"lighthouse-core/config/default-config.js | a11yCategoryTitle":{
+"message":"Accessibility",
+"description":"Title of the Accessibility category of audits. This section contains audits focused on making web content accessible to all users. Also used as a label of a score gauge; try to limit to 20 characters."},
 
 "lighthouse-core/config/default-config.js | a11yColorContrastGroupDescription":{
 "message":"These are opportunities to improve the legibility of your content.",
 "description":"Description of the color contrast section within the Accessibility category. Within this section are audits with descriptive titles that highlight the color and vision aspects of the page's accessibility that are passing or failing."},
 
 "lighthouse-core/config/default-config.js | a11yColorContrastGroupTitle":{
-"message":"Color Contrast Is Satisfactory",
+"message":"Contrast",
 "description":"Title of the color contrast section within the Accessibility category. Within this section are audits with descriptive titles that highlight the color and vision aspects of the page's accessibility that are passing or failing."},
-
-"lighthouse-core/config/default-config.js | a11yCorrectAttributesGroupDescription":{
-"message":"These are opportunities to improve the configuration of your HTML elements.",
-"description":"Description of the HTML attribute validity section within the Accessibility category. Within this section are audits with descriptive titles that highlight if the HTML attribute values on the page are used correctly."},
-
-"lighthouse-core/config/default-config.js | a11yCorrectAttributesGroupTitle":{
-"message":"Elements Use Attributes Correctly",
-"description":"Title of the HTML attribute validity section within the Accessibility category. Within this section are audits with descriptive titles that highlight if the HTML attribute values on the page are used correctly. 'Elements' refers to HTML elements."},
-
-"lighthouse-core/config/default-config.js | a11yDescribeContentsGroupDescription":{
-"message":"These are opportunities to make your content easier to understand for a user of assistive technology, like a screen reader.",
-"description":"Description of the screen reader annotation section within the Accessibility category. Within this section are audits with descriptive titles that highlight the screen reader readability aspects of the page's accessibility that are passing or failing."},
-
-"lighthouse-core/config/default-config.js | a11yDescribeContentsGroupTitle":{
-"message":"Elements Describe Contents Well",
-"description":"Title of the screen reader annotation section within the Accessibility category. Within this section are audits with descriptive titles that highlight the screen reader readability aspects of the page's accessibility that are passing or failing. 'Elements' refers to HTML elements."},
-
-"lighthouse-core/config/default-config.js | a11yElementNamesGroupDescription":{
-"message":"These are opportunities to improve the semantics of the controls in your application. This may enhance the experience for users of assistive technology, like a screen reader.",
-"description":"Description of the HTML element naming section within the Accessibility category. Within this section are audits with descriptive titles that highlight if the non-textual HTML elements on the page have names discernible by a screen reader."},
-
-"lighthouse-core/config/default-config.js | a11yElementNamesGroupTitle":{
-"message":"Elements Have Discernible Names",
-"description":"Title of the HTML element naming section within the Accessibility category. Within this section are audits with descriptive titles that highlight if the non-textual HTML elements on the page have names discernible by a screen reader."},
 
 "lighthouse-core/config/default-config.js | a11yLanguageGroupDescription":{
 "message":"These are opportunities to improve the interpretation of your content by users in different locales.",
 "description":"Description of the language section within the Accessibility category. Within this section are audits with descriptive titles that highlight if the language has been annotated in the correct HTML attributes on the page."},
 
 "lighthouse-core/config/default-config.js | a11yLanguageGroupTitle":{
-"message":"Page Specifies Valid Language",
+"message":"Internationalization and localization",
 "description":"Title of the language section within the Accessibility category. Within this section are audits with descriptive titles that highlight if the language has been annotated in the correct HTML attributes on the page."},
 
-"lighthouse-core/config/default-config.js | a11yMetaGroupDescription":{
-"message":"These are opportunities to improve the user experience of your site.",
-"description":"Description of the meta tag section within the Accessibility category. Within this section are audits with descriptive titles that highlight if meta tags on the page have been used properly and if any important ones are missing."},
+"lighthouse-core/config/default-config.js | a11yNamesLabelsGroupDescription":{
+"message":"These are opportunities to improve the semantics of the controls in your application. This may enhance the experience for users of assistive technology, like a screen reader.",
+"description":"Description of the HTML element naming section within the Accessibility category. Within this section are audits with descriptive titles that highlight if the non-textual HTML elements on the page have names discernible by a screen reader."},
 
-"lighthouse-core/config/default-config.js | a11yMetaGroupTitle":{
-"message":"Meta Tags Used Properly",
-"description":"Title of the meta tag section within the Accessibility category. Within this section are audits with descriptive titles that highlight if meta tags on the page have been used properly and if any important ones are missing."},
+"lighthouse-core/config/default-config.js | a11yNamesLabelsGroupTitle":{
+"message":"Names and labels",
+"description":"Title of the HTML element naming section within the Accessibility category. Within this section are audits with descriptive titles that highlight if the non-textual HTML elements on the page have names discernible by a screen reader."},
 
-"lighthouse-core/config/default-config.js | a11yWellStructuredGroupDescription":{
-"message":"These are opportunities to make sure your HTML is appropriately structured.",
-"description":"Description of the HTML validity section within the Accessibility category. Within this section are audits with descriptive titles that highlight structural HTML aspects of the page's accessibility that are passing or failing."},
+"lighthouse-core/config/default-config.js | a11yNavigationGroupDescription":{
+"message":"These are opportunities to improve keyboard navigation in your application.",
+"description":"Description of the navigation section within the Accessibility category. Within this section are audits with descriptive titles that highlight opportunities to improve keyboard navigation."},
 
-"lighthouse-core/config/default-config.js | a11yWellStructuredGroupTitle":{
-"message":"Elements Are Well Structured",
-"description":"Title of the HTML validity section within the Accessibility category. Within this section are audits with descriptive titles that highlight structural HTML aspects of the page's accessibility that are passing or failing (i.e. that list items are contained within list parents, etc). 'Elements' refers to HTML elements."},
+"lighthouse-core/config/default-config.js | a11yNavigationGroupTitle":{
+"message":"Navigation",
+"description":"Title of the navigation section within the Accessibility category. Within this section are audits with descriptive titles that highlight opportunities to improve keyboard navigation."},
+
+"lighthouse-core/config/default-config.js | a11yTablesListsVideoGroupDescription":{
+"message":"These are opportunities to to improve the experience of reading tabular or list data using assistive technology, like a screen reader.",
+"description":"Description of the navigation section within the Accessibility category. Within this section are audits with descriptive titles that highlight opportunities to improve the experience of reading tabular or list data using assistive technology."},
+
+"lighthouse-core/config/default-config.js | a11yTablesListsVideoGroupTitle":{
+"message":"Tables and lists",
+"description":"Title of the navigation section within the Accessibility category. Within this section are audits with descriptive titles that highlight opportunities to improve the experience of reading tabular or list data using assistive technology."},
 
 "lighthouse-core/config/default-config.js | diagnosticsGroupDescription":{
 "message":"More information about the performance of your application.",
@@ -24152,6 +26650,18 @@ module.exports={
 "lighthouse-core/config/default-config.js | pwaOptimizedGroupTitle":{
 "message":"PWA Optimized",
 "description":"Title of the \"PWA Optimized\" section of the web app category. Within this section are audits that check if the developer has taken advantage of features to make their web page more enjoyable and engaging for the user."},
+
+"lighthouse-core/config/default-config.js | seoCategoryDescription":{
+"message":"These checks ensure that your page is optimized for search engine results ranking. There are additional factors Lighthouse does not check that may affect your search ranking. [Learn more](https://support.google.com/webmasters/answer/35769).",
+"description":"Description of the Search Engine Optimization (SEO) category. This is displayed at the top of a list of audits focused on optimizing a website for indexing by search engines. No character length limits. 'Learn More' becomes link text to additional documentation."},
+
+"lighthouse-core/config/default-config.js | seoCategoryManualDescription":{
+"message":"Run these additional validators on your site to check additional SEO best practices.",
+"description":"Description of the Search Engine Optimization (SEO) manual checks category, the additional validators must be run by hand in order to check all SEO best practices. This is displayed at the top of a list of manually run audits focused on optimizing a website for indexing by search engines. No character length limits."},
+
+"lighthouse-core/config/default-config.js | seoCategoryTitle":{
+"message":"SEO",
+"description":"Title of the Search Engine Optimization (SEO) category of audits. This is displayed at the top of a list of audits focused on topics related to optimizing a website for indexing by search engines. Also used as a label of a score gauge; try to limit to 20 characters."},
 
 "lighthouse-core/lib/i18n/i18n.js | columnCacheTTL":{
 "message":"Cache TTL",
@@ -24297,6 +26807,14 @@ module.exports={
 "message":"Score scale:",
 "description":"Label preceding a pictorial explanation of the scoring scale: 0-50 is red (bad), 50-90 is orange (ok), 90-100 is green (good). These colors are used throughout the report to provide context for how good/bad a particular result is."},
 
+"lighthouse-core/report/html/renderer/util.js | snippetCollapseButtonLabel":{
+"message":"Collapse snippet",
+"description":"Label for button that only shows a few lines of the snippet when clicked"},
+
+"lighthouse-core/report/html/renderer/util.js | snippetExpandButtonLabel":{
+"message":"Expand snippet",
+"description":"Label for button that shows all lines of the snippet when clicked"},
+
 "lighthouse-core/report/html/renderer/util.js | toplevelWarningsMessage":{
 "message":"There were issues affecting this run of Lighthouse:",
 "description":"Label shown preceding any important warnings that may have invalidated the entire report. For example, if the user has Chrome extensions installed, they may add enough performance overhead that Lighthouse's performance metrics are unreliable. If shown, this will be displayed at the top of the report UI."},
@@ -24315,7 +26833,7 @@ module.exports={
 
 
 
-},{}],59:[function(require,module,exports){
+},{}],63:[function(require,module,exports){
 (function(__filename,__dirname){
 
 
@@ -24655,7 +27173,7 @@ isIcuMessage};
 
 
 }).call(this,"/lighthouse-core/lib/i18n/i18n.js","/lighthouse-core/lib/i18n");
-},{"./locales.js":60,"intl":87,"intl-messageformat":102,"intl-messageformat-parser":100,"lighthouse-logger":113,"lodash.isequal":114,"lookup-closest-locale":115,"path":128}],60:[function(require,module,exports){
+},{"./locales.js":64,"intl":93,"intl-messageformat":109,"intl-messageformat-parser":107,"lighthouse-logger":120,"lodash.isequal":121,"lookup-closest-locale":122,"path":135}],64:[function(require,module,exports){
 
 
 
@@ -24743,7 +27261,7 @@ const locales={
 
 module.exports=locales;
 
-},{"./en-US.json":58,"./locales/ar-XB.json":87,"./locales/ar.json":87,"./locales/bg.json":87,"./locales/ca.json":87,"./locales/cs.json":87,"./locales/da.json":87,"./locales/de.json":87,"./locales/el.json":87,"./locales/en-GB.json":87,"./locales/en-XA.json":87,"./locales/es.json":87,"./locales/fi.json":87,"./locales/fil.json":87,"./locales/fr.json":87,"./locales/he.json":87,"./locales/hi.json":87,"./locales/hr.json":87,"./locales/hu.json":87,"./locales/id.json":87,"./locales/it.json":87,"./locales/ja.json":87,"./locales/ko.json":87,"./locales/lt.json":87,"./locales/lv.json":87,"./locales/nl.json":87,"./locales/no.json":87,"./locales/pl.json":87,"./locales/pt-PT.json":87,"./locales/pt.json":87,"./locales/ro.json":87,"./locales/ru.json":87,"./locales/sk.json":87,"./locales/sl.json":87,"./locales/sr-Latn.json":87,"./locales/sr.json":87,"./locales/sv.json":87,"./locales/ta.json":87,"./locales/te.json":87,"./locales/th.json":87,"./locales/tr.json":87,"./locales/uk.json":87,"./locales/vi.json":87,"./locales/zh-HK.json":87,"./locales/zh-TW.json":87,"./locales/zh.json":87}],61:[function(require,module,exports){
+},{"./en-US.json":62,"./locales/ar-XB.json":93,"./locales/ar.json":93,"./locales/bg.json":93,"./locales/ca.json":93,"./locales/cs.json":93,"./locales/da.json":93,"./locales/de.json":93,"./locales/el.json":93,"./locales/en-GB.json":93,"./locales/en-XA.json":93,"./locales/es.json":93,"./locales/fi.json":93,"./locales/fil.json":93,"./locales/fr.json":93,"./locales/he.json":93,"./locales/hi.json":93,"./locales/hr.json":93,"./locales/hu.json":93,"./locales/id.json":93,"./locales/it.json":93,"./locales/ja.json":93,"./locales/ko.json":93,"./locales/lt.json":93,"./locales/lv.json":93,"./locales/nl.json":93,"./locales/no.json":93,"./locales/pl.json":93,"./locales/pt-PT.json":93,"./locales/pt.json":93,"./locales/ro.json":93,"./locales/ru.json":93,"./locales/sk.json":93,"./locales/sl.json":93,"./locales/sr-Latn.json":93,"./locales/sr.json":93,"./locales/sv.json":93,"./locales/ta.json":93,"./locales/te.json":93,"./locales/th.json":93,"./locales/tr.json":93,"./locales/uk.json":93,"./locales/vi.json":93,"./locales/zh-HK.json":93,"./locales/zh-TW.json":93,"./locales/zh.json":93}],65:[function(require,module,exports){
 
 
 
@@ -24817,7 +27335,7 @@ doExist,
 pngSizedAtLeast};
 
 
-},{"./url-shim.js":"url"}],62:[function(require,module,exports){
+},{"./url-shim.js":"url"}],66:[function(require,module,exports){
 
 
 
@@ -25025,7 +27543,7 @@ simulationNamesToIgnore:[
 convertNodeTimingsToTrace};
 
 
-},{}],63:[function(require,module,exports){
+},{}],67:[function(require,module,exports){
 (function(__filename){
 
 
@@ -25267,7 +27785,7 @@ module.exports=LighthouseError;
 module.exports.UIStrings=UIStrings;
 
 }).call(this,"/lighthouse-core/lib/lh-error.js");
-},{"./i18n/i18n.js":59}],64:[function(require,module,exports){
+},{"./i18n/i18n.js":63}],68:[function(require,module,exports){
 
 
 
@@ -25739,7 +28257,7 @@ warning:undefined};
 
 module.exports=parse;
 
-},{"./url-shim":"url","cssstyle/lib/parsers":90}],65:[function(require,module,exports){
+},{"./url-shim":"url","cssstyle/lib/parsers":97}],69:[function(require,module,exports){
 
 
 
@@ -25910,7 +28428,7 @@ return computeTokenLength(content,{singlelineComments:false,regex:false});
 
 module.exports={computeJSTokenLength,computeCSSTokenLength};
 
-},{}],66:[function(require,module,exports){
+},{}],70:[function(require,module,exports){
 
 
 
@@ -26018,22 +28536,9 @@ return!!(isQUIC&&receivedHeaders&&record.endTime);
 
 
 
-
-
-static _isFrameRootRequestAndFinished(record){
-const isFrameRootRequest=record.url===record.documentURL;
-const responseReceived=record.responseReceivedTime>0;
-return!!(isFrameRootRequest&&responseReceived&&record.endTime);
-}
-
-
-
-
-
 static isNetworkRecordFinished(record){
 return record.finished||
-NetworkRecorder._isQUICAndFinished(record)||
-NetworkRecorder._isFrameRootRequestAndFinished(record);
+NetworkRecorder._isQUICAndFinished(record);
 }
 
 
@@ -26124,8 +28629,9 @@ this._emitNetworkStatus();
 
 
 
-onRequestWillBeSent(data){
-const originalRequest=this._findRealRequest(data.requestId);
+onRequestWillBeSent(event){
+const data=event.params;
+const originalRequest=this._findRealRequestAndSetSource(data.requestId,event.source);
 
 if(!originalRequest){
 const request=new NetworkRequest();
@@ -26143,7 +28649,6 @@ return;
 
 const modifiedData={
 ...data,
-
 
 initiator:originalRequest.initiator,
 requestId:`${originalRequest.requestId}:redirect`};
@@ -26164,8 +28669,9 @@ this.onRequestFinished(originalRequest);
 
 
 
-onRequestServedFromCache(data){
-const request=this._findRealRequest(data.requestId);
+onRequestServedFromCache(event){
+const data=event.params;
+const request=this._findRealRequestAndSetSource(data.requestId,event.source);
 if(!request)return;
 request.onRequestServedFromCache();
 }
@@ -26173,8 +28679,9 @@ request.onRequestServedFromCache();
 
 
 
-onResponseReceived(data){
-const request=this._findRealRequest(data.requestId);
+onResponseReceived(event){
+const data=event.params;
+const request=this._findRealRequestAndSetSource(data.requestId,event.source);
 if(!request)return;
 request.onResponseReceived(data);
 }
@@ -26182,8 +28689,9 @@ request.onResponseReceived(data);
 
 
 
-onDataReceived(data){
-const request=this._findRealRequest(data.requestId);
+onDataReceived(event){
+const data=event.params;
+const request=this._findRealRequestAndSetSource(data.requestId,event.source);
 if(!request)return;
 request.onDataReceived(data);
 }
@@ -26191,8 +28699,9 @@ request.onDataReceived(data);
 
 
 
-onLoadingFinished(data){
-const request=this._findRealRequest(data.requestId);
+onLoadingFinished(event){
+const data=event.params;
+const request=this._findRealRequestAndSetSource(data.requestId,event.source);
 if(!request)return;
 request.onLoadingFinished(data);
 this.onRequestFinished(request);
@@ -26201,8 +28710,9 @@ this.onRequestFinished(request);
 
 
 
-onLoadingFailed(data){
-const request=this._findRealRequest(data.requestId);
+onLoadingFailed(event){
+const data=event.params;
+const request=this._findRealRequestAndSetSource(data.requestId,event.source);
 if(!request)return;
 request.onLoadingFailed(data);
 this.onRequestFinished(request);
@@ -26211,8 +28721,9 @@ this.onRequestFinished(request);
 
 
 
-onResourceChangedPriority(data){
-const request=this._findRealRequest(data.requestId);
+onResourceChangedPriority(event){
+const data=event.params;
+const request=this._findRealRequestAndSetSource(data.requestId,event.source);
 if(!request)return;
 request.onResourceChangedPriority(data);
 }
@@ -26222,18 +28733,14 @@ request.onResourceChangedPriority(data);
 
 
 dispatch(event){
-if(!event.method.startsWith('Network.')){
-return;
-}
-
 switch(event.method){
-case'Network.requestWillBeSent':return this.onRequestWillBeSent(event.params);
-case'Network.requestServedFromCache':return this.onRequestServedFromCache(event.params);
-case'Network.responseReceived':return this.onResponseReceived(event.params);
-case'Network.dataReceived':return this.onDataReceived(event.params);
-case'Network.loadingFinished':return this.onLoadingFinished(event.params);
-case'Network.loadingFailed':return this.onLoadingFailed(event.params);
-case'Network.resourceChangedPriority':return this.onResourceChangedPriority(event.params);
+case'Network.requestWillBeSent':return this.onRequestWillBeSent(event);
+case'Network.requestServedFromCache':return this.onRequestServedFromCache(event);
+case'Network.responseReceived':return this.onResponseReceived(event);
+case'Network.dataReceived':return this.onDataReceived(event);
+case'Network.loadingFinished':return this.onLoadingFinished(event);
+case'Network.loadingFailed':return this.onLoadingFailed(event);
+case'Network.resourceChangedPriority':return this.onResourceChangedPriority(event);
 default:return;}
 
 }
@@ -26247,7 +28754,8 @@ default:return;}
 
 
 
-_findRealRequest(requestId){
+
+_findRealRequestAndSetSource(requestId,source){
 let request=this._recordsById.get(requestId);
 if(!request||!request.isValid)return undefined;
 
@@ -26255,6 +28763,7 @@ while(request.redirectDestination){
 request=request.redirectDestination;
 }
 
+request.setSource(source);
 return request;
 }
 
@@ -26282,7 +28791,9 @@ recordsByURL.set(record.url,record);
 for(const record of records){
 const stackFrames=record.initiator.stack&&record.initiator.stack.callFrames||[];
 const initiatorURL=record.initiator.url||stackFrames[0]&&stackFrames[0].url;
-const initiator=recordsByURL.get(initiatorURL)||record.redirectSource;
+
+
+const initiator=record.redirectSource||recordsByURL.get(initiatorURL);
 if(initiator){
 record.setInitiatorRequest(initiator);
 }
@@ -26309,7 +28820,7 @@ return records;
 
 module.exports=NetworkRecorder;
 
-},{"./network-request":67,"events":93,"lighthouse-logger":113}],67:[function(require,module,exports){
+},{"./network-request":71,"events":100,"lighthouse-logger":120}],71:[function(require,module,exports){
 (function(global){
 
 
@@ -26327,6 +28838,27 @@ module.exports=NetworkRecorder;
 const URL=require('./url-shim');
 
 const SECURE_SCHEMES=['data','https','wss','blob','chrome','chrome-extension','about'];
+
+
+
+const HEADER_TCP='X-TCPMs';
+const HEADER_SSL='X-SSLMs';
+const HEADER_REQ='X-RequestMs';
+const HEADER_RES='X-ResponseMs';
+const HEADER_TOTAL='X-TotalMs';
+const HEADER_FETCHED_SIZE='X-TotalFetchedSize';
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -26361,10 +28893,9 @@ Ping:'Ping',
 CSPViolationReport:'CSPViolationReport'};
 
 
-module.exports=class NetworkRequest{
+class NetworkRequest{
 constructor(){
 this.requestId='';
-
 this.connectionId='0';
 this.connectionReused=false;
 
@@ -26381,10 +28912,14 @@ this.endTime=-1;
 
 this.responseReceivedTime=-1;
 
+
 this.transferSize=0;
 this.resourceSize=0;
 this.fromDiskCache=false;
 this.fromMemoryCache=false;
+
+
+this.lrStatistics=undefined;
 
 this.finished=false;
 this.requestMethod='';
@@ -26416,6 +28951,18 @@ this.responseHeadersText='';
 this.fetchedViaServiceWorker=false;
 
 this.frameId='';
+
+
+
+
+
+this.targetId=undefined;
+
+
+
+
+
+this.sessionId=undefined;
 this.isLinkPreload=false;
 }
 
@@ -26505,7 +29052,8 @@ this.transferSize=data.encodedDataLength;
 }
 
 this._updateResponseReceivedTimeIfNecessary();
-this._updateTransferSizeForLightRiderIfNecessary();
+this._updateTransferSizeForLightrider();
+this._updateTimingsForLightrider();
 }
 
 
@@ -26523,6 +29071,8 @@ this.resourceType=data.type&&RESOURCE_TYPES[data.type];
 this.localizedFailDescription=data.errorText;
 
 this._updateResponseReceivedTimeIfNecessary();
+this._updateTransferSizeForLightrider();
+this._updateTimingsForLightrider();
 }
 
 
@@ -26543,6 +29093,19 @@ this.finished=true;
 this.endTime=data.timestamp;
 
 this._updateResponseReceivedTimeIfNecessary();
+}
+
+
+
+
+setSource(source){
+if(source){
+this.targetId=source.targetId;
+this.sessionId=source.sessionId;
+}else{
+this.targetId=undefined;
+this.sessionId=undefined;
+}
 }
 
 
@@ -26575,8 +29138,6 @@ this.fetchedViaServiceWorker=!!response.fromServiceWorker;
 
 if(this.fromMemoryCache)this.timing=undefined;
 if(this.timing)this._recomputeTimesWithResourceTiming(this.timing);
-
-this._updateTransferSizeForLightRiderIfNecessary();
 }
 
 
@@ -26598,6 +29159,8 @@ this.responseReceivedTime=headersReceivedTime;
 
 this.responseReceivedTime=Math.min(this.responseReceivedTime,headersReceivedTime);
 this.responseReceivedTime=Math.max(this.responseReceivedTime,this.startTime);
+
+
 this.endTime=Math.max(this.endTime,this.responseReceivedTime);
 }
 
@@ -26612,16 +29175,89 @@ this.responseReceivedTime=Math.min(this.endTime,this.responseReceivedTime);
 
 
 
-_updateTransferSizeForLightRiderIfNecessary(){
 
-if(!global.isLightRider)return;
 
-if(this.transferSize)return;
 
-const totalFetchedSize=this.responseHeaders.find(item=>item.name==='X-TotalFetchedSize');
+
+
+
+
+
+
+
+
+
+
+
+_updateTransferSizeForLightrider(){
+
+if(!global.isLightrider)return;
+
+const totalFetchedSize=this.responseHeaders.find(item=>item.name===HEADER_FETCHED_SIZE);
 
 if(!totalFetchedSize)return;
-this.transferSize=parseFloat(totalFetchedSize.value);
+const floatValue=parseFloat(totalFetchedSize.value);
+
+if(isNaN(floatValue))return;
+this.transferSize=floatValue;
+}
+
+
+
+
+
+_updateTimingsForLightrider(){
+
+if(!global.isLightrider)return;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+const totalHeader=this.responseHeaders.find(item=>item.name===HEADER_TOTAL);
+
+if(!totalHeader)return;
+
+const totalMs=parseInt(totalHeader.value);
+const TCPMsHeader=this.responseHeaders.find(item=>item.name===HEADER_TCP);
+const SSLMsHeader=this.responseHeaders.find(item=>item.name===HEADER_SSL);
+const requestMsHeader=this.responseHeaders.find(item=>item.name===HEADER_REQ);
+const responseMsHeader=this.responseHeaders.find(item=>item.name===HEADER_RES);
+
+
+const TCPMs=TCPMsHeader?Math.max(0,parseInt(TCPMsHeader.value)):0;
+const SSLMs=SSLMsHeader?Math.max(0,parseInt(SSLMsHeader.value)):0;
+const requestMs=requestMsHeader?Math.max(0,parseInt(requestMsHeader.value)):0;
+const responseMs=responseMsHeader?Math.max(0,parseInt(responseMsHeader.value)):0;
+
+
+if(TCPMs+requestMs+responseMs!==totalMs){
+return;
+}
+
+
+if(SSLMs>TCPMs){
+return;
+}
+
+this.lrStatistics={
+endTimeDeltaMs:(this.endTime-(this.startTime+totalMs/1000))*1000,
+TCPMs:TCPMs,
+requestMs:requestMs,
+responseMs:responseMs};
+
 }
 
 
@@ -26653,11 +29289,20 @@ return result;
 
 static get TYPES(){
 return RESOURCE_TYPES;
-}};
+}}
 
+
+NetworkRequest.HEADER_TCP=HEADER_TCP;
+NetworkRequest.HEADER_SSL=HEADER_SSL;
+NetworkRequest.HEADER_REQ=HEADER_REQ;
+NetworkRequest.HEADER_RES=HEADER_RES;
+NetworkRequest.HEADER_TOTAL=HEADER_TOTAL;
+NetworkRequest.HEADER_FETCHED_SIZE=HEADER_FETCHED_SIZE;
+
+module.exports=NetworkRequest;
 
 }).call(this,typeof global!=="undefined"?global:typeof self!=="undefined"?self:typeof window!=="undefined"?window:{});
-},{"./url-shim":"url"}],68:[function(require,module,exports){
+},{"./url-shim":"url"}],72:[function(require,module,exports){
 
 
 
@@ -26892,7 +29537,269 @@ getNodeSelectorString:getNodeSelector.toString(),
 getNodeSelector:getNodeSelector};
 
 
-},{}],69:[function(require,module,exports){
+},{}],73:[function(require,module,exports){
+
+
+
+
+
+'use strict';
+
+
+
+
+
+function rectContainsPoint(rect,{x,y}){
+return rect.left<=x&&rect.right>=x&&rect.top<=y&&rect.bottom>=y;
+}
+
+
+
+
+
+
+
+
+
+
+function rectContains(rect1,rect2){
+return rect2.top>=rect1.top&&
+rect2.right<=rect1.right&&
+rect2.bottom<=rect1.bottom&&
+rect2.left>=rect1.left;
+}
+
+
+const rectContainsString=`
+  ${rectContains.toString()};
+`;
+
+
+
+
+
+function filterOutTinyRects(rects){
+return rects.filter(
+rect=>rect.width>1&&rect.height>1);
+
+}
+
+
+
+
+
+function filterOutRectsContainedByOthers(rects){
+const rectsToKeep=new Set(rects);
+
+for(const rect of rects){
+for(const possiblyContainingRect of rects){
+if(rect===possiblyContainingRect)continue;
+if(!rectsToKeep.has(possiblyContainingRect))continue;
+if(rectContains(possiblyContainingRect,rect)){
+rectsToKeep.delete(rect);
+break;
+}
+}
+}
+
+return Array.from(rectsToKeep);
+}
+
+
+
+
+function getRectCenterPoint(rect){
+return{
+x:rect.left+rect.width/2,
+y:rect.top+rect.height/2};
+
+}
+
+
+
+
+
+
+function rectsTouchOrOverlap(rectA,rectB){
+
+return(
+rectA.left<=rectB.right&&
+rectB.left<=rectA.right&&
+rectA.top<=rectB.bottom&&
+rectB.top<=rectA.bottom);
+
+}
+
+
+
+
+
+
+
+
+function getBoundingRectWithPadding(rects,minimumSize){
+if(rects.length===0){
+throw new Error('No rects to take bounds of');
+}
+
+let left=Number.MAX_VALUE;
+let right=-Number.MAX_VALUE;
+let top=Number.MAX_VALUE;
+let bottom=-Number.MAX_VALUE;
+for(const rect of rects){
+left=Math.min(left,rect.left);
+right=Math.max(right,rect.right);
+top=Math.min(top,rect.top);
+bottom=Math.max(bottom,rect.bottom);
+}
+
+
+const halfMinSize=minimumSize/2;
+left-=halfMinSize;
+right+=halfMinSize;
+top-=halfMinSize;
+bottom+=halfMinSize;
+
+return{
+left,
+right,
+top,
+bottom,
+width:right-left,
+height:bottom-top};
+
+}
+
+
+
+
+
+function getBoundingRect(rectA,rectB){
+const left=Math.min(rectA.left,rectB.left);
+const right=Math.max(rectA.right,rectB.right);
+const top=Math.min(rectA.top,rectB.top);
+const bottom=Math.max(rectA.bottom,rectB.bottom);
+return addRectWidthAndHeight({
+left,
+right,
+top,
+bottom});
+
+}
+
+
+
+
+
+function addRectWidthAndHeight({left,top,right,bottom}){
+return{
+left,
+top,
+right,
+bottom,
+width:right-left,
+height:bottom-top};
+
+}
+
+
+
+
+
+function addRectTopAndBottom({x,y,width,height}){
+return{
+left:x,
+top:y,
+right:x+width,
+bottom:y+height,
+width,
+height};
+
+}
+
+
+
+
+
+function getRectOverlapArea(rect1,rect2){
+
+const rectYOverlap=Math.min(rect1.bottom,rect2.bottom)-Math.max(rect1.top,rect2.top);
+if(rectYOverlap<=0)return 0;
+
+const rectXOverlap=Math.min(rect1.right,rect2.right)-Math.max(rect1.left,rect2.left);
+if(rectXOverlap<=0)return 0;
+
+return rectXOverlap*rectYOverlap;
+}
+
+
+
+
+
+function getRectAtCenter(rect,centerRectSize){
+return addRectWidthAndHeight({
+left:rect.left+rect.width/2-centerRectSize/2,
+top:rect.top+rect.height/2-centerRectSize/2,
+right:rect.right-rect.width/2+centerRectSize/2,
+bottom:rect.bottom-rect.height/2+centerRectSize/2});
+
+}
+
+
+
+
+function getRectArea(rect){
+return rect.width*rect.height;
+}
+
+
+
+
+function getLargestRect(rects){
+let largestRect=rects[0];
+for(const rect of rects){
+if(getRectArea(rect)>getRectArea(largestRect)){
+largestRect=rect;
+}
+}
+return largestRect;
+}
+
+
+
+
+
+
+function allRectsContainedWithinEachOther(rectListA,rectListB){
+for(const rectA of rectListA){
+for(const rectB of rectListB){
+if(!rectContains(rectA,rectB)&&!rectContains(rectB,rectA)){
+return false;
+}
+}
+}
+return true;
+}
+
+module.exports={
+rectContainsPoint,
+rectContains,
+rectContainsString,
+addRectWidthAndHeight,
+addRectTopAndBottom,
+getRectOverlapArea,
+getRectAtCenter,
+getLargestRect,
+getRectCenterPoint,
+getBoundingRect,
+getBoundingRectWithPadding,
+rectsTouchOrOverlap,
+allRectsContainedWithinEachOther,
+filterOutRectsContainedByOthers,
+filterOutTinyRects};
+
+
+},{}],74:[function(require,module,exports){
 
 
 
@@ -27020,7 +29927,7 @@ log.warn(
 
 module.exports=sentryDelegate;
 
-},{"lighthouse-logger":113,"raven":87}],70:[function(require,module,exports){
+},{"lighthouse-logger":120,"raven":93}],75:[function(require,module,exports){
 
 
 
@@ -27101,7 +30008,115 @@ linearInterpolation,
 getLogNormalDistribution};
 
 
-},{}],71:[function(require,module,exports){
+},{}],76:[function(require,module,exports){
+
+
+
+
+
+'use strict';
+
+const{
+filterOutRectsContainedByOthers,
+filterOutTinyRects,
+rectsTouchOrOverlap,
+rectContainsPoint,
+getBoundingRect,
+getRectCenterPoint}=
+require('./rect-helpers');
+
+
+
+
+
+
+
+function getTappableRectsFromClientRects(clientRects){
+
+
+clientRects=filterOutTinyRects(clientRects);
+clientRects=filterOutRectsContainedByOthers(clientRects);
+clientRects=mergeTouchingClientRects(clientRects);
+return clientRects;
+}
+
+
+
+
+
+
+
+
+
+function almostEqual(a,b){
+return Math.abs(a-b)<=10;
+}
+
+
+
+
+
+
+function mergeTouchingClientRects(clientRects){
+for(let i=0;i<clientRects.length;i++){
+for(let j=i+1;j<clientRects.length;j++){
+const crA=clientRects[i];
+const crB=clientRects[j];
+
+
+
+
+
+
+
+
+
+
+
+
+const rectsLineUpHorizontally=
+almostEqual(crA.top,crB.top)||almostEqual(crA.bottom,crB.bottom);
+const rectsLineUpVertically=
+almostEqual(crA.left,crB.left)||almostEqual(crA.right,crB.right);
+const canMerge=
+rectsTouchOrOverlap(crA,crB)&&(
+rectsLineUpHorizontally||rectsLineUpVertically);
+
+if(canMerge){
+const replacementClientRect=getBoundingRect(crA,crB);
+const mergedRectCenter=getRectCenterPoint(replacementClientRect);
+
+if(
+!(
+rectContainsPoint(crA,mergedRectCenter)||
+rectContainsPoint(crB,mergedRectCenter)))
+
+{
+
+
+
+continue;
+}
+
+
+clientRects=clientRects.filter(cr=>cr!==crA&&cr!==crB);
+clientRects.push(replacementClientRect);
+
+
+
+return mergeTouchingClientRects(clientRects);
+}
+}
+}
+
+return clientRects;
+}
+
+module.exports={
+getTappableRectsFromClientRects};
+
+
+},{"./rect-helpers":73}],77:[function(require,module,exports){
 
 
 
@@ -27214,7 +30229,7 @@ taskGroups,
 taskNameToGroup};
 
 
-},{}],72:[function(require,module,exports){
+},{}],78:[function(require,module,exports){
 
 
 
@@ -27232,7 +30247,7 @@ const log=require('lighthouse-logger');
 
 function getUberMetrics(auditResults){
 const metricsAudit=auditResults.metrics;
-if(!metricsAudit||!metricsAudit.details||!metricsAudit.details.items)return;
+if(!metricsAudit||!metricsAudit.details||!('items'in metricsAudit.details))return;
 
 return metricsAudit.details.items[0];
 }
@@ -27419,7 +30434,7 @@ return fakeEvents;
 
 module.exports=Metrics;
 
-},{"lighthouse-logger":113}],73:[function(require,module,exports){
+},{"lighthouse-logger":120}],79:[function(require,module,exports){
 
 
 
@@ -27683,7 +30698,7 @@ evt.name===SCHEDULABLE_TASK_TITLE_ALT3;
 
 module.exports=TraceProcessor;
 
-},{"../lh-error":63}],74:[function(require,module,exports){
+},{"../lh-error":67}],80:[function(require,module,exports){
 
 
 
@@ -27778,46 +30793,6 @@ static updateAllUIStrings(rendererFormattedStrings){
 for(const[key,value]of Object.entries(rendererFormattedStrings)){
 Util.UIStrings[key]=value;
 }
-}
-
-
-
-
-
-static formatDisplayValue(displayValue){
-if(typeof displayValue==='string')return displayValue;
-if(!displayValue)return'';
-
-const replacementRegex=/%([0-9]*(\.[0-9]+)?d|s)/;
-const template=displayValue[0];
-if(typeof template!=='string'){
-
-
-return'UNKNOWN';
-}
-
-let output=template;
-for(const replacement of displayValue.slice(1)){
-if(!replacementRegex.test(output)){
-
-console.warn('Too many replacements given');
-break;
-}
-
-output=output.replace(replacementRegex,match=>{
-const granularity=Number(match.match(/[0-9.]+/))||1;
-return match==='%s'?
-replacement.toLocaleString():
-(Math.round(Number(replacement)/granularity)*granularity).toLocaleString();
-});
-}
-
-if(replacementRegex.test(output)){
-
-console.warn('Not enough replacements given');
-}
-
-return output;
 }
 
 
@@ -28134,6 +31109,48 @@ Util.numberDateLocale=locale;
 
 
 if(Util.numberDateLocale==='en-XA')Util.numberDateLocale='de';
+}
+
+
+
+
+
+
+
+
+
+static filterRelevantLines(lines,lineMessages,surroundingLineCount){
+if(lineMessages.length===0){
+
+return lines.slice(0,surroundingLineCount*2+1);
+}
+
+const minGapSize=3;
+const lineNumbersToKeep=new Set();
+
+
+lineMessages=lineMessages.sort((a,b)=>(a.lineNumber||0)-(b.lineNumber||0));
+lineMessages.forEach(({lineNumber})=>{
+let firstSurroundingLineNumber=lineNumber-surroundingLineCount;
+let lastSurroundingLineNumber=lineNumber+surroundingLineCount;
+
+while(firstSurroundingLineNumber<1){
+
+firstSurroundingLineNumber++;
+lastSurroundingLineNumber++;
+}
+
+
+if(lineNumbersToKeep.has(firstSurroundingLineNumber-minGapSize-1)){
+firstSurroundingLineNumber-=minGapSize;
+}
+for(let i=firstSurroundingLineNumber;i<=lastSurroundingLineNumber;i++){
+const surroundingLineNumber=i;
+lineNumbersToKeep.add(surroundingLineNumber);
+}
+});
+
+return lines.filter(line=>lineNumbersToKeep.has(line.lineNumber));
 }}
 
 
@@ -28183,6 +31200,11 @@ crcInitialNavigation:'Initial Navigation',
 crcLongestDurationLabel:'Maximum critical path latency:',
 
 
+snippetExpandButtonLabel:'Expand snippet',
+
+snippetCollapseButtonLabel:'Collapse snippet',
+
+
 lsPerformanceCategoryDescription:'[Lighthouse](https://developers.google.com/web/tools/lighthouse/) analysis of the current page on an emulated mobile network. Values are estimated and may vary.',
 
 labDataTitle:'Lab Data'};
@@ -28194,7 +31216,7 @@ module.exports=Util;
 self.Util=Util;
 }
 
-},{}],75:[function(require,module,exports){
+},{}],81:[function(require,module,exports){
 
 
 
@@ -28314,7 +31336,7 @@ return outputAsArray?output:output[0];
 
 module.exports=ReportGenerator;
 
-},{"./html/html-report-assets":87}],76:[function(require,module,exports){
+},{"./html/html-report-assets":93}],82:[function(require,module,exports){
 (function(process){
 
 
@@ -28497,7 +31519,16 @@ const timingEntriesKeyValues=[
 ...timingEntriesFromRunner].
 
 map(entry=>[entry.startTime,entry]);
-const timingEntries=Array.from(new Map(timingEntriesKeyValues).values());
+const timingEntries=Array.from(new Map(timingEntriesKeyValues).values()).
+
+
+map(entry=>{
+return{
+...entry,
+duration:parseFloat(entry.duration.toFixed(2)),
+startTime:parseFloat(entry.startTime.toFixed(2))};
+
+});
 const runnerEntry=timingEntries.find(e=>e.name==='lh:runner:run');
 return{entries:timingEntries,total:runnerEntry&&runnerEntry.duration||0};
 }
@@ -28544,7 +31575,6 @@ output:undefined};
 
 const normalizedGatherSettings=Object.assign({},artifacts.settings,overrides);
 const normalizedAuditSettings=Object.assign({},settings,overrides);
-
 
 if(!isDeepEqual(normalizedGatherSettings,normalizedAuditSettings)){
 throw new Error('Cannot change settings between gathering and auditing');
@@ -28664,10 +31694,7 @@ message:errorMessage};
 }
 }
 
-return{
-code:LHError.NO_ERROR,
-message:''};
-
+return undefined;
 }
 
 
@@ -28685,14 +31712,14 @@ const ignoredFiles=[
 
 
 const fileList=[
-...["accessibility","audit.js","bootup-time.js","byte-efficiency","content-width.js","critical-request-chains.js","deprecations.js","dobetterweb","errors-in-console.js","final-screenshot.js","font-display.js","image-aspect-ratio.js","installable-manifest.js","is-on-https.js","load-fast-enough-for-pwa.js","mainthread-work-breakdown.js","manual","metrics","metrics.js","mixed-content.js","multi-check-audit.js","network-requests.js","offline-start-url.js","predictive-perf.js","redirects-http.js","redirects.js","screenshot-thumbnails.js","seo","service-worker.js","splash-screen.js","themed-omnibox.js","time-to-first-byte.js","user-timings.js","uses-rel-preconnect.js","uses-rel-preload.js","viewport.js","violation-audit.js","without-javascript.js","works-offline.js"],
+...["accessibility","audit.js","bootup-time.js","byte-efficiency","content-width.js","critical-request-chains.js","deprecations.js","diagnostics.js","dobetterweb","errors-in-console.js","final-screenshot.js","font-display.js","image-aspect-ratio.js","installable-manifest.js","is-on-https.js","load-fast-enough-for-pwa.js","main-thread-tasks.js","mainthread-work-breakdown.js","manual","metrics","metrics.js","mixed-content.js","multi-check-audit.js","network-requests.js","network-rtt.js","network-server-latency.js","offline-start-url.js","predictive-perf.js","redirects-http.js","redirects.js","screenshot-thumbnails.js","seo","service-worker.js","splash-screen.js","themed-omnibox.js","time-to-first-byte.js","user-timings.js","uses-rel-preconnect.js","uses-rel-preload.js","viewport.js","violation-audit.js","without-javascript.js","works-offline.js"],
 ...["appcache-manifest.js","doctype.js","dom-size.js","external-anchors-use-rel-noopener.js","geolocation-on-start.js","js-libraries.js","no-document-write.js","no-vulnerable-libraries.js","notification-on-start.js","password-inputs-can-be-pasted-into.js","uses-http2.js","uses-passive-event-listeners.js"].map(f=>`dobetterweb/${f}`),
-...["estimated-input-latency.js","first-contentful-paint.js","first-cpu-idle.js","first-meaningful-paint.js","interactive.js","speed-index.js"].map(f=>`metrics/${f}`),
-...["canonical.js","font-size.js","hreflang.js","http-status-code.js","is-crawlable.js","link-text.js","manual","meta-description.js","plugins.js","robots-txt.js"].map(f=>`seo/${f}`),
-...["mobile-friendly.js","structured-data.js"].map(f=>`seo/manual/${f}`),
-...["aria-allowed-attr.js","aria-required-attr.js","aria-required-children.js","aria-required-parent.js","aria-roles.js","aria-valid-attr-value.js","aria-valid-attr.js","audio-caption.js","axe-audit.js","button-name.js","bypass.js","color-contrast.js","definition-list.js","dlitem.js","document-title.js","duplicate-id.js","frame-title.js","html-has-lang.js","html-lang-valid.js","image-alt.js","input-image-alt.js","label.js","layout-table.js","link-name.js","list.js","listitem.js","manual","meta-refresh.js","meta-viewport.js","object-alt.js","tabindex.js","td-headers-attr.js","th-has-data-cells.js","valid-lang.js","video-caption.js","video-description.js"].
+...["estimated-input-latency.js","first-contentful-paint-3g.js","first-contentful-paint.js","first-cpu-idle.js","first-meaningful-paint.js","interactive.js","max-potential-fid.js","speed-index.js"].map(f=>`metrics/${f}`),
+...["canonical.js","font-size.js","hreflang.js","http-status-code.js","is-crawlable.js","link-text.js","manual","meta-description.js","plugins.js","robots-txt.js","tap-targets.js"].map(f=>`seo/${f}`),
+...["structured-data.js"].map(f=>`seo/manual/${f}`),
+...["accesskeys.js","aria-allowed-attr.js","aria-required-attr.js","aria-required-children.js","aria-required-parent.js","aria-roles.js","aria-valid-attr-value.js","aria-valid-attr.js","audio-caption.js","axe-audit.js","button-name.js","bypass.js","color-contrast.js","definition-list.js","dlitem.js","document-title.js","duplicate-id.js","frame-title.js","html-has-lang.js","html-lang-valid.js","image-alt.js","input-image-alt.js","label.js","layout-table.js","link-name.js","list.js","listitem.js","manual","meta-refresh.js","meta-viewport.js","object-alt.js","tabindex.js","td-headers-attr.js","th-has-data-cells.js","valid-lang.js","video-caption.js","video-description.js"].
 map(f=>`accessibility/${f}`),
-...["accesskeys.js","custom-controls-labels.js","custom-controls-roles.js","focus-traps.js","focusable-controls.js","heading-levels.js","interactive-element-affordance.js","logical-tab-order.js","managed-focus.js","offscreen-content-hidden.js","use-landmarks.js","visual-order-follows-dom.js"].
+...["custom-controls-labels.js","custom-controls-roles.js","focus-traps.js","focusable-controls.js","heading-levels.js","interactive-element-affordance.js","logical-tab-order.js","managed-focus.js","offscreen-content-hidden.js","use-landmarks.js","visual-order-follows-dom.js"].
 map(f=>`accessibility/manual/${f}`),
 ...["byte-efficiency-audit.js","efficient-animated-content.js","offscreen-images.js","render-blocking-resources.js","total-byte-weight.js","unminified-css.js","unminified-javascript.js","unused-css-rules.js","unused-javascript.js","uses-long-cache-ttl.js","uses-optimized-images.js","uses-responsive-images.js","uses-text-compression.js","uses-webp-images.js"].
 map(f=>`byte-efficiency/${f}`),
@@ -28709,9 +31736,9 @@ return /\.js$/.test(f)&&!ignoredFiles.includes(f);
 
 static getGathererList(){
 const fileList=[
-...["accessibility.js","cache-contents.js","chrome-console-messages.js","css-usage.js","dobetterweb","gatherer.js","html-without-javascript.js","http-redirect.js","image-usage.js","js-usage.js","link-elements.js","manifest.js","mixed-content.js","offline.js","runtime-exceptions.js","scripts.js","seo","service-worker.js","start-url.js","theme-color.js","viewport-dimensions.js","viewport.js"],
-...["canonical.js","crawlable-links.js","embedded-content.js","font-size.js","hreflang.js","meta-description.js","meta-robots.js","robots-txt.js"].map(f=>`seo/${f}`),
-...["anchors-with-no-rel-noopener.js","appcache.js","doctype.js","domstats.js","js-libraries.js","optimized-images.js","password-inputs-with-prevented-paste.js","response-compression.js","tags-blocking-first-paint.js"].
+...["accessibility.js","anchor-elements.js","cache-contents.js","chrome-console-messages.js","css-usage.js","dobetterweb","gatherer.js","html-without-javascript.js","http-redirect.js","image-elements.js","js-usage.js","link-elements.js","meta-elements.js","mixed-content.js","offline.js","runtime-exceptions.js","script-elements.js","seo","service-worker.js","start-url.js","viewport-dimensions.js"],
+...["embedded-content.js","font-size.js","robots-txt.js","tap-targets.js"].map(f=>`seo/${f}`),
+...["appcache.js","doctype.js","domstats.js","js-libraries.js","optimized-images.js","password-inputs-with-prevented-paste.js","response-compression.js","tags-blocking-first-paint.js"].
 map(f=>`dobetterweb/${f}`)];
 
 return fileList.filter(f=>/\.js$/.test(f)&&f!=='gatherer.js').sort();
@@ -28736,7 +31763,7 @@ return path.join(process.cwd(),'latest-run');
 module.exports=Runner;
 
 }).call(this,require('_process'));
-},{"../package.json":160,"./audits/audit":3,"./gather/driver.js":42,"./gather/gather-runner":43,"./lib/asset-saver":47,"./lib/i18n/i18n.js":59,"./lib/lh-error.js":63,"./lib/sentry":69,"./lib/url-shim":"url","./report/report-generator":75,"./scoring":77,"_process":130,"lighthouse-logger":113,"lodash.isequal":114,"path":128}],77:[function(require,module,exports){
+},{"../package.json":167,"./audits/audit":3,"./gather/driver.js":46,"./gather/gather-runner":47,"./lib/asset-saver":51,"./lib/i18n/i18n.js":63,"./lib/lh-error.js":67,"./lib/sentry":74,"./lib/url-shim":"url","./report/report-generator":81,"./scoring":83,"_process":137,"lighthouse-logger":120,"lodash.isequal":121,"path":135}],83:[function(require,module,exports){
 
 
 
@@ -28831,7 +31858,7 @@ return scoredCategories;
 
 module.exports=ReportScoring;
 
-},{"./audits/audit":3}],78:[function(require,module,exports){
+},{"./audits/audit":3}],84:[function(require,module,exports){
 (function(global){
 'use strict';
 
@@ -29325,7 +32352,7 @@ return keys;
 };
 
 }).call(this,typeof global!=="undefined"?global:typeof self!=="undefined"?self:typeof window!=="undefined"?window:{});
-},{"util/":81}],79:[function(require,module,exports){
+},{"util/":87}],85:[function(require,module,exports){
 if(typeof Object.create==='function'){
 
 module.exports=function inherits(ctor,superCtor){
@@ -29350,14 +32377,14 @@ ctor.prototype.constructor=ctor;
 };
 }
 
-},{}],80:[function(require,module,exports){
+},{}],86:[function(require,module,exports){
 module.exports=function isBuffer(arg){
 return arg&&typeof arg==='object'&&
 typeof arg.copy==='function'&&
 typeof arg.fill==='function'&&
 typeof arg.readUInt8==='function';
 };
-},{}],81:[function(require,module,exports){
+},{}],87:[function(require,module,exports){
 (function(process,global){
 
 
@@ -29947,7 +32974,7 @@ return Object.prototype.hasOwnProperty.call(obj,prop);
 }
 
 }).call(this,require('_process'),typeof global!=="undefined"?global:typeof self!=="undefined"?self:typeof window!=="undefined"?window:{});
-},{"./support/isBuffer":80,"_process":130,"inherits":79}],82:[function(require,module,exports){
+},{"./support/isBuffer":86,"_process":137,"inherits":85}],88:[function(require,module,exports){
 
 
 var langs=[
@@ -38103,7 +41130,7 @@ axe.utils.validLangs=function(){
 return langs;
 };
 
-},{}],83:[function(require,module,exports){
+},{}],89:[function(require,module,exports){
 'use strict';
 
 exports.byteLength=byteLength;
@@ -38256,9 +41283,9 @@ lookup[tmp<<2&0x3F]+
 return parts.join('');
 }
 
-},{}],84:[function(require,module,exports){
+},{}],90:[function(require,module,exports){
 
-},{}],85:[function(require,module,exports){
+},{}],91:[function(require,module,exports){
 (function(process,Buffer){
 'use strict';
 
@@ -38670,7 +41697,7 @@ this._error('Failed to reset stream');
 
 exports.Zlib=Zlib;
 }).call(this,require('_process'),require("buffer").Buffer);
-},{"_process":130,"assert":78,"buffer":88,"pako/lib/zlib/constants":121,"pako/lib/zlib/deflate.js":123,"pako/lib/zlib/inflate.js":87,"pako/lib/zlib/zstream":126}],86:[function(require,module,exports){
+},{"_process":137,"assert":84,"buffer":94,"pako/lib/zlib/constants":128,"pako/lib/zlib/deflate.js":130,"pako/lib/zlib/inflate.js":93,"pako/lib/zlib/zstream":133}],92:[function(require,module,exports){
 (function(process){
 'use strict';
 
@@ -39282,9 +42309,10 @@ util.inherits(DeflateRaw,Zlib);
 util.inherits(InflateRaw,Zlib);
 util.inherits(Unzip,Zlib);
 }).call(this,require('_process'));
-},{"./binding":85,"_process":130,"assert":78,"buffer":88,"stream":155,"util":159}],87:[function(require,module,exports){
-arguments[4][84][0].apply(exports,arguments);
-},{"dup":84}],88:[function(require,module,exports){
+},{"./binding":91,"_process":137,"assert":84,"buffer":94,"stream":162,"util":166}],93:[function(require,module,exports){
+arguments[4][90][0].apply(exports,arguments);
+},{"dup":90}],94:[function(require,module,exports){
+(function(Buffer){
 
 
 
@@ -41063,7 +44091,8 @@ function numberIsNaN(obj){
 return obj!==obj;
 }
 
-},{"base64-js":83,"ieee754":96}],89:[function(require,module,exports){
+}).call(this,require("buffer").Buffer);
+},{"base64-js":89,"buffer":94,"ieee754":103}],95:[function(require,module,exports){
 (function(Buffer){
 
 
@@ -41174,12 +44203,166 @@ return Object.prototype.toString.call(o);
 }
 
 }).call(this,{"isBuffer":require("../../insert-module-globals/node_modules/is-buffer/index.js")});
-},{"../../insert-module-globals/node_modules/is-buffer/index.js":99}],90:[function(require,module,exports){
+},{"../../insert-module-globals/node_modules/is-buffer/index.js":106}],96:[function(require,module,exports){
+module.exports=[
+"aliceblue",
+"antiquewhite",
+"aqua",
+"aquamarine",
+"azure",
+"beige",
+"bisque",
+"black",
+"blanchedalmond",
+"blue",
+"blueviolet",
+"brown",
+"burlywood",
+"cadetblue",
+"chartreuse",
+"chocolate",
+"coral",
+"cornflowerblue",
+"cornsilk",
+"crimson",
+"cyan",
+"darkblue",
+"darkcyan",
+"darkgoldenrod",
+"darkgray",
+"darkgreen",
+"darkgrey",
+"darkkhaki",
+"darkmagenta",
+"darkolivegreen",
+"darkorange",
+"darkorchid",
+"darkred",
+"darksalmon",
+"darkseagreen",
+"darkslateblue",
+"darkslategray",
+"darkslategrey",
+"darkturquoise",
+"darkviolet",
+"deeppink",
+"deepskyblue",
+"dimgray",
+"dimgrey",
+"dodgerblue",
+"firebrick",
+"floralwhite",
+"forestgreen",
+"fuchsia",
+"gainsboro",
+"ghostwhite",
+"gold",
+"goldenrod",
+"gray",
+"green",
+"greenyellow",
+"grey",
+"honeydew",
+"hotpink",
+"indianred",
+"indigo",
+"ivory",
+"khaki",
+"lavender",
+"lavenderblush",
+"lawngreen",
+"lemonchiffon",
+"lightblue",
+"lightcoral",
+"lightcyan",
+"lightgoldenrodyellow",
+"lightgray",
+"lightgreen",
+"lightgrey",
+"lightpink",
+"lightsalmon",
+"lightseagreen",
+"lightskyblue",
+"lightslategray",
+"lightslategrey",
+"lightsteelblue",
+"lightyellow",
+"lime",
+"limegreen",
+"linen",
+"magenta",
+"maroon",
+"mediumaquamarine",
+"mediumblue",
+"mediumorchid",
+"mediumpurple",
+"mediumseagreen",
+"mediumslateblue",
+"mediumspringgreen",
+"mediumturquoise",
+"mediumvioletred",
+"midnightblue",
+"mintcream",
+"mistyrose",
+"moccasin",
+"navajowhite",
+"navy",
+"oldlace",
+"olive",
+"olivedrab",
+"orange",
+"orangered",
+"orchid",
+"palegoldenrod",
+"palegreen",
+"paleturquoise",
+"palevioletred",
+"papayawhip",
+"peachpuff",
+"peru",
+"pink",
+"plum",
+"powderblue",
+"purple",
+"rebeccapurple",
+"red",
+"rosybrown",
+"royalblue",
+"saddlebrown",
+"salmon",
+"sandybrown",
+"seagreen",
+"seashell",
+"sienna",
+"silver",
+"skyblue",
+"slateblue",
+"slategray",
+"slategrey",
+"snow",
+"springgreen",
+"steelblue",
+"tan",
+"teal",
+"thistle",
+"tomato",
+"turquoise",
+"violet",
+"wheat",
+"white",
+"whitesmoke",
+"yellow",
+"yellowgreen"];
+
+
+},{}],97:[function(require,module,exports){
 
 
 
 
 'use strict';
+
+const namedColors=require('./named_colors.json');
 
 exports.TYPES={
 INTEGER:1,
@@ -41195,18 +44378,17 @@ NULL_OR_EMPTY_STR:10};
 
 
 
-
-var integerRegEx=/^[\-+]?[0-9]+$/;
-var numberRegEx=/^[\-+]?[0-9]*\.[0-9]+$/;
-var lengthRegEx=/^(0|[\-+]?[0-9]*\.?[0-9]+(in|cm|em|mm|pt|pc|px|ex|rem|vh|vw))$/;
-var percentRegEx=/^[\-+]?[0-9]*\.?[0-9]+%$/;
-var urlRegEx=/^url\(\s*([^\)]*)\s*\)$/;
-var stringRegEx=/^(\"[^\"]*\"|\'[^\']*\')$/;
+var integerRegEx=/^[-+]?[0-9]+$/;
+var numberRegEx=/^[-+]?[0-9]*\.[0-9]+$/;
+var lengthRegEx=/^(0|[-+]?[0-9]*\.?[0-9]+(in|cm|em|mm|pt|pc|px|ex|rem|vh|vw))$/;
+var percentRegEx=/^[-+]?[0-9]*\.?[0-9]+%$/;
+var urlRegEx=/^url\(\s*([^)]*)\s*\)$/;
+var stringRegEx=/^("[^"]*"|'[^']*')$/;
 var colorRegEx1=/^#[0-9a-fA-F][0-9a-fA-F][0-9a-fA-F]([0-9a-fA-F][0-9a-fA-F][0-9a-fA-F])?$/;
-var colorRegEx2=/^rgb\(([^\)]*)\)$/;
-var colorRegEx3=/^rgba\(([^\)]*)\)$/;
-var angleRegEx=/^([\-+]?[0-9]*\.?[0-9]+)(deg|grad|rad)$/;
-
+var colorRegEx2=/^rgb\(([^)]*)\)$/;
+var colorRegEx3=/^rgba\(([^)]*)\)$/;
+var colorRegEx4=/^hsla?\(\s*(-?\d+|-?\d*.\d+)\s*,\s*(-?\d+|-?\d*.\d+)%\s*,\s*(-?\d+|-?\d*.\d+)%\s*(,\s*(-?\d+|-?\d*.\d+)\s*)?\)/;
+var angleRegEx=/^([-+]?[0-9]*\.?[0-9]+)(deg|grad|rad)$/;
 
 
 exports.valueType=function valueType(val){
@@ -41252,7 +44434,10 @@ parts=res[1].split(/\s*,\s*/);
 if(parts.length!==3){
 return undefined;
 }
-if(parts.every(percentRegEx.test.bind(percentRegEx))||parts.every(integerRegEx.test.bind(integerRegEx))){
+if(
+parts.every(percentRegEx.test.bind(percentRegEx))||
+parts.every(integerRegEx.test.bind(integerRegEx)))
+{
 return exports.TYPES.COLOR;
 }
 return undefined;
@@ -41263,7 +44448,10 @@ parts=res[1].split(/\s*,\s*/);
 if(parts.length!==4){
 return undefined;
 }
-if(parts.slice(0,3).every(percentRegEx.test.bind(percentRegEx))||parts.every(integerRegEx.test.bind(integerRegEx))){
+if(
+parts.slice(0,3).every(percentRegEx.test.bind(percentRegEx))||
+parts.every(integerRegEx.test.bind(integerRegEx)))
+{
 if(numberRegEx.test(parts[3])){
 return exports.TYPES.COLOR;
 }
@@ -41271,26 +44459,18 @@ return exports.TYPES.COLOR;
 return undefined;
 }
 
+if(colorRegEx4.test(val)){
+return exports.TYPES.COLOR;
+}
+
 
 val=val.toLowerCase();
+
+if(namedColors.includes(val)){
+return exports.TYPES.COLOR;
+}
+
 switch(val){
-case'maroon':
-case'red':
-case'orange':
-case'yellow':
-case'olive':
-case'purple':
-case'fuchsia':
-case'white':
-case'lime':
-case'green':
-case'navy':
-case'blue':
-case'aqua':
-case'teal':
-case'black':
-case'silver':
-case'gray':
 
 case'activeborder':
 case'activecaption':
@@ -41456,7 +44636,13 @@ var type=exports.valueType(val);
 if(type===exports.TYPES.NULL_OR_EMPTY_STR){
 return val;
 }
-var red,green,blue,alpha=1;
+var red,
+green,
+blue,
+hue,
+saturation,
+lightness,
+alpha=1;
 var parts;
 var res=colorRegEx1.exec(val);
 
@@ -41526,6 +44712,25 @@ return'rgb('+red+', '+green+', '+blue+')';
 return'rgba('+red+', '+green+', '+blue+', '+alpha+')';
 }
 
+res=colorRegEx4.exec(val);
+if(res){
+const[,_hue,_saturation,_lightness,_alphaString='']=res;
+const _alpha=parseFloat(_alphaString.replace(',','').trim());
+if(!_hue||!_saturation||!_lightness){
+return undefined;
+}
+hue=parseFloat(_hue);
+saturation=parseInt(_saturation,10);
+lightness=parseInt(_lightness,10);
+if(_alpha&&numberRegEx.test(_alpha)){
+alpha=parseFloat(_alpha);
+}
+if(!_alphaString||alpha===1){
+return'hsl('+hue+', '+saturation+'%, '+lightness+'%)';
+}
+return'hsla('+hue+', '+saturation+'%, '+lightness+'%, '+alpha+')';
+}
+
 if(type===exports.TYPES.COLOR){
 return val;
 }
@@ -41593,8 +44798,8 @@ return camel;
 exports.dashedToCamelCase=dashedToCamelCase;
 
 var is_space=/\s/;
-var opening_deliminators=['"','\'','('];
-var closing_deliminators=['"','\'',')'];
+var opening_deliminators=['"',"'",'('];
+var closing_deliminators=['"',"'",')'];
 
 var getParts=function(str){
 var deliminator_stack=[];
@@ -41622,7 +44827,10 @@ i++;
 current_part+=str[i];
 }else{
 current_part+=str[i];
-if(closing_index!==-1&&closing_index===deliminator_stack[deliminator_stack.length-1]){
+if(
+closing_index!==-1&&
+closing_index===deliminator_stack[deliminator_stack.length-1])
+{
 deliminator_stack.pop();
 }else if(opening_index!==-1){
 deliminator_stack.push(opening_index);
@@ -41665,10 +44873,10 @@ return{};
 }
 var parts=getParts(v);
 var valid=true;
-parts.forEach(function(part){
+parts.forEach(function(part,i){
 var part_valid=false;
 Object.keys(shorthand_for).forEach(function(property){
-if(shorthand_for[property].isValid(part)){
+if(shorthand_for[property].isValid(part,i)){
 part_valid=true;
 obj[property]=part;
 }
@@ -41724,11 +44932,14 @@ return function(){
 if(this._values[property]!==undefined){
 return this.getPropertyValue(property);
 }
-return Object.keys(shorthand_for).map(function(subprop){
+return Object.keys(shorthand_for).
+map(function(subprop){
 return this.getPropertyValue(subprop);
-},this).filter(function(value){
+},this).
+filter(function(value){
 return value!=='';
-}).join(' ');
+}).
+join(' ');
 };
 };
 
@@ -41742,7 +44953,7 @@ property_after=property_after||'';
 if(property_after!==''){
 property_after='-'+property_after;
 }
-var part_names=["top","right","bottom","left"];
+var part_names=['top','right','bottom','left'];
 
 return function(v){
 if(typeof v==='number'){
@@ -41780,7 +44991,7 @@ parts[3]=parts[1];
 }
 
 for(var i=0;i<4;i++){
-var property=property_before+"-"+part_names[i]+property_after;
+var property=property_before+'-'+part_names[i]+property_after;
 this.removeProperty(property);
 if(parts[i]!==''){
 this._values[property]=parts[i];
@@ -41798,7 +45009,7 @@ return v;
 
 exports.subImplicitSetter=function(prefix,part,isValid,parser){
 var property=prefix+'-'+part;
-var subparts=[prefix+"-top",prefix+"-right",prefix+"-bottom",prefix+"-left"];
+var subparts=[prefix+'-top',prefix+'-right',prefix+'-bottom',prefix+'-left'];
 
 return function(v){
 if(typeof v==='number'){
@@ -41824,17 +45035,14 @@ for(i=0;i<4;i++){
 this.removeProperty(subparts[i]);
 this._values[subparts[i]]=parts[i];
 }
-this._setProperty(prefix,parts.join(" "));
+this._setProperty(prefix,parts.join(' '));
 }
 return v;
 };
 };
 
-
 var camel_to_dashed=/[A-Z]/g;
-
-var first_segment=/^\([^\-]\)-/;
-
+var first_segment=/^\([^-]\)-/;
 var vendor_prefixes=['o','moz','ms','webkit'];
 exports.camelToDashed=function(camel_case){
 var match;
@@ -41846,7 +45054,7 @@ dashed='-'+dashed;
 return dashed;
 };
 
-},{}],91:[function(require,module,exports){
+},{"./named_colors.json":96}],98:[function(require,module,exports){
 (function(process){
 
 
@@ -42035,7 +45243,7 @@ return window.localStorage;
 }
 
 }).call(this,require('_process'));
-},{"./debug":92,"_process":130}],92:[function(require,module,exports){
+},{"./debug":99,"_process":137}],99:[function(require,module,exports){
 
 
 
@@ -42239,7 +45447,7 @@ if(val instanceof Error)return val.stack||val.message;
 return val;
 }
 
-},{"ms":118}],93:[function(require,module,exports){
+},{"ms":125}],100:[function(require,module,exports){
 
 
 
@@ -42764,7 +45972,7 @@ return fn.apply(context,arguments);
 };
 }
 
-},{}],94:[function(require,module,exports){
+},{}],101:[function(require,module,exports){
 (function(Buffer){
 var querystring=require('querystring');
 var trim=require('./trim');
@@ -43071,12 +46279,12 @@ return refs.join(', ');
 module.exports=Link;
 
 }).call(this,{"isBuffer":require("../../insert-module-globals/node_modules/is-buffer/index.js")});
-},{"../../insert-module-globals/node_modules/is-buffer/index.js":99,"./trim":95,"querystring":133}],95:[function(require,module,exports){
+},{"../../insert-module-globals/node_modules/is-buffer/index.js":106,"./trim":102,"querystring":140}],102:[function(require,module,exports){
 module.exports=function trim(value){
 return value.replace(/^[\s\uFEFF\xA0]+|[\s\uFEFF\xA0]+$/g,'');
 };
 
-},{}],96:[function(require,module,exports){
+},{}],103:[function(require,module,exports){
 exports.read=function(buffer,offset,isLE,mLen,nBytes){
 var e,m;
 var eLen=nBytes*8-mLen-1;
@@ -43162,7 +46370,7 @@ for(;eLen>0;buffer[offset+i]=e&0xff,i+=d,e/=256,eLen-=8){}
 buffer[offset+i-d]|=s*128;
 };
 
-},{}],97:[function(require,module,exports){
+},{}],104:[function(require,module,exports){
 
 
 
@@ -43307,9 +46515,9 @@ return sumLuma/lumaValues.length;
 })(ImageSSIM||(ImageSSIM={}));
 module.exports=ImageSSIM;
 
-},{}],98:[function(require,module,exports){
-arguments[4][79][0].apply(exports,arguments);
-},{"dup":79}],99:[function(require,module,exports){
+},{}],105:[function(require,module,exports){
+arguments[4][85][0].apply(exports,arguments);
+},{"dup":85}],106:[function(require,module,exports){
 
 
 
@@ -43332,13 +46540,13 @@ function isSlowBuffer(obj){
 return typeof obj.readFloatLE==='function'&&typeof obj.slice==='function'&&isBuffer(obj.slice(0,0));
 }
 
-},{}],100:[function(require,module,exports){
+},{}],107:[function(require,module,exports){
 'use strict';
 
 exports=module.exports=require('./lib/parser')['default'];
 exports['default']=exports;
 
-},{"./lib/parser":101}],101:[function(require,module,exports){
+},{"./lib/parser":108}],108:[function(require,module,exports){
 "use strict";
 
 exports["default"]=function(){
@@ -44740,7 +47948,7 @@ parse:peg$parse};
 }();
 
 
-},{}],102:[function(require,module,exports){
+},{}],109:[function(require,module,exports){
 
 
 'use strict';
@@ -44757,7 +47965,7 @@ require('./lib/locales');
 exports=module.exports=IntlMessageFormat;
 exports['default']=exports;
 
-},{"./lib/locales":84,"./lib/main":107}],103:[function(require,module,exports){
+},{"./lib/locales":90,"./lib/main":114}],110:[function(require,module,exports){
 
 
 
@@ -44967,7 +48175,7 @@ return options[value]||options.other;
 };
 
 
-},{}],104:[function(require,module,exports){
+},{}],111:[function(require,module,exports){
 
 
 
@@ -45245,13 +48453,13 @@ locales.join(', ')+', or the default locale: '+defaultLocale);
 };
 
 
-},{"./compiler":103,"./es5":106,"./utils":108,"intl-messageformat-parser":100}],105:[function(require,module,exports){
+},{"./compiler":110,"./es5":113,"./utils":115,"intl-messageformat-parser":107}],112:[function(require,module,exports){
 
 "use strict";
 exports["default"]={"locale":"en","pluralRuleFunction":function(n,ord){var s=String(n).split("."),v0=!s[1],t0=Number(s[0])==n,n10=t0&&s[0].slice(-1),n100=t0&&s[0].slice(-2);if(ord)return n10==1&&n100!=11?"one":n10==2&&n100!=12?"two":n10==3&&n100!=13?"few":"other";return n==1&&v0?"one":"other";}};
 
 
-},{}],106:[function(require,module,exports){
+},{}],113:[function(require,module,exports){
 
 
 
@@ -45302,7 +48510,7 @@ return obj;
 exports.defineProperty=defineProperty,exports.objCreate=objCreate;
 
 
-},{"./utils":108}],107:[function(require,module,exports){
+},{"./utils":115}],114:[function(require,module,exports){
 
 
 "use strict";
@@ -45314,7 +48522,7 @@ src$core$$["default"].defaultLocale='en';
 exports["default"]=src$core$$["default"];
 
 
-},{"./core":104,"./en":105}],108:[function(require,module,exports){
+},{"./core":111,"./en":112}],115:[function(require,module,exports){
 
 
 
@@ -45347,14 +48555,14 @@ return obj;
 exports.hop=hop;
 
 
-},{}],109:[function(require,module,exports){
+},{}],116:[function(require,module,exports){
 var toString={}.toString;
 
 module.exports=Array.isArray||function(arr){
 return toString.call(arr)=='[object Array]';
 };
 
-},{}],110:[function(require,module,exports){
+},{}],117:[function(require,module,exports){
 var encode=require('./lib/encoder'),
 decode=require('./lib/decoder');
 
@@ -45363,7 +48571,7 @@ encode:encode,
 decode:decode};
 
 
-},{"./lib/decoder":111,"./lib/encoder":112}],111:[function(require,module,exports){
+},{"./lib/decoder":118,"./lib/encoder":119}],118:[function(require,module,exports){
 (function(Buffer){
 
 
@@ -46353,7 +49561,7 @@ return image;
 }
 
 }).call(this,require("buffer").Buffer);
-},{"buffer":88}],112:[function(require,module,exports){
+},{"buffer":94}],119:[function(require,module,exports){
 (function(Buffer){
 
 
@@ -47123,7 +50331,7 @@ return ctx.getImageData(0,0,cvs.width,cvs.height);
 }
 
 }).call(this,require("buffer").Buffer);
-},{"buffer":88}],113:[function(require,module,exports){
+},{"buffer":94}],120:[function(require,module,exports){
 (function(process){
 
 
@@ -47368,7 +50576,7 @@ Log.getTimeEntries=()=>marky.getEntries();
 module.exports=Log;
 
 }).call(this,require('_process'));
-},{"_process":130,"debug":91,"events":93,"marky":116}],114:[function(require,module,exports){
+},{"_process":137,"debug":98,"events":100,"marky":123}],121:[function(require,module,exports){
 (function(global){
 
 
@@ -49220,7 +52428,7 @@ return false;
 module.exports=isEqual;
 
 }).call(this,typeof global!=="undefined"?global:typeof self!=="undefined"?self:typeof window!=="undefined"?window:{});
-},{}],115:[function(require,module,exports){
+},{}],122:[function(require,module,exports){
 
 
 
@@ -49237,7 +52445,7 @@ current.pop();
 }
 };
 
-},{}],116:[function(require,module,exports){
+},{}],123:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports,'__esModule',{value:true});
@@ -49317,7 +52525,7 @@ exports.getEntries=function(){return entries;};
 exports.clear=function(){entries=[];};
 }
 
-},{}],117:[function(require,module,exports){
+},{}],124:[function(require,module,exports){
 exports.getRenderingDataFromViewport=function(viewportProperties,uaDeviceWidth,uaDeviceHeight,uaMaxZoom,uaMinZoom){
 
 var vw=uaDeviceWidth/100;
@@ -49660,7 +52868,7 @@ exports.expectedValues={
 "viewport-fit":["auto","cover"]};
 
 
-},{}],118:[function(require,module,exports){
+},{}],125:[function(require,module,exports){
 
 
 
@@ -49814,7 +53022,7 @@ return Math.floor(ms/n)+' '+name;
 return Math.ceil(ms/n)+' '+name+'s';
 }
 
-},{}],119:[function(require,module,exports){
+},{}],126:[function(require,module,exports){
 'use strict';
 
 
@@ -49921,7 +53129,7 @@ exports.assign(exports,fnUntyped);
 
 exports.setTyped(TYPED_OK);
 
-},{}],120:[function(require,module,exports){
+},{}],127:[function(require,module,exports){
 'use strict';
 
 
@@ -49974,7 +53182,7 @@ return s1|s2<<16|0;
 
 module.exports=adler32;
 
-},{}],121:[function(require,module,exports){
+},{}],128:[function(require,module,exports){
 'use strict';
 
 
@@ -50044,7 +53252,7 @@ Z_DEFLATED:8};
 
 
 
-},{}],122:[function(require,module,exports){
+},{}],129:[function(require,module,exports){
 'use strict';
 
 
@@ -50105,7 +53313,7 @@ return crc^-1;
 
 module.exports=crc32;
 
-},{}],123:[function(require,module,exports){
+},{}],130:[function(require,module,exports){
 'use strict';
 
 
@@ -51981,7 +55189,7 @@ exports.deflateInfo='pako deflate (from Nodeca project)';
 
 
 
-},{"../utils/common":119,"./adler32":120,"./crc32":122,"./messages":124,"./trees":125}],124:[function(require,module,exports){
+},{"../utils/common":126,"./adler32":127,"./crc32":129,"./messages":131,"./trees":132}],131:[function(require,module,exports){
 'use strict';
 
 
@@ -52015,8 +55223,10 @@ module.exports={
 '-6':'incompatible version'};
 
 
-},{}],125:[function(require,module,exports){
+},{}],132:[function(require,module,exports){
 'use strict';
+
+
 
 
 
@@ -53237,7 +56447,7 @@ exports._tr_flush_block=_tr_flush_block;
 exports._tr_tally=_tr_tally;
 exports._tr_align=_tr_align;
 
-},{"../utils/common":119}],126:[function(require,module,exports){
+},{"../utils/common":126}],133:[function(require,module,exports){
 'use strict';
 
 
@@ -53286,7 +56496,7 @@ this.adler=0;
 
 module.exports=ZStream;
 
-},{}],127:[function(require,module,exports){
+},{}],134:[function(require,module,exports){
 module.exports=function parseCacheControl(field){
 
 if(typeof field!=='string'){
@@ -53325,7 +56535,7 @@ catch(err){}
 return err?null:header;
 };
 
-},{}],128:[function(require,module,exports){
+},{}],135:[function(require,module,exports){
 (function(process){
 
 
@@ -53631,7 +56841,7 @@ return str.substr(start,len);
 
 
 }).call(this,require('_process'));
-},{"_process":130}],129:[function(require,module,exports){
+},{"_process":137}],136:[function(require,module,exports){
 (function(process){
 'use strict';
 
@@ -53678,7 +56888,7 @@ fn.apply(null,args);
 }
 
 }).call(this,require('_process'));
-},{"_process":130}],130:[function(require,module,exports){
+},{"_process":137}],137:[function(require,module,exports){
 
 var process=module.exports={};
 
@@ -53864,7 +57074,7 @@ throw new Error('process.chdir is not supported');
 };
 process.umask=function(){return 0;};
 
-},{}],131:[function(require,module,exports){
+},{}],138:[function(require,module,exports){
 
 
 
@@ -53950,7 +57160,7 @@ var isArray=Array.isArray||function(xs){
 return Object.prototype.toString.call(xs)==='[object Array]';
 };
 
-},{}],132:[function(require,module,exports){
+},{}],139:[function(require,module,exports){
 
 
 
@@ -54037,16 +57247,16 @@ if(Object.prototype.hasOwnProperty.call(obj,key))res.push(key);
 return res;
 };
 
-},{}],133:[function(require,module,exports){
+},{}],140:[function(require,module,exports){
 'use strict';
 
 exports.decode=exports.parse=require('./decode');
 exports.encode=exports.stringify=require('./encode');
 
-},{"./decode":131,"./encode":132}],134:[function(require,module,exports){
+},{"./decode":138,"./encode":139}],141:[function(require,module,exports){
 module.exports=require('./lib/_stream_duplex.js');
 
-},{"./lib/_stream_duplex.js":135}],135:[function(require,module,exports){
+},{"./lib/_stream_duplex.js":142}],142:[function(require,module,exports){
 
 
 
@@ -54171,7 +57381,7 @@ for(var i=0,l=xs.length;i<l;i++){
 f(xs[i],i);
 }
 }
-},{"./_stream_readable":137,"./_stream_writable":139,"core-util-is":89,"inherits":98,"process-nextick-args":129}],136:[function(require,module,exports){
+},{"./_stream_readable":144,"./_stream_writable":146,"core-util-is":95,"inherits":105,"process-nextick-args":136}],143:[function(require,module,exports){
 
 
 
@@ -54219,7 +57429,7 @@ Transform.call(this,options);
 PassThrough.prototype._transform=function(chunk,encoding,cb){
 cb(null,chunk);
 };
-},{"./_stream_transform":138,"core-util-is":89,"inherits":98}],137:[function(require,module,exports){
+},{"./_stream_transform":145,"core-util-is":95,"inherits":105}],144:[function(require,module,exports){
 (function(process,global){
 
 
@@ -55229,7 +58439,7 @@ if(xs[i]===x)return i;
 return-1;
 }
 }).call(this,require('_process'),typeof global!=="undefined"?global:typeof self!=="undefined"?self:typeof window!=="undefined"?window:{});
-},{"./_stream_duplex":135,"./internal/streams/BufferList":140,"./internal/streams/destroy":141,"./internal/streams/stream":142,"_process":130,"core-util-is":89,"events":93,"inherits":98,"isarray":109,"process-nextick-args":129,"safe-buffer":150,"string_decoder/":143,"util":84}],138:[function(require,module,exports){
+},{"./_stream_duplex":142,"./internal/streams/BufferList":147,"./internal/streams/destroy":148,"./internal/streams/stream":149,"_process":137,"core-util-is":95,"events":100,"inherits":105,"isarray":116,"process-nextick-args":136,"safe-buffer":157,"string_decoder/":150,"util":90}],145:[function(require,module,exports){
 
 
 
@@ -55444,7 +58654,7 @@ if(ts.transforming)throw new Error('Calling transform done when still transformi
 
 return stream.push(null);
 }
-},{"./_stream_duplex":135,"core-util-is":89,"inherits":98}],139:[function(require,module,exports){
+},{"./_stream_duplex":142,"core-util-is":95,"inherits":105}],146:[function(require,module,exports){
 (function(process,global,setImmediate){
 
 
@@ -56111,7 +59321,7 @@ this.end();
 cb(err);
 };
 }).call(this,require('_process'),typeof global!=="undefined"?global:typeof self!=="undefined"?self:typeof window!=="undefined"?window:{},require("timers").setImmediate);
-},{"./_stream_duplex":135,"./internal/streams/destroy":141,"./internal/streams/stream":142,"_process":130,"core-util-is":89,"inherits":98,"process-nextick-args":129,"safe-buffer":150,"timers":156,"util-deprecate":157}],140:[function(require,module,exports){
+},{"./_stream_duplex":142,"./internal/streams/destroy":148,"./internal/streams/stream":149,"_process":137,"core-util-is":95,"inherits":105,"process-nextick-args":136,"safe-buffer":157,"timers":163,"util-deprecate":164}],147:[function(require,module,exports){
 'use strict';
 
 
@@ -56186,7 +59396,7 @@ return ret;
 
 return BufferList;
 }();
-},{"safe-buffer":150}],141:[function(require,module,exports){
+},{"safe-buffer":157}],148:[function(require,module,exports){
 'use strict';
 
 
@@ -56259,10 +59469,10 @@ module.exports={
 destroy:destroy,
 undestroy:undestroy};
 
-},{"process-nextick-args":129}],142:[function(require,module,exports){
+},{"process-nextick-args":136}],149:[function(require,module,exports){
 module.exports=require('events').EventEmitter;
 
-},{"events":93}],143:[function(require,module,exports){
+},{"events":100}],150:[function(require,module,exports){
 'use strict';
 
 var Buffer=require('safe-buffer').Buffer;
@@ -56535,10 +59745,10 @@ return buf.toString(this.encoding);
 function simpleEnd(buf){
 return buf&&buf.length?this.write(buf):'';
 }
-},{"safe-buffer":150}],144:[function(require,module,exports){
+},{"safe-buffer":157}],151:[function(require,module,exports){
 module.exports=require('./readable').PassThrough;
 
-},{"./readable":145}],145:[function(require,module,exports){
+},{"./readable":152}],152:[function(require,module,exports){
 exports=module.exports=require('./lib/_stream_readable.js');
 exports.Stream=exports;
 exports.Readable=exports;
@@ -56547,13 +59757,13 @@ exports.Duplex=require('./lib/_stream_duplex.js');
 exports.Transform=require('./lib/_stream_transform.js');
 exports.PassThrough=require('./lib/_stream_passthrough.js');
 
-},{"./lib/_stream_duplex.js":135,"./lib/_stream_passthrough.js":136,"./lib/_stream_readable.js":137,"./lib/_stream_transform.js":138,"./lib/_stream_writable.js":139}],146:[function(require,module,exports){
+},{"./lib/_stream_duplex.js":142,"./lib/_stream_passthrough.js":143,"./lib/_stream_readable.js":144,"./lib/_stream_transform.js":145,"./lib/_stream_writable.js":146}],153:[function(require,module,exports){
 module.exports=require('./readable').Transform;
 
-},{"./readable":145}],147:[function(require,module,exports){
+},{"./readable":152}],154:[function(require,module,exports){
 module.exports=require('./lib/_stream_writable.js');
 
-},{"./lib/_stream_writable.js":139}],148:[function(require,module,exports){
+},{"./lib/_stream_writable.js":146}],155:[function(require,module,exports){
 var URL=require('url').URL;
 
 
@@ -56976,13 +60186,13 @@ return this._sitemaps.slice(0);
 
 module.exports=Robots;
 
-},{"url":"url"}],149:[function(require,module,exports){
+},{"url":"url"}],156:[function(require,module,exports){
 var Robots=require('./Robots');
 
 module.exports=function(url,contents){
 return new Robots(url,contents);
 };
-},{"./Robots":148}],150:[function(require,module,exports){
+},{"./Robots":155}],157:[function(require,module,exports){
 
 var buffer=require('buffer');
 var Buffer=buffer.Buffer;
@@ -57046,7 +60256,7 @@ throw new TypeError('Argument must be a number');
 return buffer.SlowBuffer(size);
 };
 
-},{"buffer":88}],151:[function(require,module,exports){
+},{"buffer":94}],158:[function(require,module,exports){
 (function(process){
 exports=module.exports=SemVer;
 
@@ -58253,7 +61463,7 @@ return parsed&&parsed.prerelease.length?parsed.prerelease:null;
 }
 
 }).call(this,require('_process'));
-},{"_process":130}],152:[function(require,module,exports){
+},{"_process":137}],159:[function(require,module,exports){
 (function(Buffer){
 'use strict';
 
@@ -58495,7 +61705,7 @@ create:frame};
 
 
 }).call(this,require("buffer").Buffer);
-},{"buffer":88,"jpeg-js":110}],153:[function(require,module,exports){
+},{"buffer":94,"jpeg-js":117}],160:[function(require,module,exports){
 'use strict';
 
 const frame=require('./frame');
@@ -58565,7 +61775,7 @@ return calculateValues(frames,data);
 });
 };
 
-},{"./frame":152,"./speed-index":154}],154:[function(require,module,exports){
+},{"./frame":159,"./speed-index":161}],161:[function(require,module,exports){
 'use strict';
 
 const imageSSIM=require('image-ssim');
@@ -58837,7 +62047,7 @@ calculatePerceptualProgress,
 calculateSpeedIndexes};
 
 
-},{"image-ssim":97}],155:[function(require,module,exports){
+},{"image-ssim":104}],162:[function(require,module,exports){
 
 
 
@@ -58966,7 +62176,7 @@ dest.emit('pipe',source);
 return dest;
 };
 
-},{"events":93,"inherits":98,"readable-stream/duplex.js":134,"readable-stream/passthrough.js":144,"readable-stream/readable.js":145,"readable-stream/transform.js":146,"readable-stream/writable.js":147}],156:[function(require,module,exports){
+},{"events":100,"inherits":105,"readable-stream/duplex.js":141,"readable-stream/passthrough.js":151,"readable-stream/readable.js":152,"readable-stream/transform.js":153,"readable-stream/writable.js":154}],163:[function(require,module,exports){
 (function(setImmediate,clearImmediate){
 var nextTick=require('process/browser.js').nextTick;
 var apply=Function.prototype.apply;
@@ -59045,7 +62255,7 @@ exports.clearImmediate=typeof clearImmediate==="function"?clearImmediate:functio
 delete immediateIds[id];
 };
 }).call(this,require("timers").setImmediate,require("timers").clearImmediate);
-},{"process/browser.js":130,"timers":156}],157:[function(require,module,exports){
+},{"process/browser.js":137,"timers":163}],164:[function(require,module,exports){
 (function(global){
 
 
@@ -59116,15 +62326,15 @@ return String(val).toLowerCase()==='true';
 }
 
 }).call(this,typeof global!=="undefined"?global:typeof self!=="undefined"?self:typeof window!=="undefined"?window:{});
-},{}],158:[function(require,module,exports){
-arguments[4][80][0].apply(exports,arguments);
-},{"dup":80}],159:[function(require,module,exports){
-arguments[4][81][0].apply(exports,arguments);
-},{"./support/isBuffer":158,"_process":130,"dup":81,"inherits":98}],160:[function(require,module,exports){
+},{}],165:[function(require,module,exports){
+arguments[4][86][0].apply(exports,arguments);
+},{"dup":86}],166:[function(require,module,exports){
+arguments[4][87][0].apply(exports,arguments);
+},{"./support/isBuffer":165,"_process":137,"dup":87,"inherits":105}],167:[function(require,module,exports){
 module.exports={
-"version":"4.0.0"};
+"version":"4.3.0"};
 
-},{}],161:[function(require,module,exports){
+},{}],168:[function(require,module,exports){
 module.exports={
 "npm":{
 "angular":[
@@ -59154,8 +62364,12 @@ module.exports={
 {"id":"npm:backbone:20110701","severity":"medium","semver":{"vulnerable":["<0.5.0"]}}],
 
 "bootstrap":[
-{"id":"npm:bootstrap:20180529","severity":"medium","semver":{"vulnerable":[">=4.0.0 <4.1.2"]}},
-{"id":"npm:bootstrap:20160627","severity":"medium","semver":{"vulnerable":["<3.4.0 || >=4.0.0-alpha <4.0.0-beta.2"]}},
+{"id":"SNYK-JS-BOOTSTRAP-173700","severity":"medium","semver":{"vulnerable":["<3.4.1",">=4.0.0 <4.3.1"]}},
+{"id":"SNYK-JS-BOOTSTRAP-73560","severity":"medium","semver":{"vulnerable":[">=4.0.0 <4.1.2"]}},
+{"id":"SNYK-JS-BOOTSTRAP-72890","severity":"medium","semver":{"vulnerable":["<3.4.0"]}},
+{"id":"SNYK-JS-BOOTSTRAP-72889","severity":"medium","semver":{"vulnerable":["<3.4.0"]}},
+{"id":"npm:bootstrap:20180529","severity":"medium","semver":{"vulnerable":["<3.4.0",">=4.0.0 <4.1.2"]}},
+{"id":"npm:bootstrap:20160627","severity":"medium","semver":{"vulnerable":["<3.4.0",">=4.0.0-alpha <4.0.0-beta.2"]}},
 {"id":"npm:bootstrap:20120510","severity":"medium","semver":{"vulnerable":["<2.1.0"]}}],
 
 "dojo":[
@@ -59163,7 +62377,7 @@ module.exports={
 {"id":"npm:dojo:20180818","severity":"medium","semver":{"vulnerable":["<1.10.10 || >=1.11.0 <1.11.6 || >=1.12.0 <1.12.4 || >=1.13.0 <1.13.1"]}},
 {"id":"npm:dojo:20160523","severity":"medium","semver":{"vulnerable":["<= 1.0.0"]}},
 {"id":"npm:dojo:20100614-6","severity":"medium","semver":{"vulnerable":["<1.4.2"]}},
-{"id":"npm:dojo:20100614-1","severity":"high","semver":{"vulnerable":[">=0.4 <0.4.4 || >=1.0 <1.0.3 || >=1.1 <1.1.2 || >=1.2 <1.2.4 || >=1.3 <1.3.3 || >=1.4 <1.4.2"]}},
+{"id":"npm:dojo:20100614","severity":"high","semver":{"vulnerable":[">=0.4 <0.4.4 || >=1.0 <1.0.3 || >=1.1 <1.1.2 || >=1.2 <1.2.4 || >=1.3 <1.3.3 || >=1.4 <1.4.2"]}},
 {"id":"npm:dojo:20090409","severity":"medium","semver":{"vulnerable":["<1.1"]}}],
 
 "foundation-sites":[
@@ -59172,17 +62386,19 @@ module.exports={
 {"id":"npm:foundation-sites:20120717","severity":"medium","semver":{"vulnerable":["<3.0.6 >=3.0.0"]}}],
 
 "handlebars":[
+{"id":"SNYK-JS-HANDLEBARS-173692","severity":"high","semver":{"vulnerable":["<4.0.13"]}},
 {"id":"npm:handlebars:20151207","severity":"medium","semver":{"vulnerable":["<4.0.0"]}},
 {"id":"npm:handlebars:20110425","severity":"medium","semver":{"vulnerable":["<=1.0.0-beta.3"]}}],
 
 "highcharts":[
-{"id":"npm:highcharts:20180225","severity":"low","semver":{"vulnerable":["<6.1.0"]}}],
+{"id":"npm:highcharts:20180225","severity":"high","semver":{"vulnerable":["<6.1.0"]}}],
 
 "jquery":[
-{"id":"npm:jquery:20160529","severity":"low","semver":{"vulnerable":["=3.0.0-rc.1"]}},
-{"id":"npm:jquery:20150627","severity":"medium","semver":{"vulnerable":["<3.0.0-beta1 >1.12.3 || <1.12.0 >=1.4.0"]}},
+{"id":"SNYK-JS-JQUERY-174006","severity":"medium","semver":{"vulnerable":["*"]}},
+{"id":"npm:jquery:20160529","severity":"low","semver":{"vulnerable":["=3.0.0-rc1"]}},
+{"id":"npm:jquery:20150627","severity":"medium","semver":{"vulnerable":["<1.12.2",">=1.12.3 <2.2.2",">=2.2.3 <3.0.0"]}},
 {"id":"npm:jquery:20140902","severity":"medium","semver":{"vulnerable":[">=1.4.2 <1.6.2"]}},
-{"id":"npm:jquery:20120206","severity":"medium","semver":{"vulnerable":["<1.9.0 >=1.7.1"]}},
+{"id":"npm:jquery:20120206","severity":"medium","semver":{"vulnerable":[">=1.7.1 <1.9.0"]}},
 {"id":"npm:jquery:20110606","severity":"medium","semver":{"vulnerable":["<1.6.3"]}}],
 
 "jquery-mobile":[
@@ -59198,12 +62414,14 @@ module.exports={
 {"id":"npm:knockout:20130701","severity":"medium","semver":{"vulnerable":["<3.0.0 >=2.1.0-pre"]}}],
 
 "lodash":[
+{"id":"SNYK-JS-LODASH-73639","severity":"medium","semver":{"vulnerable":["<4.17.11"]}},
+{"id":"SNYK-JS-LODASH-73638","severity":"low","semver":{"vulnerable":["<4.17.11"]}},
 {"id":"npm:lodash:20180130","severity":"low","semver":{"vulnerable":["<4.17.5"]}}],
 
 "moment":[
 {"id":"npm:moment:20170905","severity":"low","semver":{"vulnerable":["<2.19.3"]}},
 {"id":"npm:moment:20161019","severity":"medium","semver":{"vulnerable":["<2.15.2"]}},
-{"id":"npm:moment:20160126","severity":"low","semver":{"vulnerable":["<=2.11.1"]}}],
+{"id":"npm:moment:20160126","severity":"medium","semver":{"vulnerable":["<=2.11.1"]}}],
 
 "mustache":[
 {"id":"npm:mustache:20151207","severity":"medium","semver":{"vulnerable":["<2.2.1"]}},
@@ -59254,6 +62472,7 @@ const Util=require('../report/html/renderer/util.js');
 
 const URL=typeof self!=='undefined'&&self.URL||
 require('url').URL;
+
 
 
 
@@ -59453,4 +62672,4 @@ URLShim.INVALID_URL_DEBUG_STRING=
 
 module.exports=URLShim;
 
-},{"../report/html/renderer/util.js":74,"url":"url"}]},{},[1]);
+},{"../report/html/renderer/util.js":80,"url":"url"}]},{},[1]);

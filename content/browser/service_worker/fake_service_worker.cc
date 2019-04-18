@@ -10,6 +10,8 @@
 #include "base/run_loop.h"
 #include "content/browser/service_worker/embedded_worker_test_helper.h"
 #include "mojo/public/cpp/bindings/associated_interface_ptr.h"
+#include "services/network/public/mojom/fetch_api.mojom.h"
+#include "third_party/blink/public/mojom/fetch/fetch_api_response.mojom.h"
 
 namespace content {
 
@@ -72,46 +74,45 @@ void FakeServiceWorker::DispatchActivateEvent(
 void FakeServiceWorker::DispatchBackgroundFetchAbortEvent(
     blink::mojom::BackgroundFetchRegistrationPtr registration,
     DispatchBackgroundFetchAbortEventCallback callback) {
-  helper_->OnBackgroundFetchAbortEventStub(std::move(registration),
-                                           std::move(callback));
+  std::move(callback).Run(blink::mojom::ServiceWorkerEventStatus::COMPLETED);
 }
 
 void FakeServiceWorker::DispatchBackgroundFetchClickEvent(
     blink::mojom::BackgroundFetchRegistrationPtr registration,
     DispatchBackgroundFetchClickEventCallback callback) {
-  helper_->OnBackgroundFetchClickEventStub(std::move(registration),
-                                           std::move(callback));
+  std::move(callback).Run(blink::mojom::ServiceWorkerEventStatus::COMPLETED);
 }
 
 void FakeServiceWorker::DispatchBackgroundFetchFailEvent(
     blink::mojom::BackgroundFetchRegistrationPtr registration,
     DispatchBackgroundFetchFailEventCallback callback) {
-  helper_->OnBackgroundFetchFailEventStub(std::move(registration),
-                                          std::move(callback));
+  std::move(callback).Run(blink::mojom::ServiceWorkerEventStatus::COMPLETED);
 }
 
 void FakeServiceWorker::DispatchBackgroundFetchSuccessEvent(
     blink::mojom::BackgroundFetchRegistrationPtr registration,
     DispatchBackgroundFetchSuccessEventCallback callback) {
-  helper_->OnBackgroundFetchSuccessEventStub(std::move(registration),
-                                             std::move(callback));
+  std::move(callback).Run(blink::mojom::ServiceWorkerEventStatus::COMPLETED);
 }
 
 void FakeServiceWorker::DispatchCookieChangeEvent(
     const net::CanonicalCookie& cookie,
     ::network::mojom::CookieChangeCause cause,
     DispatchCookieChangeEventCallback callback) {
-  helper_->OnCookieChangeEventStub(cookie, cause, std::move(callback));
+  std::move(callback).Run(blink::mojom::ServiceWorkerEventStatus::COMPLETED);
 }
 
 void FakeServiceWorker::DispatchFetchEvent(
     blink::mojom::DispatchFetchEventParamsPtr params,
     blink::mojom::ServiceWorkerFetchResponseCallbackPtr response_callback,
     DispatchFetchEventCallback callback) {
-  helper_->OnFetchEventStub(0 /* embedded_worker_id_ */,
-                            std::move(params->request),
-                            std::move(params->preload_handle),
-                            std::move(response_callback), std::move(callback));
+  auto response = blink::mojom::FetchAPIResponse::New();
+  response->status_code = 200;
+  response->status_text = "OK";
+  response->response_type = network::mojom::FetchResponseType::kDefault;
+  response_callback->OnResponse(
+      std::move(response), blink::mojom::ServiceWorkerFetchEventTiming::New());
+  std::move(callback).Run(blink::mojom::ServiceWorkerEventStatus::COMPLETED);
 }
 
 void FakeServiceWorker::DispatchNotificationClickEvent(
@@ -120,23 +121,20 @@ void FakeServiceWorker::DispatchNotificationClickEvent(
     int action_index,
     const base::Optional<base::string16>& reply,
     DispatchNotificationClickEventCallback callback) {
-  helper_->OnNotificationClickEventStub(notification_id, notification_data,
-                                        action_index, reply,
-                                        std::move(callback));
+  std::move(callback).Run(blink::mojom::ServiceWorkerEventStatus::COMPLETED);
 }
 
 void FakeServiceWorker::DispatchNotificationCloseEvent(
     const std::string& notification_id,
     const blink::PlatformNotificationData& notification_data,
     DispatchNotificationCloseEventCallback callback) {
-  helper_->OnNotificationCloseEventStub(notification_id, notification_data,
-                                        std::move(callback));
+  std::move(callback).Run(blink::mojom::ServiceWorkerEventStatus::COMPLETED);
 }
 
 void FakeServiceWorker::DispatchPushEvent(
     const base::Optional<std::string>& payload,
     DispatchPushEventCallback callback) {
-  helper_->OnPushEventStub(payload, std::move(callback));
+  std::move(callback).Run(blink::mojom::ServiceWorkerEventStatus::COMPLETED);
 }
 
 void FakeServiceWorker::DispatchSyncEvent(const std::string& tag,
@@ -149,24 +147,25 @@ void FakeServiceWorker::DispatchSyncEvent(const std::string& tag,
 void FakeServiceWorker::DispatchAbortPaymentEvent(
     payments::mojom::PaymentHandlerResponseCallbackPtr response_callback,
     DispatchAbortPaymentEventCallback callback) {
-  helper_->OnAbortPaymentEventStub(std::move(response_callback),
-                                   std::move(callback));
+  response_callback->OnResponseForAbortPayment(true);
+  std::move(callback).Run(blink::mojom::ServiceWorkerEventStatus::COMPLETED);
 }
 
 void FakeServiceWorker::DispatchCanMakePaymentEvent(
     payments::mojom::CanMakePaymentEventDataPtr event_data,
     payments::mojom::PaymentHandlerResponseCallbackPtr response_callback,
     DispatchCanMakePaymentEventCallback callback) {
-  helper_->OnCanMakePaymentEventStub(
-      std::move(event_data), std::move(response_callback), std::move(callback));
+  response_callback->OnResponseForCanMakePayment(true);
+  std::move(callback).Run(blink::mojom::ServiceWorkerEventStatus::COMPLETED);
 }
 
 void FakeServiceWorker::DispatchPaymentRequestEvent(
     payments::mojom::PaymentRequestEventDataPtr event_data,
     payments::mojom::PaymentHandlerResponseCallbackPtr response_callback,
     DispatchPaymentRequestEventCallback callback) {
-  helper_->OnPaymentRequestEventStub(
-      std::move(event_data), std::move(response_callback), std::move(callback));
+  response_callback->OnResponseForPaymentRequest(
+      payments::mojom::PaymentHandlerResponse::New());
+  std::move(callback).Run(blink::mojom::ServiceWorkerEventStatus::COMPLETED);
 }
 
 void FakeServiceWorker::DispatchExtendableMessageEvent(
@@ -187,7 +186,7 @@ void FakeServiceWorker::Ping(PingCallback callback) {
 }
 
 void FakeServiceWorker::SetIdleTimerDelayToZero() {
-  helper_->OnSetIdleTimerDelayToZero(0 /* embedded_worker_id_ */);
+  is_zero_idle_timer_delay_ = true;
 }
 
 void FakeServiceWorker::OnConnectionError() {

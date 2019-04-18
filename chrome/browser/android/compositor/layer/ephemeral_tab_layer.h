@@ -11,7 +11,6 @@
 
 namespace cc {
 class Layer;
-class NinePatchLayer;
 }  // namespace cc
 
 namespace ui {
@@ -37,12 +36,14 @@ class EphemeralTabLayer : public OverlayPanelLayer {
                      float panel_y,
                      float panel_width,
                      float panel_height,
+                     int bar_background_color,
                      float bar_margin_side,
                      float bar_height,
                      bool bar_border_visible,
                      float bar_border_height,
                      bool bar_shadow_visible,
                      float bar_shadow_opacity,
+                     int icon_color,
                      bool progress_bar_visible,
                      float progress_bar_height,
                      float progress_bar_opacity,
@@ -64,8 +65,6 @@ class EphemeralTabLayer : public OverlayPanelLayer {
   scoped_refptr<cc::UIResourceLayer> title_;
   scoped_refptr<cc::UIResourceLayer> caption_;
   scoped_refptr<cc::UIResourceLayer> text_layer_;
-  scoped_refptr<cc::NinePatchLayer> progress_bar_;
-  scoped_refptr<cc::NinePatchLayer> progress_bar_background_;
 };
 
 }  //  namespace android

@@ -15,10 +15,10 @@
 #include "chrome/browser/sync/test/integration/sync_test.h"
 #include "chrome/browser/sync/test/integration/updated_progress_marker_checker.h"
 #include "components/bookmarks/browser/bookmark_model.h"
-#include "components/browser_sync/profile_sync_service.h"
 #include "components/sync/base/model_type.h"
-#include "components/sync/base/sync_prefs.h"
+#include "components/sync/driver/profile_sync_service.h"
 #include "components/sync/driver/sync_driver_switches.h"
+#include "components/sync/driver/sync_user_settings_impl.h"
 #include "components/sync/test/fake_server/bookmark_entity_builder.h"
 #include "components/sync/test/fake_server/entity_builder_factory.h"
 
@@ -49,7 +49,8 @@ ModelTypeSet MultiGroupTypes(const ModelTypeSet& registered_types) {
   // elsewhere in the file).
   for (ModelType st : selectable_types) {
     const ModelTypeSet grouped_types =
-        SyncPrefs::ResolvePrefGroups(ModelTypeSet(st));
+        syncer::SyncUserSettingsImpl::ResolvePrefGroupsForTesting(
+            ModelTypeSet(st));
     for (ModelType gt : grouped_types) {
       if (seen.Has(gt)) {
         multi.Put(gt);
@@ -115,15 +116,6 @@ class EnableDisableSingleClientTest : public SyncTest {
         .num_updates_downloaded_total;
   }
 
-  sync_pb::ClientToServerMessage TriggerGetUpdatesCycleAndWait() {
-    TriggerSyncForModelTypes(0, {syncer::BOOKMARKS});
-    EXPECT_TRUE(UpdatedProgressMarkerChecker(GetSyncService(0)).Wait());
-
-    sync_pb::ClientToServerMessage message;
-    EXPECT_TRUE(GetFakeServer()->GetLastGetUpdatesMessage(&message));
-    return message;
-  }
-
  protected:
   void SetupTest(bool all_types_enabled) {
     ASSERT_TRUE(SetupClients());
@@ -141,7 +133,8 @@ class EnableDisableSingleClientTest : public SyncTest {
 
   ModelTypeSet ResolveGroup(ModelType type) {
     ModelTypeSet grouped_types =
-        SyncPrefs::ResolvePrefGroups(ModelTypeSet(type));
+        syncer::SyncUserSettingsImpl::ResolvePrefGroupsForTesting(
+            ModelTypeSet(type));
     grouped_types.RetainAll(registered_types_);
     grouped_types.RemoveAll(ProxyTypes());
     return grouped_types;
@@ -396,15 +389,28 @@ IN_PROC_BROWSER_TEST_F(EnableDisableSingleClientTest,
   // exact count.
   ASSERT_GT(GetNumUpdatesDownloadedInLastCycle(), 0);
 
-  // Stop and restart Sync.
+  // Stop Sync and let it start up again in standalone transport mode.
   GetClient(0)->StopSyncServiceWithoutClearingData();
+  ASSERT_TRUE(GetClient(0)->AwaitSyncTransportActive());
+  ASSERT_EQ(syncer::SyncService::TransportState::ACTIVE,
+            GetSyncService(0)->GetTransportState());
+  ASSERT_FALSE(GetSyncService(0)->IsSyncFeatureActive());
+
+  // Now start full Sync again.
+  base::HistogramTester histogram_tester;
   GetClient(0)->StartSyncService();
   ASSERT_TRUE(GetSyncService(0)->IsSyncFeatureActive());
 
   // The bookmark should still be there, *without* having been redownloaded.
+  ASSERT_TRUE(SetupSync());
   ASSERT_TRUE(bookmarks_helper::GetBookmarkModel(0)->IsBookmarked(
       GURL(kSyncedBookmarkURL)));
-  EXPECT_EQ(0, GetNumUpdatesDownloadedInLastCycle());
+  EXPECT_EQ(
+      0, histogram_tester.GetBucketCount("Sync.ModelTypeEntityChange3.BOOKMARK",
+                                         /*REMOTE_NON_INITIAL_UPDATE=*/4));
+  EXPECT_EQ(
+      0, histogram_tester.GetBucketCount("Sync.ModelTypeEntityChange3.BOOKMARK",
+                                         /*REMOTE_INITIAL_UPDATE=*/5));
 }
 
 IN_PROC_BROWSER_TEST_F(EnableDisableSingleClientTest, ClearsPrefsIfClearData) {
@@ -429,7 +435,24 @@ IN_PROC_BROWSER_TEST_F(EnableDisableSingleClientTest,
   EXPECT_EQ(cache_guid, prefs.GetCacheGuid());
 }
 
-IN_PROC_BROWSER_TEST_F(EnableDisableSingleClientTest, PRE_ResendsBagOfChips) {
+class EnableDisableSingleClientSelfNotifyTest
+    : public EnableDisableSingleClientTest {
+ public:
+  // UpdatedProgressMarkerChecker relies on the 'self-notify' feature.
+  bool TestUsesSelfNotifications() override { return true; }
+
+  sync_pb::ClientToServerMessage TriggerGetUpdatesCycleAndWait() {
+    TriggerSyncForModelTypes(0, {syncer::BOOKMARKS});
+    EXPECT_TRUE(UpdatedProgressMarkerChecker(GetSyncService(0)).Wait());
+
+    sync_pb::ClientToServerMessage message;
+    EXPECT_TRUE(GetFakeServer()->GetLastGetUpdatesMessage(&message));
+    return message;
+  }
+};
+
+IN_PROC_BROWSER_TEST_F(EnableDisableSingleClientSelfNotifyTest,
+                       PRE_ResendsBagOfChips) {
   sync_pb::ChipBag bag_of_chips;
   bag_of_chips.set_server_chips(kTestServerChips);
   ASSERT_FALSE(base::IsStringUTF8(bag_of_chips.SerializeAsString()));
@@ -445,68 +468,16 @@ IN_PROC_BROWSER_TEST_F(EnableDisableSingleClientTest, PRE_ResendsBagOfChips) {
   EXPECT_EQ(kTestServerChips, message.bag_of_chips().server_chips());
 }
 
-IN_PROC_BROWSER_TEST_F(EnableDisableSingleClientTest, ResendsBagOfChips) {
+IN_PROC_BROWSER_TEST_F(EnableDisableSingleClientSelfNotifyTest,
+                       ResendsBagOfChips) {
   ASSERT_TRUE(SetupClients());
   SyncPrefs prefs(GetProfile(0)->GetPrefs());
   ASSERT_NE("", prefs.GetBagOfChips());
-  ASSERT_TRUE(GetClient(0)->AwaitEngineInitialization());
+  ASSERT_TRUE(GetClient(0)->AwaitSyncSetupCompletion());
 
   sync_pb::ClientToServerMessage message = TriggerGetUpdatesCycleAndWait();
   EXPECT_TRUE(message.has_bag_of_chips());
   EXPECT_EQ(kTestServerChips, message.bag_of_chips().server_chips());
-}
-
-class EnableDisableSingleClientWithStandaloneTransportTest
-    : public EnableDisableSingleClientTest {
- public:
-  EnableDisableSingleClientWithStandaloneTransportTest() {
-    features_.InitAndEnableFeature(switches::kSyncStandaloneTransport);
-  }
-
- private:
-  base::test::ScopedFeatureList features_;
-};
-
-IN_PROC_BROWSER_TEST_F(EnableDisableSingleClientWithStandaloneTransportTest,
-                       DoesNotRedownloadAfterKeepDataWithStandaloneTransport) {
-  ASSERT_TRUE(SetupClients());
-  ASSERT_FALSE(bookmarks_helper::GetBookmarkModel(0)->IsBookmarked(
-      GURL(kSyncedBookmarkURL)));
-
-  // Create a bookmark on the server, then turn on Sync on the client.
-  InjectSyncedBookmark();
-  ASSERT_TRUE(GetClient(0)->SetupSync());
-  ASSERT_TRUE(GetSyncService(0)->IsSyncFeatureActive());
-
-  // Make sure the bookmark got synced down.
-  ASSERT_TRUE(bookmarks_helper::GetBookmarkModel(0)->IsBookmarked(
-      GURL(kSyncedBookmarkURL)));
-  // Note: The response may also contain permanent nodes, so we can't check the
-  // exact count.
-  ASSERT_GT(GetNumUpdatesDownloadedInLastCycle(), 0);
-
-  // Stop Sync and let it start up again in standalone transport mode.
-  GetClient(0)->StopSyncServiceWithoutClearingData();
-  ASSERT_TRUE(GetClient(0)->AwaitSyncTransportActive());
-  ASSERT_EQ(syncer::SyncService::TransportState::ACTIVE,
-            GetSyncService(0)->GetTransportState());
-  ASSERT_FALSE(GetSyncService(0)->IsSyncFeatureActive());
-
-  // Now start full Sync again.
-  base::HistogramTester histogram_tester;
-  GetClient(0)->StartSyncService();
-  ASSERT_TRUE(GetSyncService(0)->IsSyncFeatureActive());
-
-  // The bookmark should still be there, *without* having been redownloaded.
-  ASSERT_TRUE(SetupSync());
-  ASSERT_TRUE(bookmarks_helper::GetBookmarkModel(0)->IsBookmarked(
-      GURL(kSyncedBookmarkURL)));
-  EXPECT_EQ(
-      0, histogram_tester.GetBucketCount("Sync.ModelTypeEntityChange3.BOOKMARK",
-                                         /*REMOTE_NON_INITIAL_UPDATE=*/4));
-  EXPECT_EQ(
-      0, histogram_tester.GetBucketCount("Sync.ModelTypeEntityChange3.BOOKMARK",
-                                         /*REMOTE_INITIAL_UPDATE=*/5));
 }
 
 }  // namespace

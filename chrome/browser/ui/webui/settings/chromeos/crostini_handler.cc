@@ -4,6 +4,10 @@
 
 #include "chrome/browser/ui/webui/settings/chromeos/crostini_handler.h"
 
+#include <string>
+#include <utility>
+#include <vector>
+
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "chrome/browser/chromeos/crostini/crostini_export_import.h"
@@ -20,7 +24,9 @@ namespace settings {
 CrostiniHandler::CrostiniHandler(Profile* profile)
     : profile_(profile), weak_ptr_factory_(this) {}
 
-CrostiniHandler::~CrostiniHandler() = default;
+CrostiniHandler::~CrostiniHandler() {
+  DisallowJavascript();
+}
 
 void CrostiniHandler::RegisterMessages() {
   web_ui()->RegisterMessageCallback(
@@ -41,6 +47,14 @@ void CrostiniHandler::RegisterMessages() {
       base::BindRepeating(&CrostiniHandler::HandleRemoveCrostiniSharedPath,
                           weak_ptr_factory_.GetWeakPtr()));
   web_ui()->RegisterMessageCallback(
+      "getCrostiniSharedUsbDevices",
+      base::BindRepeating(&CrostiniHandler::HandleGetCrostiniSharedUsbDevices,
+                          weak_ptr_factory_.GetWeakPtr()));
+  web_ui()->RegisterMessageCallback(
+      "setCrostiniUsbDeviceShared",
+      base::BindRepeating(&CrostiniHandler::HandleSetCrostiniUsbDeviceShared,
+                          weak_ptr_factory_.GetWeakPtr()));
+  web_ui()->RegisterMessageCallback(
       "exportCrostiniContainer",
       base::BindRepeating(&CrostiniHandler::HandleExportCrostiniContainer,
                           weak_ptr_factory_.GetWeakPtr()));
@@ -48,6 +62,30 @@ void CrostiniHandler::RegisterMessages() {
       "importCrostiniContainer",
       base::BindRepeating(&CrostiniHandler::HandleImportCrostiniContainer,
                           weak_ptr_factory_.GetWeakPtr()));
+  web_ui()->RegisterMessageCallback(
+      "requestCrostiniInstallerStatus",
+      base::BindRepeating(
+          &CrostiniHandler::HandleCrostiniInstallerStatusRequest,
+          weak_ptr_factory_.GetWeakPtr()));
+}
+
+void CrostiniHandler::OnJavascriptAllowed() {
+  crostini::CrostiniManager::GetForProfile(profile_)
+      ->AddInstallerViewStatusObserver(this);
+  if (chromeos::CrosUsbDetector::Get()) {
+    chromeos::CrosUsbDetector::Get()->AddSharedUsbDeviceObserver(this);
+  }
+}
+
+void CrostiniHandler::OnJavascriptDisallowed() {
+  if (crostini::CrostiniManager::GetForProfile(profile_)
+          ->HasInstallerViewStatusObserver(this)) {
+    crostini::CrostiniManager::GetForProfile(profile_)
+        ->RemoveInstallerViewStatusObserver(this);
+  }
+  if (chromeos::CrosUsbDetector::Get()) {
+    chromeos::CrosUsbDetector::Get()->RemoveSharedUsbDeviceObserver(this);
+  }
 }
 
 void CrostiniHandler::HandleRequestCrostiniInstallerView(
@@ -82,12 +120,15 @@ void CrostiniHandler::HandleGetCrostiniSharedPathsDisplayText(
 
 void CrostiniHandler::HandleRemoveCrostiniSharedPath(
     const base::ListValue* args) {
-  CHECK_EQ(1U, args->GetSize());
+  CHECK_EQ(2U, args->GetSize());
+  std::string vm_name;
+  CHECK(args->GetString(0, &vm_name));
   std::string path;
-  CHECK(args->GetString(0, &path));
+  CHECK(args->GetString(1, &path));
 
   crostini::CrostiniSharePath::GetForProfile(profile_)->UnsharePath(
-      crostini::kCrostiniDefaultVmName, base::FilePath(path),
+      vm_name, base::FilePath(path),
+      /*unpersist=*/true,
       base::BindOnce(
           [](const std::string& path, bool result, std::string failure_reason) {
             if (!result) {
@@ -96,6 +137,65 @@ void CrostiniHandler::HandleRemoveCrostiniSharedPath(
             }
           },
           path));
+}
+
+namespace {
+base::ListValue UsbDevicesToListValue(
+    const std::vector<SharedUsbDeviceInfo> shared_usbs) {
+  base::ListValue usb_devices_list;
+  for (auto device : shared_usbs) {
+    base::Value device_info(base::Value::Type::DICTIONARY);
+    device_info.SetKey("guid", base::Value(device.guid));
+    device_info.SetKey("label", base::Value(device.label));
+    device_info.SetKey("shared", base::Value(device.shared));
+    usb_devices_list.GetList().push_back(std::move(device_info));
+  }
+  return usb_devices_list;
+}
+}  // namespace
+
+void CrostiniHandler::HandleGetCrostiniSharedUsbDevices(
+    const base::ListValue* args) {
+  AllowJavascript();
+  CHECK_EQ(1U, args->GetSize());
+
+  std::string callback_id = args->GetList()[0].GetString();
+
+  chromeos::CrosUsbDetector* detector = chromeos::CrosUsbDetector::Get();
+  if (!detector) {
+    ResolveJavascriptCallback(base::Value(callback_id), base::ListValue());
+    return;
+  }
+
+  ResolveJavascriptCallback(
+      base::Value(callback_id),
+      UsbDevicesToListValue(detector->GetSharedUsbDevices()));
+}
+
+void CrostiniHandler::HandleSetCrostiniUsbDeviceShared(
+    const base::ListValue* args) {
+  CHECK_EQ(2U, args->GetSize());
+  const auto& args_list = args->GetList();
+  std::string guid = args_list[0].GetString();
+  bool shared = args_list[1].GetBool();
+
+  chromeos::CrosUsbDetector* detector = chromeos::CrosUsbDetector::Get();
+  if (!detector)
+    return;
+
+  if (shared) {
+    detector->AttachUsbDeviceToVm(crostini::kCrostiniDefaultVmName, guid,
+                                  base::DoNothing());
+    return;
+  }
+  detector->DetachUsbDeviceFromVm(crostini::kCrostiniDefaultVmName, guid,
+                                  base::DoNothing());
+}
+
+void CrostiniHandler::OnSharedUsbDevicesChanged(
+    const std::vector<SharedUsbDeviceInfo> shared_usbs) {
+  FireWebUIListener("crostini-shared-usb-devices-changed",
+                    UsbDevicesToListValue(shared_usbs));
 }
 
 void CrostiniHandler::HandleExportCrostiniContainer(
@@ -110,6 +210,24 @@ void CrostiniHandler::HandleImportCrostiniContainer(
   CHECK_EQ(0U, args->GetSize());
   crostini::CrostiniExportImport::GetForProfile(profile_)->ImportContainer(
       web_ui()->GetWebContents());
+}
+
+void CrostiniHandler::HandleCrostiniInstallerStatusRequest(
+    const base::ListValue* args) {
+  AllowJavascript();
+  CHECK_EQ(0U, args->GetSize());
+  bool status = crostini::CrostiniManager::GetForProfile(profile_)
+                    ->GetInstallerViewStatus();
+  OnCrostiniInstallerViewStatusChanged(status);
+}
+
+void CrostiniHandler::OnCrostiniInstallerViewStatusChanged(bool status) {
+  // It's technically possible for this to be called before Javascript is
+  // enabled, in which case we must not call FireWebUIListener
+  if (IsJavascriptAllowed()) {
+    // Other side listens with cr.addWebUIListener
+    FireWebUIListener("crostini-installer-status-changed", base::Value(status));
+  }
 }
 
 }  // namespace settings

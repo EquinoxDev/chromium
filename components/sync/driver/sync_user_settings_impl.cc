@@ -10,15 +10,50 @@
 
 namespace syncer {
 
+namespace {
+
+ModelTypeSet ResolvePrefGroups(ModelTypeSet chosen_types) {
+  DCHECK(UserSelectableTypes().HasAll(chosen_types));
+  ModelTypeSet types_with_groups = chosen_types;
+  if (chosen_types.Has(APPS)) {
+    types_with_groups.PutAll({APP_SETTINGS, APP_LIST, ARC_PACKAGE});
+  }
+  if (chosen_types.Has(AUTOFILL)) {
+    types_with_groups.PutAll(
+        {AUTOFILL_PROFILE, AUTOFILL_WALLET_DATA, AUTOFILL_WALLET_METADATA});
+  }
+  if (chosen_types.Has(EXTENSIONS)) {
+    types_with_groups.Put(EXTENSION_SETTINGS);
+  }
+  if (chosen_types.Has(PREFERENCES)) {
+    types_with_groups.PutAll(
+        {DICTIONARY, PRIORITY_PREFERENCES, SEARCH_ENGINES});
+  }
+  if (chosen_types.Has(TYPED_URLS)) {
+    types_with_groups.PutAll({HISTORY_DELETE_DIRECTIVES, SESSIONS,
+                              FAVICON_IMAGES, FAVICON_TRACKING, USER_EVENTS});
+  }
+  if (chosen_types.Has(PROXY_TABS)) {
+    types_with_groups.PutAll(
+        {SESSIONS, FAVICON_IMAGES, FAVICON_TRACKING, SEND_TAB_TO_SELF});
+  }
+
+  return types_with_groups;
+}
+
+}  // namespace
+
 SyncUserSettingsImpl::SyncUserSettingsImpl(
     SyncServiceCrypto* crypto,
     SyncPrefs* prefs,
     ModelTypeSet registered_types,
-    const base::RepeatingCallback<void(bool)>& sync_allowed_by_platform_changed)
+    const base::RepeatingCallback<void(bool)>& sync_allowed_by_platform_changed,
+    const base::RepeatingCallback<bool()>& is_encrypt_everything_allowed)
     : crypto_(crypto),
       prefs_(prefs),
       registered_types_(registered_types),
-      sync_allowed_by_platform_changed_cb_(sync_allowed_by_platform_changed) {
+      sync_allowed_by_platform_changed_cb_(sync_allowed_by_platform_changed),
+      is_encrypt_everything_allowed_cb_(is_encrypt_everything_allowed) {
   DCHECK(crypto_);
   DCHECK(prefs_);
 }
@@ -60,24 +95,25 @@ bool SyncUserSettingsImpl::IsSyncEverythingEnabled() const {
 }
 
 ModelTypeSet SyncUserSettingsImpl::GetChosenDataTypes() const {
-  ModelTypeSet types = GetPreferredDataTypes();
-  types.RetainAll(UserSelectableTypes());
+  ModelTypeSet types = prefs_->GetChosenDataTypes();
+  DCHECK(UserSelectableTypes().HasAll(types));
+  types.RetainAll(registered_types_);
   return types;
 }
 
 void SyncUserSettingsImpl::SetChosenDataTypes(bool sync_everything,
                                               ModelTypeSet types) {
   DCHECK(UserSelectableTypes().HasAll(types));
-
-  prefs_->SetDataTypesConfiguration(sync_everything, registered_types_, types);
+  DCHECK(registered_types_.HasAll(types));
+  prefs_->SetDataTypesConfiguration(
+      sync_everything,
+      /*choosable_types=*/
+      Intersection(registered_types_, UserSelectableTypes()),
+      /*chosen_types=*/Intersection(registered_types_, types));
 }
 
 bool SyncUserSettingsImpl::IsEncryptEverythingAllowed() const {
-  return crypto_->IsEncryptEverythingAllowed();
-}
-
-void SyncUserSettingsImpl::SetEncryptEverythingAllowed(bool allowed) {
-  crypto_->SetEncryptEverythingAllowed(allowed);
+  return is_encrypt_everything_allowed_cb_.Run();
 }
 
 bool SyncUserSettingsImpl::IsEncryptEverythingEnabled() const {
@@ -85,6 +121,7 @@ bool SyncUserSettingsImpl::IsEncryptEverythingEnabled() const {
 }
 
 void SyncUserSettingsImpl::EnableEncryptEverything() {
+  DCHECK(IsEncryptEverythingAllowed());
   crypto_->EnableEncryptEverything();
 }
 
@@ -130,11 +167,33 @@ bool SyncUserSettingsImpl::SetDecryptionPassphrase(
   return result;
 }
 
+void SyncUserSettingsImpl::SetSyncRequestedIfNotSetExplicitly() {
+  prefs_->SetSyncRequestedIfNotSetExplicitly();
+}
+
 ModelTypeSet SyncUserSettingsImpl::GetPreferredDataTypes() const {
-  ModelTypeSet types =
-      Union(prefs_->GetPreferredDataTypes(registered_types_), ControlTypes());
+  ModelTypeSet types;
+  if (IsSyncEverythingEnabled()) {
+    // TODO(crbug.com/950874): it's possible to remove this case if we accept
+    // behavioral change. When one of UserSelectableTypes() isn't registered,
+    // but one of its corresponding UserTypes() is registered, current
+    // implementation treats that corresponding type as preferred while
+    // implementation without processing of this case won't treat that type
+    // as preferred.
+    types = registered_types_;
+  } else {
+    types = ResolvePrefGroups(GetChosenDataTypes());
+    types.PutAll(AlwaysPreferredUserTypes());
+    types.RetainAll(registered_types_);
+  }
+
+  static_assert(44 == ModelType::NUM_ENTRIES,
+                "If adding a new sync data type, update the list below below if"
+                " you want to disable the new data type for local sync.");
+  types.PutAll(ControlTypes());
   if (prefs_->IsLocalSyncEnabled()) {
     types.Remove(APP_LIST);
+    types.Remove(SECURITY_EVENTS);
     types.Remove(USER_CONSENTS);
     types.Remove(USER_EVENTS);
   }
@@ -156,6 +215,12 @@ bool SyncUserSettingsImpl::IsEncryptedDatatypeEnabled() const {
 
 bool SyncUserSettingsImpl::IsEncryptionPending() const {
   return crypto_->encryption_pending();
+}
+
+// static
+ModelTypeSet SyncUserSettingsImpl::ResolvePrefGroupsForTesting(
+    ModelTypeSet chosen_types) {
+  return ResolvePrefGroups(chosen_types);
 }
 
 }  // namespace syncer

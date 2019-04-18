@@ -32,8 +32,10 @@
 #include "base/threading/thread_restrictions.h"
 #include "base/time/time.h"
 #include "chromeos/audio/cras_audio_handler.h"
+#include "chromeos/dbus/biod/biod_client.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
-#include "chromeos/dbus/power_policy_controller.h"
+#include "chromeos/dbus/power/power_manager_client.h"
+#include "chromeos/dbus/power/power_policy_controller.h"
 #include "components/exo/file_helper.h"
 #include "content/public/browser/browser_task_traits.h"
 #include "content/public/browser/browser_thread.h"
@@ -72,6 +74,8 @@ void ShellBrowserMainParts::PreMainMessageLoopStart() {}
 
 void ShellBrowserMainParts::PostMainMessageLoopStart() {
   chromeos::DBusThreadManager::Initialize(chromeos::DBusThreadManager::kShared);
+  chromeos::PowerManagerClient::InitializeFake();
+  chromeos::BiodClient::InitializeFake();
 
   // WindowTreeClient needs to do some shutdown while the IO thread is alive.
   if (mus_client_)
@@ -98,7 +102,7 @@ void ShellBrowserMainParts::PreMainMessageLoopRun() {
   bluez::BluezDBusManager::Initialize();
 
   chromeos::PowerPolicyController::Initialize(
-      chromeos::DBusThreadManager::Get()->GetPowerManagerClient());
+      chromeos::PowerManagerClient::Get());
 
   service_manager::Connector* const connector =
       content::ServiceManagerConnection::GetForProcess()->GetConnector();

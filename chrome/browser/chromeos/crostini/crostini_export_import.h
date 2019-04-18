@@ -10,6 +10,8 @@
 #include <string>
 
 #include "base/memory/weak_ptr.h"
+#include "base/strings/string16.h"
+#include "base/time/time.h"
 #include "chrome/browser/chromeos/crostini/crostini_export_import_notification.h"
 #include "chrome/browser/chromeos/crostini/crostini_manager.h"
 #include "components/keyed_service/core/keyed_service.h"
@@ -22,9 +24,29 @@ class WebContents;
 
 namespace crostini {
 
-enum class CrostiniResult;
+enum class ExportContainerResult;
+enum class ImportContainerResult;
 
 enum class ExportImportType { EXPORT, IMPORT };
+
+// ExportContainerResult and ImportContainerResult are used for UMA.  Adding new
+// fields is OK, but do not delete or renumber.
+enum class ExportContainerResult {
+  kSuccess = 0,
+  kFailed = 1,
+  kFailedVmStopped = 2,
+  kFailedVmStarted = 3,
+  kMaxValue = kFailedVmStarted,
+};
+
+enum class ImportContainerResult {
+  kSuccess = 0,
+  kFailed = 1,
+  kFailedVmStopped = 2,
+  kFailedVmStarted = 3,
+  kFailedArchitecture = 4,
+  kMaxValue = kFailedArchitecture,
+};
 
 // CrostiniExportImport is a keyed profile service to manage exporting and
 // importing containers with crostini.  It manages a file dialog for selecting
@@ -45,10 +67,19 @@ class CrostiniExportImport : public KeyedService,
   // KeyedService:
   void Shutdown() override;
 
-  // Export the crostini container.
+  // Export the crostini container showing FileDialog.
   void ExportContainer(content::WebContents* web_contents);
-  // Import the crostini container.
+  // Import the crostini container showing FileDialog.
   void ImportContainer(content::WebContents* web_contents);
+
+  // Export |container| to |path| and invoke |callback| when complete.
+  void ExportContainer(ContainerId container_id,
+                       base::FilePath path,
+                       CrostiniManager::CrostiniResultCallback callback);
+  // Import |container| to |path| and invoke |callback| when complete.
+  void ImportContainer(ContainerId container_id,
+                       base::FilePath path,
+                       CrostiniManager::CrostiniResultCallback callback);
 
   // Called by the notification when it is closed so it can be destroyed.
   void NotificationCompleted(CrostiniExportImportNotification* notification);
@@ -67,6 +98,11 @@ class CrostiniExportImport : public KeyedService,
                     int index,
                     void* params) override;
 
+  void Start(ExportImportType type,
+             const ContainerId& container_id,
+             base::FilePath path,
+             CrostiniManager::CrostiniResultCallback callback);
+
   // crostini::ExportContainerProgressObserver implementation.
   void OnExportContainerProgress(const std::string& vm_name,
                                  const std::string& container_name,
@@ -75,24 +111,35 @@ class CrostiniExportImport : public KeyedService,
                                  uint64_t progress_speed) override;
 
   // crostini::ImportContainerProgressObserver implementation.
-  void OnImportContainerProgress(const std::string& vm_name,
-                                 const std::string& container_name,
-                                 crostini::ImportContainerProgressStatus status,
-                                 int progress_percent,
-                                 uint64_t progress_speed) override;
+  void OnImportContainerProgress(
+      const std::string& vm_name,
+      const std::string& container_name,
+      crostini::ImportContainerProgressStatus status,
+      int progress_percent,
+      uint64_t progress_speed,
+      const std::string& architecture_device,
+      const std::string& architecture_container) override;
 
   void ExportAfterSharing(const ContainerId& container_id,
                           const base::FilePath& filename,
+                          CrostiniManager::CrostiniResultCallback callback,
                           const base::FilePath& container_path,
                           bool result,
                           const std::string failure_reason);
-  void OnExportComplete(const ContainerId& container_id, CrostiniResult result);
+  void OnExportComplete(const base::Time& start,
+                        const ContainerId& container_id,
+                        CrostiniManager::CrostiniResultCallback callback,
+                        CrostiniResult result);
 
   void ImportAfterSharing(const ContainerId& container_id,
+                          CrostiniManager::CrostiniResultCallback callback,
                           const base::FilePath& container_path,
                           bool result,
                           const std::string failure_reason);
-  void OnImportComplete(const ContainerId& container_id, CrostiniResult result);
+  void OnImportComplete(const base::Time& start,
+                        const ContainerId& container_id,
+                        CrostiniManager::CrostiniResultCallback callback,
+                        CrostiniResult result);
 
   void OpenFileDialog(ExportImportType type,
                       content::WebContents* web_contents);

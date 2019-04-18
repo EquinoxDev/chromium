@@ -27,7 +27,6 @@
 #include "chrome/browser/chromeos/settings/device_settings_provider.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chromeos/constants/chromeos_switches.h"
-#include "chromeos/dbus/dbus_thread_manager.h"
 #include "chromeos/tpm/install_attributes.h"
 #include "chromeos/tpm/tpm_token_loader.h"
 #include "components/ownership/owner_key_util.h"
@@ -84,7 +83,7 @@ void LoadPrivateKeyByPublicKeyOnWorkerThread(
   if (!owner_key_util->ImportPublicKey(&public_key_data)) {
     scoped_refptr<PrivateKey> private_key;
     base::PostTaskWithTraits(FROM_HERE, {BrowserThread::UI},
-                             base::Bind(callback, public_key, private_key));
+                             base::BindOnce(callback, public_key, private_key));
     return;
   }
   public_key = new PublicKey();
@@ -106,7 +105,7 @@ void LoadPrivateKeyByPublicKeyOnWorkerThread(
         public_key->data(), public_slot.get()));
   }
   base::PostTaskWithTraits(FROM_HERE, {BrowserThread::UI},
-                           base::Bind(callback, public_key, private_key));
+                           base::BindOnce(callback, public_key, private_key));
 }
 
 void ContinueLoadPrivateKeyOnIOThread(
@@ -204,10 +203,8 @@ OwnerSettingsServiceChromeOS::OwnerSettingsServiceChromeOS(
         tpm_token_status == TPMTokenLoader::TPM_TOKEN_STATUS_UNDETERMINED;
   }
 
-  if (DBusThreadManager::IsInitialized() &&
-      DBusThreadManager::Get()->GetSessionManagerClient()) {
-    DBusThreadManager::Get()->GetSessionManagerClient()->AddObserver(this);
-  }
+  if (SessionManagerClient::Get())
+    SessionManagerClient::Get()->AddObserver(this);
 
   if (device_settings_service_)
     device_settings_service_->AddObserver(this);
@@ -233,10 +230,8 @@ OwnerSettingsServiceChromeOS::~OwnerSettingsServiceChromeOS() {
   if (device_settings_service_)
     device_settings_service_->RemoveObserver(this);
 
-  if (DBusThreadManager::IsInitialized() &&
-      DBusThreadManager::Get()->GetSessionManagerClient()) {
-    DBusThreadManager::Get()->GetSessionManagerClient()->RemoveObserver(this);
-  }
+  if (SessionManagerClient::Get())
+    SessionManagerClient::Get()->RemoveObserver(this);
 }
 
 OwnerSettingsServiceChromeOS* OwnerSettingsServiceChromeOS::FromWebUI(
@@ -710,8 +705,9 @@ void OwnerSettingsServiceChromeOS::ReloadKeypairImpl(const base::Callback<
 
   bool rv = base::PostTaskWithTraits(
       FROM_HERE, {BrowserThread::IO},
-      base::Bind(&LoadPrivateKeyOnIOThread, owner_key_util_,
-                 ProfileHelper::GetUserIdHashFromProfile(profile_), callback));
+      base::BindOnce(&LoadPrivateKeyOnIOThread, owner_key_util_,
+                     ProfileHelper::GetUserIdHashFromProfile(profile_),
+                     callback));
   if (!rv) {
     // IO thread doesn't exists in unit tests, but it's safe to use NSS from
     // BlockingPool in unit tests.

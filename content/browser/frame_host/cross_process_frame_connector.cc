@@ -241,8 +241,7 @@ bool CrossProcessFrameConnector::TransformPointToCoordSpaceForView(
     const gfx::PointF& point,
     RenderWidgetHostViewBase* target_view,
     const viz::SurfaceId& local_surface_id,
-    gfx::PointF* transformed_point,
-    viz::EventSource source) {
+    gfx::PointF* transformed_point) {
   RenderWidgetHostViewBase* root_view = GetRootRenderWidgetHostView();
   if (!root_view)
     return false;
@@ -252,14 +251,14 @@ bool CrossProcessFrameConnector::TransformPointToCoordSpaceForView(
   // be siblings). To account for this, the point is first transformed into the
   // root coordinate space and then the root is asked to perform the conversion.
   if (!root_view->TransformPointToLocalCoordSpace(point, local_surface_id,
-                                                  transformed_point, source))
+                                                  transformed_point))
     return false;
 
   if (target_view == root_view)
     return true;
 
   return root_view->TransformPointToCoordSpaceForView(
-      *transformed_point, target_view, transformed_point, source);
+      *transformed_point, target_view, transformed_point);
 }
 
 void CrossProcessFrameConnector::ForwardAckedTouchpadZoomEvent(
@@ -333,6 +332,17 @@ void CrossProcessFrameConnector::UnlockMouse() {
 void CrossProcessFrameConnector::OnSynchronizeVisualProperties(
     const viz::FrameSinkId& frame_sink_id,
     const FrameVisualProperties& visual_properties) {
+  TRACE_EVENT_WITH_FLOW2(
+      TRACE_DISABLED_BY_DEFAULT("viz.surface_id_flow"),
+      "CrossProcessFrameConnector::OnSynchronizeVisualProperties Receive "
+      "Message",
+      TRACE_ID_GLOBAL(
+          visual_properties.local_surface_id_allocation.local_surface_id()
+              .submission_trace_id()),
+      TRACE_EVENT_FLAG_FLOW_IN, "message",
+      "FrameHostMsg_SynchronizeVisualProperties", "new_local_surface_id",
+      visual_properties.local_surface_id_allocation.local_surface_id()
+          .ToString());
   // If the |screen_space_rect| or |screen_info| of the frame has changed, then
   // the viz::LocalSurfaceId must also change.
   if ((last_received_local_frame_size_ != visual_properties.local_frame_size ||
@@ -355,13 +365,13 @@ void CrossProcessFrameConnector::OnSynchronizeVisualProperties(
 void CrossProcessFrameConnector::OnUpdateViewportIntersection(
     const gfx::Rect& viewport_intersection,
     const gfx::Rect& compositor_visible_rect,
-    bool occluded_or_obscured) {
+    blink::FrameOcclusionState occlusion_state) {
   viewport_intersection_rect_ = viewport_intersection;
   compositor_visible_rect_ = compositor_visible_rect;
-  occluded_or_obscured_ = occluded_or_obscured;
+  occlusion_state_ = occlusion_state;
   if (view_)
-    view_->UpdateViewportIntersection(
-        viewport_intersection, compositor_visible_rect, occluded_or_obscured);
+    view_->UpdateViewportIntersection(viewport_intersection,
+                                      compositor_visible_rect, occlusion_state);
 
   if (IsVisible()) {
     // Record metrics if a crashed subframe became visible as a result of this

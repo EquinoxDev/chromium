@@ -25,6 +25,7 @@
 #include "ui/gfx/color_utils.h"
 #include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/paint_vector_icon.h"
+#include "ui/gfx/text_constants.h"
 #include "ui/strings/grit/ui_strings.h"
 #include "ui/views/background.h"
 #include "ui/views/controls/button/image_button.h"
@@ -33,7 +34,7 @@
 #include "ui/views/layout/flex_layout_types.h"
 #include "ui/views/style/typography.h"
 #include "ui/views/style/typography_provider.h"
-#include "ui/views/view_properties.h"
+#include "ui/views/view_class_properties.h"
 #include "url/gurl.h"
 
 #if defined(OS_CHROMEOS)
@@ -61,8 +62,11 @@ views::ImageButton* CreateCloseButton(views::ButtonListener* listener,
                                       SkColor color) {
   views::ImageButton* close_button = CreateVectorImageButton(listener);
   SetImageFromVectorIconWithColor(close_button, vector_icons::kCloseRoundedIcon,
+                                  GetLayoutConstant(LOCATION_BAR_ICON_SIZE),
                                   color);
   close_button->SetTooltipText(l10n_util::GetStringUTF16(IDS_APP_CLOSE));
+  close_button->SetBorder(views::CreateEmptyBorder(
+      gfx::Insets(GetLayoutConstant(LOCATION_BAR_CHILD_INTERIOR_PADDING))));
   close_button->SizeToPreferredSize();
 
   // Use a circular ink drop.
@@ -71,34 +75,6 @@ views::ImageButton* CreateCloseButton(views::ButtonListener* listener,
   close_button->SetProperty(views::kHighlightPathKey, highlight_path.release());
 
   return close_button;
-}
-
-void GoBackToApp(content::WebContents* web_contents) {
-  Browser* browser = chrome::FindBrowserWithWebContents(web_contents);
-  GURL launch_url = browser->hosted_app_controller()->GetAppLaunchURL();
-  content::NavigationController& controller = web_contents->GetController();
-  content::BrowserContext* context = web_contents->GetBrowserContext();
-
-  content::NavigationEntry* entry = nullptr;
-  int offset = 0;
-
-  // Go back until we find an in scope url, or run out of urls.
-  while ((entry = controller.GetEntryAtOffset(offset)) &&
-         !extensions::IsSameScope(entry->GetURL(), launch_url, context)) {
-    offset--;
-  }
-
-  // If there are no in scope urls, push the app's launch url and clear
-  // the history.
-  if (!entry) {
-    content::NavigationController::LoadURLParams load(launch_url);
-    load.should_clear_history_list = true;
-    controller.LoadURLWithParams(load);
-    return;
-  }
-
-  // Otherwise, go back to the first in scope url.
-  controller.GoToOffset(offset);
 }
 
 }  // namespace
@@ -111,23 +87,33 @@ class CustomTabBarTitleOriginView : public views::View {
     title_label_ = new views::Label(base::string16(), CONTEXT_BODY_TEXT_LARGE,
                                     views::style::TextStyle::STYLE_PRIMARY);
     location_label_ = new views::Label(
-        base::string16(), CONTEXT_BODY_TEXT_SMALL, STYLE_SECONDARY);
+        base::string16(), CONTEXT_BODY_TEXT_SMALL, STYLE_SECONDARY,
+        gfx::DirectionalityMode::DIRECTIONALITY_AS_URL);
 
     title_label_->SetBackgroundColor(background_color);
     title_label_->SetElideBehavior(gfx::ElideBehavior::ELIDE_TAIL);
+    title_label_->SetHorizontalAlignment(gfx::HorizontalAlignment::ALIGN_LEFT);
 
     location_label_->SetBackgroundColor(background_color);
-    location_label_->SetElideBehavior(gfx::ElideBehavior::ELIDE_TAIL);
+    location_label_->SetElideBehavior(gfx::ElideBehavior::ELIDE_HEAD);
+    location_label_->SetHorizontalAlignment(
+        gfx::HorizontalAlignment::ALIGN_LEFT);
 
     AddChildView(title_label_);
     AddChildView(location_label_);
 
-    auto layout = std::make_unique<views::FlexLayout>();
+    auto* layout = SetLayoutManager(std::make_unique<views::FlexLayout>());
     layout->SetOrientation(views::LayoutOrientation::kVertical)
         .SetMainAxisAlignment(views::LayoutAlignment::kCenter)
-        .SetCrossAxisAlignment(views::LayoutAlignment::kStart);
-
-    SetLayoutManager(std::move(layout));
+        .SetCrossAxisAlignment(views::LayoutAlignment::kStart)
+        .SetFlexForView(title_label_,
+                        views::FlexSpecification::ForSizeRule(
+                            views::MinimumFlexSizeRule::kScaleToMinimum,
+                            views::MaximumFlexSizeRule::kPreferred))
+        .SetFlexForView(location_label_,
+                        views::FlexSpecification::ForSizeRule(
+                            views::MinimumFlexSizeRule::kScaleToMinimum,
+                            views::MaximumFlexSizeRule::kPreferred));
   }
 
   void Update(base::string16 title, base::string16 location) {
@@ -135,16 +121,30 @@ class CustomTabBarTitleOriginView : public views::View {
     location_label_->SetText(location);
   }
 
-  // views::View:
-  gfx::Size GetMinimumSize() const override {
+  int GetMinimumWidth() const {
     // As labels are not multi-line, the layout will calculate a minimum size
     // that would fit the entire text (potentially a long url). Instead, set a
     // minimum number of characters we want to display and elide the text if it
     // overflows.
+    // This is in a helper function because we also have to ensure that the
+    // preferred size is at least as wide as the minimum size, and the
+    // minimum height of the control should be the preferred height.
     constexpr int kMinCharacters = 20;
-    return gfx::Size(
-        title_label_->font_list().GetExpectedTextWidth(kMinCharacters),
-        GetPreferredSize().height());
+    return title_label_->font_list().GetExpectedTextWidth(kMinCharacters);
+  }
+
+  // views::View:
+  gfx::Size GetMinimumSize() const override {
+    return gfx::Size(GetMinimumWidth(), GetPreferredSize().height());
+  }
+
+  gfx::Size CalculatePreferredSize() const override {
+    // If we don't also override CalculatePreferredSize, we violate some
+    // assumptions in the FlexLayout (that our PreferredSize is always larger
+    // than our MinimumSize).
+    gfx::Size preferred_size = views::View::CalculatePreferredSize();
+    preferred_size.SetToMax(gfx::Size(GetMinimumWidth(), 0));
+    return preferred_size;
   }
 
  private:
@@ -162,7 +162,7 @@ CustomTabBarView::CustomTabBarView(BrowserView* browser_view,
       tab_strip_model_observer_(this) {
   Browser* browser = browser_view->browser();
   base::Optional<SkColor> optional_theme_color =
-      browser->hosted_app_controller()->GetThemeColor();
+      browser->web_app_controller()->GetThemeColor();
 
   // If we have a theme color, use that, otherwise fall back to the default
   // frame color.
@@ -185,13 +185,15 @@ CustomTabBarView::CustomTabBarView(BrowserView* browser_view,
       new CustomTabBarTitleOriginView(kCustomTabBarViewBackgroundColor);
   AddChildView(title_origin_view_);
 
-  auto layout = std::make_unique<views::FlexLayout>();
-  layout->SetOrientation(views::LayoutOrientation::kHorizontal)
+  layout_manager_ = SetLayoutManager(std::make_unique<views::FlexLayout>());
+  layout_manager_->SetOrientation(views::LayoutOrientation::kHorizontal)
       .SetMainAxisAlignment(views::LayoutAlignment::kStart)
       .SetCrossAxisAlignment(views::LayoutAlignment::kCenter)
-      .SetInteriorMargin(GetLayoutInsets(LayoutInset::TOOLBAR_INTERIOR_MARGIN));
-
-  SetLayoutManager(std::move(layout));
+      .SetInteriorMargin(GetLayoutInsets(LayoutInset::TOOLBAR_INTERIOR_MARGIN))
+      .SetFlexForView(title_origin_view_,
+                      views::FlexSpecification::ForSizeRule(
+                          views::MinimumFlexSizeRule::kScaleToMinimum,
+                          views::MaximumFlexSizeRule::kPreferred));
 
   tab_strip_model_observer_.Add(browser->tab_strip_model());
 }
@@ -213,9 +215,10 @@ void CustomTabBarView::TabChangedAt(content::WebContents* contents,
   base::string16 title, location;
   if (entry) {
     title = Browser::FormatTitleForDisplay(entry->GetTitleForDisplay());
-    location = url_formatter::FormatUrl(
-        entry->GetVirtualURL(), url_formatter::kFormatUrlOmitDefaults,
-        net::UnescapeRule::NORMAL, nullptr, nullptr, nullptr);
+    location = url_formatter::FormatUrl(entry->GetVirtualURL().GetOrigin(),
+                                        url_formatter::kFormatUrlOmitDefaults,
+                                        net::UnescapeRule::NORMAL, nullptr,
+                                        nullptr, nullptr);
   }
 
   title_origin_view_->Update(title, location);
@@ -224,6 +227,14 @@ void CustomTabBarView::TabChangedAt(content::WebContents* contents,
   last_title_ = title;
   last_location_ = location;
 
+  // Only show the close button if the current URL is not in the application
+  // scope (it doesn't make sense to show a 'back-to-scope' button in scope).
+  close_button_->SetVisible(!extensions::IsSameScope(
+      chrome::FindBrowserWithWebContents(contents)
+          ->web_app_controller()
+          ->GetAppLaunchURL(),
+      contents->GetVisibleURL(), contents->GetBrowserContext()));
+
   Layout();
 }
 
@@ -231,7 +242,7 @@ gfx::Size CustomTabBarView::CalculatePreferredSize() const {
   // ToolbarView::GetMinimumSize() uses the preferred size of its children, so
   // tell it the minimum size this control will fit into (its layout will
   // automatically have this control fill available space).
-  return gfx::Size(GetInsets().width() +
+  return gfx::Size(layout_manager_->interior_margin().width() +
                        title_origin_view_->GetMinimumSize().width() +
                        close_button_->GetPreferredSize().width() +
                        location_icon_view_->GetPreferredSize().width(),
@@ -281,7 +292,7 @@ content::WebContents* CustomTabBarView::GetWebContents() {
   return delegate_->GetWebContents();
 }
 
-bool CustomTabBarView::IsEditingOrEmpty() {
+bool CustomTabBarView::IsEditingOrEmpty() const {
   return false;
 }
 
@@ -304,7 +315,7 @@ gfx::ImageSkia CustomTabBarView::GetLocationIcon(
   return gfx::CreateVectorIcon(
       delegate_->GetLocationBarModel()->GetVectorIcon(),
       GetLayoutConstant(LOCATION_BAR_ICON_SIZE),
-      GetSecurityChipColor(GetLocationBarModel()->GetSecurityLevel(false)));
+      GetSecurityChipColor(GetLocationBarModel()->GetSecurityLevel()));
 }
 
 SkColor CustomTabBarView::GetLocationIconInkDropColor() const {
@@ -318,5 +329,38 @@ const LocationBarModel* CustomTabBarView::GetLocationBarModel() const {
 
 void CustomTabBarView::ButtonPressed(views::Button* sender,
                                      const ui::Event& event) {
-  GoBackToApp(GetWebContents());
+  GoBackToApp();
+}
+
+void CustomTabBarView::GoBackToAppForTesting() {
+  GoBackToApp();
+}
+
+void CustomTabBarView::GoBackToApp() {
+  content::WebContents* web_contents = GetWebContents();
+  Browser* browser = chrome::FindBrowserWithWebContents(web_contents);
+  GURL launch_url = browser->web_app_controller()->GetAppLaunchURL();
+  content::NavigationController& controller = web_contents->GetController();
+  content::BrowserContext* context = web_contents->GetBrowserContext();
+
+  content::NavigationEntry* entry = nullptr;
+  int offset = 0;
+
+  // Go back until we find an in scope url, or run out of urls.
+  while ((entry = controller.GetEntryAtOffset(offset)) &&
+         !extensions::IsSameScope(launch_url, entry->GetURL(), context)) {
+    offset--;
+  }
+
+  // If there are no in scope urls, push the app's launch url and clear
+  // the history.
+  if (!entry) {
+    content::NavigationController::LoadURLParams load(launch_url);
+    load.should_clear_history_list = true;
+    controller.LoadURLWithParams(load);
+    return;
+  }
+
+  // Otherwise, go back to the first in scope url.
+  controller.GoToOffset(offset);
 }

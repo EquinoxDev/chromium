@@ -28,7 +28,6 @@
 #include "components/password_manager/core/common/password_manager_features.h"
 #include "content/public/browser/web_contents.h"
 #include "ui/base/l10n/l10n_util.h"
-#include "ui/base/ui_base_features.h"
 
 using autofill::AccessorySheetData;
 using autofill::FooterCommand;
@@ -45,10 +44,8 @@ bool PasswordAccessoryController::AllowedForWebContents(
   if (vr::VrTabHelper::IsInVr(web_contents)) {
     return false;  // TODO(crbug.com/865749): Reenable if works for VR keyboard.
   }
-  // Either #passwords-keyboards-accessory or #experimental-ui must be enabled.
   return base::FeatureList::IsEnabled(
-             password_manager::features::kPasswordsKeyboardAccessory) ||
-         base::FeatureList::IsEnabled(features::kExperimentalUi);
+      password_manager::features::kPasswordsKeyboardAccessory);
 }
 
 // static
@@ -204,13 +201,20 @@ void PasswordAccessoryControllerImpl::GetFavicon(
 void PasswordAccessoryControllerImpl::OnFillingTriggered(
     bool is_password,
     const base::string16& text_to_fill) {
+  content::RenderFrameHost* target = web_contents_->GetFocusedFrame();
+
+  const url::Origin& origin = target->GetLastCommittedOrigin();
+  if (!AppearsInSuggestions(text_to_fill, is_password, origin)) {
+    NOTREACHED() << "Tried to fill '" << text_to_fill << "' into " << origin;
+    return;  // Never fill across different origins!
+  }
+
   password_manager::ContentPasswordManagerDriverFactory* factory =
       password_manager::ContentPasswordManagerDriverFactory::FromWebContents(
           web_contents_);
   DCHECK(factory);
-  // TODO(fhorschig): Consider allowing filling on non-main frames.
   password_manager::ContentPasswordManagerDriver* driver =
-      factory->GetDriverForFrame(web_contents_->GetMainFrame());
+      factory->GetDriverForFrame(target);
   if (!driver) {
     return;
   }  // |driver| can be NULL if the tab is being closed.
@@ -248,7 +252,8 @@ AccessorySheetData PasswordAccessoryControllerImpl::CreateAccessorySheetData(
           ? IDS_PASSWORD_MANAGER_ACCESSORY_PASSWORD_LIST_EMPTY_MESSAGE
           : IDS_PASSWORD_MANAGER_ACCESSORY_PASSWORD_LIST_TITLE,
       base::ASCIIToUTF16(origin.host()));
-  AccessorySheetData data(passwords_title_str);
+  AccessorySheetData data(autofill::FallbackSheetType::PASSWORD,
+                          passwords_title_str);
 
   // Create a username and a password element for every suggestion.
   for (const SuggestionElementData& suggestion : suggestions) {
@@ -294,6 +299,19 @@ void PasswordAccessoryControllerImpl::OnImageFetched(
     }
   }
   icon_request->pending_requests.clear();
+}
+
+bool PasswordAccessoryControllerImpl::AppearsInSuggestions(
+    const base::string16& suggestion,
+    bool is_password,
+    const url::Origin& origin) const {
+  for (const SuggestionElementData& element : origin_suggestions_.at(origin)) {
+    const base::string16& candidate =
+        is_password ? element.password : element.username;
+    if (candidate == suggestion)
+      return true;
+  }
+  return false;
 }
 
 base::WeakPtr<ManualFillingController>

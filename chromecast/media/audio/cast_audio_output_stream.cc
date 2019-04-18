@@ -5,6 +5,7 @@
 #include "chromecast/media/audio/cast_audio_output_stream.h"
 
 #include <algorithm>
+#include <limits>
 #include <string>
 #include <utility>
 
@@ -54,8 +55,6 @@ const int64_t kInvalidTimestamp = std::numeric_limits<int64_t>::min();
 constexpr base::TimeDelta kFadeTime = base::TimeDelta::FromMilliseconds(5);
 constexpr base::TimeDelta kMixerStartThreshold =
     base::TimeDelta::FromMilliseconds(60);
-constexpr base::TimeDelta kMixerBufferSizeInTime =
-    base::TimeDelta::FromMilliseconds(25);
 }  // namespace
 
 namespace chromecast {
@@ -208,10 +207,13 @@ void CastAudioOutputStream::CmaWrapper::Initialize(
 
   AudioConfig audio_config;
   audio_config.codec = kCodecPCM;
+  audio_config.channel_layout =
+      ChannelLayoutFromChannelNumber(audio_params_.channels());
   audio_config.sample_format = kSampleFormatS16;
   audio_config.bytes_per_channel = 2;
   audio_config.channel_number = audio_params_.channels();
   audio_config.samples_per_second = audio_params_.sample_rate();
+  DCHECK(IsValidConfig(audio_config));
   if (!audio_decoder_->SetConfig(audio_config)) {
     encountered_error_ = true;
     return;
@@ -466,10 +468,7 @@ void CastAudioOutputStream::MixerServiceWrapper::Start(
       kMixerStartThreshold, audio_params_.sample_rate());
   params.set_start_threshold_frames(start_threshold_frames);
 
-  int32_t fill_size_frames = ::media::AudioTimestampHelper::TimeToFrames(
-      kMixerBufferSizeInTime, audio_params_.sample_rate());
-
-  params.set_fill_size_frames(fill_size_frames);
+  params.set_fill_size_frames(audio_params_.frames_per_buffer());
   params.set_use_fader(true);
   params.set_fade_frames(::media::AudioTimestampHelper::TimeToFrames(
       kFadeTime, audio_params_.sample_rate()));

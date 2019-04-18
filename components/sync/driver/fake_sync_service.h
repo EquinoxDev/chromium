@@ -36,10 +36,6 @@ class FakeSyncService : public SyncService {
   void AddObserver(SyncServiceObserver* observer) override;
   void RemoveObserver(SyncServiceObserver* observer) override;
   bool HasObserver(const SyncServiceObserver* observer) const override;
-  void AddPreferenceProvider(SyncTypePreferenceProvider* provider) override;
-  void RemovePreferenceProvider(SyncTypePreferenceProvider* provider) override;
-  bool HasPreferenceProvider(
-      SyncTypePreferenceProvider* provider) const override;
   void OnDataTypeRequestsSyncStartup(ModelType type) override;
   void StopAndClear() override;
   ModelTypeSet GetRegisteredDataTypes() const override;
@@ -48,15 +44,16 @@ class FakeSyncService : public SyncService {
   std::unique_ptr<SyncSetupInProgressHandle> GetSetupInProgressHandle()
       override;
   bool IsSetupInProgress() const override;
-  const GoogleServiceAuthError& GetAuthError() const override;
+  GoogleServiceAuthError GetAuthError() const override;
+  base::Time GetAuthErrorTime() const override;
+  bool RequiresClientUpgrade() const override;
   UserShare* GetUserShare() const override;
-  void ReenableDatatype(ModelType type) override;
   void ReadyForStartChanged(syncer::ModelType type) override;
   SyncTokenStatus GetSyncTokenStatus() const override;
-  bool QueryDetailedSyncStatus(SyncStatus* result) const override;
+  bool QueryDetailedSyncStatusForDebugging(SyncStatus* result) const override;
   base::Time GetLastSyncedTime() const override;
   SyncCycleSnapshot GetLastCycleSnapshot() const override;
-  std::unique_ptr<base::Value> GetTypeStatusMap() override;
+  std::unique_ptr<base::Value> GetTypeStatusMapForDebugging() override;
   const GURL& sync_service_url() const override;
   std::string unrecoverable_error_message() const override;
   base::Location unrecoverable_error_location() const override;
@@ -73,7 +70,6 @@ class FakeSyncService : public SyncService {
   void Shutdown() override;
 
  private:
-  GoogleServiceAuthError error_;
   GURL sync_service_url_;
   std::unique_ptr<UserShare> user_share_;
 };

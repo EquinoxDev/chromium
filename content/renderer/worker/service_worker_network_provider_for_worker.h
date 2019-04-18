@@ -26,8 +26,7 @@ struct NavigationResponseOverrideParameters;
 class ServiceWorkerNetworkProviderForWorker final
     : public blink::WebServiceWorkerNetworkProvider {
  public:
-  // Creates a new instance. Some params might only be used in S13nServiceWorker
-  // or PlzSharedWorker.
+  // Creates a new instance.
   // - |info|: provider info from the browser
   // - |script_loader_factory_info|: the factory for loading the worker's
   //   scripts
@@ -62,7 +61,6 @@ class ServiceWorkerNetworkProviderForWorker final
   int64_t ControllerServiceWorkerID() override;
   void DispatchNetworkQuiet() override;
 
-  int provider_id() const;
   ServiceWorkerProviderContext* context() { return context_.get(); }
 
  private:
@@ -72,9 +70,6 @@ class ServiceWorkerNetworkProviderForWorker final
   // |context_| is null if |this| is an invalid instance, in which case there is
   // no connection to the browser process.
   scoped_refptr<ServiceWorkerProviderContext> context_;
-
-  // Used in non-s13nsw.
-  blink::mojom::ServiceWorkerDispatcherHostAssociatedPtr dispatcher_host_;
 
   // The URL loader factory for loading the worker's scripts.
   network::mojom::URLLoaderFactoryAssociatedPtr script_loader_factory_;

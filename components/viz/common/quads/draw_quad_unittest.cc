@@ -48,8 +48,8 @@ TEST(DrawQuadTest, CopySharedQuadState) {
   int sorting_context_id = 65536;
 
   auto state = std::make_unique<SharedQuadState>();
-  state->SetAll(quad_transform, layer_rect, visible_layer_rect, clip_rect,
-                is_clipped, are_contents_opaque, opacity, blend_mode,
+  state->SetAll(quad_transform, layer_rect, visible_layer_rect, gfx::RRectF(),
+                clip_rect, is_clipped, are_contents_opaque, opacity, blend_mode,
                 sorting_context_id);
 
   auto copy = std::make_unique<SharedQuadState>(*state);
@@ -74,8 +74,8 @@ SharedQuadState* CreateSharedQuadState(RenderPass* render_pass) {
   SkBlendMode blend_mode = SkBlendMode::kSrcOver;
 
   SharedQuadState* state = render_pass->CreateAndAppendSharedQuadState();
-  state->SetAll(quad_transform, layer_rect, visible_layer_rect, clip_rect,
-                is_clipped, are_contents_opaque, opacity, blend_mode,
+  state->SetAll(quad_transform, layer_rect, visible_layer_rect, gfx::RRectF(),
+                clip_rect, is_clipped, are_contents_opaque, opacity, blend_mode,
                 sorting_context_id);
   return state;
 }
@@ -400,17 +400,17 @@ TEST(DrawQuadTest, CopyTileDrawQuad) {
 
 TEST(DrawQuadTest, CopyVideoHoleDrawQuad) {
   gfx::Rect visible_rect(40, 50, 30, 20);
-  base::UnguessableToken overlay_id = base::UnguessableToken::Create();
+  base::UnguessableToken overlay_plane_id = base::UnguessableToken::Create();
   CREATE_SHARED_STATE();
 
-  CREATE_QUAD_NEW(VideoHoleDrawQuad, visible_rect, overlay_id);
+  CREATE_QUAD_NEW(VideoHoleDrawQuad, visible_rect, overlay_plane_id);
   EXPECT_EQ(DrawQuad::VIDEO_HOLE, copy_quad->material);
   EXPECT_EQ(visible_rect, copy_quad->visible_rect);
-  EXPECT_EQ(overlay_id, copy_quad->overlay_id);
+  EXPECT_EQ(overlay_plane_id, copy_quad->overlay_plane_id);
 
-  CREATE_QUAD_ALL(VideoHoleDrawQuad, overlay_id);
+  CREATE_QUAD_ALL(VideoHoleDrawQuad, overlay_plane_id);
   EXPECT_EQ(DrawQuad::VIDEO_HOLE, copy_quad->material);
-  EXPECT_EQ(overlay_id, copy_quad->overlay_id);
+  EXPECT_EQ(overlay_plane_id, copy_quad->overlay_plane_id);
 }
 
 TEST(DrawQuadTest, CopyYUVVideoDrawQuad) {
@@ -658,10 +658,10 @@ TEST_F(DrawQuadIteratorTest, TileDrawQuad) {
 
 TEST_F(DrawQuadIteratorTest, VideoHoleDrawQuad) {
   gfx::Rect visible_rect(40, 50, 30, 20);
-  base::UnguessableToken overlay_id = base::UnguessableToken::Create();
+  base::UnguessableToken overlay_plane_id = base::UnguessableToken::Create();
 
   CREATE_SHARED_STATE();
-  CREATE_QUAD_NEW(VideoHoleDrawQuad, visible_rect, overlay_id);
+  CREATE_QUAD_NEW(VideoHoleDrawQuad, visible_rect, overlay_plane_id);
   EXPECT_EQ(0, IterateAndCount(quad_new));
 }
 

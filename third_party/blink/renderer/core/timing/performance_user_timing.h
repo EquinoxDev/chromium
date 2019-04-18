@@ -37,16 +37,11 @@ namespace blink {
 class ExceptionState;
 class Performance;
 
-typedef unsigned long long (
-    PerformanceTiming::*NavigationTimingFunction)() const;
+typedef uint64_t (PerformanceTiming::*NavigationTimingFunction)() const;
 using PerformanceEntryMap = HeapHashMap<AtomicString, PerformanceEntryVector>;
 
 class UserTiming final : public GarbageCollected<UserTiming> {
  public:
-  static UserTiming* Create(Performance& performance) {
-    return MakeGarbageCollected<UserTiming>(performance);
-  }
-
   explicit UserTiming(Performance&);
 
   PerformanceMark* Mark(ScriptState* script_state,

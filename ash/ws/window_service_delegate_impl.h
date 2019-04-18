@@ -18,6 +18,7 @@ class WindowServiceDelegateImpl : public ws::WindowServiceDelegate {
 
   // ws::WindowServiceDelegate:
   std::unique_ptr<aura::Window> NewTopLevel(
+      ws::TopLevelProxyWindow* top_level_proxy_window,
       aura::PropertyConverter* property_converter,
       const base::flat_map<std::string, std::vector<uint8_t>>& properties)
       override;
@@ -53,6 +54,8 @@ class WindowServiceDelegateImpl : public ws::WindowServiceDelegate {
       ws::WindowTree* tree,
       const std::string& name,
       mojo::ScopedInterfaceEndpointHandle handle) override;
+  void ConnectToImeEngine(ime::mojom::ImeEngineRequest engine_request,
+                          ime::mojom::ImeEngineClientPtr client) override;
 
  private:
   std::unique_ptr<ui::SystemInputInjector> system_input_injector_;

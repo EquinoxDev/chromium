@@ -36,6 +36,7 @@
 #include "cc/test/test_ukm_recorder_factory.h"
 #include "cc/trees/layer_tree_host.h"
 #include "cc/trees/layer_tree_settings.h"
+#include "third_party/blink/public/common/frame/frame_policy.h"
 #include "third_party/blink/public/platform/platform.h"
 #include "third_party/blink/public/platform/web_data.h"
 #include "third_party/blink/public/platform/web_string.h"
@@ -107,7 +108,7 @@ T* CreateDefaultClientIfNeeded(T* client, std::unique_ptr<T>& owned_client) {
 }  // namespace
 
 void LoadFrameDontWait(WebLocalFrame* frame, const WebURL& url) {
-  WebLocalFrameImpl* impl = ToWebLocalFrameImpl(frame);
+  auto* impl = To<WebLocalFrameImpl>(frame);
   if (url.ProtocolIs("javascript")) {
     impl->LoadJavaScriptURL(url);
   } else {
@@ -128,7 +129,7 @@ void LoadFrame(WebLocalFrame* frame, const std::string& url) {
 void LoadHTMLString(WebLocalFrame* frame,
                     const std::string& html,
                     const WebURL& base_url) {
-  WebLocalFrameImpl* impl = ToWebLocalFrameImpl(frame);
+  auto* impl = To<WebLocalFrameImpl>(frame);
   impl->CommitNavigation(
       WebNavigationParams::CreateWithHTMLString(html, base_url),
       nullptr /* extra_data */);
@@ -138,7 +139,7 @@ void LoadHTMLString(WebLocalFrame* frame,
 void LoadHistoryItem(WebLocalFrame* frame,
                      const WebHistoryItem& item,
                      mojom::FetchCacheMode cache_mode) {
-  WebLocalFrameImpl* impl = ToWebLocalFrameImpl(frame);
+  auto* impl = To<WebLocalFrameImpl>(frame);
   HistoryItem* history_item = item;
   auto params = std::make_unique<WebNavigationParams>();
   params->url = history_item->Url();
@@ -198,7 +199,7 @@ WebLocalFrameImpl* CreateLocalChild(WebLocalFrame& parent,
   std::unique_ptr<TestWebFrameClient> owned_client;
   client = CreateDefaultClientIfNeeded(client, owned_client);
   mojom::blink::DocumentInterfaceBrokerPtrInfo document_interface_broker;
-  WebLocalFrameImpl* frame = ToWebLocalFrameImpl(parent.CreateLocalChild(
+  auto* frame = To<WebLocalFrameImpl>(parent.CreateLocalChild(
       scope, client, nullptr,
       mojo::MakeRequest(&document_interface_broker).PassMessagePipe()));
   client->Bind(frame, std::move(owned_client));
@@ -212,7 +213,7 @@ WebLocalFrameImpl* CreateLocalChild(
   DCHECK(self_owned);
   TestWebFrameClient* client = self_owned.get();
   mojom::blink::DocumentInterfaceBrokerPtrInfo document_interface_broker;
-  WebLocalFrameImpl* frame = ToWebLocalFrameImpl(parent.CreateLocalChild(
+  auto* frame = To<WebLocalFrameImpl>(parent.CreateLocalChild(
       scope, client, nullptr,
       mojo::MakeRequest(&document_interface_broker).PassMessagePipe()));
   client->Bind(frame, std::move(self_owned));
@@ -224,11 +225,10 @@ WebLocalFrameImpl* CreateProvisional(WebRemoteFrame& old_frame,
   std::unique_ptr<TestWebFrameClient> owned_client;
   client = CreateDefaultClientIfNeeded(client, owned_client);
   mojom::blink::DocumentInterfaceBrokerPtrInfo document_interface_broker;
-  WebLocalFrameImpl* frame =
-      ToWebLocalFrameImpl(WebLocalFrame::CreateProvisional(
-          client, nullptr,
-          mojo::MakeRequest(&document_interface_broker).PassMessagePipe(),
-          &old_frame, WebSandboxFlags::kNone, ParsedFeaturePolicy()));
+  auto* frame = To<WebLocalFrameImpl>(WebLocalFrame::CreateProvisional(
+      client, nullptr,
+      mojo::MakeRequest(&document_interface_broker).PassMessagePipe(),
+      &old_frame, FramePolicy()));
   client->Bind(frame, std::move(owned_client));
   std::unique_ptr<TestWebWidgetClient> widget_client;
   // Create a local root, if necessary.
@@ -269,11 +269,10 @@ WebLocalFrameImpl* CreateLocalChild(WebRemoteFrame& parent,
   std::unique_ptr<TestWebFrameClient> owned_client;
   client = CreateDefaultClientIfNeeded(client, owned_client);
   mojom::blink::DocumentInterfaceBrokerPtrInfo document_interface_broker;
-  WebLocalFrameImpl* frame = ToWebLocalFrameImpl(parent.CreateLocalChild(
-      WebTreeScopeType::kDocument, name, WebSandboxFlags::kNone, client,
-      nullptr, mojo::MakeRequest(&document_interface_broker).PassMessagePipe(),
-      previous_sibling, ParsedFeaturePolicy(), properties,
-      FrameOwnerElementType::kIframe, nullptr));
+  auto* frame = To<WebLocalFrameImpl>(parent.CreateLocalChild(
+      WebTreeScopeType::kDocument, name, FramePolicy(), client, nullptr,
+      mojo::MakeRequest(&document_interface_broker).PassMessagePipe(),
+      previous_sibling, properties, FrameOwnerElementType::kIframe, nullptr));
   client->Bind(frame, std::move(owned_client));
 
   std::unique_ptr<TestWebWidgetClient> owned_widget_client;
@@ -300,8 +299,8 @@ WebRemoteFrameImpl* CreateRemoteChild(
   std::unique_ptr<TestWebRemoteFrameClient> owned_client;
   client = CreateDefaultClientIfNeeded(client, owned_client);
   auto* frame = ToWebRemoteFrameImpl(parent.CreateRemoteChild(
-      WebTreeScopeType::kDocument, name, WebSandboxFlags::kNone,
-      ParsedFeaturePolicy(), FrameOwnerElementType::kIframe, client, nullptr));
+      WebTreeScopeType::kDocument, name, FramePolicy(),
+      FrameOwnerElementType::kIframe, client, nullptr));
   client->Bind(frame, std::move(owned_client));
   if (!security_origin)
     security_origin = SecurityOrigin::CreateUniqueOpaque();
@@ -350,6 +349,10 @@ WebViewImpl* WebViewHelper::InitializeWithOpener(
   // TODO(dcheng): The main frame widget currently has a special case.
   // Eliminate this once WebView is no longer a WebWidget.
   blink::WebFrameWidget::CreateForMainFrame(test_web_widget_client_, frame);
+  // We inform the WebView when it has a local main frame attached once the
+  // WebFrame it fully set up and the WebWidgetClient is initialized (which is
+  // the case by this point).
+  web_view_->DidAttachLocalMainFrame(test_web_widget_client_);
 
   // Set an initial size for subframes.
   if (frame->Parent())
@@ -410,20 +413,19 @@ WebViewImpl* WebViewHelper::InitializeRemote(
 
   test_web_widget_client_ = CreateDefaultClientIfNeeded(
       web_widget_client, owned_test_web_widget_client_);
-  // TODO(danakj): Remove this! Make WebViewImpl not need a WebWidgetClient when
-  // the main frame is remote.
-  web_view_->SetWebWidgetClient(test_web_widget_client_);
-  // TODO(danakj): Make this part of attaching the main frame's WebFrameWidget.
   web_view_->MainFrameWidget()->SetLayerTreeView(
       test_web_widget_client_->layer_tree_view(),
       test_web_widget_client_->animation_host());
+  // TODO(danakj): Remove this! Make WebViewImpl not need a WebWidgetClient when
+  // the main frame is remote.
+  web_view_->DidAttachRemoteMainFrame(test_web_widget_client_);
 
   return web_view_;
 }
 
 void WebViewHelper::LoadAhem() {
   LocalFrame* local_frame =
-      ToLocalFrame(WebFrame::ToCoreFrame(*LocalMainFrame()));
+      To<LocalFrame>(WebFrame::ToCoreFrame(*LocalMainFrame()));
   DCHECK(local_frame);
   RenderingTest::LoadAhem(*local_frame);
 }
@@ -441,7 +443,7 @@ void WebViewHelper::Reset() {
 }
 
 WebLocalFrameImpl* WebViewHelper::LocalMainFrame() const {
-  return ToWebLocalFrameImpl(web_view_->MainFrame());
+  return To<WebLocalFrameImpl>(web_view_->MainFrame());
 }
 
 WebRemoteFrameImpl* WebViewHelper::RemoteMainFrame() const {
@@ -485,7 +487,7 @@ void TestWebFrameClient::Bind(WebLocalFrame* frame,
                               std::unique_ptr<TestWebFrameClient> self_owned) {
   DCHECK(!frame_);
   DCHECK(!self_owned || self_owned.get() == this);
-  frame_ = ToWebLocalFrameImpl(frame);
+  frame_ = To<WebLocalFrameImpl>(frame);
   self_owned_ = std::move(self_owned);
 }
 
@@ -509,8 +511,7 @@ WebLocalFrame* TestWebFrameClient::CreateChildFrame(
     WebTreeScopeType scope,
     const WebString& name,
     const WebString& fallback_name,
-    WebSandboxFlags sandbox_flags,
-    const ParsedFeaturePolicy& container_policy,
+    const FramePolicy&,
     const WebFrameOwnerProperties& frame_owner_properties,
     FrameOwnerElementType owner_type) {
   return CreateLocalChild(*parent, scope);
@@ -629,7 +630,28 @@ TestWebWidgetClient::TestWebWidgetClient(
 }
 
 void TestWebWidgetClient::SetRootLayer(scoped_refptr<cc::Layer> layer) {
-  layer_tree_view_->layer_tree_host()->SetRootLayer(std::move(layer));
+  layer_tree_host()->SetRootLayer(std::move(layer));
+}
+
+void TestWebWidgetClient::SetBackgroundColor(SkColor color) {
+  layer_tree_host()->set_background_color(color);
+}
+
+void TestWebWidgetClient::SetPageScaleFactorAndLimits(float page_scale_factor,
+                                                      float minimum,
+                                                      float maximum) {
+  layer_tree_host()->SetPageScaleFactorAndLimits(page_scale_factor, minimum,
+                                                 maximum);
+}
+
+void TestWebWidgetClient::RegisterViewportLayers(
+    const cc::ViewportLayers& layers) {
+  layer_tree_host()->RegisterViewportLayers(layers);
+}
+
+void TestWebWidgetClient::RegisterSelection(
+    const cc::LayerSelection& selection) {
+  layer_tree_host()->RegisterSelection(selection);
 }
 
 void TestWebWidgetClient::DidMeaningfulLayout(
@@ -656,7 +678,6 @@ WebView* TestWebViewClient::CreateView(WebLocalFrame* opener,
                                        const WebWindowFeatures&,
                                        const WebString& name,
                                        WebNavigationPolicy,
-                                       bool,
                                        WebSandboxFlags,
                                        const FeaturePolicy::FeatureState&,
                                        const SessionStorageNamespaceId&) {

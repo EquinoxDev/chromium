@@ -31,9 +31,7 @@ class CryptAuthKeyBundle {
  public:
   // Names which uniquely define a CryptAuthKeyBundle.
   // TODO(nohle): Add name for DeviceSync keys.
-  // TODO(nohle): Add additional unit tests for CryptAuthKeyCreatorImpl when
-  // more Names are added.
-  enum class Name { kUserKeyPair };
+  enum class Name { kUserKeyPair, kLegacyMasterKey };
   static const base::flat_set<CryptAuthKeyBundle::Name>& AllNames();
   static std::string KeyBundleNameEnumToString(CryptAuthKeyBundle::Name name);
   static base::Optional<CryptAuthKeyBundle::Name> KeyBundleNameStringToEnum(
@@ -68,6 +66,8 @@ class CryptAuthKeyBundle {
   // If the key being added is active, all other keys in the bundle will be
   // deactivated. If the handle of the input key matches one in the bundle, the
   // existing key will be overwritten.
+  // Note: All keys added to the bundle kUserKeyPair must have the handle
+  // kCryptAuthFixedUserKeyPairHandle.
   void AddKey(const CryptAuthKey& key);
 
   // Activates the key corresponding to |handle| in the bundle and deactivates

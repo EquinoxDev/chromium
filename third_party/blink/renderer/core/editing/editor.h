@@ -35,8 +35,8 @@
 #include "third_party/blink/renderer/core/editing/forward.h"
 #include "third_party/blink/renderer/core/editing/visible_selection.h"
 #include "third_party/blink/renderer/core/events/input_event.h"
+#include "third_party/blink/renderer/core/scroll/scroll_alignment.h"
 #include "third_party/blink/renderer/platform/heap/handle.h"
-#include "third_party/blink/renderer/platform/scroll/scroll_alignment.h"
 
 namespace blink {
 
@@ -63,8 +63,6 @@ enum class WritingDirection;
 
 class CORE_EXPORT Editor final : public GarbageCollectedFinalized<Editor> {
  public:
-  static Editor* Create(LocalFrame&);
-
   explicit Editor(LocalFrame&);
   ~Editor();
 
@@ -223,10 +221,10 @@ class CORE_EXPORT Editor final : public GarbageCollectedFinalized<Editor> {
   void SetTypingStyle(EditingStyle*);
   void ClearTypingStyle();
 
-  void Trace(blink::Visitor*);
+  void Trace(Visitor*);
 
   void RevealSelectionAfterEditingOperation(
-      const ScrollAlignment& = ScrollAlignment::kAlignCenterIfNeeded);
+      const ScrollAlignment& = ScrollAlignment::kAlignToEdgeIfNeeded);
 
  private:
   Member<LocalFrame> frame_;

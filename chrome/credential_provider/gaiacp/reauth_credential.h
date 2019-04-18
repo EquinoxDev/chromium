@@ -6,7 +6,6 @@
 #define CHROME_CREDENTIAL_PROVIDER_GAIACP_REAUTH_CREDENTIAL_H_
 
 #include "chrome/credential_provider/gaiacp/gaia_credential_base.h"
-#include "chrome/credential_provider/gaiacp/gaia_credential_provider_i.h"
 
 namespace credential_provider {
 
@@ -42,6 +41,14 @@ class ATL_NO_VTABLE CReauthCredential
   // ICredentialProviderCredential2
   IFACEMETHODIMP GetUserSid(wchar_t** sid) override;
 
+  // IReauthCredential
+  IFACEMETHODIMP SetOSUserInfo(BSTR sid, BSTR domain, BSTR username) override;
+  IFACEMETHODIMP SetEmailForReauth(BSTR email) override;
+
+  const CComBSTR& get_os_user_sid() const { return os_user_sid_; }
+  const CComBSTR& get_os_user_domain() const { return os_user_domain_; }
+  const CComBSTR& get_os_username() const { return os_username_; }
+
   // CGaiaCredentialBase
 
   // Adds additional command line switches to specify which gaia id to sign in
@@ -58,10 +65,6 @@ class ATL_NO_VTABLE CReauthCredential
                                const base::string16& sid,
                                BSTR* error_text) override;
   HRESULT GetStringValueImpl(DWORD field_id, wchar_t** value) override;
-
-  // IReauthCredential
-  IFACEMETHODIMP SetOSUserInfo(BSTR sid, BSTR domain, BSTR username) override;
-  IFACEMETHODIMP SetEmailForReauth(BSTR email) override;
 
   // Information about the OS user.
   CComBSTR os_user_domain_;

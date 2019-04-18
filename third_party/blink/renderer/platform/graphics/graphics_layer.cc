@@ -41,7 +41,6 @@
 #include "third_party/blink/public/platform/web_float_rect.h"
 #include "third_party/blink/public/platform/web_point.h"
 #include "third_party/blink/public/platform/web_size.h"
-#include "third_party/blink/renderer/platform/drag_image.h"
 #include "third_party/blink/renderer/platform/geometry/float_rect.h"
 #include "third_party/blink/renderer/platform/geometry/layout_rect.h"
 #include "third_party/blink/renderer/platform/geometry/region.h"
@@ -59,7 +58,6 @@
 #include "third_party/blink/renderer/platform/graphics/paint/raster_invalidator.h"
 #include "third_party/blink/renderer/platform/graphics/skia/skia_utils.h"
 #include "third_party/blink/renderer/platform/instrumentation/tracing/trace_event.h"
-#include "third_party/blink/renderer/platform/scroll/scroll_snap_data.h"
 #include "third_party/blink/renderer/platform/wtf/hash_map.h"
 #include "third_party/blink/renderer/platform/wtf/hash_set.h"
 #include "third_party/blink/renderer/platform/wtf/math_extras.h"
@@ -71,18 +69,13 @@
 
 namespace blink {
 
-std::unique_ptr<GraphicsLayer> GraphicsLayer::Create(
-    GraphicsLayerClient& client) {
-  return base::WrapUnique(new GraphicsLayer(client));
-}
-
 GraphicsLayer::GraphicsLayer(GraphicsLayerClient& client)
     : client_(client),
       prevent_contents_opaque_changes_(false),
       draws_content_(false),
       paints_hit_test_(false),
       contents_visible_(true),
-      hit_testable_without_draws_content_(false),
+      hit_testable_(false),
       needs_check_raster_invalidation_(false),
       has_scroll_parent_(false),
       has_clip_parent_(false),
@@ -101,6 +94,7 @@ GraphicsLayer::GraphicsLayer(GraphicsLayerClient& client)
 #endif
   layer_ = cc::PictureLayer::Create(this);
   CcLayer()->SetIsDrawable(draws_content_ && contents_visible_);
+  CcLayer()->SetHitTestable(hit_testable_);
   CcLayer()->SetLayerClient(weak_ptr_factory_.GetWeakPtr());
 
   UpdateTrackingRasterInvalidations();
@@ -123,9 +117,9 @@ GraphicsLayer::~GraphicsLayer() {
   DCHECK(!parent_);
 }
 
-LayoutRect GraphicsLayer::VisualRect() const {
+IntRect GraphicsLayer::VisualRect() const {
   DCHECK(layer_state_);
-  return LayoutRect(layer_state_->offset, LayoutSize(Size()));
+  return IntRect(layer_state_->offset, IntSize(Size()));
 }
 
 void GraphicsLayer::SetHasWillChangeTransformHint(
@@ -139,16 +133,20 @@ void GraphicsLayer::SetOverscrollBehavior(
 }
 
 void GraphicsLayer::SetSnapContainerData(
-    base::Optional<SnapContainerData> data) {
+    base::Optional<cc::SnapContainerData> data) {
   CcLayer()->SetSnapContainerData(std::move(data));
 }
 
 void GraphicsLayer::SetIsResizedByBrowserControls(
     bool is_resized_by_browser_controls) {
+  DCHECK(!RuntimeEnabledFeatures::BlinkGenPropertyTreesEnabled() &&
+         !RuntimeEnabledFeatures::CompositeAfterPaintEnabled());
   CcLayer()->SetIsResizedByBrowserControls(is_resized_by_browser_controls);
 }
 
 void GraphicsLayer::SetIsContainerForFixedPositionLayers(bool is_container) {
+  DCHECK(!RuntimeEnabledFeatures::BlinkGenPropertyTreesEnabled() &&
+         !RuntimeEnabledFeatures::CompositeAfterPaintEnabled());
   CcLayer()->SetIsContainerForFixedPositionLayers(is_container);
 }
 
@@ -387,6 +385,7 @@ bool GraphicsLayer::PaintWithoutCommit(
       !client_.NeedsRepaint(*this) &&
       !GetPaintController().CacheIsAllInvalid() &&
       previous_interest_rect_ == *interest_rect) {
+    GetPaintController().UpdateUMACountsOnFullyCached();
     return false;
   }
 
@@ -546,6 +545,7 @@ void GraphicsLayer::SetupContentsLayer(cc::Layer* contents_layer) {
   // contents_layer, for the correctness of early exit conditions in
   // SetDrawsContent() and SetContentsVisible().
   contents_layer_->SetIsDrawable(contents_visible_);
+  contents_layer_->SetHitTestable(contents_visible_);
 
   // Insert the content layer first. Video elements require this, because they
   // have shadow content that must display in front of the video.
@@ -590,8 +590,9 @@ cc::Layer* GraphicsLayer::ContentsLayerIfRegistered() {
 
 RasterInvalidator& GraphicsLayer::EnsureRasterInvalidator() {
   if (!raster_invalidator_) {
-    raster_invalidator_ = std::make_unique<RasterInvalidator>(
-        [this](const IntRect& r) { SetNeedsDisplayInRect(r); });
+    raster_invalidator_ =
+        std::make_unique<RasterInvalidator>(base::BindRepeating(
+            &GraphicsLayer::SetNeedsDisplayInRect, base::Unretained(this)));
     raster_invalidator_->SetTracksRasterInvalidations(
         client_.IsTrackingRasterInvalidations());
   }
@@ -706,7 +707,7 @@ void GraphicsLayer::SetRenderingContext(int context) {
   CcLayer()->Set3dSortingContextId(context);
 
   if (contents_layer_)
-    CcLayer()->Set3dSortingContextId(rendering_context3d_);
+    contents_layer_->Set3dSortingContextId(rendering_context3d_);
 }
 
 bool GraphicsLayer::MasksToBounds() const {
@@ -782,7 +783,8 @@ void GraphicsLayer::SetMaskLayer(GraphicsLayer* mask_layer) {
     return;
 
   mask_layer_ = mask_layer;
-  CcLayer()->SetMaskLayer(mask_layer_ ? mask_layer_->CcLayer() : nullptr);
+  if (!RuntimeEnabledFeatures::BlinkGenPropertyTreesEnabled())
+    CcLayer()->SetMaskLayer(mask_layer_ ? mask_layer_->CcLayer() : nullptr);
 }
 
 void GraphicsLayer::SetContentsClippingMaskLayer(
@@ -833,11 +835,11 @@ void GraphicsLayer::SetIsRootForIsolatedGroup(bool isolated) {
   CcLayer()->SetIsRootForIsolatedGroup(isolated);
 }
 
-void GraphicsLayer::SetHitTestableWithoutDrawsContent(bool should_hit_test) {
-  if (hit_testable_without_draws_content_ == should_hit_test)
+void GraphicsLayer::SetHitTestable(bool should_hit_test) {
+  if (hit_testable_ == should_hit_test)
     return;
-  hit_testable_without_draws_content_ = should_hit_test;
-  CcLayer()->SetHitTestableWithoutDrawsContent(should_hit_test);
+  hit_testable_ = should_hit_test;
+  CcLayer()->SetHitTestable(should_hit_test);
 }
 
 void GraphicsLayer::SetContentsNeedsDisplay() {
@@ -1014,7 +1016,7 @@ void GraphicsLayer::DidChangeScrollbarsHiddenIfOverlay(bool hidden) {
 PaintController& GraphicsLayer::GetPaintController() const {
   CHECK(PaintsContentOrHitTest());
   if (!paint_controller_)
-    paint_controller_ = PaintController::Create();
+    paint_controller_ = std::make_unique<PaintController>();
   return *paint_controller_;
 }
 

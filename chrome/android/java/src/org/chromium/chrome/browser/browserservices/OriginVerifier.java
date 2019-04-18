@@ -9,6 +9,7 @@ import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
 import android.net.Uri;
 import android.support.annotation.NonNull;
+import android.support.annotation.Nullable;
 import android.support.customtabs.CustomTabsService;
 import android.support.customtabs.CustomTabsService.Relation;
 import android.text.TextUtils;
@@ -22,11 +23,13 @@ import org.chromium.base.VisibleForTesting;
 import org.chromium.base.annotations.CalledByNative;
 import org.chromium.base.annotations.JNINamespace;
 import org.chromium.base.library_loader.LibraryProcessType;
+import org.chromium.base.task.PostTask;
 import org.chromium.chrome.browser.ChromeSwitches;
 import org.chromium.chrome.browser.IntentHandler;
 import org.chromium.chrome.browser.UrlConstants;
 import org.chromium.chrome.browser.profiles.Profile;
 import org.chromium.content_public.browser.BrowserStartupController;
+import org.chromium.content_public.browser.UiThreadTaskTraits;
 
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
@@ -67,7 +70,7 @@ public class OriginVerifier {
     private final String mSignatureFingerprint;
     private final @Relation int mRelation;
     private long mNativeOriginVerifier;
-    private OriginVerificationListener mListener;
+    @Nullable private OriginVerificationListener mListener;
     private Origin mOrigin;
 
     /**
@@ -224,7 +227,7 @@ public class OriginVerifier {
         if (!TextUtils.isEmpty(disableDalUrl)
                 && mOrigin.equals(new Origin(disableDalUrl))) {
             Log.i(TAG, "Verification skipped for %s due to command line flag.", origin);
-            ThreadUtils.runOnUiThread(new VerifiedCallback(true, null));
+            PostTask.runOrPostTask(UiThreadTaskTraits.DEFAULT, new VerifiedCallback(true, null));
             return;
         }
 
@@ -234,13 +237,13 @@ public class OriginVerifier {
             Log.i(TAG, "Verification failed for %s as not https.", origin);
             BrowserServicesMetrics.recordVerificationResult(
                     BrowserServicesMetrics.VerificationResult.HTTPS_FAILURE);
-            ThreadUtils.runOnUiThread(new VerifiedCallback(false, null));
+            PostTask.runOrPostTask(UiThreadTaskTraits.DEFAULT, new VerifiedCallback(false, null));
             return;
         }
 
         if (shouldOverrideVerification(mPackageName, mOrigin, mRelation)) {
             Log.i(TAG, "Verification succeeded for %s, it was overridden.", origin);
-            ThreadUtils.runOnUiThread(new VerifiedCallback(true, null));
+            PostTask.runOrPostTask(UiThreadTaskTraits.DEFAULT, new VerifiedCallback(true, null));
             return;
         }
 
@@ -270,8 +273,15 @@ public class OriginVerifier {
         if (!requestSent) {
             BrowserServicesMetrics.recordVerificationResult(
                     BrowserServicesMetrics.VerificationResult.REQUEST_FAILURE);
-            ThreadUtils.runOnUiThread(new VerifiedCallback(false, false));
+            PostTask.runOrPostTask(UiThreadTaskTraits.DEFAULT, new VerifiedCallback(false, false));
         }
+    }
+
+    /**
+     * Removes the verification listener, but finishes the ongoing verification process, if any.
+     */
+    public void removeListener() {
+        mListener = null;
     }
 
     private static boolean shouldOverrideVerification(String packageName, Origin origin,
@@ -376,9 +386,6 @@ public class OriginVerifier {
             Log.d(TAG, "Adding: %s for %s", mPackageName, mOrigin);
             VerificationResultStore.addRelationship(new Relationship(mPackageName,
                     mSignatureFingerprint, mOrigin, mRelation));
-
-            TrustedWebActivityClient.registerClient(ContextUtils.getApplicationContext(),
-                    mOrigin, mPackageName);
         }
 
         // We save the result even if there is a failure as a way of overwriting a previously

@@ -134,18 +134,14 @@ class MultizoneBackendTest : public testing::TestWithParam<TestParams> {
   void SetUp() override {
     srand(12345);
     CastMediaShlib::Initialize(base::CommandLine::ForCurrentProcess()->argv());
-    if (VolumeControl::Initialize) {
-      VolumeControl::Initialize(base::CommandLine::ForCurrentProcess()->argv());
-    }
+    VolumeControl::Initialize(base::CommandLine::ForCurrentProcess()->argv());
   }
 
   void TearDown() override {
     // Pipeline must be destroyed before finalizing media shlib.
     audio_feeder_.reset();
     effects_feeders_.clear();
-    if (VolumeControl::Finalize) {
-      VolumeControl::Finalize();
-    }
+    VolumeControl::Finalize();
     CastMediaShlib::Finalize();
   }
 
@@ -322,6 +318,7 @@ void MultizoneBackendTest::Initialize(int sample_rate,
                                       int playback_rate_change_count) {
   AudioConfig config;
   config.codec = kCodecPCM;
+  config.channel_layout = ChannelLayout::STEREO;
   config.sample_format = kSampleFormatPlanarF32;
   config.channel_number = 2;
   config.bytes_per_channel = 4;
@@ -338,6 +335,7 @@ void MultizoneBackendTest::Initialize(int sample_rate,
 void MultizoneBackendTest::AddEffectsStreams() {
   AudioConfig effects_config;
   effects_config.codec = kCodecPCM;
+  effects_config.channel_layout = ChannelLayout::STEREO;
   effects_config.sample_format = kSampleFormatS16;
   effects_config.channel_number = 2;
   effects_config.bytes_per_channel = 2;

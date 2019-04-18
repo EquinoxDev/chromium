@@ -68,7 +68,7 @@ VisiblePositionTemplate<Strategy>::VisiblePositionTemplate(
 }
 
 template <typename Strategy>
-void VisiblePositionTemplate<Strategy>::Trace(blink::Visitor* visitor) {
+void VisiblePositionTemplate<Strategy>::Trace(Visitor* visitor) {
   visitor->Trace(position_with_affinity_);
 }
 
@@ -121,8 +121,7 @@ VisiblePositionTemplate<Strategy> VisiblePositionTemplate<Strategy>::Create(
     DCHECK(context);
     DCHECK(context->IsLayoutNGMixin());
 
-    const NGOffsetMapping* mapping =
-        NGInlineNode::GetOffsetMapping(context, nullptr);
+    const NGOffsetMapping* mapping = NGInlineNode::GetOffsetMapping(context);
     DCHECK(mapping);
 
     const base::Optional<unsigned> offset =

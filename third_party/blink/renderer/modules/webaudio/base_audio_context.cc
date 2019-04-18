@@ -26,6 +26,7 @@
 #include "third_party/blink/renderer/modules/webaudio/base_audio_context.h"
 
 #include "build/build_config.h"
+#include "third_party/blink/public/mojom/devtools/console_message.mojom-shared.h"
 #include "third_party/blink/public/platform/platform.h"
 #include "third_party/blink/public/platform/task_type.h"
 #include "third_party/blink/renderer/bindings/core/v8/dictionary.h"
@@ -33,10 +34,8 @@
 #include "third_party/blink/renderer/core/dom/document.h"
 #include "third_party/blink/renderer/core/dom/dom_exception.h"
 #include "third_party/blink/renderer/core/frame/settings.h"
-#include "third_party/blink/renderer/core/html/media/autoplay_policy.h"
 #include "third_party/blink/renderer/core/html/media/html_media_element.h"
 #include "third_party/blink/renderer/core/inspector/console_message.h"
-#include "third_party/blink/renderer/core/inspector/console_types.h"
 #include "third_party/blink/renderer/modules/webaudio/analyser_node.h"
 #include "third_party/blink/renderer/modules/webaudio/audio_buffer.h"
 #include "third_party/blink/renderer/modules/webaudio/audio_buffer_source_node.h"
@@ -121,7 +120,7 @@ void BaseAudioContext::Initialize() {
 
   FFTFrame::Initialize();
 
-  audio_worklet_ = AudioWorklet::Create(this);
+  audio_worklet_ = MakeGarbageCollected<AudioWorklet>(this);
 
   if (destination_node_) {
     destination_node_->Handler().Initialize();
@@ -135,7 +134,7 @@ void BaseAudioContext::Initialize() {
 
     // The AudioParams in the listener need access to the destination node, so
     // only create the listener if the destination node exists.
-    listener_ = AudioListener::Create(*this);
+    listener_ = MakeGarbageCollected<AudioListener>(*this);
   }
 }
 
@@ -212,7 +211,8 @@ void BaseAudioContext::WarnIfContextClosed(const AudioHandler* handler) const {
 
   if (IsContextClosed() && GetDocument()) {
     GetDocument()->AddConsoleMessage(
-        ConsoleMessage::Create(kOtherMessageSource, kWarningMessageLevel,
+        ConsoleMessage::Create(mojom::ConsoleMessageSource::kOther,
+                               mojom::ConsoleMessageLevel::kWarning,
                                "Construction of " + handler->NodeTypeName() +
                                    " is not useful when context is closed."));
   }
@@ -221,7 +221,8 @@ void BaseAudioContext::WarnIfContextClosed(const AudioHandler* handler) const {
 void BaseAudioContext::WarnForConnectionIfContextClosed() const {
   if (IsContextClosed() && GetDocument()) {
     GetDocument()->AddConsoleMessage(ConsoleMessage::Create(
-        kOtherMessageSource, kWarningMessageLevel,
+        mojom::ConsoleMessageSource::kOther,
+        mojom::ConsoleMessageLevel::kWarning,
         "Connecting nodes after the context has been closed is not useful."));
   }
 }
@@ -306,7 +307,7 @@ ScriptPromise BaseAudioContext::decodeAudioData(
   DCHECK(IsMainThread());
   DCHECK(audio_data);
 
-  ScriptPromiseResolver* resolver = ScriptPromiseResolver::Create(script_state);
+  auto* resolver = MakeGarbageCollected<ScriptPromiseResolver>(script_state);
   ScriptPromise promise = resolver->Promise();
 
   v8::Isolate* isolate = script_state->GetIsolate();
@@ -674,12 +675,22 @@ void BaseAudioContext::HandleStoppableSourceNodes() {
       GetDeferredTaskHandler().GetActiveSourceHandlers();
 
   if (active_source_handlers->size()) {
-    // Find AudioBufferSourceNodes to see if we can stop playing them.
+    // Find source handlers to see if we can stop playing them.  Note: this
+    // check doesn't have to be done every render quantum, if this checking
+    // becomes to expensive.  It's ok to do this on a less frequency basis as
+    // long as the active nodes eventually get stopped if they're done.
     for (auto handler : *active_source_handlers) {
-      if (handler->GetNodeType() == AudioHandler::kNodeTypeAudioBufferSource) {
-        AudioBufferSourceHandler* source_handler =
-            static_cast<AudioBufferSourceHandler*>(handler.get());
-        source_handler->HandleStoppableSourceNode();
+      switch (handler->GetNodeType()) {
+        case AudioHandler::kNodeTypeAudioBufferSource:
+        case AudioHandler::kNodeTypeOscillator:
+        case AudioHandler::kNodeTypeConstantSource: {
+          AudioScheduledSourceHandler* source_handler =
+              static_cast<AudioScheduledSourceHandler*>(handler.get());
+          source_handler->HandleStoppableSourceNode();
+          break;
+        }
+        default:
+          break;
       }
     }
   }
@@ -802,10 +813,11 @@ void BaseAudioContext::NotifyWorkletIsReady() {
         audioWorklet()->GetMessagingProxy()->GetBackingWorkerThread();
   }
 
-  // If the context is running or suspended, restart the destination to switch
-  // the render thread with the worklet thread. Note that restarting can happen
-  // right after the context construction.
-  if (ContextState() != kClosed) {
+  // If the context is running, restart the destination to switch the render
+  // thread with the worklet thread. When the context is suspended, the next
+  // resume() call will start rendering with the worklet thread.
+  // Note that restarting can happen right after the context construction.
+  if (ContextState() == kRunning) {
     destination()->GetAudioDestinationHandler().RestartRendering();
   }
 }

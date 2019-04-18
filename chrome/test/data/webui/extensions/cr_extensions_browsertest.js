@@ -239,7 +239,7 @@ TEST_F('CrExtensionsActivityLogHistoryTest', 'All', () => {
 ////////////////////////////////////////////////////////////////////////////////
 // Extension Activity Log Item Tests
 
-CrExtensionsActivityLogItemTest = class extends CrExtensionsBrowserTest {
+CrExtensionsActivityLogHistoryItemTest = class extends CrExtensionsBrowserTest {
   /** @override */
   get browsePreload() {
     return 'chrome://extensions/activity_log/activity_log_item.html';
@@ -247,12 +247,12 @@ CrExtensionsActivityLogItemTest = class extends CrExtensionsBrowserTest {
 
   get extraLibraries() {
     return super.extraLibraries.concat([
-      'activity_log_item_test.js',
+      'activity_log_history_item_test.js',
     ]);
   }
 };
 
-TEST_F('CrExtensionsActivityLogItemTest', 'All', () => {
+TEST_F('CrExtensionsActivityLogHistoryItemTest', 'All', () => {
   mocha.run();
 });
 
@@ -273,6 +273,26 @@ CrExtensionsActivityLogStreamTest = class extends CrExtensionsBrowserTest {
 };
 
 TEST_F('CrExtensionsActivityLogStreamTest', 'All', () => {
+  mocha.run();
+});
+
+////////////////////////////////////////////////////////////////////////////////
+// Extension Activity Log Stream Item Tests
+
+CrExtensionsActivityLogStreamItemTest = class extends CrExtensionsBrowserTest {
+  /** @override */
+  get browsePreload() {
+    return 'chrome://extensions/activity_log/activity_log_stream_item.html';
+  }
+
+  get extraLibraries() {
+    return super.extraLibraries.concat([
+      'activity_log_stream_item_test.js',
+    ]);
+  }
+};
+
+TEST_F('CrExtensionsActivityLogStreamItemTest', 'All', () => {
   mocha.run();
 });
 
@@ -422,6 +442,10 @@ CrExtensionsManagerUnitTest = class extends CrExtensionsBrowserTest {
 
 TEST_F('CrExtensionsManagerUnitTest', 'ItemOrder', function() {
   this.runMochaTest(extension_manager_tests.TestNames.ItemOrder);
+});
+
+TEST_F('CrExtensionsManagerUnitTest', 'SetItemData', function() {
+  this.runMochaTest(extension_manager_tests.TestNames.SetItemData);
 });
 
 TEST_F('CrExtensionsManagerUnitTest', 'UpdateItemData', function() {

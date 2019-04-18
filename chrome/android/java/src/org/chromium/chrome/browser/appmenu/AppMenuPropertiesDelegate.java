@@ -120,9 +120,9 @@ public class AppMenuPropertiesDelegate {
                             < DeviceFormFactor.getMinimumTabletWidthPx(
                                       mActivity.getWindowAndroid().getDisplay());
 
-            boolean bottomToolbarEnabled = mActivity.getToolbarManager() != null
-                    && mActivity.getToolbarManager().getBottomToolbarCoordinator() != null;
-            shouldShowIconRow &= !bottomToolbarEnabled;
+            final boolean bottomToolbarVisible = mActivity.getToolbarManager() != null
+                    && mActivity.getToolbarManager().isBottomToolbarVisible();
+            shouldShowIconRow &= !bottomToolbarVisible;
 
             // Update the icon row items (shown in narrow form factors).
             menu.findItem(R.id.icon_row_menu_id).setVisible(shouldShowIconRow);
@@ -135,7 +135,8 @@ public class AppMenuPropertiesDelegate {
                 Drawable icon =
                         AppCompatResources.getDrawable(mActivity, R.drawable.btn_reload_stop);
                 DrawableCompat.setTintList(icon,
-                        AppCompatResources.getColorStateList(mActivity, R.color.dark_mode_tint));
+                        AppCompatResources.getColorStateList(
+                                mActivity, R.color.standard_mode_tint));
                 mReloadMenuItem.setIcon(icon);
                 loadingStateChanged(currentTab.isLoading());
 
@@ -253,7 +254,7 @@ public class AppMenuPropertiesDelegate {
         // Record whether or not we have finished installability checks for this page when we're
         // preparing the menu to be displayed. This will let us determine if it is feasible to
         // change the add to homescreen menu item based on whether a site is a PWA.
-        currentTab.getAppBannerManager().recordMenuOpen();
+        AppBannerManager.forTab(currentTab).recordMenuOpen();
 
         MenuItem homescreenItem = menu.findItem(R.id.add_to_homescreen_id);
         MenuItem openWebApkItem = menu.findItem(R.id.open_webapk_id);

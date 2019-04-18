@@ -20,18 +20,12 @@
 #include "components/signin/core/browser/about_signin_internals.h"
 #include "components/signin/core/browser/account_consistency_method.h"
 #include "components/signin/core/browser/account_reconcilor.h"
-#include "components/signin/core/browser/account_tracker_service.h"
 #include "components/signin/core/browser/dice_account_reconcilor_delegate.h"
-#include "components/signin/core/browser/fake_account_fetcher_service.h"
-#include "components/signin/core/browser/fake_signin_manager.h"
-#include "components/signin/core/browser/mutable_profile_oauth2_token_service_delegate.h"
-#include "components/signin/core/browser/profile_oauth2_token_service.h"
 #include "components/signin/core/browser/signin_error_controller.h"
 #include "components/signin/core/browser/signin_header_helper.h"
 #include "components/signin/core/browser/test_signin_client.h"
 #include "components/sync_preferences/testing_pref_service_syncable.h"
 #include "content/public/test/test_browser_thread_bundle.h"
-#include "google_apis/gaia/fake_oauth2_token_service_delegate.h"
 #include "services/identity/public/cpp/identity_test_environment.h"
 #include "services/identity/public/cpp/identity_test_utils.h"
 #include "services/network/public/cpp/shared_url_loader_factory.h"
@@ -97,41 +91,20 @@ class DiceResponseHandlerTest : public testing::Test,
             base::test::ScopedTaskEnvironment::MainThreadType::
                 IO_MOCK_TIME),  // URLRequestContext requires IO.
         signin_client_(&pref_service_),
-        token_service_(&pref_service_,
-                       std::make_unique<FakeOAuth2TokenServiceDelegate>()),
-        signin_manager_(&signin_client_,
-                        &token_service_,
-                        &account_tracker_service_,
-                        nullptr),
-        cookie_service_(&token_service_, &signin_client_),
-        identity_test_env_(&pref_service_,
-                           &account_tracker_service_,
-                           &account_fetcher_service_,
-                           &token_service_,
-                           &signin_manager_,
-                           &cookie_service_),
+        identity_test_env_(/*test_url_loader_factory=*/nullptr,
+                           &pref_service_,
+                           signin::AccountConsistencyMethod::kDice,
+                           &signin_client_),
         signin_error_controller_(
             SigninErrorController::AccountMode::PRIMARY_ACCOUNT,
             identity_test_env_.identity_manager()),
-        about_signin_internals_(&token_service_,
-                                &account_tracker_service_,
-                                identity_test_env_.identity_manager(),
+        about_signin_internals_(identity_test_env_.identity_manager(),
                                 &signin_error_controller_,
-                                &cookie_service_,
                                 signin::AccountConsistencyMethod::kDice),
         reconcilor_blocked_count_(0),
         reconcilor_unblocked_count_(0) {
     EXPECT_TRUE(temp_dir_.CreateUniqueTempDir());
     AboutSigninInternals::RegisterPrefs(pref_service_.registry());
-    AccountTrackerService::RegisterPrefs(pref_service_.registry());
-    AccountFetcherService::RegisterPrefs(pref_service_.registry());
-    ProfileOAuth2TokenService::RegisterProfilePrefs(pref_service_.registry());
-    SigninManager::RegisterProfilePrefs(pref_service_.registry());
-    account_tracker_service_.Initialize(&pref_service_, base::FilePath());
-    signin_manager_.Initialize(&pref_service_);
-    account_fetcher_service_.Initialize(&signin_client_, &token_service_,
-                                        &account_tracker_service_,
-                                        std::make_unique<TestImageDecoder>());
     auto account_reconcilor_delegate =
         std::make_unique<signin::DiceAccountReconcilorDelegate>(
             &signin_client_, signin::AccountConsistencyMethod::kDiceMigration);
@@ -146,13 +119,7 @@ class DiceResponseHandlerTest : public testing::Test,
     account_reconcilor_->RemoveObserver(this);
     account_reconcilor_->Shutdown();
     about_signin_internals_.Shutdown();
-    cookie_service_.Shutdown();
     signin_error_controller_.Shutdown();
-    signin_manager_.Shutdown();
-    account_fetcher_service_.Shutdown();
-    account_tracker_service_.Shutdown();
-    token_service_.Shutdown();
-    signin_client_.Shutdown();
   }
 
   void InitializeDiceResponseHandler(
@@ -207,11 +174,6 @@ class DiceResponseHandlerTest : public testing::Test,
   base::ScopedTempDir temp_dir_;
   sync_preferences::TestingPrefServiceSyncable pref_service_;
   DiceTestSigninClient signin_client_;
-  FakeProfileOAuth2TokenService token_service_;
-  AccountTrackerService account_tracker_service_;
-  FakeAccountFetcherService account_fetcher_service_;
-  FakeSigninManager signin_manager_;
-  GaiaCookieManagerService cookie_service_;
   identity::IdentityTestEnvironment identity_test_env_;
   SigninErrorController signin_error_controller_;
   AboutSigninInternals about_signin_internals_;
@@ -251,7 +213,7 @@ TEST_F(DiceResponseHandlerTest, Signin) {
   InitializeDiceResponseHandler(signin::AccountConsistencyMethod::kDice);
   DiceResponseParams dice_params = MakeDiceParams(DiceAction::SIGNIN);
   const auto& account_info = dice_params.signin_info->account_info;
-  std::string account_id = identity_manager()->LegacyPickAccountIdForAccount(
+  std::string account_id = identity_manager()->PickAccountIdForAccount(
       account_info.gaia_id, account_info.email);
   EXPECT_FALSE(identity_manager()->HasAccountWithRefreshToken(account_id));
   dice_response_handler_->ProcessDiceHeader(
@@ -285,7 +247,7 @@ TEST_F(DiceResponseHandlerTest, SigninFailure) {
   InitializeDiceResponseHandler(signin::AccountConsistencyMethod::kDice);
   DiceResponseParams dice_params = MakeDiceParams(DiceAction::SIGNIN);
   const auto& account_info = dice_params.signin_info->account_info;
-  std::string account_id = identity_manager()->LegacyPickAccountIdForAccount(
+  std::string account_id = identity_manager()->PickAccountIdForAccount(
       account_info.gaia_id, account_info.email);
   EXPECT_FALSE(identity_manager()->HasAccountWithRefreshToken(account_id));
   dice_response_handler_->ProcessDiceHeader(
@@ -313,7 +275,7 @@ TEST_F(DiceResponseHandlerTest, SigninRepeatedWithSameAccount) {
   InitializeDiceResponseHandler(signin::AccountConsistencyMethod::kDice);
   DiceResponseParams dice_params = MakeDiceParams(DiceAction::SIGNIN);
   const auto& account_info = dice_params.signin_info->account_info;
-  std::string account_id = identity_manager()->LegacyPickAccountIdForAccount(
+  std::string account_id = identity_manager()->PickAccountIdForAccount(
       account_info.gaia_id, account_info.email);
   ASSERT_FALSE(identity_manager()->HasAccountWithRefreshToken(account_id));
   dice_response_handler_->ProcessDiceHeader(
@@ -349,9 +311,9 @@ TEST_F(DiceResponseHandlerTest, SigninWithTwoAccounts) {
   dice_params_2.signin_info->account_info.email = "other_email";
   dice_params_2.signin_info->account_info.gaia_id = "other_gaia_id";
   const auto& account_info_2 = dice_params_2.signin_info->account_info;
-  std::string account_id_1 = identity_manager()->LegacyPickAccountIdForAccount(
+  std::string account_id_1 = identity_manager()->PickAccountIdForAccount(
       account_info_1.gaia_id, account_info_1.email);
-  std::string account_id_2 = identity_manager()->LegacyPickAccountIdForAccount(
+  std::string account_id_2 = identity_manager()->PickAccountIdForAccount(
       account_info_2.gaia_id, account_info_2.email);
   ASSERT_FALSE(identity_manager()->HasAccountWithRefreshToken(account_id_1));
   ASSERT_FALSE(identity_manager()->HasAccountWithRefreshToken(account_id_2));
@@ -402,7 +364,7 @@ TEST_F(DiceResponseHandlerTest, SigninEnableSyncAfterRefreshTokenFetched) {
   InitializeDiceResponseHandler(signin::AccountConsistencyMethod::kDice);
   DiceResponseParams dice_params = MakeDiceParams(DiceAction::SIGNIN);
   const auto& account_info = dice_params.signin_info->account_info;
-  std::string account_id = identity_manager()->LegacyPickAccountIdForAccount(
+  std::string account_id = identity_manager()->PickAccountIdForAccount(
       account_info.gaia_id, account_info.email);
   ASSERT_FALSE(identity_manager()->HasAccountWithRefreshToken(account_id));
   dice_response_handler_->ProcessDiceHeader(
@@ -434,7 +396,7 @@ TEST_F(DiceResponseHandlerTest, SigninEnableSyncBeforeRefreshTokenFetched) {
   InitializeDiceResponseHandler(signin::AccountConsistencyMethod::kDice);
   DiceResponseParams dice_params = MakeDiceParams(DiceAction::SIGNIN);
   const auto& account_info = dice_params.signin_info->account_info;
-  std::string account_id = identity_manager()->LegacyPickAccountIdForAccount(
+  std::string account_id = identity_manager()->PickAccountIdForAccount(
       account_info.gaia_id, account_info.email);
   ASSERT_FALSE(identity_manager()->HasAccountWithRefreshToken(account_id));
   dice_response_handler_->ProcessDiceHeader(
@@ -464,7 +426,7 @@ TEST_F(DiceResponseHandlerTest, Timeout) {
   InitializeDiceResponseHandler(signin::AccountConsistencyMethod::kDice);
   DiceResponseParams dice_params = MakeDiceParams(DiceAction::SIGNIN);
   const auto& account_info = dice_params.signin_info->account_info;
-  std::string account_id = identity_manager()->LegacyPickAccountIdForAccount(
+  std::string account_id = identity_manager()->PickAccountIdForAccount(
       account_info.gaia_id, account_info.email);
   ASSERT_FALSE(identity_manager()->HasAccountWithRefreshToken(account_id));
   dice_response_handler_->ProcessDiceHeader(
@@ -677,9 +639,9 @@ TEST_F(DiceResponseHandlerTest, SigninSignoutDifferentAccount) {
   signin_params_2.signin_info->account_info.gaia_id = "other_gaia_id";
   const auto& signin_account_info_1 = signin_params_1.signin_info->account_info;
   const auto& signin_account_info_2 = signin_params_2.signin_info->account_info;
-  std::string account_id_1 = identity_manager()->LegacyPickAccountIdForAccount(
+  std::string account_id_1 = identity_manager()->PickAccountIdForAccount(
       signin_account_info_1.gaia_id, signin_account_info_1.email);
-  std::string account_id_2 = identity_manager()->LegacyPickAccountIdForAccount(
+  std::string account_id_2 = identity_manager()->PickAccountIdForAccount(
       signin_account_info_2.gaia_id, signin_account_info_2.email);
   dice_response_handler_->ProcessDiceHeader(
       signin_params_1, std::make_unique<TestProcessDiceHeaderDelegate>(this));

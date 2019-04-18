@@ -86,7 +86,7 @@ class AttributeChange {
 
   void Apply() { element_->setAttribute(name_, AtomicString(value_)); }
 
-  void Trace(blink::Visitor* visitor) { visitor->Trace(element_); }
+  void Trace(Visitor* visitor) { visitor->Trace(element_); }
 
  private:
   Member<Element> element_;
@@ -161,9 +161,10 @@ bool PropertyMissingOrEqualToNone(CSSPropertyValueSet* style,
   const CSSValue* value = style->GetPropertyCSSValue(property_id);
   if (!value)
     return true;
-  if (!value->IsIdentifierValue())
+  auto* identifier_value = DynamicTo<CSSIdentifierValue>(value);
+  if (!identifier_value)
     return false;
-  return ToCSSIdentifierValue(value)->GetValueID() == CSSValueNone;
+  return identifier_value->GetValueID() == CSSValueID::kNone;
 }
 
 template <typename Strategy>
@@ -217,6 +218,13 @@ static HTMLElement* HighestAncestorToWrapMarkup(
   Node* check_ancestor =
       special_common_ancestor ? special_common_ancestor : common_ancestor;
   if (check_ancestor->GetLayoutObject()) {
+    // We want to constrain the ancestor to the enclosing block.
+    // Ex: <b><p></p></b> is an ill-formed html and we don't want to return <b>
+    // as the ancestor because paragraph element is the enclosing block of the
+    // start and end positions provided to this API.
+    constraining_ancestor = constraining_ancestor
+                                ? constraining_ancestor
+                                : EnclosingBlock(check_ancestor);
     HTMLElement* new_special_common_ancestor =
         ToHTMLElement(HighestEnclosingNodeOfType(
             Position::FirstPositionInNode(*check_ancestor),
@@ -729,22 +737,6 @@ void ReplaceChildrenWithText(ContainerNode* container,
   ContainerNode* container_node(container);
 
   ChildListMutationScope mutation(*container_node);
-
-  // FIXME: This is wrong if containerNode->firstChild() has more than one ref!
-  // Example:
-  // <div>foo</div>
-  // <script>
-  // var oldText = div.firstChild;
-  // console.log(oldText.data); // foo
-  // div.innerText = "bar";
-  // console.log(oldText.data); // bar!?!
-  // </script>
-  // I believe this is an intentional benchmark cheat from years ago.
-  // We should re-visit if we actually want this still.
-  if (container_node->HasOneTextChild()) {
-    ToText(container_node->firstChild())->setData(text);
-    return;
-  }
 
   // NOTE: This method currently always creates a text node, even if that text
   // node will be empty.

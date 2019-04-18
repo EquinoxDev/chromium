@@ -4,7 +4,10 @@
 
 #include "third_party/blink/renderer/platform/loader/fetch/resource_load_scheduler.h"
 
+#include <algorithm>
 #include <memory>
+#include <string>
+
 #include "base/metrics/field_trial_params.h"
 #include "base/metrics/histogram.h"
 #include "base/numerics/safe_conversions.h"
@@ -16,6 +19,7 @@
 #include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 #include "third_party/blink/renderer/platform/scheduler/public/aggregated_metric_reporter.h"
 #include "third_party/blink/renderer/platform/scheduler/public/frame_status.h"
+#include "third_party/blink/renderer/platform/wtf/time.h"
 
 namespace blink {
 
@@ -348,11 +352,13 @@ constexpr ResourceLoadScheduler::ClientId
 ResourceLoadScheduler::ResourceLoadScheduler(
     ThrottlingPolicy initial_throttling_policy,
     const ResourceFetcherProperties& resource_fetcher_properties,
-    FrameScheduler* frame_scheduler)
+    FrameScheduler* frame_scheduler,
+    ConsoleLogger& console_logger)
     : resource_fetcher_properties_(resource_fetcher_properties),
       policy_(initial_throttling_policy),
       outstanding_limit_for_throttled_frame_scheduler_(
-          GetOutstandingThrottledLimit(*resource_fetcher_properties_)) {
+          GetOutstandingThrottledLimit(*resource_fetcher_properties_)),
+      console_logger_(console_logger) {
   traffic_monitor_ = std::make_unique<ResourceLoadScheduler::TrafficMonitor>(
       resource_fetcher_properties);
 
@@ -377,6 +383,7 @@ ResourceLoadScheduler::~ResourceLoadScheduler() = default;
 void ResourceLoadScheduler::Trace(blink::Visitor* visitor) {
   visitor->Trace(pending_request_map_);
   visitor->Trace(resource_fetcher_properties_);
+  visitor->Trace(console_logger_);
 }
 
 void ResourceLoadScheduler::LoosenThrottlingPolicy() {
@@ -421,7 +428,7 @@ void ResourceLoadScheduler::Request(ResourceLoadSchedulerClient* client,
   DCHECK(ThrottleOption::kStoppable == option ||
          ThrottleOption::kThrottleable == option);
   if (pending_requests_[option].empty())
-    pending_queue_update_times_[option] = base::TimeTicks::Now();
+    pending_queue_update_times_[option] = CurrentTime();
   pending_requests_[option].insert(request_info);
   pending_request_map_.insert(
       *id, MakeGarbageCollected<ClientInfo>(client, option, priority,
@@ -462,7 +469,7 @@ bool ResourceLoadScheduler::Release(
   if (id == kInvalidClientId)
     return false;
 
-  if (running_requests_.find(id) != running_requests_.end()) {
+  if (running_requests_.Contains(id)) {
     running_requests_.erase(id);
     running_throttleable_requests_.erase(id);
 
@@ -604,6 +611,23 @@ ResourceLoadScheduler::ClientId ResourceLoadScheduler::GenerateClientId() {
   return id;
 }
 
+bool ResourceLoadScheduler::IsPendingRequestEffectivelyEmpty(
+    ThrottleOption option) {
+  for (const auto& client : pending_requests_[option]) {
+    // The request in |pending_request_| is erased when it is scheduled. So if
+    // the request is canceled, or Release() is called before firing its Run(),
+    // the entry for the request remains in |pending_request_| until it is
+    // popped in GetNextPendingRequest().
+    if (pending_request_map_.find(client.client_id) !=
+        pending_request_map_.end()) {
+      return false;
+    }
+  }
+  // There is no entry, or no existing entries are alive in
+  // |pending_request_map_|.
+  return true;
+}
+
 bool ResourceLoadScheduler::GetNextPendingRequest(ClientId* id) {
   bool needs_throttling =
       running_throttleable_requests_.size() >= GetOutstandingLimit();
@@ -639,14 +663,12 @@ bool ResourceLoadScheduler::GetNextPendingRequest(ClientId* id) {
   if (use_stoppable) {
     *id = stoppable_it->client_id;
     stoppable_queue.erase(stoppable_it);
-    pending_queue_update_times_[ThrottleOption::kStoppable] =
-        base::TimeTicks::Now();
+    pending_queue_update_times_[ThrottleOption::kStoppable] = CurrentTime();
     return true;
   }
   *id = throttleable_it->client_id;
   throttleable_queue.erase(throttleable_it);
-  pending_queue_update_times_[ThrottleOption::kThrottleable] =
-      base::TimeTicks::Now();
+  pending_queue_update_times_[ThrottleOption::kThrottleable] = CurrentTime();
   return true;
 }
 
@@ -710,32 +732,25 @@ void ResourceLoadScheduler::ShowConsoleMessageIfNeeded() {
   if (is_console_info_shown_ || pending_request_map_.IsEmpty())
     return;
 
-  const base::TimeTicks limit =
-      base::TimeTicks::Now() - base::TimeDelta::FromMinutes(1);
+  const double limit = CurrentTime() - 60;  // In seconds
   ThrottleOption target_option;
   if (pending_queue_update_times_[ThrottleOption::kThrottleable] < limit &&
-      !pending_requests_[ThrottleOption::kThrottleable].empty()) {
+      !IsPendingRequestEffectivelyEmpty(ThrottleOption::kThrottleable)) {
     target_option = ThrottleOption::kThrottleable;
   } else if (pending_queue_update_times_[ThrottleOption::kStoppable] < limit &&
-             !pending_requests_[ThrottleOption::kStoppable].empty()) {
+             !IsPendingRequestEffectivelyEmpty(ThrottleOption::kStoppable)) {
     target_option = ThrottleOption::kStoppable;
   } else {
     // At least, one of the top requests in pending queues was handled in the
     // last 1 minutes, or there is no pending requests in the inactive queue.
     return;
   }
-  auto client_it = pending_request_map_.find(
-      pending_requests_[target_option].begin()->client_id);
-  DCHECK_NE(pending_request_map_.end(), client_it);
-  ConsoleLogger* logger = client_it->value->client->GetConsoleLogger();
-  DCHECK(logger);
-
-  logger->AddInfoMessage(
-      ConsoleLogger::Source::kOther,
+  console_logger_->AddConsoleMessage(
+      mojom::ConsoleMessageSource::kOther, mojom::ConsoleMessageLevel::kInfo,
       "Some resource load requests were throttled while the tab was in "
       "background, and no request was sent from the queue in the last 1 "
       "minute. This means previously requested in-flight requests haven't "
-      "received any response from servers. See"
+      "received any response from servers. See "
       "https://www.chromestatus.com/feature/5527160148197376 for more details");
   is_console_info_shown_ = true;
 }

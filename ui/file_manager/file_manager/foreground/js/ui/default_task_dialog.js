@@ -7,8 +7,7 @@
  * cancel button.
  * This dialog should be used as task picker for file operations.
  */
-cr.define('cr.filebrowser', function() {
-
+cr.define('cr.filebrowser', () => {
   /**
    * Creates dialog in DOM tree.
    *
@@ -39,7 +38,7 @@ cr.define('cr.filebrowser', function() {
 
     this.initialFocusElement_ = this.list_;
 
-    var self = this;
+    const self = this;
 
     // Binding stuff doesn't work with constructors, so we have to create
     // closure here.
@@ -48,18 +47,16 @@ cr.define('cr.filebrowser', function() {
     };
   }
 
-  DefaultTaskDialog.prototype = {
-    __proto__: FileManagerDialogBase.prototype
-  };
+  DefaultTaskDialog.prototype = {__proto__: FileManagerDialogBase.prototype};
 
   /**
    * Renders item for list.
    * @param {Object} item Item to render.
    */
   DefaultTaskDialog.prototype.renderItem = function(item) {
-    var result = this.document_.createElement('li');
+    const result = this.document_.createElement('li');
 
-    var div = this.document_.createElement('div');
+    const div = this.document_.createElement('div');
     div.textContent = item.label;
 
     if (item.iconType) {
@@ -92,12 +89,11 @@ cr.define('cr.filebrowser', function() {
    * @param {function(Object)} onSelectedItem Callback which is called when an
    *     item is selected.
    */
-  DefaultTaskDialog.prototype.showDefaultTaskDialog =
-      function(title, message, items, defaultIndex, onSelectedItem) {
-
+  DefaultTaskDialog.prototype.showDefaultTaskDialog = function(
+      title, message, items, defaultIndex, onSelectedItem) {
     this.onSelectedItemCallback_ = onSelectedItem;
 
-    var show = FileManagerDialogBase.prototype.showTitleAndTextDialog.call(
+    const show = FileManagerDialogBase.prototype.showTitleAndTextDialog.call(
         this, title, message);
 
     if (!show) {
@@ -113,7 +109,7 @@ cr.define('cr.filebrowser', function() {
 
     this.list_.startBatchUpdates();
     this.dataModel_.splice(0, this.dataModel_.length);
-    for (var i = 0; i < items.length; i++) {
+    for (let i = 0; i < items.length; i++) {
       this.dataModel_.push(items[i]);
     }
     this.selectionModel_.selectedIndex = defaultIndex;
@@ -144,9 +140,9 @@ cr.define('cr.filebrowser', function() {
    * currently active item so ChromeVox can read it out.
    * @param {!Event} event triggered by cr.ui.List.
    */
-  DefaultTaskDialog.prototype.onListChange_ = function(event) {
-    var list = /** @type {cr.ui.List} */ (event.target);
-    var activeItem =
+  DefaultTaskDialog.prototype.onListChange_ = event => {
+    const list = /** @type {cr.ui.List} */ (event.target);
+    const activeItem =
         list.getListItemByIndex(list.selectionModel_.selectedIndex);
     if (activeItem) {
       activeItem.focus();

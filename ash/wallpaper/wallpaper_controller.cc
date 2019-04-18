@@ -27,6 +27,7 @@
 #include "ash/wallpaper/wallpaper_window_state_manager.h"
 #include "ash/wm/overview/overview_constants.h"
 #include "ash/wm/overview/overview_controller.h"
+#include "ash/wm/tablet_mode/tablet_mode_controller.h"
 #include "base/bind.h"
 #include "base/command_line.h"
 #include "base/files/file_enumerator.h"
@@ -231,23 +232,6 @@ gfx::ImageSkia CreateSolidColorWallpaper(SkColor color) {
   return gfx::ImageSkia::CreateFrom1xBitmap(bitmap);
 }
 
-// Returns true if a color should be extracted from the wallpaper based on the
-// command kAshShelfColor line arg.
-bool IsShelfColoringEnabled() {
-  const std::string explicit_switch_value =
-      base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
-          switches::kAshShelfColor);
-
-  // Always enabled, unless explicitly disabled.
-  if (explicit_switch_value == switches::kAshShelfColorDisabled) {
-    LOG(WARNING) << "Shelf coloring explicitly disabled. "
-                 << "This should only happen in tests.";
-    return false;
-  }
-
-  return true;
-}
-
 // Gets the color profiles for extracting wallpaper prominent colors.
 std::vector<ColorProfile> GetProminentColorProfiles() {
   return {ColorProfile(LumaRange::DARK, SaturationRange::VIBRANT),
@@ -263,6 +247,10 @@ std::vector<ColorProfile> GetProminentColorProfiles() {
 ColorProfileType GetColorProfileType(ColorProfile color_profile) {
   bool vibrant = color_profile.saturation == SaturationRange::VIBRANT;
   switch (color_profile.luma) {
+    case LumaRange::ANY:
+      // There should be no color profiles with the ANY luma range.
+      NOTREACHED();
+      break;
     case LumaRange::DARK:
       return vibrant ? ColorProfileType::DARK_VIBRANT
                      : ColorProfileType::DARK_MUTED;
@@ -616,8 +604,8 @@ bool WallpaperController::ShouldShowInitialAnimation() {
 }
 
 void WallpaperController::OnWallpaperAnimationFinished() {
-  // TODO(wzang|784495): This is used by a code path in web-UI login. Remove it
-  // if views-based login is not interested in this event.
+  // TODO(crbug.com/875128): Remove this after web-ui login code is completely
+  // removed.
   if (wallpaper_controller_client_ && is_first_wallpaper_) {
     wallpaper_controller_client_->OnFirstWallpaperAnimationFinished();
   }
@@ -717,8 +705,15 @@ void WallpaperController::UpdateWallpaperBlur(bool blur) {
 }
 
 bool WallpaperController::ShouldApplyDimming() const {
-  return Shell::Get()->session_controller()->IsUserSessionBlocked() &&
-         !IsOneShotWallpaper();
+  // Dim the wallpaper in a blocked user session or in tablet mode unless during
+  // wallpaper preview.
+  const bool should_dim =
+      Shell::Get()->session_controller()->IsUserSessionBlocked() ||
+      (Shell::Get()
+           ->tablet_mode_controller()
+           ->IsTabletModeWindowManagerEnabled() &&
+       !confirm_preview_wallpaper_callback_);
+  return should_dim && !IsOneShotWallpaper();
 }
 
 bool WallpaperController::IsBlurAllowed() const {
@@ -1378,6 +1373,14 @@ void WallpaperController::OnLocalStatePrefServiceInitialized(
   }
 }
 
+void WallpaperController::OnShellInitialized() {
+  Shell::Get()->tablet_mode_controller()->AddObserver(this);
+}
+
+void WallpaperController::OnShellDestroying() {
+  Shell::Get()->tablet_mode_controller()->RemoveObserver(this);
+}
+
 void WallpaperController::OnWallpaperResized() {
   CalculateWallpaperColors();
   compositor_lock_.reset();
@@ -1423,6 +1426,14 @@ void WallpaperController::OnSessionStateChanged(
     MoveToLockedContainer();
 }
 
+void WallpaperController::OnTabletModeStarted() {
+  RepaintWallpaper();
+}
+
+void WallpaperController::OnTabletModeEnded() {
+  RepaintWallpaper();
+}
+
 void WallpaperController::CompositorLockTimedOut() {
   compositor_lock_.reset();
 }
@@ -1462,12 +1473,9 @@ void WallpaperController::FlushForTesting() {
 void WallpaperController::InstallDesktopController(aura::Window* root_window) {
   DCHECK_EQ(WALLPAPER_IMAGE, wallpaper_mode_);
 
-  bool session_blocked =
-      Shell::Get()->session_controller()->IsUserSessionBlocked();
-  bool in_overview = Shell::Get()->overview_controller()->IsSelecting();
-  bool is_wallpaper_blurred =
-      (session_blocked || in_overview) && IsBlurAllowed();
-
+  const bool is_wallpaper_blurred =
+      Shell::Get()->session_controller()->IsUserSessionBlocked() &&
+      IsBlurAllowed();
   if (is_wallpaper_blurred_ != is_wallpaper_blurred) {
     is_wallpaper_blurred_ = is_wallpaper_blurred;
     for (auto& observer : observers_)
@@ -1478,14 +1486,34 @@ void WallpaperController::InstallDesktopController(aura::Window* root_window) {
   }
 
   const int container_id = GetWallpaperContainerId(locked_);
-  float blur = login_constants::kClearBlurSigma;
-  if (is_wallpaper_blurred) {
-    blur = session_blocked ? login_constants::kBlurSigma : kWallpaperBlurSigma;
-  }
-  RootWindowController::ForWindow(root_window)
-      ->wallpaper_widget_controller()
-      ->SetWallpaperWidget(CreateWallpaperWidget(root_window, container_id),
-                           blur);
+  float blur = is_wallpaper_blurred ? login_constants::kBlurSigma
+                                    : login_constants::kClearBlurSigma;
+
+  // There are two types of blurring we can do on the wallpaper. One is on the
+  // widget itself and the other is on the wallpaper view paint code which more
+  // optimized but lower quality. The latter is used by overview mode which
+  // needs to animate the wallpaper blur, meaning the former is not a very good
+  // option in terms of performance.
+  // TODO(crbug.com/944152): Modify wallpaper view use painting blur in all
+  // cases.
+  auto* wallpaper_widget_controller =
+      RootWindowController::ForWindow(root_window)
+          ->wallpaper_widget_controller();
+  WallpaperView* previous_wallpaper_view =
+      wallpaper_widget_controller->wallpaper_view();
+  WallpaperView* current_wallpaper_view = nullptr;
+
+  // Copy the blur and opacity values from the old wallpaper to the new one.
+  const int repaint_blur =
+      previous_wallpaper_view ? previous_wallpaper_view->repaint_blur() : 0;
+  const float repaint_opacity = previous_wallpaper_view
+                                    ? previous_wallpaper_view->repaint_opacity()
+                                    : 1.f;
+  auto* widget =
+      CreateWallpaperWidget(root_window, container_id, repaint_blur,
+                            repaint_opacity, &current_wallpaper_view);
+  wallpaper_widget_controller->SetWallpaperWidget(widget,
+                                                  current_wallpaper_view, blur);
 }
 
 void WallpaperController::InstallDesktopControllerForAllWindows() {
@@ -1983,8 +2011,7 @@ void WallpaperController::CalculateWallpaperColors() {
 
 bool WallpaperController::ShouldCalculateColors() const {
   gfx::ImageSkia image = GetWallpaper();
-  return IsShelfColoringEnabled() &&
-         Shell::Get()->session_controller()->GetSessionState() ==
+  return Shell::Get()->session_controller()->GetSessionState() ==
              session_manager::SessionState::ACTIVE &&
          !image.isNull();
 }
@@ -2157,6 +2184,15 @@ void WallpaperController::GetInternalDisplayCompositorLock() {
 
   compositor_lock_ = root_window->layer()->GetCompositor()->GetCompositorLock(
       this, kCompositorLockTimeout);
+}
+
+void WallpaperController::RepaintWallpaper() {
+  for (auto* root_window_controller : Shell::GetAllRootWindowControllers()) {
+    auto* wallpaper_view =
+        root_window_controller->wallpaper_widget_controller()->wallpaper_view();
+    if (wallpaper_view)
+      wallpaper_view->SchedulePaint();
+  }
 }
 
 }  // namespace ash

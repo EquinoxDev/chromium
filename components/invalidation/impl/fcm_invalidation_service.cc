@@ -27,6 +27,10 @@ namespace {
 const char kApplicationName[] = "com.google.chrome.fcm.invalidations";
 // Sender ID coming from the Firebase console.
 const char kInvalidationGCMSenderId[] = "8181035976";
+
+void ReportInvalidatorState(syncer::InvalidatorState state) {
+  UMA_HISTOGRAM_ENUMERATION("Invalidations.StatusChanged", state);
+}
 }
 
 namespace invalidation {
@@ -59,8 +63,15 @@ FCMInvalidationService::~FCMInvalidationService() {
 void FCMInvalidationService::Init() {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 
-  if (IsReadyToStart())
+  if (IsReadyToStart()) {
     StartInvalidator();
+  } else {
+    if (identity_provider_->GetActiveAccountId().empty()) {
+      ReportInvalidatorState(syncer::NOT_STARTED_NO_ACTIVE_ACCOUNT);
+    } else {
+      ReportInvalidatorState(syncer::NOT_STARTED_NO_REFRESH_TOKEN);
+    }
+  }
 
   identity_provider_->AddObserver(this);
 }
@@ -162,6 +173,8 @@ void FCMInvalidationService::OnActiveAccountLogin() {
 
   if (is_ready_to_start) {
     StartInvalidator();
+  } else {
+    ReportInvalidatorState(syncer::NOT_STARTED_NO_REFRESH_TOKEN);
   }
 }
 
@@ -183,7 +196,7 @@ void FCMInvalidationService::OnActiveAccountLogout() {
 
 void FCMInvalidationService::OnInvalidatorStateChange(
     syncer::InvalidatorState state) {
-  UMA_HISTOGRAM_ENUMERATION("Invalidations.StatusChanged", state);
+  ReportInvalidatorState(state);
   invalidator_registrar_.UpdateInvalidatorState(state);
   logger_.OnStateChange(state);
 }
@@ -201,7 +214,7 @@ std::string FCMInvalidationService::GetOwnerName() const {
 }
 
 bool FCMInvalidationService::IsReadyToStart() {
-  if (!identity_provider_->IsActiveAccountAvailable()) {
+  if (!identity_provider_->IsActiveAccountWithRefreshToken()) {
     DVLOG(2) << "Not starting FCMInvalidationService: "
              << "active account is not available";
     return false;
@@ -226,12 +239,13 @@ void FCMInvalidationService::StartInvalidator() {
   // We should start listening before requesting the id, because
   // valid id is only generated, once there is an app handler
   // for the app. StartListening registers the app handler.
-  network->StartListening();
-  PopulateClientID();
-
+  // We should create invalidator first, because it registers the handler
+  // for the incoming messages, which is crutial on Android, because on the
+  // startup cached messages might exists.
   invalidator_ = std::make_unique<syncer::FCMInvalidator>(
       std::move(network), identity_provider_, pref_service_, loader_factory_,
       parse_json_, kInvalidationGCMSenderId);
+  PopulateClientID();
   invalidator_->RegisterHandler(this);
   DoUpdateRegisteredIdsIfNeeded();
 }

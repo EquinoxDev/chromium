@@ -18,6 +18,7 @@ const base::Feature* const kAllFeatures[] = {
     &kIPHDummyFeature,  // Ensures non-empty array for all platforms.
 #if defined(OS_ANDROID)
     &kIPHDataSaverDetailFeature,
+    &kIPHDataSaverMilestonePromoFeature,
     &kIPHDataSaverPreviewFeature,
     &kIPHDownloadHomeFeature,
     &kIPHDownloadPageFeature,
@@ -37,6 +38,9 @@ const base::Feature* const kAllFeatures[] = {
     &kIPHHomepageTileFeature,
     &kIPHNewTabPageButtonFeature,
     &kIPHPreviewsOmniboxUIFeature,
+    &kIPHTabGroupsQuicklyComparePagesFeature,
+    &kIPHTabGroupsTapToSeeAnotherTabFeature,
+    &kIPHTabGroupsYourTabsAreTogetherFeature,
     &kIPHTranslateMenuButtonFeature,
 #endif  // defined(OS_ANDROID)
 #if BUILDFLAG(ENABLE_DESKTOP_IN_PRODUCT_HELP)
@@ -51,6 +55,7 @@ const base::Feature* const kAllFeatures[] = {
     &kIPHNewTabTipFeature,
     &kIPHNewIncognitoTabTipFeature,
     &kIPHBadgedReadingListFeature,
+    &kIPHBadgedTranslateManualTriggerFeature,
 #endif  // defined(OS_IOS)
 };
 }  // namespace

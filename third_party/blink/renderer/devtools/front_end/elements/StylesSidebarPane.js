@@ -385,7 +385,7 @@ Elements.StylesSidebarPane = class extends Elements.ElementsSidebarPane {
       return;
     this.contentElement.classList.toggle('is-editing-style', editing);
     this._isEditingStyle = editing;
-    this._setActiveProperty(editing ? treeElement || null : null);
+    this._setActiveProperty(null);
   }
 
   /**
@@ -732,7 +732,7 @@ Elements.StylesSidebarPane = class extends Elements.ElementsSidebarPane {
   }
 };
 
-Elements.StylesSidebarPane._maxLinkLength = 30;
+Elements.StylesSidebarPane._maxLinkLength = 23;
 
 Elements.SectionBlock = class {
   /**
@@ -761,7 +761,7 @@ Elements.SectionBlock = class {
   static createKeyframesBlock(keyframesName) {
     const separatorElement = createElement('div');
     separatorElement.className = 'sidebar-separator';
-    separatorElement.textContent = Common.UIString('@keyframes ' + keyframesName);
+    separatorElement.textContent = `@keyframes ${keyframesName}`;
     return new Elements.SectionBlock(separatorElement);
   }
 
@@ -772,7 +772,7 @@ Elements.SectionBlock = class {
   static async _createInheritedNodeBlock(node) {
     const separatorElement = createElement('div');
     separatorElement.className = 'sidebar-separator';
-    separatorElement.createTextChild(Common.UIString('Inherited from') + ' ');
+    separatorElement.createTextChild(ls`Inherited from${' '}`);
     const link = await Common.Linkifier.linkify(node);
     separatorElement.appendChild(link);
     return new Elements.SectionBlock(separatorElement);
@@ -844,9 +844,8 @@ Elements.StylePropertiesSection = class {
     this._selectorElement.addEventListener('mousemove', event => event.consume(), false);
     this._selectorElement.addEventListener('mouseleave', this._onMouseOutSelector.bind(this), false);
 
-    const openBrace = createElement('span');
+    const openBrace = selectorContainer.createChild('span', 'sidebar-pane-open-brace');
     openBrace.textContent = ' {';
-    selectorContainer.appendChild(openBrace);
     selectorContainer.addEventListener('mousedown', this._handleEmptySpaceMouseDown.bind(this), false);
     selectorContainer.addEventListener('click', this._handleSelectorContainerClick.bind(this), false);
 
@@ -860,6 +859,7 @@ Elements.StylePropertiesSection = class {
     this.element.addEventListener('click', this._handleEmptySpaceClick.bind(this), false);
     this.element.addEventListener('mousemove', this._onMouseMove.bind(this), false);
     this.element.addEventListener('mouseleave', this._onMouseLeave.bind(this), false);
+    this._selectedSinceMouseDown = false;
 
     if (rule) {
       // Prevent editing the user agent and user rules.
@@ -928,7 +928,7 @@ Elements.StylePropertiesSection = class {
 
     if (header && header.ownerNode) {
       const link = Elements.DOMLinkifier.linkifyDeferredNodeReference(header.ownerNode);
-      link.textContent = '<style>…</style>';
+      link.textContent = '<style>';
       return link;
     }
 
@@ -1002,6 +1002,8 @@ Elements.StylePropertiesSection = class {
       this._parentPane._setActiveProperty(/** @type {!Elements.StylePropertyTreeElement} */ (treeElement));
     else
       this._parentPane._setActiveProperty(null);
+    if (!this._selectedSinceMouseDown && this.element.getComponentSelection().toString())
+      this._selectedSinceMouseDown = true;
   }
 
   /**
@@ -1081,7 +1083,7 @@ Elements.StylePropertiesSection = class {
     if (this._style.type === SDK.CSSStyleDeclaration.Type.Inline)
       return this._matchedStyles.isInherited(this._style) ? Common.UIString('Style Attribute') : 'element.style';
     if (this._style.type === SDK.CSSStyleDeclaration.Type.Attributes)
-      return node.nodeNameInCorrectCase() + '[' + Common.UIString('Attributes Style') + ']';
+      return ls`${node.nodeNameInCorrectCase()}[Attributes Style]`;
     return this._style.parentRule.selectorText();
   }
 
@@ -1391,6 +1393,8 @@ Elements.StylePropertiesSection = class {
       const isShorthand = !!style.longhandProperties(property.name).length;
       const inherited = this.isPropertyInherited(property.name);
       const overloaded = this._isPropertyOverloaded(property);
+      if (style.parentRule && style.parentRule.isUserAgent() && inherited)
+        continue;
       const item = new Elements.StylePropertyTreeElement(
           this._parentPane, this._matchedStyles, property, isShorthand, inherited, overloaded, false);
       this.propertiesTreeOutline.appendChild(item);
@@ -1548,13 +1552,14 @@ Elements.StylePropertiesSection = class {
 
   _handleEmptySpaceMouseDown() {
     this._willCauseCancelEditing = this._parentPane._isEditingStyle;
+    this._selectedSinceMouseDown = false;
   }
 
   /**
    * @param {!Event} event
    */
   _handleEmptySpaceClick(event) {
-    if (!this.editable || this.element.hasSelection() || this._checkWillCancelEditing())
+    if (!this.editable || this.element.hasSelection() || this._checkWillCancelEditing() || this._selectedSinceMouseDown)
       return;
 
     if (event.target.classList.contains('header') || this.element.classList.contains('read-only') ||
@@ -2132,14 +2137,13 @@ Elements.StylesSidebarPane.CSSPropertyPrompt = class extends UI.TextPrompt {
       // If a CSS value is being edited that has a numeric or hex substring, hint that precision modifier shortcuts are available.
       if (treeElement && treeElement.valueElement) {
         const cssValueText = treeElement.valueElement.textContent;
+        const cmdOrCtrl = Host.isMac() ? 'Cmd' : 'Ctrl';
         if (cssValueText.match(/#[\da-f]{3,6}$/i)) {
-          this.setTitle(Common.UIString(
-              'Increment/decrement with mousewheel or up/down keys. %s: R ±1, Shift: G ±1, Alt: B ±1',
-              Host.isMac() ? 'Cmd' : 'Ctrl'));
+          this.setTitle(ls
+              `Increment/decrement with mousewheel or up/down keys. ${cmdOrCtrl}: R ±1, Shift: G ±1, Alt: B ±1`);
         } else if (cssValueText.match(/\d+/)) {
-          this.setTitle(Common.UIString(
-              'Increment/decrement with mousewheel or up/down keys. %s: ±100, Shift: ±10, Alt: ±0.1',
-              Host.isMac() ? 'Cmd' : 'Ctrl'));
+          this.setTitle(ls
+              `Increment/decrement with mousewheel or up/down keys. ${cmdOrCtrl}: ±100, Shift: ±10, Alt: ±0.1`);
         }
       }
     }
@@ -2272,12 +2276,19 @@ Elements.StylesSidebarPane.CSSPropertyPrompt = class extends UI.TextPrompt {
           results[i].text = results[i].text.toUpperCase();
       }
     }
-    if (editingVariable) {
-      results.forEach(result => {
+    results.forEach(result => {
+      if (editingVariable) {
         result.title = result.text;
         result.text += ')';
-      });
-    }
+        return;
+      }
+      const valuePreset = SDK.cssMetadata().getValuePreset(this._treeElement.name, result.text);
+      if (!this._isEditingName && valuePreset) {
+        result.title = result.text;
+        result.text = valuePreset.text;
+        result.selectionRange = {startColumn: valuePreset.startColumn, endColumn: valuePreset.endColumn};
+      }
+    });
     if (this._isColorAware && !this._isEditingName) {
       results.stableSort((a, b) => {
         if (!!a.subtitleRenderer === !!b.subtitleRenderer)

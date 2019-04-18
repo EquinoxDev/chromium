@@ -49,10 +49,6 @@ class KURL;
 // when the prefinalizer is executed.
 class MemoryCacheEntry final : public GarbageCollected<MemoryCacheEntry> {
  public:
-  static MemoryCacheEntry* Create(Resource* resource) {
-    return MakeGarbageCollected<MemoryCacheEntry>(resource);
-  }
-
   explicit MemoryCacheEntry(Resource* resource) : resource_(resource) {}
 
   void Trace(blink::Visitor*);
@@ -64,8 +60,6 @@ class MemoryCacheEntry final : public GarbageCollected<MemoryCacheEntry> {
   WeakMember<Resource> resource_;
 };
 
-WILL_NOT_BE_EAGERLY_TRACED_CLASS(MemoryCacheEntry);
-
 // This cache holds subresources used by Web pages: images, scripts,
 // stylesheets, etc.
 class PLATFORM_EXPORT MemoryCache final
@@ -75,11 +69,9 @@ class PLATFORM_EXPORT MemoryCache final
   USING_GARBAGE_COLLECTED_MIXIN(MemoryCache);
 
  public:
-  static MemoryCache* Create(
-      scoped_refptr<base::SingleThreadTaskRunner> task_runner);
-
   explicit MemoryCache(scoped_refptr<base::SingleThreadTaskRunner> task_runner);
   ~MemoryCache() override;
+
   void Trace(blink::Visitor*) override;
 
   struct TypeStatistic {
@@ -91,6 +83,7 @@ class PLATFORM_EXPORT MemoryCache final
     size_t decoded_size;
     size_t encoded_size;
     size_t overhead_size;
+    size_t code_cache_size;
     size_t encoded_size_duplicated_in_data_urls;
 
     TypeStatistic()
@@ -99,6 +92,7 @@ class PLATFORM_EXPORT MemoryCache final
           decoded_size(0),
           encoded_size(0),
           overhead_size(0),
+          code_cache_size(0),
           encoded_size_duplicated_in_data_urls(0) {}
 
     void AddResource(Resource*);

@@ -212,6 +212,9 @@ void TestWindowTree::SetHitTestInsets(ws::Id window_id,
   last_touch_hit_test_insets_ = touch;
 }
 
+void TestWindowTree::SetShape(ws::Id window_id,
+                              const std::vector<gfx::Rect>& shape) {}
+
 void TestWindowTree::SetCanAcceptDrops(ws::Id window_id, bool accepts_drops) {
   last_accepts_drops_ = accepts_drops;
   ++accepts_drops_count_;
@@ -221,6 +224,12 @@ void TestWindowTree::SetWindowVisibility(uint32_t change_id,
                                          ws::Id window_id,
                                          bool visible) {
   OnChangeReceived(change_id, WindowTreeChangeType::VISIBLE);
+}
+
+void TestWindowTree::SetWindowTransparent(uint32_t change_id,
+                                          ws::Id window_id,
+                                          bool transparent) {
+  OnChangeReceived(change_id);
 }
 
 void TestWindowTree::SetWindowProperty(
@@ -345,6 +354,7 @@ void TestWindowTree::AttachFrameSinkId(uint64_t window_id,
 void TestWindowTree::UnattachFrameSinkId(uint64_t window_id) {}
 
 void TestWindowTree::SetFocus(uint32_t change_id, ws::Id window_id) {
+  last_focused_window_id_ = window_id;
   OnChangeReceived(change_id, WindowTreeChangeType::FOCUS);
 }
 
@@ -460,5 +470,9 @@ void TestWindowTree::UnpauseWindowOcclusionTracking() {
   if (delegate_)
     delegate_->UnpauseWindowOcclusionTracking();
 }
+
+void TestWindowTree::ConnectToImeEngine(
+    ime::mojom::ImeEngineRequest engine_request,
+    ime::mojom::ImeEngineClientPtr client) {}
 
 }  // namespace aura

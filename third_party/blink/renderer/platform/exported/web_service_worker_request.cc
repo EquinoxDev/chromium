@@ -11,12 +11,15 @@
 #include "third_party/blink/public/platform/web_url_request.h"
 #include "third_party/blink/renderer/platform/network/encoded_form_data.h"
 #include "third_party/blink/renderer/platform/weborigin/kurl.h"
+#include "third_party/blink/renderer/platform/wtf/allocator.h"
 #include "third_party/blink/renderer/platform/wtf/ref_counted.h"
 
 namespace blink {
 
 class WebServiceWorkerRequestPrivate
     : public RefCounted<WebServiceWorkerRequestPrivate> {
+  USING_FAST_MALLOC(WebServiceWorkerRequestPrivate);
+
  public:
   WebURL url_;
   WebString method_;
@@ -100,7 +103,7 @@ void WebServiceWorkerRequest::AppendHeader(const WebString& key,
         result.stored_value->value + ", " + String(value);
 }
 
-void WebServiceWorkerRequest::VisitHTTPHeaderFields(
+void WebServiceWorkerRequest::VisitHttpHeaderFields(
     WebHTTPHeaderVisitor* header_visitor) const {
   for (HTTPHeaderMap::const_iterator i = private_->headers_.begin(),
                                      end = private_->headers_.end();

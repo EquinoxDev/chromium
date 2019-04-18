@@ -120,18 +120,14 @@ class COMPONENTS_DOWNLOAD_EXPORT DownloadItemImpl
     // Target path of an in-progress download. We may be downloading to a
     // temporary or intermediate file (specified by |current_path|).  Once the
     // download completes, we will rename the file to |target_path|.
-    // |target_path| should be a valid file path on the system. However, if
-    // download is directly written to a content Uri, the |target_path| should
-    // be ignored and |full_path| should be used instead. For content Uris,
-    // |full_path| is used as both the intermediate and final download target.
+    // |target_path| should be a valid file path on the system. On Android, this
+    // could be a content Uri.
     base::FilePath target_path;
 
     // Full path to the downloaded or downloading file. This is the path to the
     // physical file, if one exists. The final target path is specified by
     // |target_path|. |current_path| can be empty if the in-progress path
-    // hasn't been determined. For download that is directly written to a
-    // content Uri, use |current_path| instead of |target_path| as the latter
-    // is not a content Uri.
+    // hasn't been determined.
     base::FilePath current_path;
 
     // Current received bytes.
@@ -226,6 +222,8 @@ class COMPONENTS_DOWNLOAD_EXPORT DownloadItemImpl
   void Remove() override;
   void OpenDownload() override;
   void ShowDownloadInShell() override;
+  void Rename(const base::FilePath& name,
+              RenameDownloadCallback callback) override;
   uint32_t GetId() const override;
   const std::string& GetGuid() const override;
   DownloadState GetState() const override;
@@ -366,6 +364,8 @@ class COMPONENTS_DOWNLOAD_EXPORT DownloadItemImpl
   DownloadSource download_source() const { return download_source_; }
 
   uint64_t ukm_download_id() const { return ukm_download_id_; }
+
+  void SetAutoResumeCountForTesting(int32_t auto_resume_count);
 
  private:
   // Fine grained states of a download.
@@ -636,6 +636,12 @@ class COMPONENTS_DOWNLOAD_EXPORT DownloadItemImpl
   // last_reason_ to be set, but doesn't require the download to be in
   // INTERRUPTED state.
   ResumeMode GetResumeMode() const;
+
+  DownloadItem::DownloadRenameResult RenameDownloadedFile(
+      const std::string& name);
+  void RenameDownloadedFileDone(RenameDownloadCallback callback,
+                                const base::FilePath& new_path,
+                                DownloadRenameResult result);
 
   static DownloadState InternalToExternalState(
       DownloadInternalState internal_state);

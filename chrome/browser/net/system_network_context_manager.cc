@@ -198,6 +198,11 @@ network::mojom::HttpAuthDynamicParamsPtr CreateHttpAuthDynamicParams(
   auth_dynamic_params->enable_negotiate_port =
       local_state->GetBoolean(prefs::kEnableAuthNegotiatePort);
 
+#if defined(OS_LINUX) || defined(OS_MACOSX) || defined(OS_CHROMEOS)
+  auth_dynamic_params->delegate_by_kdc_policy =
+      local_state->GetBoolean(prefs::kAuthNegotiateDelegateByKdcPolicy);
+#endif  // defined(OS_LINUX) || defined(OS_MACOSX) || defined(OS_CHROMEOS)
+
 #if defined(OS_POSIX)
   auth_dynamic_params->ntlm_v2_enabled =
       local_state->GetBoolean(prefs::kNtlmV2Enabled);
@@ -340,10 +345,6 @@ void SystemNetworkContextManager::SetUp(
   if (!base::FeatureList::IsEnabled(network::features::kNetworkService)) {
     *network_context_request = mojo::MakeRequest(&io_thread_network_context_);
     *network_context_params = CreateNetworkContextParams();
-  } else {
-    // Just use defaults if the network service is enabled, since
-    // CreateNetworkContextParams() can only be called once.
-    *network_context_params = CreateDefaultNetworkContextParams();
   }
   *is_quic_allowed = is_quic_allowed_;
   *http_auth_static_params = CreateHttpAuthStaticParams(local_state_);
@@ -432,6 +433,11 @@ SystemNetworkContextManager::SystemNetworkContextManager(
   pref_change_registrar_.Add(prefs::kEnableAuthNegotiatePort,
                              auth_pref_callback);
 
+#if defined(OS_LINUX) || defined(OS_MACOSX) || defined(OS_CHROMEOS)
+  pref_change_registrar_.Add(prefs::kAuthNegotiateDelegateByKdcPolicy,
+                             auth_pref_callback);
+#endif  // defined(OS_LINUX) || defined(OS_MACOSX) || defined(OS_CHROMEOS)
+
 #if defined(OS_POSIX)
   pref_change_registrar_.Add(prefs::kNtlmV2Enabled, auth_pref_callback);
 #endif  // defined(OS_POSIX)
@@ -475,6 +481,11 @@ void SystemNetworkContextManager::RegisterPrefs(PrefRegistrySimple* registry) {
   registry->RegisterStringPref(prefs::kAuthServerWhitelist, std::string());
   registry->RegisterStringPref(prefs::kAuthNegotiateDelegateWhitelist,
                                std::string());
+#if defined(OS_LINUX) || defined(OS_MACOSX) || defined(OS_CHROMEOS)
+  registry->RegisterBooleanPref(prefs::kAuthNegotiateDelegateByKdcPolicy,
+                                false);
+#endif  // defined(OS_LINUX) || defined(OS_MACOSX) || defined(OS_CHROMEOS)
+
 #if defined(OS_POSIX)
   registry->RegisterBooleanPref(
       prefs::kNtlmV2Enabled,
@@ -712,11 +723,7 @@ SystemNetworkContextManager::CreateNetworkContextParams() {
 
   network_context_params->http_cache_enabled = false;
 
-  // These are needed for PAC scripts that use file or data URLs (Or FTP URLs?).
-  // TODO(crbug.com/839566): remove file support for all cases.
-  network_context_params->enable_data_url_support = true;
-  if (!base::FeatureList::IsEnabled(network::features::kNetworkService))
-    network_context_params->enable_file_url_support = true;
+  // These are needed for PAC scripts that use FTP URLs.
 #if !BUILDFLAG(DISABLE_FTP_SUPPORT)
   network_context_params->enable_ftp_url_support = true;
 #endif

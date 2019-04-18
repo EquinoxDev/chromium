@@ -28,6 +28,7 @@ import org.chromium.base.StrictModeContext;
 import org.chromium.base.library_loader.LibraryProcessType;
 import org.chromium.base.metrics.CachedMetrics;
 import org.chromium.chrome.browser.browserservices.BrowserSessionContentUtils;
+import org.chromium.chrome.browser.browserservices.trustedwebactivityui.splashscreen.SplashScreenController;
 import org.chromium.chrome.browser.customtabs.CustomTabActivity;
 import org.chromium.chrome.browser.customtabs.CustomTabIntentDataProvider;
 import org.chromium.chrome.browser.customtabs.CustomTabsConnection;
@@ -44,7 +45,6 @@ import org.chromium.chrome.browser.profiles.Profile;
 import org.chromium.chrome.browser.searchwidget.SearchActivity;
 import org.chromium.chrome.browser.tab.Tab;
 import org.chromium.chrome.browser.tabmodel.DocumentModeAssassin;
-import org.chromium.chrome.browser.touchless.NoTouchActivity;
 import org.chromium.chrome.browser.upgrade.UpgradeActivity;
 import org.chromium.chrome.browser.util.FeatureUtilities;
 import org.chromium.chrome.browser.util.IntentUtils;
@@ -69,13 +69,10 @@ public class LaunchIntentDispatcher implements IntentHandler.IntentHandlerDelega
     public static final String EXTRA_LAUNCH_MODE =
             "com.google.android.apps.chrome.EXTRA_LAUNCH_MODE";
 
-    /**
-     * Whether or not the toolbar should indicate that a tab was spawned by another Activity.
-     */
-    public static final String EXTRA_IS_ALLOWED_TO_RETURN_TO_PARENT =
-            "org.chromium.chrome.browser.document.IS_ALLOWED_TO_RETURN_TO_PARENT";
-
     private static final String TAG = "ActivitiyDispatcher";
+
+    private static final String NO_TOUCH_ACTIVITY_NAME =
+            "org.chromium.chrome.browser.touchless.NoTouchActivity";
 
     /**
      * Timeout in ms for reading PartnerBrowserCustomizations provider. We do not trust third party
@@ -294,8 +291,7 @@ public class LaunchIntentDispatcher implements IntentHandler.IntentHandlerDelega
         newIntent.setData(uri);
         newIntent.setClassName(context, CustomTabActivity.class.getName());
 
-        if (clearTopIntentsForCustomTabsEnabled(intent)
-                && BrowserSessionContentUtils.canHandleIntentInCurrentTask(intent, context)) {
+        if (clearTopIntentsForCustomTabsEnabled(intent)) {
             // Ensure the new intent is routed into the instance of CustomTabActivity in this task.
             // If the existing CustomTabActivity can't handle the intent, it will re-launch
             // the intent without these flags.
@@ -303,7 +299,13 @@ public class LaunchIntentDispatcher implements IntentHandler.IntentHandlerDelega
             // - "Don't keep activities",
             // - Multiple clients hosting CCTs,
             // - Multiwindow mode.
-            newIntent.addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+            Class<? extends Activity> handlerClass =
+                    BrowserSessionContentUtils.getActiveHandlerClassInCurrentTask(intent, context);
+            if (handlerClass != null) {
+                newIntent.setClassName(context, handlerClass.getName());
+                newIntent.addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP |
+                        Intent.FLAG_ACTIVITY_CLEAR_TOP);
+            }
         }
 
         // Use a custom tab with a unique theme for payment handlers.
@@ -413,6 +415,10 @@ public class LaunchIntentDispatcher implements IntentHandler.IntentHandlerDelega
         // Allow disk writes during startActivity() to avoid strict mode violations on some
         // Samsung devices, see https://crbug.com/796548.
         try (StrictModeContext smc = StrictModeContext.allowDiskWrites()) {
+            if (SplashScreenController.handleIntent(mActivity, launchIntent)) {
+                return;
+            }
+
             mActivity.startActivity(launchIntent, null);
         }
     }
@@ -441,17 +447,20 @@ public class LaunchIntentDispatcher implements IntentHandler.IntentHandlerDelega
         maybePrefetchDnsInBackground();
 
         Intent newIntent = new Intent(mIntent);
-        Class<?> tabbedActivityClass = null;
+        String targetActivityClassName = null;
         if (FeatureUtilities.isNoTouchModeEnabled()) {
             // When in No Touch Mode we don't support tabs, and replace the TabbedActivity with the
             // NoTouchActivity.
-            tabbedActivityClass = NoTouchActivity.class;
+            // We can't depend on NoTouchActivity directly as it's not always compiled in, so
+            // refer to it by string.
+            targetActivityClassName = NO_TOUCH_ACTIVITY_NAME;
         } else {
-            tabbedActivityClass =
-                    MultiWindowUtils.getInstance().getTabbedActivityForIntent(newIntent, mActivity);
+            targetActivityClassName = MultiWindowUtils.getInstance()
+                                              .getTabbedActivityForIntent(newIntent, mActivity)
+                                              .getName();
         }
         newIntent.setClassName(
-                mActivity.getApplicationContext().getPackageName(), tabbedActivityClass.getName());
+                mActivity.getApplicationContext().getPackageName(), targetActivityClassName);
         newIntent.setFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_NEW_TASK);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
             newIntent.addFlags(Intent.FLAG_ACTIVITY_RETAIN_IN_RECENTS);

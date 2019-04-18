@@ -17,11 +17,23 @@ Polymer({
     indicatorModel: Object,
 
     /** @private {?nux.NtpBackgroundData} */
-    selectedBackground_: Object,
+    selectedBackground_: {
+      observer: 'onSelectedBackgroundChange_',
+      type: Object,
+    },
   },
 
   /** @private {?Array<!nux.NtpBackgroundData>} */
   backgrounds_: null,
+
+  /** @private */
+  finalized_: false,
+
+  /** @private {boolean} */
+  imageIsLoading_: false,
+
+  /** @private {?nux.ModuleMetricsManager} */
+  metricsManager_: null,
 
   /** @private {?nux.NtpBackgroundProxy} */
   ntpBackgroundProxy_: null,
@@ -29,30 +41,52 @@ Polymer({
   /** @override */
   ready: function() {
     this.ntpBackgroundProxy_ = nux.NtpBackgroundProxyImpl.getInstance();
+    this.metricsManager_ = new nux.ModuleMetricsManager(
+        nux.NtpBackgroundMetricsProxyImpl.getInstance());
   },
 
   onRouteEnter: function() {
+    this.finalized_ = false;
     const defaultBackground = {
       id: -1,
       imageUrl: '',
       thumbnailClass: '',
       title: this.i18n('ntpBackgroundDefault'),
     };
-    this.selectedBackground_ = defaultBackground;
-    this.ntpBackgroundProxy_.getBackgrounds().then((backgrounds) => {
-      this.backgrounds_ = [
-        defaultBackground,
-        ...backgrounds,
-      ];
-    });
+    if (!this.selectedBackground_) {
+      this.selectedBackground_ = defaultBackground;
+    }
+    if (!this.backgrounds_) {
+      this.ntpBackgroundProxy_.getBackgrounds().then((backgrounds) => {
+        this.backgrounds_ = [
+          defaultBackground,
+          ...backgrounds,
+        ];
+      });
+    }
+    this.metricsManager_.recordPageInitialized();
   },
 
-  /**
-   * @param {!nux.NtpBackgroundData} background
-   * @private
-   */
-  getAriaPressedValue_: function(background) {
-    return this.isSelectedBackground_(background).toString();
+  onRouteExit: function() {
+    if (this.imageIsLoading_) {
+      this.ntpBackgroundProxy_.recordBackgroundImageNeverLoaded();
+    }
+
+    if (this.finalized_) {
+      return;
+    }
+    this.metricsManager_.recordBrowserBackOrForward();
+  },
+
+  onRouteUnload: function() {
+    if (this.imageIsLoading_) {
+      this.ntpBackgroundProxy_.recordBackgroundImageNeverLoaded();
+    }
+
+    if (this.finalized_) {
+      return;
+    }
+    this.metricsManager_.recordNavigatedAway();
   },
 
   /**
@@ -71,12 +105,55 @@ Polymer({
     return background == this.selectedBackground_;
   },
 
+  /** @private */
+  onSelectedBackgroundChange_: function() {
+    const id = this.selectedBackground_.id;
+
+    if (id > -1) {
+      this.imageIsLoading_ = true;
+      const imageUrl = this.selectedBackground_.imageUrl;
+      const beforeLoadTime = window.performance.now();
+      this.ntpBackgroundProxy_.preloadImage(imageUrl).then(
+          () => {
+            if (this.selectedBackground_.id === id) {
+              this.imageIsLoading_ = false;
+              this.$.backgroundPreview.classList.add('active');
+              this.$.backgroundPreview.style.backgroundImage =
+                  `url(${imageUrl})`;
+            }
+
+            this.ntpBackgroundProxy_.recordBackgroundImageLoadTime(
+                Math.floor(performance.now() - beforeLoadTime));
+          },
+          () => {
+            this.ntpBackgroundProxy_.recordBackgroundImageFailedToLoad();
+          });
+    } else {
+      this.$.backgroundPreview.classList.remove('active');
+    }
+  },
+
+  /** @private */
+  onBackgroundPreviewTransitionEnd_: function() {
+    // Whenever the #backgroundPreview transitions to a non-active, hidden
+    // state, remove the background image. This way, when the element
+    // transitions back to active, the previous background is not displayed.
+    if (!this.$.backgroundPreview.classList.contains('active')) {
+      this.$.backgroundPreview.style.backgroundImage = '';
+    }
+  },
+
   /**
    * @param {!{model: !{item: !nux.NtpBackgroundData}}} e
    * @private
    */
   onBackgroundClick_: function(e) {
     this.selectedBackground_ = e.model.item;
+    this.metricsManager_.recordClickedOption();
+    this.fire('iron-announce', {
+      text: this.i18n(
+          'ntpBackgroundPreviewUpdated', this.selectedBackground_.title)
+    });
   },
 
   /**
@@ -132,14 +209,25 @@ Polymer({
 
   /** @private */
   onNextClicked_: function() {
+    this.finalized_ = true;
+
     if (this.selectedBackground_ && this.selectedBackground_.id > -1) {
       this.ntpBackgroundProxy_.setBackground(this.selectedBackground_.id);
+    } else {
+      this.ntpBackgroundProxy_.clearBackground();
     }
+    this.metricsManager_.recordGetStarted();
     welcome.navigateToNextStep();
   },
 
   /** @private */
   onSkipClicked_: function() {
+    this.finalized_ = true;
+    this.metricsManager_.recordNoThanks();
     welcome.navigateToNextStep();
+
+    if (this.hasValidSelectedBackground_()) {
+      this.fire('iron-announce', {text: this.i18n('ntpBackgroundReset')});
+    }
   },
 });

@@ -14,11 +14,11 @@
 #include "content/browser/service_worker/service_worker_disk_cache.h"
 #include "content/browser/service_worker/service_worker_storage.h"
 #include "content/browser/service_worker/service_worker_version.h"
-#include "content/browser/service_worker/service_worker_write_to_cache_job.h"
 #include "content/browser/url_loader_factory_getter.h"
 #include "content/common/service_worker/service_worker_utils.h"
 #include "net/base/ip_endpoint.h"
 #include "net/base/load_flags.h"
+#include "net/base/net_errors.h"
 #include "net/cert/cert_status_flags.h"
 #include "services/network/public/cpp/resource_response.h"
 #include "third_party/blink/public/common/mime_util/mime_util.h"
@@ -96,7 +96,7 @@ ServiceWorkerNewScriptLoader::ServiceWorkerNewScriptLoader(
     resource_request.headers.SetHeader("Service-Worker", "script");
   }
 
-  // Bypass the browser cache if needed, e.g., updateViaCache demands it or 24
+  // Validate the browser cache if needed, e.g., updateViaCache demands it or 24
   // hours passed since the last update check that hit network.
   base::TimeDelta time_since_last_check =
       base::Time::Now() - registration->last_update_check();
@@ -104,7 +104,7 @@ ServiceWorkerNewScriptLoader::ServiceWorkerNewScriptLoader(
           is_main_script, registration->update_via_cache()) ||
       time_since_last_check > kServiceWorkerScriptMaxCacheAge ||
       version_->force_bypass_cache_for_scripts()) {
-    resource_request.load_flags |= net::LOAD_BYPASS_CACHE;
+    resource_request.load_flags |= net::LOAD_VALIDATE_CACHE;
   }
 
   ServiceWorkerStorage* storage = version_->context()->storage();
@@ -442,8 +442,8 @@ void ServiceWorkerNewScriptLoader::MaybeStartNetworkConsumerHandleWatcher() {
   network_watcher_.Watch(
       network_consumer_.get(),
       MOJO_HANDLE_SIGNAL_READABLE | MOJO_HANDLE_SIGNAL_PEER_CLOSED,
-      base::Bind(&ServiceWorkerNewScriptLoader::OnNetworkDataAvailable,
-                 weak_factory_.GetWeakPtr()));
+      base::BindRepeating(&ServiceWorkerNewScriptLoader::OnNetworkDataAvailable,
+                          weak_factory_.GetWeakPtr()));
   network_watcher_.ArmOrNotify();
 }
 
@@ -561,7 +561,7 @@ void ServiceWorkerNewScriptLoader::CommitCompleted(
     if (!cache_writer_->did_replace()) {
       version_->SetStartWorkerStatusCode(
           blink::ServiceWorkerStatusCode::kErrorExists);
-      error_code = ServiceWorkerWriteToCacheJob::kIdenticalScriptError;
+      error_code = net::ERR_FILE_EXISTS;
     }
     bytes_written = cache_writer_->bytes_written();
   } else {

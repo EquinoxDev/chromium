@@ -30,8 +30,8 @@ static bool ShouldFullyInvalidateFillLayersOnWidthChange(
     return true;
 
   // The layer properties checked below apply only when there is a valid image.
-  StyleImage* img = layer.GetImage();
-  if (!img || !img->CanRender())
+  const StyleImage* image = layer.GetImage();
+  if (!image || !image->CanRender())
     return false;
 
   if (layer.RepeatX() != EFillRepeat::kRepeatFill &&
@@ -51,16 +51,15 @@ static bool ShouldFullyInvalidateFillLayersOnWidthChange(
       size_type == EFillSizeType::kCover)
     return true;
 
-  if (size_type == EFillSizeType::kSizeLength) {
-    // TODO(alancutter): Make this work correctly for calc lengths.
-    if (layer.SizeLength().Width().IsPercentOrCalc() &&
-        !layer.SizeLength().Width().IsZero())
-      return true;
-    if (img->IsGeneratedImage() && layer.SizeLength().Width().IsAuto())
-      return true;
-  } else if (img->UsesImageContainerSize()) {
+  DCHECK_EQ(size_type, EFillSizeType::kSizeLength);
+
+  // TODO(alancutter): Make this work correctly for calc lengths.
+  const Length& width = layer.SizeLength().Width();
+  if (width.IsPercentOrCalc() && !width.IsZero())
     return true;
-  }
+
+  if (width.IsAuto() && !image->HasIntrinsicSize())
+    return true;
 
   return false;
 }
@@ -73,8 +72,8 @@ static bool ShouldFullyInvalidateFillLayersOnHeightChange(
     return true;
 
   // The layer properties checked below apply only when there is a valid image.
-  StyleImage* img = layer.GetImage();
-  if (!img || !img->CanRender())
+  const StyleImage* image = layer.GetImage();
+  if (!image || !image->CanRender())
     return false;
 
   if (layer.RepeatY() != EFillRepeat::kRepeatFill &&
@@ -94,16 +93,15 @@ static bool ShouldFullyInvalidateFillLayersOnHeightChange(
       size_type == EFillSizeType::kCover)
     return true;
 
-  if (size_type == EFillSizeType::kSizeLength) {
-    // TODO(alancutter): Make this work correctly for calc lengths.
-    if (layer.SizeLength().Height().IsPercentOrCalc() &&
-        !layer.SizeLength().Height().IsZero())
-      return true;
-    if (img->IsGeneratedImage() && layer.SizeLength().Height().IsAuto())
-      return true;
-  } else if (img->UsesImageContainerSize()) {
+  DCHECK_EQ(size_type, EFillSizeType::kSizeLength);
+
+  // TODO(alancutter): Make this work correctly for calc lengths.
+  const Length& height = layer.SizeLength().Height();
+  if (height.IsPercentOrCalc() && !height.IsZero())
     return true;
-  }
+
+  if (height.IsAuto() && !image->HasIntrinsicSize())
+    return true;
 
   return false;
 }
@@ -142,9 +140,9 @@ PaintInvalidationReason BoxPaintInvalidator::ComputePaintInvalidationReason() {
   // - pixel snapping, or not snapping e.g. for some visual overflowing effects,
   // - scale, rotate, skew etc. transforms,
   // - visual (ink) overflows.
-  if (context_.old_visual_rect !=
+  if (LayoutRect(context_.old_visual_rect) !=
           LayoutRect(context_.old_paint_offset, box_.PreviousSize()) ||
-      context_.fragment_data->VisualRect() !=
+      LayoutRect(context_.fragment_data->VisualRect()) !=
           LayoutRect(context_.fragment_data->PaintOffset(), box_.Size())) {
     return PaintInvalidationReason::kGeometry;
   }

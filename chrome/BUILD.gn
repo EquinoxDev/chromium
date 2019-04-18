@@ -789,8 +789,8 @@ if (is_win) {
   }
 
   compile_entitlements("entitlements") {
-    entitlements_templates = [ "app/entitlements.plist" ]
-    output_name = "$target_gen_dir/entitlements.plist"
+    entitlements_templates = [ "app/app-entitlements.plist" ]
+    output_name = "$target_gen_dir/app-entitlements.plist"
     substitutions = [
       "CHROMIUM_BUNDLE_ID=$chrome_mac_bundle_id",
       "CHROMIUM_TEAM_ID=$chrome_mac_team_id",
@@ -1253,7 +1253,6 @@ if (is_win) {
       ":packed_resources",
       ":swiftshader_library",
       ":widevine_cdm_library",
-      "//chrome/app/nibs:chrome_xibs",
       "//chrome/browser/resources/media/mei_preload:component_bundle",
     ]
 
@@ -1570,8 +1569,6 @@ group("extra_resources") {
     "//chrome/browser/resources:invalidations_resources",
     "//chrome/browser/resources:net_internals_resources",
     "//chrome/browser/resources:quota_internals_resources",
-    "//chrome/browser/resources:task_scheduler_internals_resources",
-    "//chrome/browser/resources:translate_internals_resources",
     "//chrome/browser/resources:webapks_ui_resources",
   ]
 
@@ -1585,6 +1582,8 @@ group("extra_resources") {
 
   if (is_chromeos) {
     public_deps += [
+      "//chrome/browser/resources:os_settings_resources",
+      "//chrome/browser/resources/chromeos:cellular_setup_resources",
       "//chrome/browser/resources/chromeos:multidevice_setup_resources",
       "//chrome/browser/resources/chromeos/chromevox",
       "//chrome/browser/resources/chromeos/select_to_speak:build",

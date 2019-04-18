@@ -15,9 +15,10 @@ import org.chromium.base.CommandLine;
 import org.chromium.base.ThreadUtils;
 import org.chromium.chrome.R;
 import org.chromium.chrome.browser.UrlConstants;
+import org.chromium.chrome.browser.datareduction.DataReductionBrandingResourceProvider;
+import org.chromium.chrome.browser.datareduction.DataReductionPromoUtils;
 import org.chromium.chrome.browser.omaha.VersionNumberGetter;
 import org.chromium.chrome.browser.preferences.PrefServiceBridge;
-import org.chromium.chrome.browser.preferences.datareduction.DataReductionPromoUtils;
 import org.chromium.content_public.browser.WebContents;
 import org.chromium.net.GURLUtils;
 
@@ -34,7 +35,7 @@ import java.util.TimeZone;
  */
 public class DataReductionPromoInfoBar extends ConfirmInfoBar {
     private static final String M48_STABLE_RELEASE_DATE = "2016-01-26";
-    private static final String ENABLE_INFOBAR_SWITCH = "enable-data-reduction-promo-infobar";
+    private static final String FORCE_INFOBAR_SWITCH = "force-data-reduction-promo-infobar";
     private static final int NO_INSTALL_TIME = 0;
 
     private static Bitmap sIcon;
@@ -43,21 +44,11 @@ public class DataReductionPromoInfoBar extends ConfirmInfoBar {
     private static String sPrimaryButtonText;
     private static String sSecondaryButtonText;
 
-    /**
-     * Launch the data reduction infobar promo, if it needs to be displayed.
-     *
-     * @param context An Android context.
-     * @param webContents The WebContents of the tab on which the infobar should show.
-     * @param url The URL of the page on which the infobar should show.
-     * @param isFragmentNavigation Whether the main frame navigation did not cause changes to the
-     *            document (for example scrolling to a named anchor PopState).
-     * @param statusCode The HTTP status code of the navigation.
-     * @return boolean Whether the promo was launched.
-     */
-    public static boolean maybeLaunchPromoInfoBar(Context context,
-            WebContents webContents, String url, boolean isErrorPage, boolean isFragmentNavigation,
-            int statusCode) {
-        ThreadUtils.assertOnUiThread();
+    private static boolean shouldLaunchPromoInfoBar(Context context, WebContents webContents,
+            String url, boolean isErrorPage, boolean isFragmentNavigation, int statusCode) {
+        // This switch is only used for testing so let it override every other check.
+        if (CommandLine.getInstance().hasSwitch(FORCE_INFOBAR_SWITCH)) return true;
+
         if (webContents.isIncognito()) return false;
         if (isErrorPage) return false;
         if (isFragmentNavigation) return false;
@@ -103,24 +94,48 @@ public class DataReductionPromoInfoBar extends ConfirmInfoBar {
             // promo was displayed or the command line switch is on. If the last promo was shown
             // before M51 then |freOrSecondRunVersion| will be empty and it is safe to show the
             // infobar promo.
-            if (!CommandLine.getInstance().hasSwitch(ENABLE_INFOBAR_SWITCH)
-                    && !freOrSecondRunVersion.isEmpty()
-                    && currentMilestone < VersionNumberGetter
-                            .getMilestoneFromVersionNumber(freOrSecondRunVersion) + 2) {
+            if (!freOrSecondRunVersion.isEmpty()
+                    && currentMilestone < VersionNumberGetter.getMilestoneFromVersionNumber(
+                                                  freOrSecondRunVersion)
+                                    + 2) {
                 return false;
             }
-
-            DataReductionPromoInfoBar.launch(webContents,
-                    BitmapFactory.decodeResource(context.getResources(), R.drawable.infobar_chrome),
-                    context.getString(R.string.data_reduction_promo_infobar_title),
-                    context.getString(R.string.data_reduction_promo_infobar_text),
-                    context.getString(R.string.data_reduction_promo_infobar_button),
-                    context.getString(R.string.no_thanks));
 
             return true;
         } finally {
             StrictMode.setThreadPolicy(oldPolicy);
         }
+    }
+
+    /**
+     * Launch the data reduction infobar promo, if it needs to be displayed.
+     *
+     * @param context An Android context.
+     * @param webContents The WebContents of the tab on which the infobar should show.
+     * @param url The URL of the page on which the infobar should show.
+     * @param isFragmentNavigation Whether the main frame navigation did not cause changes to the
+     *            document (for example scrolling to a named anchor PopState).
+     * @param statusCode The HTTP status code of the navigation.
+     * @return boolean Whether the promo was launched.
+     */
+    public static boolean maybeLaunchPromoInfoBar(Context context, WebContents webContents,
+            String url, boolean isErrorPage, boolean isFragmentNavigation, int statusCode) {
+        ThreadUtils.assertOnUiThread();
+
+        if (!shouldLaunchPromoInfoBar(
+                    context, webContents, url, isErrorPage, isFragmentNavigation, statusCode)) {
+            return false;
+        }
+
+        DataReductionPromoInfoBar.launch(webContents,
+                BitmapFactory.decodeResource(context.getResources(), R.drawable.infobar_chrome),
+                context.getString(R.string.data_reduction_promo_infobar_title),
+                context.getString(R.string.data_reduction_promo_infobar_text),
+                context.getString(DataReductionBrandingResourceProvider.getDataSaverBrandedString(
+                        R.string.data_reduction_enable_button)),
+                context.getString(R.string.no_thanks));
+
+        return true;
     }
 
     /**

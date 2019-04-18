@@ -237,12 +237,7 @@ class PolicyFetchClientObserver : public CloudPolicyClient::Observer {
   ~PolicyFetchClientObserver() override { client_->RemoveObserver(this); }
 
   void OnPolicyFetched(CloudPolicyClient* client) override {
-    // The policy is fetched, wait for the policy is validated and stored.
-    store_observer_ = std::make_unique<PolicyFetchStoreObserver>(
-        g_browser_process->browser_policy_connector()
-            ->machine_level_user_cloud_policy_manager()
-            ->store(),
-        std::move(quit_closure_));
+    std::move(quit_closure_).Run();
   }
 
   void OnRegistrationStateChanged(CloudPolicyClient* client) override {}
@@ -613,7 +608,7 @@ class MachineLevelUserCloudPolicyPolicyFetchTest
     base::FilePath config_path = temp_dir_.GetPath().AppendASCII("config.json");
     base::WriteFile(config_path, kTestPolicyConfig, strlen(kTestPolicyConfig));
     test_server_ = std::make_unique<LocalPolicyTestServer>(config_path);
-    test_server_->RegisterClient(kDMToken, kClientID);
+    test_server_->RegisterClient(kDMToken, kClientID, {} /* state_keys */);
   }
 
   const std::string dm_token() const { return GetParam(); }
@@ -634,8 +629,18 @@ IN_PROC_BROWSER_TEST_P(MachineLevelUserCloudPolicyPolicyFetchTest, Test) {
   // If the policy hasn't been updated, wait for it.
   if (manager->core()->client()->last_policy_timestamp().is_null()) {
     base::RunLoop run_loop;
-    PolicyFetchClientObserver observer(manager->core()->client(),
-                                       run_loop.QuitClosure());
+    // Listen to store event which is fired after policy validation if token is
+    // valid. Otherwise listen to the client event because there is no store
+    // event.
+    std::unique_ptr<PolicyFetchClientObserver> client_observer;
+    std::unique_ptr<PolicyFetchStoreObserver> store_observer;
+    if (dm_token() == kInvalidDMToken) {
+      client_observer = std::make_unique<PolicyFetchClientObserver>(
+          manager->core()->client(), run_loop.QuitClosure());
+    } else {
+      store_observer = std::make_unique<PolicyFetchStoreObserver>(
+          manager->store(), run_loop.QuitClosure());
+    }
     g_browser_process->browser_policy_connector()
         ->device_management_service()
         ->ScheduleInitialization(0);

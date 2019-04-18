@@ -5,6 +5,8 @@
 #ifndef CHROME_BROWSER_UI_VIEWS_TABS_TAB_STRIP_CONTROLLER_H_
 #define CHROME_BROWSER_UI_VIEWS_TABS_TAB_STRIP_CONTROLLER_H_
 
+#include <vector>
+
 #include "base/strings/string16.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/views/frame/browser_non_client_frame_view.h"
@@ -13,6 +15,7 @@
 #include "ui/base/ui_base_types.h"
 
 class Tab;
+class TabGroupData;
 class TabStrip;
 
 namespace gfx {
@@ -20,6 +23,7 @@ class Point;
 }
 
 namespace ui {
+class Event;
 class ListSelectionModel;
 }
 
@@ -52,7 +56,8 @@ class TabStripController {
   virtual bool IsTabPinned(int index) const = 0;
 
   // Select the tab at the specified index in the model.
-  virtual void SelectTab(int index) = 0;
+  // |event| is the input event that triggers the tab selection.
+  virtual void SelectTab(int index, const ui::Event& event) = 0;
 
   // Extends the selection from the anchor to the specified index in the model.
   virtual void ExtendSelectionTo(int index) = 0;
@@ -90,9 +95,6 @@ class TabStripController {
   // Compatible tab strips can transfer tabs during drag and drop.
   virtual bool IsCompatibleWith(TabStrip* other) const = 0;
 
-  // Returns the position of the new tab button within the strip.
-  virtual NewTabButtonPosition GetNewTabButtonPosition() const = 0;
-
   // Creates the new tab.
   virtual void CreateNewTab() = 0;
 
@@ -111,6 +113,9 @@ class TabStripController {
   // This is also called when the tabs that the user is dragging were detached
   // from this tabstrip but the user is still dragging the tabs.
   virtual void OnStoppedDraggingTabs() = 0;
+
+  // Returns the list of tabs affiliated with |group|.
+  virtual std::vector<int> ListTabsInGroup(const TabGroupData* group) const = 0;
 
   // Determines whether the top frame is condensed vertically, as when the
   // window is maximized. If true, the top frame is just the height of a tab,

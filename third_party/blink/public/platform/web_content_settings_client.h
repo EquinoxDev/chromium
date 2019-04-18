@@ -6,10 +6,11 @@
 #define THIRD_PARTY_BLINK_PUBLIC_PLATFORM_WEB_CONTENT_SETTINGS_CLIENT_H_
 
 #include <memory>
+#include <utility>
 
+#include "base/callback.h"
 #include "base/time/time.h"
 #include "third_party/blink/public/platform/web_client_hints_type.h"
-#include "third_party/blink/public/platform/web_content_setting_callbacks.h"
 
 namespace blink {
 
@@ -32,9 +33,8 @@ class WebContentSettingsClient {
 
   // Controls whether access to File System is allowed for this frame.
   virtual void RequestFileSystemAccessAsync(
-      const WebContentSettingCallbacks& callbacks) {
-    WebContentSettingCallbacks permission_callbacks(callbacks);
-    permission_callbacks.DoAllow();
+      base::OnceCallback<void(bool)> callback) {
+    std::move(callback).Run(true);
   }
 
   // Controls whether images are allowed for this frame.
@@ -44,6 +44,9 @@ class WebContentSettingsClient {
 
   // Controls whether access to Indexed DB are allowed for this frame.
   virtual bool AllowIndexedDB(const WebSecurityOrigin&) { return true; }
+
+  // Controls whether access to CacheStorage is allowed for this frame.
+  virtual bool AllowCacheStorage(const WebSecurityOrigin&) { return true; }
 
   // Controls whether scripts are allowed to execute for this frame.
   virtual bool AllowScript(bool enabled_per_settings) {

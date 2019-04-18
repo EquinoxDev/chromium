@@ -25,7 +25,7 @@
 #include "content/public/common/window_container_type.mojom-forward.h"
 #include "third_party/blink/public/common/manifest/web_display_mode.h"
 #include "third_party/blink/public/common/mediastream/media_stream_request.h"
-#include "third_party/blink/public/mojom/color_chooser/color_chooser.mojom-forward.h"
+#include "third_party/blink/public/mojom/choosers/color_chooser.mojom-forward.h"
 #include "third_party/blink/public/platform/web_drag_operation.h"
 #include "third_party/blink/public/platform/web_security_style.h"
 #include "third_party/blink/public/web/web_fullscreen_options.h"
@@ -243,7 +243,7 @@ class CONTENT_EXPORT WebContentsDelegate {
   // Invoking the |callback| synchronously is OK.
   virtual void CanDownload(const GURL& url,
                            const std::string& request_method,
-                           const base::Callback<void(bool)>& callback);
+                           base::OnceCallback<void(bool)> callback);
 
   // Returns true if the context menu operation was handled by the delegate.
   virtual bool HandleContextMenu(RenderFrameHost* render_frame_host,
@@ -520,14 +520,14 @@ class CONTENT_EXPORT WebContentsDelegate {
   virtual void SetOverlayMode(bool use_overlay_mode) {}
 #endif
 
-  // Requests permission to access the PPAPI broker. The delegate should return
-  // true and call the passed in |callback| with the result, or return false
+  // Requests permission to access the PPAPI broker. The delegate must either
+  // call the passed in |callback| with the result, or call it with false
   // to indicate that it does not support asking for permission.
-  virtual bool RequestPpapiBrokerPermission(
+  virtual void RequestPpapiBrokerPermission(
       WebContents* web_contents,
       const GURL& url,
       const base::FilePath& plugin_path,
-      const base::Callback<void(bool)>& callback);
+      base::OnceCallback<void(bool)> callback);
 
   // Returns the size for the new render view created for the pending entry in
   // |web_contents|; if there's no size, returns an empty size.

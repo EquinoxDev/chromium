@@ -19,11 +19,13 @@ class SyncServiceCrypto;
 class SyncUserSettingsImpl : public SyncUserSettings {
  public:
   // Both |crypto| and |prefs| must not be null, and must outlive this object.
-  SyncUserSettingsImpl(SyncServiceCrypto* crypto,
-                       SyncPrefs* prefs,
-                       ModelTypeSet registered_types,
-                       const base::RepeatingCallback<void(bool)>&
-                           sync_allowed_by_platform_changed);
+  SyncUserSettingsImpl(
+      SyncServiceCrypto* crypto,
+      SyncPrefs* prefs,
+      ModelTypeSet registered_types,
+      const base::RepeatingCallback<void(bool)>&
+          sync_allowed_by_platform_changed,
+      const base::RepeatingCallback<bool()>& is_encrypt_everything_allowed);
   ~SyncUserSettingsImpl() override;
 
   bool IsSyncRequested() const override;
@@ -40,7 +42,6 @@ class SyncUserSettingsImpl : public SyncUserSettings {
   void SetChosenDataTypes(bool sync_everything, ModelTypeSet types) override;
 
   bool IsEncryptEverythingAllowed() const override;
-  void SetEncryptEverythingAllowed(bool allowed) override;
   bool IsEncryptEverythingEnabled() const override;
   void EnableEncryptEverything() override;
 
@@ -54,15 +55,23 @@ class SyncUserSettingsImpl : public SyncUserSettings {
   void SetEncryptionPassphrase(const std::string& passphrase) override;
   bool SetDecryptionPassphrase(const std::string& passphrase) override;
 
+  void SetSyncRequestedIfNotSetExplicitly();
+
   ModelTypeSet GetPreferredDataTypes() const;
   bool IsEncryptedDatatypeEnabled() const;
   bool IsEncryptionPending() const;
+
+  // Converts ModelTypeSet of UserSelectableTypes() to ModelTypeSet of
+  // corresponding UserTypes() by resolving pref groups (e.g. {EXTENSIONS}
+  // becomes {EXTENSIONS, EXTENSION_SETTINGS}).
+  static ModelTypeSet ResolvePrefGroupsForTesting(ModelTypeSet chosen_types);
 
  private:
   SyncServiceCrypto* const crypto_;
   SyncPrefs* const prefs_;
   const ModelTypeSet registered_types_;
   base::RepeatingCallback<void(bool)> sync_allowed_by_platform_changed_cb_;
+  base::RepeatingCallback<bool()> is_encrypt_everything_allowed_cb_;
 
   // Whether sync is currently allowed on this platform.
   bool sync_allowed_by_platform_ = true;

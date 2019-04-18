@@ -6,6 +6,9 @@
 
 #include <utility>
 
+#include "base/callback.h"
+#include "net/cookies/canonical_cookie.h"
+
 namespace network {
 
 TestCookieManager::TestCookieManager() = default;
@@ -14,10 +17,13 @@ TestCookieManager::~TestCookieManager() = default;
 
 void TestCookieManager::SetCanonicalCookie(
     const net::CanonicalCookie& cookie,
-    bool secure_source,
-    bool modify_http_only,
+    const std::string& source_scheme,
+    const net::CookieOptions& cookie_options,
     SetCanonicalCookieCallback callback) {
-  std::move(callback).Run(false);
+  if (callback) {
+    std::move(callback).Run(
+        net::CanonicalCookie::CookieInclusionStatus::EXCLUDE_UNKNOWN_ERROR);
+  }
 }
 
 void TestCookieManager::AddCookieChangeListener(

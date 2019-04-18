@@ -10,16 +10,20 @@
 #include "third_party/blink/renderer/core/inspector/inspector_trace_events.h"
 #include "third_party/blink/renderer/core/paint/background_image_geometry.h"
 #include "third_party/blink/renderer/core/paint/box_border_painter.h"
+#include "third_party/blink/renderer/core/paint/image_element_timing.h"
 #include "third_party/blink/renderer/core/paint/nine_piece_image_painter.h"
 #include "third_party/blink/renderer/core/paint/paint_info.h"
 #include "third_party/blink/renderer/core/paint/paint_layer.h"
+#include "third_party/blink/renderer/core/paint/paint_timing_detector.h"
 #include "third_party/blink/renderer/core/paint/rounded_inner_rect_clipper.h"
 #include "third_party/blink/renderer/core/style/border_edge.h"
 #include "third_party/blink/renderer/core/style/computed_style.h"
 #include "third_party/blink/renderer/core/style/shadow_list.h"
 #include "third_party/blink/renderer/platform/geometry/layout_rect.h"
 #include "third_party/blink/renderer/platform/graphics/graphics_context_state_saver.h"
+#include "third_party/blink/renderer/platform/graphics/paint/paint_controller.h"
 #include "third_party/blink/renderer/platform/graphics/scoped_interpolation_quality.h"
+#include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 
 namespace blink {
 
@@ -374,7 +378,7 @@ void DrawTiledBackground(GraphicsContext& context,
   // generated image to be the tile size.
   FloatSize intrinsic_tile_size(image->Size());
   FloatSize scale(1, 1);
-  if (image->HasRelativeSize()) {
+  if (!image->HasIntrinsicSize()) {
     intrinsic_tile_size = tile_size;
   } else {
     scale = FloatSize(tile_size.Width() / intrinsic_tile_size.Width(),
@@ -507,9 +511,9 @@ inline bool PaintFastBottomLayer(Node* node,
 
   // Generated images will be created at the desired tile size, so assume their
   // intrinsic size is the requested tile size.
-  bool is_generated_image = image->HasRelativeSize();
+  bool has_intrinsic_size = image->HasIntrinsicSize();
   const FloatSize intrinsic_tile_size =
-      is_generated_image ? image_tile.Size() : FloatSize(image->Size());
+      !has_intrinsic_size ? image_tile.Size() : FloatSize(image->Size());
   // Subset computation needs the same location as was used with
   // ComputePhaseForBackground above, but needs the unsnapped destination
   // size to correctly calculate sprite subsets in the presence of zoom. But if
@@ -517,8 +521,8 @@ inline bool PaintFastBottomLayer(Node* node,
   // snapped value), use the snapped dest rect instead.
   FloatRect dest_rect_for_subset(
       FloatPoint(geometry.SnappedDestRect().Location()),
-      is_generated_image ? FloatSize(geometry.SnappedDestRect().Size())
-                         : FloatSize(geometry.UnsnappedDestRect().Size()));
+      !has_intrinsic_size ? FloatSize(geometry.SnappedDestRect().Size())
+                          : FloatSize(geometry.UnsnappedDestRect().Size()));
   // Content providers almost always choose source pixels at integer locations,
   // so snap to integers. This is particuarly important for sprite maps.
   // Calculation up to this point, in LayoutUnits, can lead to small variations
@@ -542,6 +546,23 @@ inline bool PaintFastBottomLayer(Node* node,
   context.DrawImageRRect(image, Image::kSyncDecode, image_border, src_rect,
                          composite_op);
 
+  if (RuntimeEnabledFeatures::FirstContentfulPaintPlusPlusEnabled()) {
+    if (info.image && info.image->IsImageResource()) {
+      PaintTimingDetector::NotifyBackgroundImagePaint(
+          node, image, info.image,
+          paint_info.context.GetPaintController()
+              .CurrentPaintChunkProperties());
+    }
+  }
+  if (node &&
+      RuntimeEnabledFeatures::ElementTimingEnabled(&node->GetDocument()) &&
+      info.image && info.image->IsImageResource()) {
+    LocalDOMWindow* window = node->GetDocument().domWindow();
+    DCHECK(window);
+    ImageElementTiming::From(*window).NotifyBackgroundImagePainted(
+        node, info.image,
+        context.GetPaintController().CurrentPaintChunkProperties());
+  }
   return true;
 }
 
@@ -658,6 +679,22 @@ void PaintFillLayerBackground(GraphicsContext& context,
                         FloatRect(geometry.SnappedDestRect()), geometry.Phase(),
                         FloatSize(geometry.TileSize()), composite_op,
                         FloatSize(geometry.SpaceSize()));
+    if (RuntimeEnabledFeatures::FirstContentfulPaintPlusPlusEnabled()) {
+      if (info.image && info.image->IsImageResource()) {
+        PaintTimingDetector::NotifyBackgroundImagePaint(
+            node, image, info.image,
+            context.GetPaintController().CurrentPaintChunkProperties());
+      }
+    }
+    if (node &&
+        RuntimeEnabledFeatures::ElementTimingEnabled(&node->GetDocument()) &&
+        info.image && info.image->IsImageResource()) {
+      LocalDOMWindow* window = node->GetDocument().domWindow();
+      DCHECK(window);
+      ImageElementTiming::From(*window).NotifyBackgroundImagePainted(
+          node, info.image,
+          context.GetPaintController().CurrentPaintChunkProperties());
+    }
   }
 }
 

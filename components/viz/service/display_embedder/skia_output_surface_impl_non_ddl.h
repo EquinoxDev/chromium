@@ -10,12 +10,22 @@
 
 #include "base/containers/flat_map.h"
 #include "base/macros.h"
+#include "base/memory/weak_ptr.h"
 #include "base/observer_list.h"
 #include "base/threading/thread_checker.h"
 #include "components/viz/service/display/skia_output_surface.h"
 #include "components/viz/service/viz_service_export.h"
 #include "gpu/command_buffer/common/sync_token.h"
 #include "gpu/command_buffer/service/shared_context_state.h"
+#include "gpu/vulkan/buildflags.h"
+
+#if BUILDFLAG(ENABLE_VULKAN)
+class GrVkSecondaryCBDrawContext;
+#endif
+
+namespace gfx {
+struct PresentationFeedback;
+}
 
 namespace gl {
 class GLSurface;
@@ -23,6 +33,8 @@ class GLSurface;
 
 namespace gpu {
 class MailboxManager;
+class SharedImageManager;
+class SharedImageRepresentationFactory;
 class SyncPointClientState;
 class SyncPointManager;
 class SyncPointOrderData;
@@ -41,7 +53,9 @@ class VIZ_SERVICE_EXPORT SkiaOutputSurfaceImplNonDDL
       scoped_refptr<gl::GLSurface> gl_surface,
       scoped_refptr<gpu::SharedContextState> shared_context_state,
       gpu::MailboxManager* mailbox_manager,
-      gpu::SyncPointManager* sync_point_manager);
+      gpu::SharedImageManager* shared_image_manager,
+      gpu::SyncPointManager* sync_point_manager,
+      bool need_swapbuffers_ack);
   ~SkiaOutputSurfaceImplNonDDL() override;
 
   // OutputSurface implementation:
@@ -63,9 +77,6 @@ class VIZ_SERVICE_EXPORT SkiaOutputSurfaceImplNonDDL
   gfx::BufferFormat GetOverlayBufferFormat() const override;
   bool HasExternalStencilTest() const override;
   void ApplyExternalStencil() override;
-#if BUILDFLAG(ENABLE_VULKAN)
-  gpu::VulkanSurface* GetVulkanSurface() override;
-#endif
   unsigned UpdateGpuFence() override;
   void SetNeedsSwapSizeNotifications(
       bool needs_swap_size_notifications) override;
@@ -75,6 +86,7 @@ class VIZ_SERVICE_EXPORT SkiaOutputSurfaceImplNonDDL
   sk_sp<SkImage> MakePromiseSkImageFromYUV(
       std::vector<ResourceMetadata> metadatas,
       SkYUVColorSpace yuv_color_space,
+      sk_sp<SkColorSpace> dst_color_space,
       bool has_alpha) override;
   void SkiaSwapBuffers(OutputSurfaceFrame frame) override;
   SkCanvas* BeginPaintRenderPass(const RenderPassId& id,
@@ -104,9 +116,12 @@ class VIZ_SERVICE_EXPORT SkiaOutputSurfaceImplNonDDL
  private:
   GrContext* gr_context() { return shared_context_state_->gr_context(); }
 
+  bool WaitSyncToken(const gpu::SyncToken& sync_token);
+  sk_sp<SkImage> MakeSkImageFromSharedImage(const ResourceMetadata& metadata);
   bool GetGrBackendTexture(const ResourceMetadata& metadata,
                            GrBackendTexture* backend_texture);
 
+  void BufferPresented(const gfx::PresentationFeedback& feedback);
   void ContextLost();
 
   uint64_t sync_fence_release_ = 0;
@@ -114,9 +129,11 @@ class VIZ_SERVICE_EXPORT SkiaOutputSurfaceImplNonDDL
   // Stuffs for running with |task_executor_| instead of |gpu_service_|.
   scoped_refptr<gl::GLSurface> gl_surface_;
   scoped_refptr<gpu::SharedContextState> shared_context_state_;
-  gpu::MailboxManager* mailbox_manager_;
+  gpu::MailboxManager* const mailbox_manager_;
+  std::unique_ptr<gpu::SharedImageRepresentationFactory> sir_factory_;
   scoped_refptr<gpu::SyncPointOrderData> sync_point_order_data_;
   scoped_refptr<gpu::SyncPointClientState> sync_point_client_state_;
+  const bool need_swapbuffers_ack_;
   uint32_t order_num_ = 0u;
 
   OutputSurfaceClient* client_ = nullptr;
@@ -137,10 +154,17 @@ class VIZ_SERVICE_EXPORT SkiaOutputSurfaceImplNonDDL
   // The SkSurface for the framebuffer.
   sk_sp<SkSurface> sk_surface_;
 
+#if BUILDFLAG(ENABLE_VULKAN)
+  // The |draw_context_| for the current frame.
+  GrVkSecondaryCBDrawContext* draw_context_ = nullptr;
+#endif
+
   // Offscreen SkSurfaces for render passes.
   base::flat_map<RenderPassId, sk_sp<SkSurface>> offscreen_sk_surfaces_;
 
   THREAD_CHECKER(thread_checker_);
+
+  base::WeakPtrFactory<SkiaOutputSurfaceImplNonDDL> weak_ptr_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(SkiaOutputSurfaceImplNonDDL);
 };

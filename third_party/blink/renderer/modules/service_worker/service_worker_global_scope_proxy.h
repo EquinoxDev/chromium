@@ -89,16 +89,16 @@ class ServiceWorkerGlobalScopeProxy final
   void DispatchActivateEvent(int) override;
   void DispatchBackgroundFetchAbortEvent(
       int event_id,
-      const WebBackgroundFetchRegistration& registration) override;
+      WebBackgroundFetchRegistration registration) override;
   void DispatchBackgroundFetchClickEvent(
       int event_id,
-      const WebBackgroundFetchRegistration& registration) override;
+      WebBackgroundFetchRegistration registration) override;
   void DispatchBackgroundFetchFailEvent(
       int event_id,
-      const WebBackgroundFetchRegistration& registration) override;
+      WebBackgroundFetchRegistration registration) override;
   void DispatchBackgroundFetchSuccessEvent(
       int event_id,
-      const WebBackgroundFetchRegistration& registration) override;
+      WebBackgroundFetchRegistration registration) override;
   void DispatchCookieChangeEvent(
       int event_id,
       const WebCanonicalCookie& cookie,
@@ -151,16 +151,18 @@ class ServiceWorkerGlobalScopeProxy final
   void ReportException(const String& error_message,
                        std::unique_ptr<SourceLocation>,
                        int exception_id) override;
-  void ReportConsoleMessage(MessageSource,
-                            MessageLevel,
+  void ReportConsoleMessage(mojom::ConsoleMessageSource,
+                            mojom::ConsoleMessageLevel,
                             const String& message,
                             SourceLocation*) override;
   void WillInitializeWorkerContext() override;
   void DidCreateWorkerGlobalScope(WorkerOrWorkletGlobalScope*) override;
   void DidInitializeWorkerContext() override;
   void DidFailToInitializeWorkerContext() override;
-  void DidLoadInstalledScript() override;
-  void DidFailToLoadInstalledClassicScript() override;
+  void DidLoadClassicScript() override;
+  void DidFailToLoadClassicScript() override;
+  void DidFetchScript() override;
+  void DidFailToFetchClassicScript() override;
   void DidFailToFetchModuleScript() override;
   void WillEvaluateClassicScript(size_t script_size,
                                  size_t cached_metadata_size) override;

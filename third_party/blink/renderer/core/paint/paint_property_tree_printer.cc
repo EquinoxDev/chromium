@@ -42,9 +42,10 @@ class FrameViewPropertyTreePrinter
       CollectNodes(*layout_view);
     for (Frame* child = frame_view.GetFrame().Tree().FirstChild(); child;
          child = child->Tree().NextSibling()) {
-      if (!child->IsLocalFrame())
+      auto* child_local_frame = DynamicTo<LocalFrame>(child);
+      if (!child_local_frame)
         continue;
-      if (LocalFrameView* child_view = ToLocalFrame(child)->View())
+      if (LocalFrameView* child_view = child_local_frame->View())
         CollectNodes(*child_view);
     }
   }
@@ -68,6 +69,7 @@ class PropertyTreePrinterTraits<TransformPaintPropertyNode> {
   static void AddVisualViewportProperties(
       const VisualViewport& visual_viewport,
       PropertyTreePrinter<TransformPaintPropertyNode>& printer) {
+    printer.AddNode(visual_viewport.GetDeviceEmulationTransformNode());
     printer.AddNode(visual_viewport.GetOverscrollElasticityTransformNode());
     printer.AddNode(visual_viewport.GetPageScaleNode());
     printer.AddNode(visual_viewport.GetScrollTranslationNode());

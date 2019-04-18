@@ -5,7 +5,10 @@
 #ifndef SERVICES_MEDIA_SESSION_PUBLIC_CPP_TEST_TEST_MEDIA_CONTROLLER_H_
 #define SERVICES_MEDIA_SESSION_PUBLIC_CPP_TEST_TEST_MEDIA_CONTROLLER_H_
 
+#include <utility>
+
 #include "base/component_export.h"
+#include "base/optional.h"
 #include "base/run_loop.h"
 #include "mojo/public/cpp/bindings/binding.h"
 #include "mojo/public/cpp/bindings/interface_ptr_set.h"
@@ -14,6 +17,35 @@
 
 namespace media_session {
 namespace test {
+
+// A mock MediaControllerImageObserver than can be used for waiting for images.
+class COMPONENT_EXPORT(MEDIA_SESSION_TEST_SUPPORT_CPP)
+    TestMediaControllerImageObserver
+    : public mojom::MediaControllerImageObserver {
+ public:
+  TestMediaControllerImageObserver(mojom::MediaControllerPtr& controller,
+                                   int minimum_size_px,
+                                   int desired_size_px);
+  ~TestMediaControllerImageObserver() override;
+
+  // mojom::MediaControllerImageObserver overrides.
+  void MediaControllerImageChanged(mojom::MediaSessionImageType type,
+                                   const SkBitmap& bitmap) override;
+
+  void WaitForExpectedImageOfType(mojom::MediaSessionImageType type,
+                                  bool expect_null_value);
+
+ private:
+  // The bool is whether the image type should be a null value.
+  using ImageTypePair = std::pair<mojom::MediaSessionImageType, bool>;
+
+  std::unique_ptr<base::RunLoop> run_loop_;
+
+  base::Optional<ImageTypePair> expected_;
+  base::Optional<ImageTypePair> current_;
+
+  mojo::Binding<mojom::MediaControllerImageObserver> binding_{this};
+};
 
 // A mock MediaControllerObsever that can be used for waiting for state changes.
 class COMPONENT_EXPORT(MEDIA_SESSION_TEST_SUPPORT_CPP)
@@ -30,6 +62,8 @@ class COMPONENT_EXPORT(MEDIA_SESSION_TEST_SUPPORT_CPP)
       const base::Optional<MediaMetadata>& metadata) override;
   void MediaSessionActionsChanged(
       const std::vector<mojom::MediaSessionAction>& actions) override;
+  void MediaSessionChanged(
+      const base::Optional<base::UnguessableToken>& request_id) override;
 
   void WaitForState(mojom::MediaSessionInfo::SessionState wanted_state);
   void WaitForPlaybackState(mojom::MediaPlaybackState wanted_state);
@@ -41,6 +75,8 @@ class COMPONENT_EXPORT(MEDIA_SESSION_TEST_SUPPORT_CPP)
   void WaitForEmptyActions();
   void WaitForExpectedActions(
       const std::set<mojom::MediaSessionAction>& actions);
+
+  void WaitForSession(const base::Optional<base::UnguessableToken>& request_id);
 
   const mojom::MediaSessionInfoPtr& session_info() const {
     return *session_info_;
@@ -61,6 +97,7 @@ class COMPONENT_EXPORT(MEDIA_SESSION_TEST_SUPPORT_CPP)
   base::Optional<mojom::MediaSessionInfoPtr> session_info_;
   base::Optional<base::Optional<MediaMetadata>> session_metadata_;
   base::Optional<std::set<mojom::MediaSessionAction>> session_actions_;
+  base::Optional<base::Optional<base::UnguessableToken>> session_request_id_;
 
   base::Optional<MediaMetadata> expected_metadata_;
   base::Optional<std::set<mojom::MediaSessionAction>> expected_actions_;
@@ -69,6 +106,8 @@ class COMPONENT_EXPORT(MEDIA_SESSION_TEST_SUPPORT_CPP)
   bool waiting_for_empty_info_ = false;
   base::Optional<mojom::MediaSessionInfo::SessionState> wanted_state_;
   base::Optional<mojom::MediaPlaybackState> wanted_playback_state_;
+
+  base::Optional<base::Optional<base::UnguessableToken>> expected_request_id_;
 
   std::unique_ptr<base::RunLoop> run_loop_;
 
@@ -93,6 +132,11 @@ class COMPONENT_EXPORT(MEDIA_SESSION_TEST_SUPPORT_CPP) TestMediaController
   void PreviousTrack() override;
   void NextTrack() override;
   void Seek(base::TimeDelta seek_time) override;
+  void ObserveImages(mojom::MediaSessionImageType type,
+                     int minimum_size_px,
+                     int desired_size_px,
+                     mojom::MediaControllerImageObserverPtr observer) override {
+  }
 
   int toggle_suspend_resume_count() const {
     return toggle_suspend_resume_count_;
@@ -106,6 +150,7 @@ class COMPONENT_EXPORT(MEDIA_SESSION_TEST_SUPPORT_CPP) TestMediaController
   int seek_backward_count() const { return seek_backward_count_; }
   int seek_forward_count() const { return seek_forward_count_; }
 
+  void SimulateMediaSessionInfoChanged(mojom::MediaSessionInfoPtr session_info);
   void SimulateMediaSessionActionsChanged(
       const std::vector<mojom::MediaSessionAction>& actions);
   void Flush();

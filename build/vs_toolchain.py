@@ -3,6 +3,8 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+from __future__ import print_function
+
 import glob
 import json
 import os
@@ -183,7 +185,7 @@ def _CopyRuntimeImpl(target, source, verbose=True):
       (not os.path.isfile(target) or
        abs(os.stat(target).st_mtime - os.stat(source).st_mtime) >= 0.01)):
     if verbose:
-      print 'Copying %s to %s...' % (source, target)
+      print('Copying %s to %s...' % (source, target))
     if os.path.exists(target):
       # Make the file writable so that we can delete it now, and keep it
       # readable.
@@ -367,8 +369,9 @@ def _GetDesiredVsToolchainHashes():
   to build with."""
   env_version = GetVisualStudioVersion()
   if env_version == '2017':
-    # VS 2017 Update 9 (15.9.3) with 10.0.17763.132 SDK with ARM64 libraries.
-    toolchain_hash = 'e04af53255fe13c130e9cfde7d9ac861b9fb674a'
+    # VS 2017 Update 9 (15.9.3) with 10.0.17763.132 SDK, 10.0.17134 version of
+    # d3dcompiler_47.dll, with ARM64 libraries.
+    toolchain_hash = '818a152b3f1da991c1725d85be19a0f27af6bab4'
     # Third parties that do not have access to the canonical toolchain can map
     # canonical toolchain version to their own toolchain versions.
     toolchain_hash_mapping_key = 'GYP_MSVS_HASH_%s' % toolchain_hash
@@ -397,7 +400,7 @@ def Update(force=False, no_download=False):
   will not be downloaded.
   """
   if force != False and force != '--force':
-    print >>sys.stderr, 'Unknown parameter "%s"' % force
+    print('Unknown parameter "%s"' % force, file=sys.stderr)
     return 1
   if force == '--force' or os.path.exists(json_data_file):
     force = True
@@ -479,17 +482,15 @@ def GetToolchainDir():
   runtime_dll_dirs = SetEnvironmentAndGetRuntimeDllDirs()
   win_sdk_dir = SetEnvironmentAndGetSDKDir()
 
-  print '''vs_path = %s
+  print('''vs_path = %s
 sdk_path = %s
 vs_version = %s
 wdk_dir = %s
 runtime_dirs = %s
-''' % (
-      ToGNString(NormalizePath(os.environ['GYP_MSVS_OVERRIDE_PATH'])),
-      ToGNString(win_sdk_dir),
-      ToGNString(GetVisualStudioVersion()),
-      ToGNString(NormalizePath(os.environ.get('WDK_DIR', ''))),
-      ToGNString(os.path.pathsep.join(runtime_dll_dirs or ['None'])))
+''' % (ToGNString(NormalizePath(os.environ['GYP_MSVS_OVERRIDE_PATH'])),
+       ToGNString(win_sdk_dir), ToGNString(GetVisualStudioVersion()),
+       ToGNString(NormalizePath(os.environ.get('WDK_DIR', ''))),
+       ToGNString(os.path.pathsep.join(runtime_dll_dirs or ['None']))))
 
 
 def main():
@@ -499,7 +500,7 @@ def main():
       'copy_dlls': CopyDlls,
   }
   if len(sys.argv) < 2 or sys.argv[1] not in commands:
-    print >>sys.stderr, 'Expected one of: %s' % ', '.join(commands)
+    print('Expected one of: %s' % ', '.join(commands), file=sys.stderr)
     return 1
   return commands[sys.argv[1]](*sys.argv[2:])
 

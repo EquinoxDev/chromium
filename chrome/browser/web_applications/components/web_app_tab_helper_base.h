@@ -35,6 +35,8 @@ class WebAppTabHelperBase
 
   const AppId& app_id() const { return app_id_; }
 
+  bool HasAssociatedApp() const;
+
   // Set associated app_id.
   void SetAppId(const AppId& app_id);
 
@@ -69,8 +71,7 @@ class WebAppTabHelperBase
   virtual WebAppTabHelperBase* CloneForWebContents(
       content::WebContents* web_contents) const = 0;
 
-  // Gets AppId of app whose scope includes |url|.
-  virtual AppId GetAppId(const GURL& url) = 0;
+  virtual AppId FindAppIdInScopeOfUrl(const GURL& url) = 0;
 
   // Returns whether the associated web contents belongs to an app window.
   virtual bool IsInAppWindow() const = 0;
@@ -85,6 +86,9 @@ class WebAppTabHelperBase
 
   // Updates the audio focus group id based on the current web app.
   void UpdateAudioFocusGroupId();
+
+  // Triggers a reinstall of a placeholder app for |url|.
+  void ReinstallPlaceholderAppIfNecessary(const GURL& url);
 
   // WebApp associated with this tab. Empty string if no app associated.
   AppId app_id_;

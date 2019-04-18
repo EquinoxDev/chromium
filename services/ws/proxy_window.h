@@ -5,6 +5,7 @@
 #ifndef SERVICES_WS_PROXY_WINDOW_H_
 #define SERVICES_WS_PROXY_WINDOW_H_
 
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -22,7 +23,6 @@
 
 namespace aura {
 class Window;
-class WindowTargeter;
 }  // namespace aura
 
 namespace ui {
@@ -33,6 +33,7 @@ namespace ws {
 
 class DragDropDelegate;
 class Embedding;
+class TopLevelProxyWindowImpl;
 class WindowTree;
 
 // Tracks any state associated with an aura::Window for the WindowService.
@@ -83,6 +84,8 @@ class COMPONENT_EXPORT(WINDOW_SERVICE) ProxyWindow {
                      const std::vector<gfx::Rect>& additional_client_areas);
 
   void SetHitTestInsets(const gfx::Insets& mouse, const gfx::Insets& touch);
+
+  void SetShape(const std::vector<gfx::Rect>& shape);
 
   void set_attached_frame_sink_id(const viz::FrameSinkId& id) {
     attached_frame_sink_id_ = id;
@@ -140,12 +143,18 @@ class COMPONENT_EXPORT(WINDOW_SERVICE) ProxyWindow {
   void SetDragDropDelegate(
       std::unique_ptr<DragDropDelegate> drag_drop_delegate);
 
+  void SetTopLevelProxyWindow(std::unique_ptr<TopLevelProxyWindowImpl> window);
+  TopLevelProxyWindowImpl* top_level_proxy_window() {
+    return top_level_proxy_window_.get();
+  }
+
   // Returns an id useful for debugging. This returns the id from the client
   // that created the window, otherwise |frame_sink_id_|.
   std::string GetIdForDebugging();
 
  private:
   friend class ProxyWindowTestHelper;
+  class ProxyWindowTargeter;
 
   ProxyWindow(aura::Window*,
               WindowTree* tree,
@@ -180,7 +189,7 @@ class COMPONENT_EXPORT(WINDOW_SERVICE) ProxyWindow {
   gfx::Insets client_area_;
   std::vector<gfx::Rect> additional_client_areas_;
 
-  aura::WindowTargeter* window_targeter_ = nullptr;
+  ProxyWindowTargeter* window_targeter_ = nullptr;
 
   std::unique_ptr<ui::EventHandler> event_handler_;
 
@@ -210,6 +219,8 @@ class COMPONENT_EXPORT(WINDOW_SERVICE) ProxyWindow {
 
   // FrameSinkId set by way of mojom::WindowTree::AttachFrameSinkId().
   viz::FrameSinkId attached_frame_sink_id_;
+
+  std::unique_ptr<TopLevelProxyWindowImpl> top_level_proxy_window_;
 
   DISALLOW_COPY_AND_ASSIGN(ProxyWindow);
 };

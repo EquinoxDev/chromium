@@ -16,7 +16,6 @@
 #include "content/public/browser/render_widget_host_view.h"
 #include "content/public/browser/web_contents.h"
 #include "ipc/ipc_message.h"
-#include "ui/accessibility/accessibility_switches.h"
 #include "ui/accessibility/ax_enums.mojom.h"
 #include "ui/accessibility/ax_node_data.h"
 #include "ui/events/event.h"
@@ -63,7 +62,7 @@ WebView::WebView(content::BrowserContext* browser_context)
 }
 
 WebView::~WebView() {
-  SetWebContents(NULL);  // Make sure all necessary tear-down takes place.
+  SetWebContents(nullptr);  // Make sure all necessary tear-down takes place.
 }
 
 content::WebContents* WebView::GetWebContents() {
@@ -120,10 +119,6 @@ void WebView::EnableSizingFromWebContents(const gfx::Size& min_size,
   min_size_ = min_size;
   max_size_ = max_size;
   MaybeEnableAutoResize();
-}
-
-void WebView::SetResizeBackgroundColor(SkColor resize_background_color) {
-  holder_->set_resize_background_color(resize_background_color);
 }
 
 void WebView::SetCrashedOverlayView(View* crashed_overlay_view) {
@@ -261,26 +256,11 @@ void WebView::GetAccessibleNodeData(ui::AXNodeData* node_data) {
 }
 
 gfx::NativeViewAccessible WebView::GetNativeViewAccessible() {
-  // On Windows, when UI Automation is enabled, we do not link to the render
-  // widget's NativeViewAccessible here. UIA recognizes the HWND parent-child
-  // relationship between the browser UI HWND and the LegacyRenderWidgetHostHWND
-  // associated with the render widget. By default, it assumes that HWND
-  // parent-child relationships map to accessibility parent-child relationships.
-  //
-  // If we were to return the render widget's NativeViewAccessible here, the
-  // browser content accessibility tree would appear rooted in two places: (1)
-  // in the UI widget hierarchy at the WebView's position, and (2) as a direct
-  // child of the browser UI fragment root, owing to the HWND parent-child
-  // relationship between the browser UI HWND and LegacyRenderWidgetHostHWND.
-  // That would lead to tree navigation inconsistencies that confuse assistive
-  // technologies such as Narrator.
-  if (!::switches::IsExperimentalAccessibilityPlatformUIAEnabled()) {
-    if (web_contents() && !web_contents()->IsCrashed()) {
-      content::RenderWidgetHostView* host_view =
-          web_contents()->GetRenderWidgetHostView();
-      if (host_view)
-        return host_view->GetNativeViewAccessible();
-    }
+  if (web_contents() && !web_contents()->IsCrashed()) {
+    content::RenderWidgetHostView* host_view =
+        web_contents()->GetRenderWidgetHostView();
+    if (host_view)
+      return host_view->GetNativeViewAccessible();
   }
   return View::GetNativeViewAccessible();
 }
@@ -451,8 +431,7 @@ std::unique_ptr<content::WebContents> WebView::CreateWebContents(
   }
 
   if (!contents) {
-    content::WebContents::CreateParams create_params(
-        browser_context, NULL);
+    content::WebContents::CreateParams create_params(browser_context, nullptr);
     return content::WebContents::Create(create_params);
   }
 

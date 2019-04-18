@@ -31,6 +31,7 @@
 #include "base/memory/scoped_refptr.h"
 #include "third_party/blink/public/mojom/net/ip_address_space.mojom-blink.h"
 #include "third_party/blink/renderer/core/execution_context/execution_context.h"
+#include "third_party/blink/renderer/core/frame/csp/content_security_policy.h"
 #include "third_party/blink/renderer/core/html/parser/text_resource_decoder.h"
 #include "third_party/blink/renderer/core/inspector/console_message.h"
 #include "third_party/blink/renderer/core/loader/resource/script_resource.h"
@@ -108,7 +109,7 @@ void WorkerClassicScriptLoader::LoadSynchronously(
   fetch_client_settings_object_fetcher_ = fetch_client_settings_object_fetcher;
 
   ResourceRequest request(url);
-  request.SetHTTPMethod(http_names::kGET);
+  request.SetHttpMethod(http_names::kGET);
   request.SetExternalRequestStateFromRequestorAddressSpace(
       creation_address_space);
   request.SetRequestContext(request_context);
@@ -147,7 +148,7 @@ void WorkerClassicScriptLoader::LoadTopLevelScriptAsynchronously(
   is_worker_global_scope_ = execution_context.IsWorkerGlobalScope();
 
   ResourceRequest request(url);
-  request.SetHTTPMethod(http_names::kGET);
+  request.SetHttpMethod(http_names::kGET);
   request.SetExternalRequestStateFromRequestorAddressSpace(
       creation_address_space);
   request.SetRequestContext(request_context);
@@ -169,7 +170,7 @@ const KURL& WorkerClassicScriptLoader::ResponseURL() const {
 }
 
 void WorkerClassicScriptLoader::DidReceiveResponse(
-    unsigned long identifier,
+    uint64_t identifier,
     const ResourceResponse& response) {
   if (response.HttpStatusCode() / 100 != 2 && response.HttpStatusCode()) {
     NotifyError();
@@ -177,7 +178,7 @@ void WorkerClassicScriptLoader::DidReceiveResponse(
   }
   if (!AllowedByNosniff::MimeTypeAsScript(
           fetch_client_settings_object_fetcher_->Context(),
-          fetch_client_settings_object_fetcher_->GetConsoleLogger(), response,
+          &fetch_client_settings_object_fetcher_->GetConsoleLogger(), response,
           fetch_client_settings_object_fetcher_->GetProperties()
               .GetFetchClientSettingsObject()
               .MimeTypeCheckForClassicWorkerScript(),
@@ -190,7 +191,8 @@ void WorkerClassicScriptLoader::DidReceiveResponse(
     String error = CheckSameOriginEnforcement(url_, response);
     if (!error.IsNull()) {
       fetch_client_settings_object_fetcher_->GetConsoleLogger()
-          ->AddErrorMessage(ConsoleLogger::Source::kSecurity, error);
+          .AddConsoleMessage(mojom::ConsoleMessageSource::kSecurity,
+                             mojom::ConsoleMessageLevel::kError, error);
       NotifyError();
       return;
     }
@@ -222,7 +224,7 @@ void WorkerClassicScriptLoader::DidReceiveData(const char* data, unsigned len) {
     return;
 
   if (!decoder_) {
-    decoder_ = TextResourceDecoder::Create(TextResourceDecoderOptions(
+    decoder_ = std::make_unique<TextResourceDecoder>(TextResourceDecoderOptions(
         TextResourceDecoderOptions::kPlainTextContent,
         response_encoding_.IsEmpty() ? UTF8Encoding()
                                      : WTF::TextEncoding(response_encoding_)));
@@ -240,7 +242,7 @@ void WorkerClassicScriptLoader::DidReceiveCachedMetadata(const char* data,
   memcpy(cached_metadata_->data(), data, size);
 }
 
-void WorkerClassicScriptLoader::DidFinishLoading(unsigned long identifier) {
+void WorkerClassicScriptLoader::DidFinishLoading(uint64_t identifier) {
   need_to_cancel_ = false;
   if (!failed_ && decoder_)
     source_text_.Append(decoder_->Flush());
@@ -308,7 +310,7 @@ void WorkerClassicScriptLoader::ProcessContentSecurityPolicy(
   if (!response.CurrentRequestUrl().ProtocolIs("blob") &&
       !response.CurrentRequestUrl().ProtocolIs("file") &&
       !response.CurrentRequestUrl().ProtocolIs("filesystem")) {
-    content_security_policy_ = ContentSecurityPolicy::Create();
+    content_security_policy_ = MakeGarbageCollected<ContentSecurityPolicy>();
     content_security_policy_->SetOverrideURLForSelf(
         response.CurrentRequestUrl());
     content_security_policy_->DidReceiveHeaders(

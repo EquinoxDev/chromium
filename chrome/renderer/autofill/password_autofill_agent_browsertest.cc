@@ -46,14 +46,15 @@ using autofill::FillingStatus;
 using autofill::FormTracker;
 using autofill::PasswordForm;
 using base::ASCIIToUTF16;
-using blink::WebAutofillState;
 using base::UTF16ToUTF8;
+using blink::WebAutofillState;
 using blink::WebDocument;
 using blink::WebElement;
 using blink::WebFormElement;
 using blink::WebFrame;
 using blink::WebInputElement;
 using blink::WebString;
+using testing::_;
 
 namespace {
 
@@ -673,11 +674,6 @@ class PasswordAutofillAgentTest : public ChromeRenderViewTest {
     }
   }
 
-  bool GetCalledAutomaticGenerationStatusChangedTrue() {
-    fake_pw_client_.Flush();
-    return fake_pw_client_.called_automatic_generation_status_changed_true();
-  }
-
   void BindPasswordManagerDriver(mojo::ScopedInterfaceEndpointHandle handle) {
     fake_driver_.BindRequest(
         mojom::PasswordManagerDriverAssociatedRequest(std::move(handle)));
@@ -721,7 +717,7 @@ class PasswordAutofillAgentTest : public ChromeRenderViewTest {
   }
 
   FakeMojoPasswordManagerDriver fake_driver_;
-  FakePasswordGenerationDriver fake_pw_client_;
+  testing::NiceMock<FakePasswordGenerationDriver> fake_pw_client_;
 
   base::string16 username1_;
   base::string16 username2_;
@@ -2571,6 +2567,9 @@ TEST_F(PasswordAutofillAgentTest, PasswordGenerationTriggered_TypedPassword) {
   SetAccountCreationFormsDetectedMessage(password_generation_,
                                          GetMainFrame()->GetDocument(), 0, 2);
 
+  // Generation event is triggered due to focus events.
+  EXPECT_CALL(fake_pw_client_, GenerationElementLostFocus())
+      .Times(testing::AnyNumber());
   SimulateUsernameTyping("NewGuy");
   SimulatePasswordTyping("NewPassword");
 
@@ -2661,9 +2660,14 @@ TEST_F(PasswordAutofillAgentTest, PasswordGenerationSupersedesAutofill) {
   // Simulate the field being clicked to start typing. This should trigger
   // generation but not password autofill.
   SetFocused(password_element_);
+  EXPECT_CALL(fake_pw_client_, AutomaticGenerationAvailable(_));
   SimulateElementClick("new_password");
+  base::RunLoop().RunUntilIdle();
+  testing::Mock::VerifyAndClearExpectations(&fake_pw_client_);
   EXPECT_FALSE(GetCalledShowPasswordSuggestions());
-  EXPECT_TRUE(GetCalledAutomaticGenerationStatusChangedTrue());
+  // On destruction the state is updated.
+  EXPECT_CALL(fake_pw_client_, GenerationElementLostFocus())
+      .Times(testing::AnyNumber());
 }
 
 // Tests that a password change form is properly filled with the username and
@@ -3772,7 +3776,7 @@ TEST_F(PasswordAutofillAgentTest, AutofillsAfterUserGesture) {
 
   password_autofill_agent_->UserGestureObserved();
   // It's a way to call PasswordValueGatekeeper::Reset().
-  password_autofill_agent_->DidStartProvisionalLoad(nullptr, false);
+  password_autofill_agent_->ReadyToCommitNavigation(nullptr);
 
   fill_data_.username_may_use_prefilled_placeholder = true;
   fill_data_.password_field.value = ASCIIToUTF16(kBobPassword);

@@ -42,6 +42,7 @@
 #include "third_party/blink/renderer/core/editing/selection_template.h"
 #include "third_party/blink/renderer/core/editing/serializers/serialization.h"
 #include "third_party/blink/renderer/core/editing/set_selection_options.h"
+#include "third_party/blink/renderer/core/editing/text_affinity.h"
 #include "third_party/blink/renderer/core/editing/visible_position.h"
 #include "third_party/blink/renderer/core/frame/local_frame.h"
 #include "third_party/blink/renderer/core/frame/use_counter.h"
@@ -51,9 +52,7 @@
 #include "third_party/blink/renderer/core/html/parser/html_parser_idioms.h"
 #include "third_party/blink/renderer/core/html/shadow/shadow_element_names.h"
 #include "third_party/blink/renderer/core/html_names.h"
-#include "third_party/blink/renderer/core/layout/layout_block.h"
 #include "third_party/blink/renderer/core/layout/layout_block_flow.h"
-#include "third_party/blink/renderer/core/layout/layout_theme.h"
 #include "third_party/blink/renderer/core/page/focus_controller.h"
 #include "third_party/blink/renderer/core/page/page.h"
 #include "third_party/blink/renderer/platform/bindings/exception_messages.h"
@@ -189,9 +188,9 @@ void TextControlElement::UpdatePlaceholderVisibility() {
   SetPlaceholderVisibility(PlaceholderShouldBeVisible());
 
   placeholder->SetInlineStyleProperty(
-      CSSPropertyDisplay,
-      IsPlaceholderVisible() || !SuggestedValue().IsEmpty() ? CSSValueBlock
-                                                            : CSSValueNone,
+      CSSPropertyID::kDisplay,
+      IsPlaceholderVisible() || !SuggestedValue().IsEmpty() ? CSSValueID::kBlock
+                                                            : CSSValueID::kNone,
       true);
 
   // If there was a visibility change not caused by the suggested value, set
@@ -293,8 +292,8 @@ void TextControlElement::setRangeText(const String& replacement,
   if (OpenShadowRoot())
     return;
 
-  String text = InnerEditorValue();
-  unsigned text_length = text.length();
+  String original_text = InnerEditorValue();
+  unsigned text_length = original_text.length();
   unsigned replacement_length = replacement.length();
   unsigned new_selection_start = selectionStart();
   unsigned new_selection_end = selectionEnd();
@@ -302,12 +301,12 @@ void TextControlElement::setRangeText(const String& replacement,
   start = std::min(start, text_length);
   end = std::min(end, text_length);
 
-  if (start < end)
-    text.replace(start, end - start, replacement);
-  else
-    text.insert(replacement, start);
+  StringBuilder text;
+  text.Append(StringView(original_text, 0, start));
+  text.Append(replacement);
+  text.Append(StringView(original_text, end));
 
-  setValue(text, TextFieldEventBehavior::kDispatchNoEvent,
+  setValue(text.ToString(), TextFieldEventBehavior::kDispatchNoEvent,
            TextControlSetValueSelection::kDoNotSet);
 
   if (selection_mode == "select") {
@@ -319,7 +318,7 @@ void TextControlElement::setRangeText(const String& replacement,
     new_selection_start = new_selection_end = start + replacement_length;
   } else {
     DCHECK_EQ(selection_mode, "preserve");
-    long delta = replacement_length - (end - start);
+    int delta = replacement_length - (end - start);
 
     if (new_selection_start > end)
       new_selection_start += delta;
@@ -659,8 +658,16 @@ SelectionInDOMTree TextControlElement::Selection() const {
   if (!start_node || !end_node)
     return SelectionInDOMTree();
 
+  TextAffinity affinity = TextAffinity::kDownstream;
+  if (GetDocument().FocusedElement() == this && GetDocument().GetFrame()) {
+    const SelectionInDOMTree& selection =
+        GetDocument().GetFrame()->Selection().GetSelectionInDOMTree();
+    affinity = selection.Affinity();
+  }
+
   return SelectionInDOMTree::Builder()
       .SetBaseAndExtent(Position(start_node, start), Position(end_node, end))
+      .SetAffinity(affinity)
       .Build();
 }
 
@@ -882,8 +889,7 @@ String TextControlElement::ValueWithHardLineBreaks() const {
   if (!inner_text || !IsTextControl())
     return value();
 
-  LayoutBlockFlow* layout_object =
-      ToLayoutBlockFlow(inner_text->GetLayoutObject());
+  auto* layout_object = To<LayoutBlockFlow>(inner_text->GetLayoutObject());
   if (!layout_object)
     return value();
 
@@ -975,7 +981,8 @@ String TextControlElement::DirectionForFormData() const {
 void TextControlElement::SetAutofillValue(const String& value) {
   // Set the value trimmed to the max length of the field and dispatch the input
   // and change events.
-  setValue(value.Substring(0, maxLength()), kDispatchInputAndChangeEvent);
+  setValue(value.Substring(0, maxLength()),
+           TextFieldEventBehavior::kDispatchInputAndChangeEvent);
 }
 
 // TODO(crbug.com/772433): Create and use a new suggested-value element instead.
@@ -1010,7 +1017,8 @@ void TextControlElement::SetSuggestedValue(const String& value) {
 
 HTMLElement* TextControlElement::CreateInnerEditorElement() {
   DCHECK(!inner_editor_);
-  inner_editor_ = TextControlInnerEditorElement::Create(GetDocument());
+  inner_editor_ =
+      MakeGarbageCollected<TextControlInnerEditorElement>(GetDocument());
   return inner_editor_;
 }
 

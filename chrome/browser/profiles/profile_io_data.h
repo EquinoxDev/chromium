@@ -151,7 +151,6 @@ class ProfileIOData {
 
   // Gets Sync state, for Dice account consistency.
   bool IsSyncEnabled() const;
-  bool SyncHasAuthError() const;
 
   BooleanPrefMember* safe_browsing_enabled() const {
     return &safe_browsing_enabled_;
@@ -163,6 +162,10 @@ class ProfileIOData {
 
   IntegerPrefMember* network_prediction_options() const {
     return &network_prediction_options_;
+  }
+
+  BooleanPrefMember* signed_exchange_enabled() const {
+    return &signed_exchange_enabled_;
   }
 
   signin::AccountConsistencyMethod account_consistency() const {
@@ -496,7 +499,6 @@ class ProfileIOData {
       client_cert_store_factory_;
 
   mutable StringPrefMember google_services_user_account_id_;
-  mutable BooleanPrefMember sync_has_auth_error_;
   mutable BooleanPrefMember sync_suppress_start_;
   mutable BooleanPrefMember sync_first_setup_complete_;
   mutable signin::AccountConsistencyMethod account_consistency_;
@@ -513,6 +515,7 @@ class ProfileIOData {
   mutable StringPrefMember allowed_domains_for_apps_;
   mutable IntegerPrefMember network_prediction_options_;
   mutable IntegerPrefMember incognito_availibility_pref_;
+  mutable BooleanPrefMember signed_exchange_enabled_;
 #if BUILDFLAG(ENABLE_PLUGINS)
   mutable BooleanPrefMember always_open_pdf_externally_;
 #endif

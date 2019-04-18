@@ -42,6 +42,13 @@ struct ShapeResultView::RunInfoPart {
   const HarfBuzzRunGlyphData& GlyphAt(unsigned index) const {
     return *(range_.begin + index);
   }
+  // The end character index of |this| without considering offsets in
+  // |ShapeResultView|. This is analogous to:
+  //   GlyphAt(Rtl() ? -1 : NumGlyphs()).character_index
+  // if such |HarfBuzzRunGlyphData| is available.
+  unsigned CharacterIndexOfEndGlyph() const {
+    return num_characters_ + offset_;
+  }
 
   bool Rtl() const { return run_->Rtl(); }
   bool IsHorizontal() const { return run_->IsHorizontal(); }
@@ -50,9 +57,6 @@ struct ShapeResultView::RunInfoPart {
   float Width() const { return width_; }
 
   unsigned PreviousSafeToBreakOffset(unsigned offset) const;
-  size_t GlyphToCharacterIndex(size_t i) const {
-    return run_->GlyphToCharacterIndex(i);
-  }
 
   // Common signatures with RunInfo, to templatize algorithms.
   const ShapeResult::RunInfo* GetRunInfo() const { return run_.get(); }
@@ -98,6 +102,13 @@ unsigned ShapeResultView::RunInfoPart::PreviousSafeToBreakOffset(
 
   // Next safe break is at the start of the run.
   return 0;
+}
+
+// The offset to add to |HarfBuzzRunGlyphData.character_index| to compute the
+// character index of the source string.
+unsigned ShapeResultView::CharacterIndexOffsetForGlyphData(
+    const RunInfoPart& part) const {
+  return part.start_index_ + char_index_offset_ - part.offset_;
 }
 
 template <class ShapeResultType>
@@ -267,6 +278,7 @@ void ShapeResultView::AddSegments(const Segment* segments,
     char_index_offset_ = 0;
   }
 
+  FloatRect bounds;
   for (unsigned i = 0; i < segment_count; i++) {
     const Segment& segment = segments[Rtl() ? last_segment_index - i : i];
     if (segment.result) {
@@ -274,25 +286,49 @@ void ShapeResultView::AddSegments(const Segment* segments,
       CreateViewsForResult(segment.result, segment.start_index,
                            segment.end_index);
       has_vertical_offsets_ |= segment.result->has_vertical_offsets_;
+      bounds.Unite(segment.result->Bounds());
     } else if (segment.view) {
       DCHECK_EQ(segment.view->Direction(), Direction());
       CreateViewsForResult(segment.view, segment.start_index,
                            segment.end_index);
       has_vertical_offsets_ |= segment.view->has_vertical_offsets_;
+      bounds.Unite(segment.view->Bounds());
     } else {
       NOTREACHED();
     }
   }
 
+  // Compute new glyph bounding box. We only need accurate (logical) left and
+  // right edges. For the (logical) top and bottom use on the unified bounds of
+  // all source ShapeResults which gurantees that the bounds of the view fully
+  // contains all text.
   float origin = 0;
   for (const auto& part : parts_) {
+    if (!part->NumGlyphs())
+      continue;
     if (part->IsHorizontal())
       ComputeBoundsForPart<true>(*part, origin);
     else
       ComputeBoundsForPart<false>(*part, origin);
     origin += part->width_;
   }
+  glyph_bounding_box_.SetY(bounds.Y());
+  glyph_bounding_box_.SetHeight(bounds.Height());
 }
+
+namespace {
+
+template <bool is_horizontal_run>
+void AccumulateGlyphBounds(GlyphBoundsAccumulator* bounds,
+                           const HarfBuzzRunGlyphData& glyph_data,
+                           const SimpleFontData* font_data) {
+  FloatRect glyph_bounds = glyph_data.HasValidGlyphBounds()
+                               ? glyph_data.GlyphBounds<is_horizontal_run>()
+                               : font_data->BoundsForGlyph(glyph_data.glyph);
+  bounds->Unite<is_horizontal_run>(glyph_data, glyph_bounds);
+}
+
+}  // Anonymous namespace
 
 template <bool is_horizontal_run>
 void ShapeResultView::ComputeBoundsForPart(const RunInfoPart& part,
@@ -300,15 +336,29 @@ void ShapeResultView::ComputeBoundsForPart(const RunInfoPart& part,
   GlyphBoundsAccumulator bounds(origin);
   const auto& run = part.run_;
   const SimpleFontData* font_data = run->font_data_.get();
-  for (const auto& glyph_data : part) {
-    FloatRect glyph_bounds = glyph_data.HasValidGlyphBounds()
-                                 ? FloatRect(glyph_data.GlyphBoundsBefore(), 0,
-                                             glyph_data.GlyphBoundsAfter(), 0)
-                                 : font_data->BoundsForGlyph(glyph_data.glyph);
+  DCHECK_GT(part.NumGlyphs(), 0u);
 
-    bounds.Unite<is_horizontal_run>(glyph_data, glyph_bounds);
+  // We only need the bounds of the full first...
+  const unsigned first_character_index = part.GlyphAt(0).character_index;
+  for (const auto& glyph_data : part) {
+    if (first_character_index != glyph_data.character_index)
+      break;
+    AccumulateGlyphBounds<is_horizontal_run>(&bounds, glyph_data, font_data);
     bounds.origin += glyph_data.advance;
   }
+
+  /// ...and last glyph.
+  unsigned last_character_index =
+      part.GlyphAt(part.NumGlyphs() - 1).character_index;
+  bounds.origin = origin + part.width_;
+  for (auto it = part.rbegin(); it != part.rend(); it++) {
+    const auto& glyph_data = *it;
+    if (last_character_index != glyph_data.character_index)
+      break;
+    bounds.origin -= glyph_data.advance;
+    AccumulateGlyphBounds<is_horizontal_run>(&bounds, glyph_data, font_data);
+  }
+
   if (!is_horizontal_run)
     bounds.ConvertVerticalRunToLogical(font_data->GetFontMetrics());
   glyph_bounding_box_.Unite(bounds.bounds);
@@ -378,10 +428,11 @@ float ShapeResultView::ForEachGlyph(float initial_advance,
     const auto& run = part->run_;
     bool is_horizontal = HB_DIRECTION_IS_HORIZONTAL(run->direction_);
     const SimpleFontData* font_data = run->font_data_.get();
+    const unsigned character_index_offset_for_glyph_data =
+        CharacterIndexOffsetForGlyphData(*part);
     for (const auto& glyph_data : *part) {
-      unsigned character_index = glyph_data.character_index +
-                                 part->start_index_ + char_index_offset_ -
-                                 part->offset_;
+      unsigned character_index =
+          glyph_data.character_index + character_index_offset_for_glyph_data;
       glyph_callback(context, character_index, glyph_data.glyph,
                      glyph_data.offset, total_advance, is_horizontal,
                      run->canvas_rotation_, font_data);
@@ -404,12 +455,13 @@ float ShapeResultView::ForEachGlyph(float initial_advance,
     const auto& run = part->run_;
     bool is_horizontal = HB_DIRECTION_IS_HORIZONTAL(run->direction_);
     const SimpleFontData* font_data = run->font_data_.get();
+    const unsigned character_index_offset_for_glyph_data =
+        CharacterIndexOffsetForGlyphData(*part);
 
     if (!run->Rtl()) {  // Left-to-right
       for (const auto& glyph_data : *part) {
-        unsigned character_index = glyph_data.character_index +
-                                   part->start_index_ + char_index_offset_ -
-                                   part->offset_;
+        unsigned character_index =
+            glyph_data.character_index + character_index_offset_for_glyph_data;
         if (character_index >= to)
           break;
         if (character_index >= from) {
@@ -422,9 +474,8 @@ float ShapeResultView::ForEachGlyph(float initial_advance,
 
     } else {  // Right-to-left
       for (const auto& glyph_data : *part) {
-        unsigned character_index = glyph_data.character_index +
-                                   part->start_index_ + char_index_offset_ -
-                                   part->offset_;
+        unsigned character_index =
+            glyph_data.character_index + character_index_offset_for_glyph_data;
         if (character_index < from)
           break;
         if (character_index < to) {
@@ -460,20 +511,24 @@ float ShapeResultView::ForEachGraphemeClusters(const StringView& text,
     // broken down further from a text shaping point of view.  A cluster can
     // contain multiple glyphs and grapheme clusters, with mutually overlapping
     // boundaries.
-    uint16_t cluster_start = static_cast<uint16_t>(
-        rtl ? run->start_index_ + run->num_characters_ + run_offset
-            : run->GlyphToCharacterIndex(0) + run_offset);
+    const unsigned character_index_offset_for_glyph_data =
+        CharacterIndexOffsetForGlyphData(*part) + run_offset;
+    uint16_t cluster_start =
+        static_cast<uint16_t>(rtl ? part->CharacterIndexOfEndGlyph() +
+                                        character_index_offset_for_glyph_data
+                                  : part->GlyphAt(0).character_index +
+                                        character_index_offset_for_glyph_data);
 
     const unsigned num_glyphs = part->NumGlyphs();
     for (unsigned i = 0; i < num_glyphs; ++i) {
       const HarfBuzzRunGlyphData& glyph_data = part->GlyphAt(i);
-      uint16_t current_character_index = glyph_data.character_index +
-                                         part->start_index_ +
-                                         char_index_offset_ - part->offset_;
+      uint16_t current_character_index =
+          glyph_data.character_index + character_index_offset_for_glyph_data;
 
       bool is_run_end = (i + 1 == num_glyphs);
       bool is_cluster_end =
-          is_run_end || (run->GlyphToCharacterIndex(i + 1) + run_offset !=
+          is_run_end || (part->GlyphAt(i + 1).character_index +
+                             character_index_offset_for_glyph_data !=
                          current_character_index);
 
       if ((rtl && current_character_index >= to) ||
@@ -496,8 +551,10 @@ float ShapeResultView::ForEachGraphemeClusters(const StringView& text,
           cluster_end = current_character_index;
         } else {
           cluster_end = static_cast<uint16_t>(
-              is_run_end ? run->start_index_ + run->num_characters_ + run_offset
-                         : run->GlyphToCharacterIndex(i + 1) + run_offset);
+              is_run_end ? part->CharacterIndexOfEndGlyph() +
+                               character_index_offset_for_glyph_data
+                         : part->GlyphAt(i + 1).character_index +
+                               character_index_offset_for_glyph_data);
         }
         graphemes_in_cluster = ShapeResult::CountGraphemesInCluster(
             text.Characters16(), text.length(), cluster_start, cluster_end);

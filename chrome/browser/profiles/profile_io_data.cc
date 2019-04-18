@@ -34,11 +34,9 @@
 #include "chrome/browser/io_thread.h"
 #include "chrome/browser/net/chrome_network_delegate.h"
 #include "chrome/browser/net/chrome_url_request_context_getter.h"
-#include "chrome/browser/net/failing_url_request_interceptor.h"
 #include "chrome/browser/net/profile_network_context_service.h"
 #include "chrome/browser/net/profile_network_context_service_factory.h"
 #include "chrome/browser/policy/cloud/policy_header_service_factory.h"
-#include "chrome/browser/policy/policy_helpers.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/signin/account_consistency_mode_manager.h"
@@ -136,7 +134,7 @@
 #include "chrome/browser/chromeos/settings/cros_settings.h"
 #include "chrome/browser/net/nss_context.h"
 #include "chromeos/constants/chromeos_switches.h"
-#include "chromeos/dbus/cryptohome_client.h"
+#include "chromeos/dbus/cryptohome/cryptohome_client.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "chromeos/settings/cros_settings_names.h"
 #include "chromeos/tpm/tpm_token_info_getter.h"
@@ -246,9 +244,10 @@ void DidGetTPMInfoForUserOnUIThread(
   if (token_info.has_value() && token_info->slot != -1) {
     DVLOG(1) << "Got TPM slot for " << username_hash << ": "
              << token_info->slot;
-    base::PostTaskWithTraits(FROM_HERE, {BrowserThread::IO},
-                             base::Bind(&crypto::InitializeTPMForChromeOSUser,
-                                        username_hash, token_info->slot));
+    base::PostTaskWithTraits(
+        FROM_HERE, {BrowserThread::IO},
+        base::BindOnce(&crypto::InitializeTPMForChromeOSUser, username_hash,
+                       token_info->slot));
   } else {
     NOTREACHED() << "TPMTokenInfoGetter reported invalid token.";
   }
@@ -261,7 +260,7 @@ void GetTPMInfoForUserOnUIThread(const AccountId& account_id,
            << " " << account_id.Serialize() << " " << username_hash;
   std::unique_ptr<chromeos::TPMTokenInfoGetter> scoped_token_info_getter =
       chromeos::TPMTokenInfoGetter::CreateForUserToken(
-          account_id, chromeos::DBusThreadManager::Get()->GetCryptohomeClient(),
+          account_id, chromeos::CryptohomeClient::Get(),
           base::ThreadTaskRunnerHandle::Get());
   chromeos::TPMTokenInfoGetter* token_info_getter =
       scoped_token_info_getter.get();
@@ -281,7 +280,7 @@ void StartTPMSlotInitializationOnIOThread(const AccountId& account_id,
 
   base::PostTaskWithTraits(
       FROM_HERE, {BrowserThread::UI},
-      base::Bind(&GetTPMInfoForUserOnUIThread, account_id, username_hash));
+      base::BindOnce(&GetTPMInfoForUserOnUIThread, account_id, username_hash));
 }
 
 void StartNSSInitOnIOThread(const AccountId& account_id,
@@ -403,8 +402,8 @@ void ProfileIOData::InitializeOnUIThread(Profile* profile) {
       DCHECK(!params->username_hash.empty());
       base::PostTaskWithTraits(
           FROM_HERE, {BrowserThread::IO},
-          base::Bind(&StartNSSInitOnIOThread, user->GetAccountId(),
-                     user->username_hash(), profile->GetPath()));
+          base::BindOnce(&StartNSSInitOnIOThread, user->GetAccountId(),
+                         user->username_hash(), profile->GetPath()));
 
       // Use the device-wide system key slot only if the user is affiliated on
       // the device.
@@ -436,6 +435,10 @@ void ProfileIOData::InitializeOnUIThread(Profile* profile) {
   allowed_domains_for_apps_.Init(prefs::kAllowedDomainsForApps, pref_service);
   allowed_domains_for_apps_.MoveToThread(
       base::CreateSingleThreadTaskRunnerWithTraits({BrowserThread::IO}));
+  signed_exchange_enabled_.Init(prefs::kSignedHTTPExchangeEnabled,
+                                pref_service);
+  signed_exchange_enabled_.MoveToThread(
+      base::CreateSingleThreadTaskRunnerWithTraits({BrowserThread::IO}));
 
   scoped_refptr<base::SingleThreadTaskRunner> io_task_runner =
       base::CreateSingleThreadTaskRunnerWithTraits({BrowserThread::IO});
@@ -451,8 +454,6 @@ void ProfileIOData::InitializeOnUIThread(Profile* profile) {
     sync_first_setup_complete_.Init(syncer::prefs::kSyncFirstSetupComplete,
                                     pref_service);
     sync_first_setup_complete_.MoveToThread(io_task_runner);
-    sync_has_auth_error_.Init(syncer::prefs::kSyncHasAuthError, pref_service);
-    sync_has_auth_error_.MoveToThread(io_task_runner);
   }
 
 #if !defined(OS_CHROMEOS)
@@ -819,10 +820,6 @@ bool ProfileIOData::IsSyncEnabled() const {
          !sync_suppress_start_.GetValue();
 }
 
-bool ProfileIOData::SyncHasAuthError() const {
-  return sync_has_auth_error_.GetValue();
-}
-
 #if !defined(OS_CHROMEOS)
 std::string ProfileIOData::GetSigninScopedDeviceId() const {
   return signin_scoped_device_id_.GetValue();
@@ -1147,6 +1144,10 @@ void ProfileIOData::SetUpJobFactoryDefaultsForBuilder(
       url::kAboutScheme,
       std::make_unique<about_handler::AboutProtocolHandler>());
 
+  // File support is needed for PAC scripts that use file URLs.
+  // TODO(crbug.com/839566): remove file support for all cases.
+  builder->set_file_enabled(true);
+
   builder->SetInterceptors(std::move(request_interceptors));
 
   if (protocol_handler_interceptor) {
@@ -1162,7 +1163,6 @@ void ProfileIOData::ShutdownOnUIThread(
   google_services_user_account_id_.Destroy();
   sync_suppress_start_.Destroy();
   sync_first_setup_complete_.Destroy();
-  sync_has_auth_error_.Destroy();
 #if !defined(OS_CHROMEOS)
   signin_scoped_device_id_.Destroy();
 #endif
@@ -1173,6 +1173,7 @@ void ProfileIOData::ShutdownOnUIThread(
   safe_browsing_whitelist_domains_.Destroy();
   network_prediction_options_.Destroy();
   incognito_availibility_pref_.Destroy();
+  signed_exchange_enabled_.Destroy();
 #if BUILDFLAG(ENABLE_PLUGINS)
   always_open_pdf_externally_.Destroy();
 #endif

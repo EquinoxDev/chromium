@@ -138,11 +138,27 @@ void FeedLoggingBridge::OnOpenedWithNoContent(JNIEnv* j_env,
   feed_logging_metrics_->OnPageShown(/*suggestions_count=*/0);
 }
 
-void FeedLoggingBridge::OnSpinnerShown(JNIEnv* j_env,
-                                       const JavaRef<jobject>& j_this,
-                                       const jlong j_shownTimeMs) {
-  feed_logging_metrics_->OnSpinnerShown(
-      base::TimeDelta::FromMilliseconds(j_shownTimeMs));
+void FeedLoggingBridge::OnSpinnerStarted(JNIEnv* j_env,
+                                         const JavaRef<jobject>& j_this,
+                                         const jint j_spinner_type) {
+  feed_logging_metrics_->OnSpinnerStarted(j_spinner_type);
+}
+
+void FeedLoggingBridge::OnSpinnerFinished(JNIEnv* j_env,
+                                          const JavaRef<jobject>& j_this,
+                                          const jlong j_shownTimeMs,
+                                          const jint j_spinner_type) {
+  feed_logging_metrics_->OnSpinnerFinished(
+      base::TimeDelta::FromMilliseconds(j_shownTimeMs), j_spinner_type);
+}
+
+void FeedLoggingBridge::OnSpinnerDestroyedWithoutCompleting(
+    JNIEnv* j_env,
+    const JavaRef<jobject>& j_this,
+    const jlong j_shownTimeMs,
+    const jint j_spinner_type) {
+  feed_logging_metrics_->OnSpinnerDestroyedWithoutCompleting(
+      base::TimeDelta::FromMilliseconds(j_shownTimeMs), j_spinner_type);
 }
 
 void FeedLoggingBridge::OnPietFrameRenderingEvent(
@@ -153,6 +169,54 @@ void FeedLoggingBridge::OnPietFrameRenderingEvent(
   base::android::JavaIntArrayToIntVector(j_env, j_piet_error_codes,
                                          &piet_error_codes);
   feed_logging_metrics_->OnPietFrameRenderingEvent(std::move(piet_error_codes));
+}
+
+void FeedLoggingBridge::OnInternalError(JNIEnv* j_env,
+                                        const JavaRef<jobject>& j_this,
+                                        const jint j_internal_error) {
+  feed_logging_metrics_->OnInternalError(j_internal_error);
+}
+
+void FeedLoggingBridge::OnTokenCompleted(
+    JNIEnv* j_env,
+    const base::android::JavaRef<jobject>& j_this,
+    const jboolean j_was_synthetic,
+    const jint j_content_count,
+    const jint j_token_count) {
+  feed_logging_metrics_->OnTokenCompleted(j_was_synthetic, j_content_count,
+                                          j_token_count);
+}
+
+void FeedLoggingBridge::OnTokenFailedToComplete(
+    JNIEnv* j_env,
+    const base::android::JavaRef<jobject>& j_this,
+    const jboolean j_was_synthetic,
+    const jint j_failure_count) {
+  feed_logging_metrics_->OnTokenFailedToComplete(j_was_synthetic,
+                                                 j_failure_count);
+}
+
+void FeedLoggingBridge::OnServerRequest(
+    JNIEnv* j_env,
+    const base::android::JavaRef<jobject>& j_this,
+    const jint j_request_reason) {
+  feed_logging_metrics_->OnServerRequest(j_request_reason);
+}
+
+void FeedLoggingBridge::OnZeroStateShown(
+    JNIEnv* j_env,
+    const base::android::JavaRef<jobject>& j_this,
+    const jint j_zero_state_show_reason) {
+  feed_logging_metrics_->OnZeroStateShown(j_zero_state_show_reason);
+}
+
+void FeedLoggingBridge::OnZeroStateRefreshCompleted(
+    JNIEnv* j_env,
+    const base::android::JavaRef<jobject>& j_this,
+    const jint j_new_content_count,
+    const jint j_new_token_count) {
+  feed_logging_metrics_->OnZeroStateRefreshCompleted(j_new_content_count,
+                                                     j_new_token_count);
 }
 
 void FeedLoggingBridge::OnContentTargetVisited(JNIEnv* j_env,

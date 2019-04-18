@@ -6,7 +6,6 @@
 #define CHROME_BROWSER_CHROMEOS_CROSTINI_CROSTINI_MANAGER_H_
 
 #include <map>
-#include <set>
 #include <string>
 #include <utility>
 #include <vector>
@@ -14,6 +13,7 @@
 #include "base/files/file_path.h"
 #include "base/memory/singleton.h"
 #include "base/memory/weak_ptr.h"
+#include "base/observer_list.h"
 #include "base/optional.h"
 #include "chrome/browser/chromeos/crostini/crostini_util.h"
 #include "chrome/browser/component_updater/cros_component_installer_chromeos.h"
@@ -25,14 +25,17 @@
 #include "chromeos/dbus/concierge_client.h"
 #include "components/keyed_service/core/keyed_service.h"
 #include "device/usb/public/mojom/device_manager.mojom.h"
-#include "device/usb/public/mojom/device_manager_client.mojom.h"
-#include "mojo/public/cpp/bindings/associated_binding.h"
 
 class Profile;
 
 namespace crostini {
 
 // Result types for CrostiniManager::StartTerminaVmCallback etc.
+
+// WARNING: Do not remove or re-order these values, as they are used in user
+// visible error messages and logs. New entries should only be added to the end.
+// This message was added during development of M74, error codes from prior
+// versions may differ from the numbering here.
 enum class CrostiniResult {
   SUCCESS,
   DBUS_ERROR,
@@ -64,10 +67,11 @@ enum class CrostiniResult {
   CROSTINI_UNINSTALLER_RUNNING,
   UNKNOWN_USB_DEVICE,
   UNKNOWN_ERROR,
-  CONTAINER_EXPORT_EXPORTING,
-  CONTAINER_EXPORT_FAILED,
-  CONTAINER_IMPORT_IMPORTING,
-  CONTAINER_IMPORT_FAILED,
+  CONTAINER_EXPORT_IMPORT_FAILED,
+  CONTAINER_EXPORT_IMPORT_FAILED_VM_STOPPED,
+  CONTAINER_EXPORT_IMPORT_FAILED_VM_STARTED,
+  CONTAINER_EXPORT_IMPORT_FAILED_ARCHITECTURE,
+  NOT_ALLOWED,
 };
 
 enum class InstallLinuxPackageProgressStatus {
@@ -97,6 +101,7 @@ enum class ExportContainerProgressStatus {
 enum class ImportContainerProgressStatus {
   UPLOAD,
   UNPACK,
+  FAILURE_ARCHITECTURE,
 };
 
 struct VmInfo {
@@ -178,12 +183,21 @@ class ImportContainerProgressObserver {
  public:
   // A successfully started container import will continually fire progress
   // events until the original callback from ImportLxdContainer is invoked with
-  // a status of SUCCESS or CONTAINER_IMPORT_FAILED.
-  virtual void OnImportContainerProgress(const std::string& vm_name,
-                                         const std::string& container_name,
-                                         ImportContainerProgressStatus status,
-                                         int progress_percent,
-                                         uint64_t progress_speed) = 0;
+  // a status of SUCCESS or CONTAINER_IMPORT_FAILED[_*].
+  virtual void OnImportContainerProgress(
+      const std::string& vm_name,
+      const std::string& container_name,
+      ImportContainerProgressStatus status,
+      int progress_percent,
+      uint64_t progress_speed,
+      const std::string& architecture_device,
+      const std::string& architecture_container) = 0;
+};
+
+class InstallerViewStatusObserver : public base::CheckedObserver {
+ public:
+  // Called when the CrostiniInstallerView is opened or closed.
+  virtual void OnCrostiniInstallerViewStatusChanged(bool open) = 0;
 };
 
 // CrostiniManager is a singleton which is used to check arguments for
@@ -194,8 +208,7 @@ class ImportContainerProgressObserver {
 // only the Concierge name is exposed outside of here.
 class CrostiniManager : public KeyedService,
                         public chromeos::ConciergeClient::Observer,
-                        public chromeos::CiceroneClient::Observer,
-                        public device::mojom::UsbDeviceManagerClient {
+                        public chromeos::CiceroneClient::Observer {
  public:
   using CrostiniResultCallback =
       base::OnceCallback<void(CrostiniResult result)>;
@@ -247,13 +260,16 @@ class CrostiniManager : public KeyedService,
   // The type of the callback for CrostiniManager::RemoveCrostini.
   using RemoveCrostiniCallback = CrostiniResultCallback;
   // The type of the callback for CrostiniManager::AttachUsbDevice
-  using AttachUsbDeviceCallback = CrostiniResultCallback;
+  // Note: The guest_port is only valid when the result is ::SUCCESS.
+  using AttachUsbDeviceCallback =
+      base::OnceCallback<void(uint8_t guest_port, CrostiniResult result)>;
   // The type of the callback for CrostiniManager::DetachUsbDevice
   using DetachUsbDeviceCallback = CrostiniResultCallback;
   // The type of the callback for CrostiniManager::ListUsbDevices
   using ListUsbDevicesCallback = base::OnceCallback<void(
       CrostiniResult result,
-      std::vector<device::mojom::UsbDeviceInfoPtr> devices)>;
+      std::vector<std::pair<std::string, uint8_t>> devices)>;
+
   // The type of the callback for CrostiniManager::SearchApp.
   using SearchAppCallback =
       base::OnceCallback<void(const std::vector<std::string>& package_names)>;
@@ -272,8 +288,8 @@ class CrostiniManager : public KeyedService,
     virtual void OnVmStarted(CrostiniResult result) = 0;
     virtual void OnContainerDownloading(int32_t download_percent) = 0;
     virtual void OnContainerCreated(CrostiniResult result) = 0;
-    virtual void OnContainerStarted(CrostiniResult result) = 0;
     virtual void OnContainerSetup(CrostiniResult result) = 0;
+    virtual void OnContainerStarted(CrostiniResult result) = 0;
     virtual void OnSshKeysFetched(CrostiniResult result) = 0;
   };
 
@@ -474,14 +490,23 @@ class CrostiniManager : public KeyedService,
                            std::string container_name,
                            GetContainerSshKeysCallback callback);
 
+  // Called when a USB device should be attached into the VM.
+  // Should only ever be called on user action.
   void AttachUsbDevice(const std::string& vm_name,
                        device::mojom::UsbDeviceInfoPtr device,
+                       base::ScopedFD fd,
                        AttachUsbDeviceCallback callback);
 
+  // Called when a USB device should be detached from the VM.
+  // May be called on user action or on USB removal.
   void DetachUsbDevice(const std::string& vm_name,
                        device::mojom::UsbDeviceInfoPtr device,
+                       uint8_t guest_port,
                        DetachUsbDeviceCallback callback);
 
+  // Lists USB devices attached to a guest VM.
+  // TODO(jopra): Rename to reflect that this now lists the mount points for USB
+  // devices.
   void ListUsbDevices(const std::string& vm_name,
                       ListUsbDevicesCallback callback);
 
@@ -585,8 +610,7 @@ class CrostiniManager : public KeyedService,
       const vm_tools::cicerone::ImportLxdContainerProgressSignal& signal)
       override;
 
-  void RemoveCrostini(std::string vm_name,
-                      RemoveCrostiniCallback callback);
+  void RemoveCrostini(std::string vm_name, RemoveCrostiniCallback callback);
 
   void SetVmState(std::string vm_name, VmState vm_state);
   bool IsVmRunning(std::string vm_name);
@@ -614,11 +638,11 @@ class CrostiniManager : public KeyedService,
     component_manager_load_error_for_testing_ = error;
   }
 
-  // device::mojom::UsbDeviceManagerClient::
-  void OnDeviceAdded(device::mojom::UsbDeviceInfoPtr device_info) override;
-  void OnDeviceRemoved(device::mojom::UsbDeviceInfoPtr device_info) override;
-
-  void SetUsbManagerForTesting(device::mojom::UsbDeviceManagerPtr usb_manager);
+  void SetInstallerViewStatus(bool open);
+  bool GetInstallerViewStatus() const;
+  void AddInstallerViewStatusObserver(InstallerViewStatusObserver* observer);
+  void RemoveInstallerViewStatusObserver(InstallerViewStatusObserver* observer);
+  bool HasInstallerViewStatusObserver(InstallerViewStatusObserver* observer);
 
  private:
   class CrostiniRestarter;
@@ -756,11 +780,6 @@ class CrostiniManager : public KeyedService,
       GetContainerSshKeysCallback callback,
       base::Optional<vm_tools::concierge::ContainerSshKeysResponse> reply);
 
-  void OnUsbDeviceOpened(AttachUsbDeviceCallback callback,
-                         device::mojom::UsbDeviceInfoPtr device,
-                         const std::string& vm_name,
-                         base::File file);
-
   // Callback for CrostiniManager::OnAttachUsbDeviceOpen
   void OnAttachUsbDevice(
       const std::string& vm_name,
@@ -801,7 +820,6 @@ class CrostiniManager : public KeyedService,
   // checking component registration code may block.
   void MaybeUpgradeCrostiniAfterChecks();
 
-
   void FinishRestart(CrostiniRestarter* restarter, CrostiniResult result);
 
   // Callback for CrostiniManager::AbortRestartCrostini
@@ -810,9 +828,6 @@ class CrostiniManager : public KeyedService,
 
   // Callback for CrostiniManager::RemoveCrostini.
   void OnRemoveCrostini(CrostiniResult result);
-
-  void InitializeUsbDeviceManager();
-  void InitializeUsbDeviceManagerClient();
 
   Profile* profile_;
   std::string owner_id_;
@@ -844,14 +859,8 @@ class CrostiniManager : public KeyedService,
   // Pending DeleteLxdContainer callbacks are keyed by <vm_name, container_name>
   // string pairs. These are used if DeleteLxdContainer indicates we need to
   // wait for an LxdContainerDelete signal.
-  std::multimap<std::pair<std::string, std::string>, CrostiniResultCallback>
-      delete_lxd_container_callbacks_;
-
-  // Pending StartLxdContainer callbacks are keyed by <vm_name, container_name>
-  // string pairs. These are used if StartLxdContainer indicates we need to
-  // wait for an LxdContainerStarting signal.
   std::multimap<ContainerId, CrostiniResultCallback>
-      start_lxd_container_callbacks_;
+      delete_lxd_container_callbacks_;
 
   // Pending ExportLxdContainer callbacks are keyed by <vm_name, container_name>
   // string pairs. They are invoked once ExportLxdContainerProgressSignal signal
@@ -892,15 +901,12 @@ class CrostiniManager : public KeyedService,
   std::map<CrostiniManager::RestartId, scoped_refptr<CrostiniRestarter>>
       restarters_by_id_;
 
-  // A mapping from GUID -> (VM name, guest port) for each attached USB device
-  std::map<std::string, std::pair<std::string, uint8_t>> attached_usb_devices_;
-  // A mapping from (VM name, guest port) -> GUID for each attached USB device
-  std::map<std::pair<std::string, uint8_t>, std::string>
-      attached_usb_devices_reverse_;
+  // True when the installer dialog is showing. At that point, it is invalid
+  // to allow Crostini uninstallation.
+  bool installer_dialog_showing_ = false;
 
-  mojo::AssociatedBinding<device::mojom::UsbDeviceManagerClient> binding_;
-
-  device::mojom::UsbDeviceManagerPtr usb_manager_;
+  base::ObserverList<InstallerViewStatusObserver>
+      installer_view_status_observers_;
 
   // Note: This should remain the last member so it'll be destroyed and
   // invalidate its weak pointers before any other members are destroyed.

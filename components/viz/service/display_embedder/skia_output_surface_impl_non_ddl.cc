@@ -14,15 +14,21 @@
 #include "components/viz/common/frame_sinks/begin_frame_source.h"
 #include "components/viz/common/frame_sinks/copy_output_request.h"
 #include "components/viz/common/gpu/context_lost_observer.h"
+#include "components/viz/common/gpu/vulkan_context_provider.h"
 #include "components/viz/common/resources/resource_format_utils.h"
 #include "components/viz/service/display/output_surface_client.h"
 #include "components/viz/service/display/output_surface_frame.h"
 #include "components/viz/service/display/resource_metadata.h"
+#include "gpu/command_buffer/common/shared_image_usage.h"
 #include "gpu/command_buffer/common/swap_buffers_complete_params.h"
 #include "gpu/command_buffer/service/mailbox_manager.h"
+#include "gpu/command_buffer/service/shared_image_factory.h"
+#include "gpu/command_buffer/service/shared_image_representation.h"
 #include "gpu/command_buffer/service/skia_utils.h"
 #include "gpu/command_buffer/service/sync_point_manager.h"
 #include "gpu/command_buffer/service/texture_base.h"
+#include "gpu/vulkan/buildflags.h"
+#include "third_party/skia/include/core/SkPromiseImageTexture.h"
 #include "third_party/skia/include/core/SkYUVAIndex.h"
 #include "ui/gfx/skia_util.h"
 #include "ui/gl/gl_bindings.h"
@@ -30,6 +36,10 @@
 #include "ui/gl/gl_gl_api_implementation.h"
 #include "ui/gl/gl_surface.h"
 #include "ui/gl/gl_version_info.h"
+
+#if BUILDFLAG(ENABLE_VULKAN)
+#include "third_party/skia/src/gpu/vk/GrVkSecondaryCBDrawContext.h"
+#endif
 
 namespace viz {
 
@@ -46,20 +56,41 @@ scoped_refptr<gpu::SyncPointClientState> CreateSyncPointClientState(
       command_buffer_id, sequence_id);
 }
 
+std::unique_ptr<gpu::SharedImageRepresentationFactory>
+CreateSharedImageRepresentationFactory(gpu::SharedImageManager* manager) {
+  if (!manager)
+    return nullptr;
+  // TODO(https://crbug.com/899905): Use a real MemoryTracker, not nullptr.
+  return std::make_unique<gpu::SharedImageRepresentationFactory>(
+      manager, nullptr /* tracker */);
+}
+
+void ReleaseSharedImagePresentation(void* context) {
+  std::unique_ptr<gpu::SharedImageRepresentationSkia> representation(
+      static_cast<gpu::SharedImageRepresentationSkia*>(context));
+  representation->EndReadAccess();
+}
+
 }  // namespace
 
 SkiaOutputSurfaceImplNonDDL::SkiaOutputSurfaceImplNonDDL(
     scoped_refptr<gl::GLSurface> gl_surface,
     scoped_refptr<gpu::SharedContextState> shared_context_state,
     gpu::MailboxManager* mailbox_manager,
-    gpu::SyncPointManager* sync_point_manager)
+    gpu::SharedImageManager* shared_image_manager,
+    gpu::SyncPointManager* sync_point_manager,
+    bool need_swapbuffers_ack)
     : gl_surface_(std::move(gl_surface)),
       shared_context_state_(std::move(shared_context_state)),
       mailbox_manager_(mailbox_manager),
+      sir_factory_(
+          CreateSharedImageRepresentationFactory(shared_image_manager)),
       sync_point_order_data_(sync_point_manager->CreateSyncPointOrderData()),
       sync_point_client_state_(
           CreateSyncPointClientState(sync_point_manager,
-                                     sync_point_order_data_->sequence_id())) {}
+                                     sync_point_order_data_->sequence_id())),
+      need_swapbuffers_ack_(need_swapbuffers_ack),
+      weak_ptr_factory_(this) {}
 
 SkiaOutputSurfaceImplNonDDL::~SkiaOutputSurfaceImplNonDDL() {
   DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
@@ -102,22 +133,37 @@ void SkiaOutputSurfaceImplNonDDL::Reshape(const gfx::Size& size,
   reshape_color_space_ = color_space;
   reshape_has_alpha_ = has_alpha;
   reshape_use_stencil_ = use_stencil;
-  backing_framebuffer_object_ = gl_surface_->GetBackingFramebufferObject();
 
-  SkSurfaceProps surface_props =
-      SkSurfaceProps(0, SkSurfaceProps::kLegacyFontHost_InitType);
+  const bool is_using_vulkan = shared_context_state_->use_vulkan_gr_context();
+  if (is_using_vulkan) {
+    auto* context_provider = shared_context_state_->vk_context_provider();
+    DCHECK(context_provider->GetGrSecondaryCBDrawContext());
+  } else {
+    // Conversion to GLSurface's color space follows the same logic as in
+    // gl::GetGLColorSpace().
+    gl::GLSurface::ColorSpace surface_color_space =
+        color_space.IsHDR() ? gl::GLSurface::ColorSpace::SCRGB_LINEAR
+                            : gl::GLSurface::ColorSpace::UNSPECIFIED;
+    gl_surface_->Resize(size, device_scale_factor, surface_color_space,
+                        has_alpha);
 
-  GrGLFramebufferInfo framebuffer_info;
-  framebuffer_info.fFBOID = backing_framebuffer_object_;
-  framebuffer_info.fFormat = GL_RGBA8;
+    backing_framebuffer_object_ = gl_surface_->GetBackingFramebufferObject();
 
-  GrBackendRenderTarget render_target(size.width(), size.height(), 0, 8,
-                                      framebuffer_info);
+    SkSurfaceProps surface_props =
+        SkSurfaceProps(0, SkSurfaceProps::kLegacyFontHost_InitType);
 
-  sk_surface_ = SkSurface::MakeFromBackendRenderTarget(
-      gr_context(), render_target, kBottomLeft_GrSurfaceOrigin,
-      kRGBA_8888_SkColorType, color_space.ToSkColorSpace(), &surface_props);
-  DCHECK(sk_surface_);
+    GrGLFramebufferInfo framebuffer_info;
+    framebuffer_info.fFBOID = backing_framebuffer_object_;
+    framebuffer_info.fFormat = GL_RGBA8;
+
+    GrBackendRenderTarget render_target(size.width(), size.height(), 0, 8,
+                                        framebuffer_info);
+
+    sk_surface_ = SkSurface::MakeFromBackendRenderTarget(
+        gr_context(), render_target, kBottomLeft_GrSurfaceOrigin,
+        kRGBA_8888_SkColorType, color_space.ToSkColorSpace(), &surface_props);
+    DCHECK(sk_surface_);
+  }
 }
 
 void SkiaOutputSurfaceImplNonDDL::SwapBuffers(OutputSurfaceFrame frame) {
@@ -158,14 +204,6 @@ void SkiaOutputSurfaceImplNonDDL::ApplyExternalStencil() {
   DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
 }
 
-#if BUILDFLAG(ENABLE_VULKAN)
-gpu::VulkanSurface* SkiaOutputSurfaceImplNonDDL::GetVulkanSurface() {
-  DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
-  NOTIMPLEMENTED();
-  return nullptr;
-}
-#endif
-
 unsigned SkiaOutputSurfaceImplNonDDL::UpdateGpuFence() {
   return 0;
 }
@@ -177,25 +215,45 @@ void SkiaOutputSurfaceImplNonDDL::SetNeedsSwapSizeNotifications(
 
 SkCanvas* SkiaOutputSurfaceImplNonDDL::BeginPaintCurrentFrame() {
   DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
-  DCHECK(sk_surface_);
   DCHECK_EQ(current_render_pass_id_, 0u);
   DCHECK_EQ(order_num_, 0u);
   order_num_ = sync_point_order_data_->GenerateUnprocessedOrderNumber();
   sync_point_order_data_->BeginProcessingOrderNumber(order_num_);
 
-  // If FBO is changed, we need call Reshape() to recreate |sk_surface_|.
-  if (backing_framebuffer_object_ !=
-      gl_surface_->GetBackingFramebufferObject()) {
-    Reshape(reshape_surface_size_, reshape_device_scale_factor_,
-            reshape_color_space_, reshape_has_alpha_, reshape_use_stencil_);
-  }
+  const bool is_using_vulkan = shared_context_state_->use_vulkan_gr_context();
 
-  return sk_surface_->getCanvas();
+  if (is_using_vulkan) {
+#if BUILDFLAG(ENABLE_VULKAN)
+    DCHECK(!draw_context_);
+    draw_context_ = shared_context_state_->vk_context_provider()
+                        ->GetGrSecondaryCBDrawContext();
+    DCHECK(draw_context_);
+    return draw_context_->getCanvas();
+#else
+    NOTREACHED();
+    return nullptr;
+#endif
+  } else {
+    DCHECK(sk_surface_);
+    // If FBO is changed, we need call Reshape() to recreate |sk_surface_|.
+    if (backing_framebuffer_object_ !=
+        gl_surface_->GetBackingFramebufferObject()) {
+      Reshape(reshape_surface_size_, reshape_device_scale_factor_,
+              reshape_color_space_, reshape_has_alpha_, reshape_use_stencil_);
+    }
+
+    return sk_surface_->getCanvas();
+  }
 }
 
 sk_sp<SkImage> SkiaOutputSurfaceImplNonDDL::MakePromiseSkImage(
     ResourceMetadata metadata) {
   DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
+
+  if (metadata.mailbox_holder.mailbox.IsSharedImage() && sir_factory_) {
+    WaitSyncToken(metadata.mailbox_holder.sync_token);
+    return MakeSkImageFromSharedImage(metadata);
+  }
 
   GrBackendTexture backend_texture;
   if (!GetGrBackendTexture(metadata, &backend_texture)) {
@@ -213,6 +271,7 @@ sk_sp<SkImage> SkiaOutputSurfaceImplNonDDL::MakePromiseSkImage(
 sk_sp<SkImage> SkiaOutputSurfaceImplNonDDL::MakePromiseSkImageFromYUV(
     std::vector<ResourceMetadata> metadatas,
     SkYUVColorSpace yuv_color_space,
+    sk_sp<SkColorSpace> dst_color_space,
     bool has_alpha) {
   DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
   DCHECK((has_alpha && (metadatas.size() == 3 || metadatas.size() == 4)) ||
@@ -273,7 +332,7 @@ sk_sp<SkImage> SkiaOutputSurfaceImplNonDDL::MakePromiseSkImageFromYUV(
   return SkImage::MakeFromYUVATextures(
       gr_context(), yuv_color_space, yuva_textures, indices,
       SkISize::Make(yuva_textures[0].width(), yuva_textures[1].height()),
-      kTopLeft_GrSurfaceOrigin);
+      kTopLeft_GrSurfaceOrigin, dst_color_space);
 }
 
 gpu::SyncToken SkiaOutputSurfaceImplNonDDL::ReleasePromiseSkImages(
@@ -288,8 +347,11 @@ gpu::SyncToken SkiaOutputSurfaceImplNonDDL::ReleasePromiseSkImages(
       sync_point_client_state_->command_buffer_id(), ++sync_fence_release_);
   sync_token.SetVerifyFlush();
   sync_point_client_state_->ReleaseFenceSync(sync_fence_release_);
-  DCHECK(mailbox_manager_->UsesSync());
-  mailbox_manager_->PushTextureUpdates(sync_token);
+  const bool is_using_vulkan = shared_context_state_->use_vulkan_gr_context();
+  if (!is_using_vulkan) {
+    DCHECK(mailbox_manager_->UsesSync());
+    mailbox_manager_->PushTextureUpdates(sync_token);
+  }
   sync_point_order_data_->FinishProcessingOrderNumber(order_num_);
   order_num_ = 0u;
   return sync_token;
@@ -298,7 +360,10 @@ gpu::SyncToken SkiaOutputSurfaceImplNonDDL::ReleasePromiseSkImages(
 void SkiaOutputSurfaceImplNonDDL::SkiaSwapBuffers(OutputSurfaceFrame frame) {
   DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
   gl_surface_->SwapBuffers(
-      base::DoNothing::Once<const gfx::PresentationFeedback&>());
+      base::BindOnce(&SkiaOutputSurfaceImplNonDDL::BufferPresented,
+                     weak_ptr_factory_.GetWeakPtr()));
+  if (need_swapbuffers_ack_)
+    client_->DidReceiveSwapBuffersAck();
 }
 
 SkCanvas* SkiaOutputSurfaceImplNonDDL::BeginPaintRenderPass(
@@ -332,7 +397,18 @@ gpu::SyncToken SkiaOutputSurfaceImplNonDDL::SubmitPaint() {
   DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
 
   if (current_render_pass_id_ == 0) {
-    sk_surface_->flush();
+    const bool is_using_vulkan = shared_context_state_->use_vulkan_gr_context();
+    if (is_using_vulkan) {
+#if BUILDFLAG(ENABLE_VULKAN)
+      DCHECK(draw_context_);
+      draw_context_->flush();
+      draw_context_ = nullptr;
+#else
+      NOTREACHED();
+#endif
+    } else {
+      sk_surface_->flush();
+    }
   } else {
     offscreen_sk_surfaces_[current_render_pass_id_]->flush();
   }
@@ -341,8 +417,11 @@ gpu::SyncToken SkiaOutputSurfaceImplNonDDL::SubmitPaint() {
       sync_point_client_state_->command_buffer_id(), ++sync_fence_release_);
   sync_token.SetVerifyFlush();
   sync_point_client_state_->ReleaseFenceSync(sync_fence_release_);
-  DCHECK(mailbox_manager_->UsesSync());
-  mailbox_manager_->PushTextureUpdates(sync_token);
+  const bool is_using_vulkan = shared_context_state_->use_vulkan_gr_context();
+  if (!is_using_vulkan) {
+    DCHECK(mailbox_manager_->UsesSync());
+    mailbox_manager_->PushTextureUpdates(sync_token);
+  }
   DCHECK_NE(order_num_, 0u);
   sync_point_order_data_->FinishProcessingOrderNumber(order_num_);
   order_num_ = 0u;
@@ -394,23 +473,67 @@ void SkiaOutputSurfaceImplNonDDL::RemoveContextLostObserver(
   observers_.RemoveObserver(observer);
 }
 
+bool SkiaOutputSurfaceImplNonDDL::WaitSyncToken(
+    const gpu::SyncToken& sync_token) {
+  base::WaitableEvent event;
+  if (!sync_point_client_state_->Wait(
+          sync_token, base::BindOnce(&base::WaitableEvent::Signal,
+                                     base::Unretained(&event)))) {
+    return false;
+  }
+  event.Wait();
+  return true;
+}
+
+sk_sp<SkImage> SkiaOutputSurfaceImplNonDDL::MakeSkImageFromSharedImage(
+    const ResourceMetadata& metadata) {
+  auto representation = sir_factory_->ProduceSkia(
+      metadata.mailbox_holder.mailbox, shared_context_state_.get());
+  if (!representation) {
+    DLOG(ERROR) << "Failed to make the SkImage - SharedImage mailbox not "
+                   "found in SharedImageManager.";
+    return nullptr;
+  }
+
+  if (!(representation->usage() & gpu::SHARED_IMAGE_USAGE_DISPLAY)) {
+    DLOG(ERROR) << "Failed to make the SkImage - SharedImage was not created "
+                   "with display usage.";
+    return nullptr;
+  }
+  auto promise_texture = representation->BeginReadAccess();
+  if (!promise_texture) {
+    DLOG(ERROR)
+        << "Failed to begin read access for SharedImageRepresentationSkia";
+    return nullptr;
+  }
+
+  SkColorType color_type = ResourceFormatToClosestSkColorType(
+      true /* gpu_compositing */, metadata.resource_format);
+
+  auto sk_image = SkImage::MakeFromTexture(
+      gr_context(), promise_texture->backendTexture(), kTopLeft_GrSurfaceOrigin,
+      color_type, metadata.alpha_type, metadata.color_space.ToSkColorSpace(),
+      ReleaseSharedImagePresentation, representation.get());
+
+  if (!sk_image) {
+    DLOG(ERROR) << "Failed to create the SkImage";
+    return nullptr;
+  }
+
+  representation.release();
+  return sk_image;
+}
+
 bool SkiaOutputSurfaceImplNonDDL::GetGrBackendTexture(
     const ResourceMetadata& metadata,
     GrBackendTexture* backend_texture) {
   DCHECK(!metadata.mailbox_holder.mailbox.IsZero());
-
-  base::WaitableEvent event;
-  if (sync_point_client_state_->Wait(
-          metadata.mailbox_holder.sync_token,
-          base::BindOnce(&base::WaitableEvent::Signal,
-                         base::Unretained(&event)))) {
-    event.Wait();
-    DCHECK(mailbox_manager_->UsesSync());
-    mailbox_manager_->PullTextureUpdates(metadata.mailbox_holder.sync_token);
-  }
-
-  if (metadata.mailbox_holder.mailbox.IsSharedImage()) {
-    // TODO(https://crbug.com/900973): support shared image.
+  if (WaitSyncToken(metadata.mailbox_holder.sync_token)) {
+    const bool is_using_vulkan = shared_context_state_->use_vulkan_gr_context();
+    if (!is_using_vulkan) {
+      DCHECK(mailbox_manager_->UsesSync());
+      mailbox_manager_->PullTextureUpdates(metadata.mailbox_holder.sync_token);
+    }
   }
 
   auto* texture_base =
@@ -425,6 +548,12 @@ bool SkiaOutputSurfaceImplNonDDL::GetGrBackendTexture(
   return gpu::GetGrBackendTexture(gl_version_info, texture_base->target(),
                                   metadata.size, texture_base->service_id(),
                                   metadata.resource_format, backend_texture);
+}
+
+void SkiaOutputSurfaceImplNonDDL::BufferPresented(
+    const gfx::PresentationFeedback& feedback) {
+  if (need_swapbuffers_ack_)
+    client_->DidReceivePresentationFeedback(feedback);
 }
 
 void SkiaOutputSurfaceImplNonDDL::ContextLost() {

@@ -79,7 +79,6 @@
 #include "third_party/blink/renderer/platform/weborigin/security_origin.h"
 #include "third_party/blink/renderer/platform/wtf/text/base64.h"
 #include "third_party/blink/renderer/platform/wtf/text/text_encoding.h"
-#include "third_party/blink/renderer/platform/wtf/time.h"
 #include "third_party/blink/renderer/platform/wtf/vector.h"
 #include "v8/include/v8-inspector.h"
 
@@ -179,7 +178,7 @@ std::unique_ptr<protocol::Array<String>> GetEnabledWindowFeatures(
 
 }  // namespace
 
-static bool PrepareResourceBuffer(Resource* cached_resource,
+static bool PrepareResourceBuffer(const Resource* cached_resource,
                                   bool* has_zero_size) {
   if (!cached_resource)
     return false;
@@ -198,7 +197,7 @@ static bool PrepareResourceBuffer(Resource* cached_resource,
   return true;
 }
 
-static bool HasTextContent(Resource* cached_resource) {
+static bool HasTextContent(const Resource* cached_resource) {
   ResourceType type = cached_resource->GetType();
   return type == ResourceType::kCSSStyleSheet ||
          type == ResourceType::kXSLStyleSheet ||
@@ -210,26 +209,26 @@ static std::unique_ptr<TextResourceDecoder> CreateResourceTextDecoder(
     const String& mime_type,
     const String& text_encoding_name) {
   if (!text_encoding_name.IsEmpty()) {
-    return TextResourceDecoder::Create(TextResourceDecoderOptions(
+    return std::make_unique<TextResourceDecoder>(TextResourceDecoderOptions(
         TextResourceDecoderOptions::kPlainTextContent,
         WTF::TextEncoding(text_encoding_name)));
   }
   if (DOMImplementation::IsXMLMIMEType(mime_type)) {
     TextResourceDecoderOptions options(TextResourceDecoderOptions::kXMLContent);
     options.SetUseLenientXMLDecoding();
-    return TextResourceDecoder::Create(options);
+    return std::make_unique<TextResourceDecoder>(options);
   }
   if (DeprecatedEqualIgnoringCase(mime_type, "text/html")) {
-    return TextResourceDecoder::Create(TextResourceDecoderOptions(
+    return std::make_unique<TextResourceDecoder>(TextResourceDecoderOptions(
         TextResourceDecoderOptions::kHTMLContent, UTF8Encoding()));
   }
   if (MIMETypeRegistry::IsSupportedJavaScriptMIMEType(mime_type) ||
       DOMImplementation::IsJSONMIMEType(mime_type)) {
-    return TextResourceDecoder::Create(TextResourceDecoderOptions(
+    return std::make_unique<TextResourceDecoder>(TextResourceDecoderOptions(
         TextResourceDecoderOptions::kPlainTextContent, UTF8Encoding()));
   }
   if (DOMImplementation::IsTextMIMEType(mime_type)) {
-    return TextResourceDecoder::Create(TextResourceDecoderOptions(
+    return std::make_unique<TextResourceDecoder>(TextResourceDecoderOptions(
         TextResourceDecoderOptions::kPlainTextContent,
         WTF::TextEncoding("ISO-8859-1")));
   }
@@ -311,7 +310,7 @@ bool InspectorPageAgent::SharedBufferContent(
 }
 
 // static
-bool InspectorPageAgent::CachedResourceContent(Resource* cached_resource,
+bool InspectorPageAgent::CachedResourceContent(const Resource* cached_resource,
                                                String* result,
                                                bool* base64_encoded) {
   bool has_zero_size;
@@ -362,15 +361,6 @@ bool InspectorPageAgent::CachedResourceContent(Resource* cached_resource,
           cached_resource->GetResponse().MimeType(), text_encoding_name, result,
           base64_encoded);
   }
-}
-
-InspectorPageAgent* InspectorPageAgent::Create(
-    InspectedFrames* inspected_frames,
-    Client* client,
-    InspectorResourceContentLoader* resource_content_loader,
-    v8_inspector::V8InspectorSession* v8_session) {
-  return MakeGarbageCollected<InspectorPageAgent>(
-      inspected_frames, client, resource_content_loader, v8_session);
 }
 
 String InspectorPageAgent::ResourceTypeJson(
@@ -527,7 +517,7 @@ void InspectorPageAgent::Restore() {
 
 Response InspectorPageAgent::enable() {
   enabled_.Set(true);
-  instrumenting_agents_->addInspectorPageAgent(this);
+  instrumenting_agents_->AddInspectorPageAgent(this);
   return Response::OK();
 }
 
@@ -535,7 +525,7 @@ Response InspectorPageAgent::disable() {
   agent_state_.ClearAllFields();
   script_to_evaluate_on_load_once_ = String();
   pending_script_to_evaluate_on_load_once_ = String();
-  instrumenting_agents_->removeInspectorPageAgent(this);
+  instrumenting_agents_->RemoveInspectorPageAgent(this);
   inspector_resource_content_loader_->Cancel(
       resource_content_loader_client_id_);
 
@@ -599,19 +589,20 @@ Response InspectorPageAgent::setLifecycleEventsEnabled(bool enabled) {
     TimeTicks commit_timestamp = timing.ResponseEnd();
     if (!commit_timestamp.is_null()) {
       LifecycleEvent(frame, loader, "commit",
-                     TimeTicksInSeconds(commit_timestamp));
+                     commit_timestamp.since_origin().InSecondsF());
     }
 
     TimeTicks domcontentloaded_timestamp =
         document->GetTiming().DomContentLoadedEventEnd();
     if (!domcontentloaded_timestamp.is_null()) {
       LifecycleEvent(frame, loader, "DOMContentLoaded",
-                     TimeTicksInSeconds(domcontentloaded_timestamp));
+                     domcontentloaded_timestamp.since_origin().InSecondsF());
     }
 
     TimeTicks load_timestamp = timing.LoadEventEnd();
     if (!load_timestamp.is_null()) {
-      LifecycleEvent(frame, loader, "load", TimeTicksInSeconds(load_timestamp));
+      LifecycleEvent(frame, loader, "load",
+                     load_timestamp.since_origin().InSecondsF());
     }
 
     IdlenessDetector* idleness_detector = frame->GetIdlenessDetector();
@@ -619,12 +610,12 @@ Response InspectorPageAgent::setLifecycleEventsEnabled(bool enabled) {
         idleness_detector->GetNetworkAlmostIdleTime();
     if (!network_almost_idle_timestamp.is_null()) {
       LifecycleEvent(frame, loader, "networkAlmostIdle",
-                     TimeTicksInSeconds(network_almost_idle_timestamp));
+                     network_almost_idle_timestamp.since_origin().InSecondsF());
     }
     TimeTicks network_idle_timestamp = idleness_detector->GetNetworkIdleTime();
     if (!network_idle_timestamp.is_null()) {
       LifecycleEvent(frame, loader, "networkIdle",
-                     TimeTicksInSeconds(network_idle_timestamp));
+                     network_idle_timestamp.since_origin().InSecondsF());
     }
   }
 
@@ -881,7 +872,7 @@ void InspectorPageAgent::DidClearDocumentOfWindowObject(LocalFrame* frame) {
   }
 }
 
-void InspectorPageAgent::DOMContentLoadedEventFired(LocalFrame* frame) {
+void InspectorPageAgent::DomContentLoadedEventFired(LocalFrame* frame) {
   double timestamp = CurrentTimeTicksInSeconds();
   if (frame == inspected_frames_->Root())
     GetFrontend()->domContentEventFired(timestamp);
@@ -933,6 +924,15 @@ void InspectorPageAgent::FrameStartedLoading(LocalFrame* frame) {
 
 void InspectorPageAgent::FrameStoppedLoading(LocalFrame* frame) {
   GetFrontend()->frameStoppedLoading(IdentifiersFactory::FrameId(frame));
+}
+
+void InspectorPageAgent::FrameRequestedNavigation(
+    LocalFrame* frame,
+    const KURL& url,
+    ClientNavigationReason reason) {
+  GetFrontend()->frameRequestedNavigation(
+      IdentifiersFactory::FrameId(frame),
+      ClientNavigationReasonToProtocol(reason), url.GetString());
 }
 
 void InspectorPageAgent::FrameScheduledNavigation(
@@ -1053,11 +1053,12 @@ InspectorPageAgent::BuildObjectForFrameTree(LocalFrame* frame) {
   std::unique_ptr<protocol::Array<protocol::Page::FrameTree>> children_array;
   for (Frame* child = frame->Tree().FirstChild(); child;
        child = child->Tree().NextSibling()) {
-    if (!child->IsLocalFrame())
+    auto* child_local_frame = DynamicTo<LocalFrame>(child);
+    if (!child_local_frame)
       continue;
     if (!children_array)
       children_array = protocol::Array<protocol::Page::FrameTree>::create();
-    children_array->addItem(BuildObjectForFrameTree(ToLocalFrame(child)));
+    children_array->addItem(BuildObjectForFrameTree(child_local_frame));
   }
   result->setChildFrames(std::move(children_array));
   return result;
@@ -1112,12 +1113,13 @@ InspectorPageAgent::BuildObjectForResourceTree(LocalFrame* frame) {
       children_array;
   for (Frame* child = frame->Tree().FirstChild(); child;
        child = child->Tree().NextSibling()) {
-    if (!child->IsLocalFrame())
+    auto* child_local_frame = DynamicTo<LocalFrame>(child);
+    if (!child_local_frame)
       continue;
     if (!children_array)
       children_array =
           protocol::Array<protocol::Page::FrameResourceTree>::create();
-    children_array->addItem(BuildObjectForResourceTree(ToLocalFrame(child)));
+    children_array->addItem(BuildObjectForResourceTree(child_local_frame));
   }
   result->setChildFrames(std::move(children_array));
   return result;
@@ -1144,7 +1146,7 @@ Response InspectorPageAgent::getLayoutMetrics(
   LocalFrame* main_frame = inspected_frames_->Root();
   VisualViewport& visual_viewport = main_frame->GetPage()->GetVisualViewport();
 
-  main_frame->GetDocument()->UpdateStyleAndLayoutIgnorePendingStylesheets();
+  main_frame->GetDocument()->UpdateStyleAndLayout();
 
   IntRect visible_contents =
       main_frame->View()->LayoutViewport()->VisibleContentRect();

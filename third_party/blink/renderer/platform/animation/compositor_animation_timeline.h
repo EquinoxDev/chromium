@@ -12,6 +12,7 @@
 #include "base/memory/scoped_refptr.h"
 #include "cc/animation/animation_timeline.h"
 #include "third_party/blink/renderer/platform/platform_export.h"
+#include "third_party/blink/renderer/platform/wtf/allocator.h"
 
 namespace blink {
 
@@ -19,11 +20,10 @@ class CompositorAnimationClient;
 
 // A compositor representation for cc::AnimationTimeline.
 class PLATFORM_EXPORT CompositorAnimationTimeline {
- public:
-  static std::unique_ptr<CompositorAnimationTimeline> Create() {
-    return base::WrapUnique(new CompositorAnimationTimeline());
-  }
+  USING_FAST_MALLOC(CompositorAnimationTimeline);
 
+ public:
+  CompositorAnimationTimeline();
   ~CompositorAnimationTimeline();
 
   cc::AnimationTimeline* GetAnimationTimeline() const;
@@ -32,8 +32,6 @@ class PLATFORM_EXPORT CompositorAnimationTimeline {
   void AnimationDestroyed(const CompositorAnimationClient&);
 
  private:
-  CompositorAnimationTimeline();
-
   scoped_refptr<cc::AnimationTimeline> animation_timeline_;
 
   DISALLOW_COPY_AND_ASSIGN(CompositorAnimationTimeline);

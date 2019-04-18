@@ -5,12 +5,16 @@
 #ifndef CHROME_BROWSER_MEDIA_ANDROID_CDM_MEDIA_DRM_ORIGIN_ID_MANAGER_H_
 #define CHROME_BROWSER_MEDIA_ANDROID_CDM_MEDIA_DRM_ORIGIN_ID_MANAGER_H_
 
-#include "base/callback_forward.h"
+#include <memory>
+
+#include "base/callback.h"
 #include "base/containers/queue.h"
 #include "base/memory/weak_ptr.h"
+#include "base/optional.h"
 #include "base/threading/thread_checker.h"
 #include "base/unguessable_token.h"
 #include "components/keyed_service/core/keyed_service.h"
+#include "media/base/android/media_drm_storage.h"
 
 class MediaDrmOriginIdManagerFactory;
 class PrefRegistrySimple;
@@ -28,8 +32,13 @@ class PrefService;
 // destroyed when the Profile goes away.
 class MediaDrmOriginIdManager : public KeyedService {
  public:
+  using MediaDrmOriginId = media::MediaDrmStorage::MediaDrmOriginId;
+
+  // |success| is true if an origin ID was obtained and |origin_id| is
+  // not null, false otherwise.
   using ProvisionedOriginIdCB =
-      base::OnceCallback<void(bool success, const base::UnguessableToken&)>;
+      base::OnceCallback<void(bool success, const MediaDrmOriginId& origin_id)>;
+  using ProvisioningResultCB = base::RepeatingCallback<bool()>;
 
   static void RegisterProfilePrefs(PrefRegistrySimple* registry);
 
@@ -46,12 +55,13 @@ class MediaDrmOriginIdManager : public KeyedService {
   // can handle it.
   void GetOriginId(ProvisionedOriginIdCB callback);
 
-  void SetProvisioningResultForTesting(bool result) {
-    skip_provisioning_for_testing_ = true;
-    provisioning_result_for_testing_ = result;
+  // When testing, use the provided |cb| instead of calling MediaDrm.
+  void SetProvisioningResultCBForTesting(ProvisioningResultCB cb) {
+    provisioning_result_cb_for_testing_ = cb;
   }
 
  private:
+  class NetworkObserver;
   friend class MediaDrmOriginIdManagerFactory;
 
   // MediaDrmOriginIdManager should only be created by
@@ -66,8 +76,7 @@ class MediaDrmOriginIdManager : public KeyedService {
 
   // Called when provisioning of |origin_id| is done. The provisioning of
   // |origin_id| was successful if |success| is true.
-  void OriginIdProvisioned(bool success,
-                           const base::UnguessableToken& origin_id);
+  void OriginIdProvisioned(bool success, const MediaDrmOriginId& origin_id);
 
   PrefService* const pref_service_;
 
@@ -78,11 +87,14 @@ class MediaDrmOriginIdManager : public KeyedService {
   // false otherwise.
   bool is_provisioning_ = false;
 
-  // When testing don't call MediaDrm to provision the origin ID, just pretend
-  // it was called and use the value provided so that tests can verify that
-  // the preference is used correctly.
-  bool skip_provisioning_for_testing_ = false;
-  bool provisioning_result_for_testing_ = false;
+  // When testing don't call MediaDrm to provision the origin ID, just call
+  // this CB and use the value returned to indicate if provisioning succeeded or
+  // failed so that tests can verify that the preference is used correctly.
+  ProvisioningResultCB provisioning_result_cb_for_testing_;
+
+  // When set, watch for network changes and call PreProvisionIfNecessary()
+  // when connected to a network.
+  std::unique_ptr<NetworkObserver> network_observer_;
 
   THREAD_CHECKER(thread_checker_);
 

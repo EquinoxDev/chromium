@@ -12,8 +12,8 @@
 namespace app_list {
 
 AppListConfig::AppListConfig()
-    : grid_tile_width_(120),
-      grid_tile_height_(112),
+    : grid_tile_width_(112),
+      grid_tile_height_(120),
       grid_tile_spacing_(0),
       grid_icon_dimension_(64),
       grid_icon_bottom_padding_(24),
@@ -27,6 +27,7 @@ AppListConfig::AppListConfig()
       search_tile_badge_icon_dimension_(22),
       search_tile_badge_icon_offset_(5),
       search_list_icon_dimension_(20),
+      search_list_icon_vertical_bar_dimension_(48),
       search_list_badge_icon_dimension_(14),
       suggestion_chip_icon_dimension_(16),
       app_title_max_line_height_(20),
@@ -59,7 +60,7 @@ AppListConfig::AppListConfig()
       shelf_height_(56),
       blur_radius_(30),
       contents_background_color_(SkColorSetRGB(0xF2, 0xF2, 0xF2)),
-      grid_selected_color_(SkColorSetARGB(0x1F, 0xFF, 0xFF, 0xFF)),
+      grid_selected_color_(gfx::kGoogleBlue300),
       card_background_color_(SK_ColorWHITE),
       page_transition_duration_ms_(250),
       overscroll_page_transition_duration_ms_(50),

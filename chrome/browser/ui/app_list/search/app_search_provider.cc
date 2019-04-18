@@ -21,20 +21,20 @@
 #include "base/callback_list.h"
 #include "base/location.h"
 #include "base/macros.h"
+#include "base/metrics/field_trial_params.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/optional.h"
 #include "base/single_thread_task_runner.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "base/time/clock.h"
-#include "chrome/browser/apps/app_service/app_service_proxy.h"
+#include "chrome/browser/apps/app_service/app_service_proxy_factory.h"
 #include "chrome/browser/chromeos/arc/arc_util.h"
 #include "chrome/browser/chromeos/crostini/crostini_manager.h"
 #include "chrome/browser/chromeos/crostini/crostini_registry_service.h"
 #include "chrome/browser/chromeos/crostini/crostini_registry_service_factory.h"
 #include "chrome/browser/chromeos/crostini/crostini_util.h"
 #include "chrome/browser/chromeos/extensions/gfx_utils.h"
-#include "chrome/browser/chromeos/profiles/profile_helper.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_ui_util.h"
 #include "chrome/browser/extensions/extension_util.h"
@@ -56,6 +56,7 @@
 #include "chrome/common/chrome_features.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/grit/generated_resources.h"
+#include "chrome/services/app_service/public/cpp/app_service_proxy.h"
 #include "components/sync/base/model_type.h"
 #include "components/sync_sessions/session_sync_service.h"
 #include "extensions/browser/extension_prefs.h"
@@ -76,6 +77,14 @@ constexpr size_t kMinimumReservedAppsContainerCapacity = 60U;
 // Relevance threshold to use when Crostini has not yet been enabled. This value
 // is somewhat arbitrary, but is roughly equivalent to the 'ter' in 'terminal'.
 constexpr double kCrostiniTerminalRelevanceThreshold = 0.8;
+
+// When ranking with the |QueryBasedAppsRanker| is enabled, this boost is
+// added to all apps that the ranker knows about.
+constexpr float kDefaultRankerScoreBoost = 0.0f;
+
+// When ranking with the |QueryBasedAppsRanker| is enabled, its scores are
+// multiplied by this amount.
+constexpr float kDefaultRankerScoreCoefficient = 0.1f;
 
 // Adds |app_result| to |results| only in case no duplicate apps were already
 // added. Duplicate means the same app but for different domain, Chrome and
@@ -118,6 +127,20 @@ float ReRange(const float score, const float min, const float max) {
     return min;
 
   return min + score * (max - min);
+}
+
+// Normalizes app IDs by removing any scheme prefix and trailing slash:
+// "arc://[id]/" to "[id]". This is necessary because apps launched from
+// different parts of the launcher have differently formatted IDs.
+std::string NormalizeID(const std::string& id) {
+  std::string app_id(id);
+  // No existing scheme names include the delimiter string "://".
+  std::size_t delimiter_index = app_id.find("://");
+  if (delimiter_index != std::string::npos)
+    app_id.erase(0, delimiter_index + 3);
+  if (!app_id.empty() && app_id.back() == '/')
+    app_id.pop_back();
+  return app_id;
 }
 
 }  // namespace
@@ -245,6 +268,8 @@ class AppSearchProvider::DataSource {
       AppListControllerDelegate* list_controller,
       bool is_recommended) = 0;
 
+  virtual void ViewClosing() {}
+
  protected:
   Profile* profile() { return profile_; }
   AppSearchProvider* owner() { return owner_; }
@@ -263,10 +288,13 @@ class AppServiceDataSource : public AppSearchProvider::DataSource,
                              public apps::AppRegistryCache::Observer {
  public:
   AppServiceDataSource(Profile* profile, AppSearchProvider* owner)
-      : AppSearchProvider::DataSource(profile, owner) {
-    apps::AppServiceProxy* proxy = apps::AppServiceProxy::Get(profile);
+      : AppSearchProvider::DataSource(profile, owner),
+        icon_cache_(apps::AppServiceProxyFactory::GetForProfile(profile),
+                    apps::IconCache::GarbageCollectionPolicy::kExplicit) {
+    apps::AppServiceProxy* proxy =
+        apps::AppServiceProxyFactory::GetForProfile(profile);
     if (proxy) {
-      Observe(&proxy->Cache());
+      Observe(&proxy->AppRegistryCache());
     }
   }
 
@@ -274,12 +302,13 @@ class AppServiceDataSource : public AppSearchProvider::DataSource,
 
   // AppSearchProvider::DataSource overrides:
   void AddApps(AppSearchProvider::Apps* apps_vector) override {
-    apps::AppServiceProxy* proxy = apps::AppServiceProxy::Get(profile());
+    apps::AppServiceProxy* proxy =
+        apps::AppServiceProxyFactory::GetForProfile(profile());
     if (!proxy) {
       return;
     }
-    proxy->Cache().ForEachApp([this,
-                               apps_vector](const apps::AppUpdate& update) {
+    proxy->AppRegistryCache().ForEachApp([this, apps_vector](
+                                             const apps::AppUpdate& update) {
       if (update.ShowInSearch() != apps::mojom::OptionalBool::kTrue) {
         return;
       }
@@ -301,6 +330,10 @@ class AppServiceDataSource : public AppSearchProvider::DataSource,
         apps_vector->back()->set_relevance_threshold(
             kCrostiniTerminalRelevanceThreshold);
       }
+
+      for (const std::string& term : update.AdditionalSearchTerms()) {
+        apps_vector->back()->AddSearchableText(base::UTF8ToUTF16(term));
+      }
     });
   }
 
@@ -309,8 +342,10 @@ class AppServiceDataSource : public AppSearchProvider::DataSource,
       AppListControllerDelegate* list_controller,
       bool is_recommended) override {
     return std::make_unique<AppServiceAppResult>(
-        profile(), app_id, list_controller, is_recommended);
+        profile(), app_id, list_controller, is_recommended, &icon_cache_);
   }
+
+  void ViewClosing() override { icon_cache_.SweepReleasedIcons(); }
 
  private:
   // apps::AppRegistryCache::Observer overrides:
@@ -321,6 +356,18 @@ class AppServiceDataSource : public AppSearchProvider::DataSource,
       owner()->RefreshAppsAndUpdateResults();
     }
   }
+
+  // The AppServiceDataSource seems like one (but not the only) good place to
+  // add an App Service icon caching wrapper, because (1) the AppSearchProvider
+  // destroys and creates multiple search results in a short period of time,
+  // while the user is typing, so will clearly benefit from a cache, and (2)
+  // there is an obvious point in time when the cache can be emptied: the user
+  // will obviously stop typing (so stop triggering LoadIcon requests) when the
+  // search box view closes.
+  //
+  // There are reasons to have more than one icon caching layer. See the
+  // comments for the apps::IconCache::GarbageCollectionPolicy enum.
+  apps::IconCache icon_cache_;
 
   DISALLOW_COPY_AND_ASSIGN(AppServiceDataSource);
 };
@@ -616,14 +663,13 @@ class CrostiniDataSource : public AppSearchProvider::DataSource,
 AppSearchProvider::AppSearchProvider(Profile* profile,
                                      AppListControllerDelegate* list_controller,
                                      base::Clock* clock,
-                                     AppListModelUpdater* model_updater)
+                                     AppListModelUpdater* model_updater,
+                                     AppSearchResultRanker* ranker)
     : profile_(profile),
       list_controller_(list_controller),
       model_updater_(model_updater),
       clock_(clock),
-      ranker_(std::make_unique<AppSearchResultRanker>(
-          profile->GetPath(),
-          chromeos::ProfileHelper::IsEphemeralUserProfile(profile))),
+      ranker_(ranker),
       refresh_apps_factory_(this),
       update_results_factory_(this) {
   bool app_service_enabled =
@@ -663,9 +709,15 @@ void AppSearchProvider::Start(const base::string16& query) {
     UpdateResults();
 }
 
+void AppSearchProvider::ViewClosing() {
+  ClearResults();
+  for (auto& data_source : data_sources_)
+    data_source->ViewClosing();
+}
+
 void AppSearchProvider::Train(const std::string& id, RankingItemType type) {
   if (type == RankingItemType::kApp)
-    ranker_->Train(id);
+    ranker_->Train(NormalizeID(id));
 }
 
 void AppSearchProvider::RefreshAppsAndUpdateResults() {
@@ -758,6 +810,26 @@ void AppSearchProvider::UpdateQueriedResults() {
   const size_t apps_size = apps_.size();
   new_results.reserve(apps_size);
 
+  const bool should_rerank =
+      app_list_features::IsQueryBasedAppsRankerEnabled() &&
+      base::GetFieldTrialParamByFeatureAsBool(
+          app_list_features::kEnableQueryBasedAppsRanker,
+          "rank_app_query_results", false) &&
+      ranker_ != nullptr;
+  // Maps app IDs to their score according to |ranker_|.
+  base::flat_map<std::string, float> ranker_scores;
+  float ranker_score_coefficient = kDefaultRankerScoreCoefficient;
+  float ranker_score_boost = kDefaultRankerScoreBoost;
+  if (should_rerank) {
+    ranker_scores = ranker_->Rank();
+    ranker_score_coefficient = base::GetFieldTrialParamByFeatureAsDouble(
+        app_list_features::kEnableQueryBasedAppsRanker, "app_query_coefficient",
+        ranker_score_coefficient);
+    ranker_score_boost = base::GetFieldTrialParamByFeatureAsDouble(
+        app_list_features::kEnableQueryBasedAppsRanker, "app_query_boost",
+        ranker_score_boost);
+  }
+
   const TokenizedString query_terms(query_);
   for (auto& app : apps_) {
     if (!app->searchable())
@@ -781,6 +853,15 @@ void AppSearchProvider::UpdateQueriedResults() {
     std::unique_ptr<AppResult> result =
         app->data_source()->CreateResult(app->id(), list_controller_, false);
     result->UpdateFromMatch(*indexed_name, match);
+    if (should_rerank) {
+      const auto find_in_ranker = ranker_scores.find(app->id());
+      if (find_in_ranker != ranker_scores.end()) {
+        result->set_relevance(result->relevance() +
+                              ranker_score_coefficient *
+                                  find_in_ranker->second +
+                              ranker_score_boost);
+      }
+    }
     MaybeAddResult(&new_results, std::move(result), &seen_or_filtered_apps);
   }
 
@@ -823,6 +904,10 @@ void AppSearchProvider::UpdateResults() {
   } else {
     UpdateQueriedResults();
   }
+}
+
+std::string AppSearchProvider::NormalizeIDForTest(const std::string& id) {
+  return NormalizeID(id);
 }
 
 }  // namespace app_list

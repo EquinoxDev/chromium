@@ -129,6 +129,9 @@ class BlinkAXTreeSource
       const std::string& value,
       uint32_t max_len = kMaxStringAttributeLength) const;
 
+  void AddImageAnnotations(blink::WebAXObject node,
+                           AXContentNodeData* out_data) const;
+
   RenderFrameImpl* render_frame_;
 
   ui::AXMode accessibility_mode_;
@@ -145,6 +148,10 @@ class BlinkAXTreeSource
   gfx::Size max_image_data_size_;
 
   AXImageAnnotator* image_annotator_ = nullptr;
+
+  // Whether we should highlight annotation results visually on the page
+  // for debugging.
+  bool image_annotation_debugging_ = false;
 
   // These are updated when calling |Freeze|.
   bool frozen_ = false;

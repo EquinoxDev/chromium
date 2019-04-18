@@ -8,9 +8,8 @@ import android.util.Base64;
 
 import com.google.android.libraries.feed.common.functional.Consumer;
 import com.google.android.libraries.feed.common.logging.Logger;
-import com.google.android.libraries.feed.feedrequestmanager.FeedRequestManager;
+import com.google.android.libraries.feed.feedrequestmanager.RequestHelper;
 import com.google.android.libraries.feed.host.config.Configuration;
-import com.google.android.libraries.feed.host.config.Configuration.ConfigKey;
 import com.google.android.libraries.feed.host.network.HttpRequest;
 import com.google.android.libraries.feed.host.network.HttpRequest.HttpMethod;
 import com.google.android.libraries.feed.host.network.HttpResponse;
@@ -50,7 +49,7 @@ public class TestNetworkClient implements NetworkClient {
         mExtensionRegistry = ExtensionRegistryLite.newInstance();
         mExtensionRegistry.add(FeedRequest.feedRequest);
         // TODO(aluo): Add ability to delay responses.
-        mResponseDelay = config.getValueOrDefault(ConfigKey.MOCK_SERVER_DELAY_MS, 0L);
+        mResponseDelay = 0L;
         mMockServer = MockServer.getDefaultInstance();
     }
 
@@ -127,10 +126,10 @@ public class TestNetworkClient implements NetworkClient {
     private Request getRequest(HttpRequest httpRequest) throws IOException {
         byte[] rawRequest = new byte[0];
         if (httpRequest.getMethod().equals(HttpMethod.GET)) {
-            if (httpRequest.getUri().getQueryParameter(FeedRequestManager.MOTHERSHIP_PARAM_PAYLOAD)
+            if (httpRequest.getUri().getQueryParameter(RequestHelper.MOTHERSHIP_PARAM_PAYLOAD)
                     != null) {
                 rawRequest = Base64.decode(httpRequest.getUri().getQueryParameter(
-                                                   FeedRequestManager.MOTHERSHIP_PARAM_PAYLOAD),
+                                                   RequestHelper.MOTHERSHIP_PARAM_PAYLOAD),
                         Base64.URL_SAFE);
             }
         } else {

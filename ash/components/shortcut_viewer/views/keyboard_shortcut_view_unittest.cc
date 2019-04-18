@@ -15,6 +15,7 @@
 #include "services/ws/public/cpp/input_devices/input_device_client_test_api.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/aura/window.h"
+#include "ui/compositor/test/test_utils.h"
 #include "ui/display/display.h"
 #include "ui/display/screen.h"
 #include "ui/events/test/event_generator.h"
@@ -40,7 +41,7 @@ class KeyboardShortcutViewTest : public ash::AshTestBase {
   }
 
  protected:
-  int GetTabCount() const {
+  size_t GetTabCount() const {
     DCHECK(GetView());
     return GetView()->GetTabCountForTesting();
   }
@@ -92,12 +93,7 @@ TEST_F(KeyboardShortcutViewTest, ShowAndClose) {
 
 TEST_F(KeyboardShortcutViewTest, StartupTimeHistogram) {
   views::Widget* widget = Toggle();
-  base::RunLoop runloop;
-  widget->GetCompositor()->RequestPresentationTimeForNextFrame(base::BindOnce(
-      [](base::RepeatingClosure closure,
-         const gfx::PresentationFeedback& feedback) { closure.Run(); },
-      runloop.QuitClosure()));
-  runloop.Run();
+  ui::WaitForNextFrameToBePresented(widget->GetCompositor());
   histograms_.ExpectTotalCount("Keyboard.ShortcutViewer.StartupTime", 1);
   widget->CloseNow();
 }
@@ -128,7 +124,7 @@ TEST_F(KeyboardShortcutViewTest, SideTabsCount) {
   // Show the widget.
   views::Widget* widget = Toggle();
 
-  int category_number = 0;
+  size_t category_number = 0;
   ShortcutCategory current_category = ShortcutCategory::kUnknown;
   for (const auto& item_view : GetShortcutViews()) {
     const ShortcutCategory category = item_view->category();
@@ -155,7 +151,7 @@ TEST_F(KeyboardShortcutViewTest, TopLineCenterAlignedInItemView) {
     if (item_view->category() != ShortcutCategory::kPopular)
       continue;
 
-    DCHECK(item_view->child_count() == 2);
+    DCHECK_EQ(2u, item_view->children().size());
 
     // The top lines in both |description_label_view_| and
     // |shortcut_label_view_| should be center aligned. Only need to check one

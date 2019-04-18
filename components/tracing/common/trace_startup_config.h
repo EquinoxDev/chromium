@@ -16,6 +16,10 @@ template <typename Type>
 struct DefaultSingletonTraits;
 }  // namespace base
 
+namespace content {
+class StartupTracingControllerTest;
+}
+
 namespace tracing {
 
 // TraceStartupConfig is a singleton that contains the configurations of startup
@@ -72,6 +76,8 @@ namespace tracing {
 // TracingControllerAndroid::GenerateTracingFilePath.
 class TRACING_EXPORT TraceStartupConfig {
  public:
+  enum class SessionOwner { kTracingController, kDevToolsTracingHandler };
+
   static TraceStartupConfig* GetInstance();
 
   // Default minimum startup trace config with enough events to debug issues.
@@ -100,6 +106,7 @@ class TRACING_EXPORT TraceStartupConfig {
   // saved to result file.
   bool ShouldTraceToResultFile() const;
   base::FilePath GetResultFile() const;
+  void OnTraceToResultFileFinished();
 
   // Get the background tracing config set in application preferences on the
   // previous session, for current session.
@@ -108,12 +115,29 @@ class TRACING_EXPORT TraceStartupConfig {
   // Set the background tracing config in preferences for the next session.
   void SetBackgroundStartupTracingEnabled(bool enabled);
 
+  // Returns when the startup tracing is finished and written to file, false on
+  // all other cases.
+  bool finished_writing_to_file_for_testing() const {
+    return finished_writing_to_file_;
+  }
+
+  SessionOwner GetSessionOwner() const;
+
+  // Called by a potential session owner to determine if it should take
+  // ownership of the startup tracing session and begin tracing. Returns |true|
+  // if the passed |owner| should adopt the session.
+  bool AttemptAdoptBySessionOwner(SessionOwner owner);
+
  private:
   // This allows constructor and destructor to be private and usable only
   // by the Singleton class.
   friend struct base::DefaultSingletonTraits<TraceStartupConfig>;
+  friend class content::StartupTracingControllerTest;
+
   TraceStartupConfig();
   ~TraceStartupConfig();
+
+  bool IsUsingPerfettoOutput() const;
 
   bool EnableFromCommandLine();
   bool EnableFromConfigFile();
@@ -121,12 +145,15 @@ class TRACING_EXPORT TraceStartupConfig {
 
   bool ParseTraceConfigFileContent(const std::string& content);
 
-  bool is_enabled_;
-  bool is_enabled_from_background_tracing_;
+  bool is_enabled_ = false;
+  bool is_enabled_from_background_tracing_ = false;
   base::trace_event::TraceConfig trace_config_;
-  int startup_duration_;
-  bool should_trace_to_result_file_;
+  int startup_duration_ = 0;
+  bool should_trace_to_result_file_ = false;
   base::FilePath result_file_;
+  bool finished_writing_to_file_ = false;
+  SessionOwner session_owner_ = SessionOwner::kTracingController;
+  bool session_adopted_ = false;
 
   DISALLOW_COPY_AND_ASSIGN(TraceStartupConfig);
 };

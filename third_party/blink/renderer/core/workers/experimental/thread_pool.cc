@@ -68,7 +68,7 @@ ConnectToWorkerInterfaceProviderForThreadPool(
   execution_context->GetInterfaceProvider()->GetInterface(&worker_host_factory);
   service_manager::mojom::blink::InterfaceProviderPtrInfo
       interface_provider_ptr;
-  worker_host_factory->CreateDedicatedWorker(
+  worker_host_factory->CreateWorkerHost(
       script_origin, mojo::MakeRequest(&interface_provider_ptr));
   return interface_provider_ptr;
 }
@@ -113,12 +113,13 @@ ThreadPoolThread* ThreadPool::CreateNewThread() {
   // ThreadedMessagingProxyBase::InitializeWorkerThread().
   proxy->StartWorker(std::make_unique<GlobalScopeCreationParams>(
       context->Url(), mojom::ScriptType::kClassic,
-      OffMainThreadWorkerScriptFetchOption::kDisabled, context->UserAgent(),
-      nullptr /* web_worker_fetch_context */,
+      OffMainThreadWorkerScriptFetchOption::kDisabled, "ThreadPool",
+      context->UserAgent(), nullptr /* web_worker_fetch_context */,
       context->GetContentSecurityPolicy()->Headers(),
       network::mojom::ReferrerPolicy::kDefault, context->GetSecurityOrigin(),
       context->IsSecureContext(), context->GetHttpsState(),
-      WorkerClients::Create(), context->GetSecurityContext().AddressSpace(),
+      MakeGarbageCollected<WorkerClients>(),
+      context->GetSecurityContext().AddressSpace(),
       OriginTrialContext::GetTokens(context).get(), devtools_worker_token,
       std::move(settings), kV8CacheOptionsDefault,
       nullptr /* worklet_module_responses_map */,

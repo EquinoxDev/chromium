@@ -58,6 +58,10 @@ Example:
       "token": "abcd-ef01-123123123",
       "username": "admin@example.com"
    },
+   "expected_errors": {
+     "register": 500,
+   }
+   "allow_set_device_attributes" : false,
 }
 
 """
@@ -305,10 +309,16 @@ class PolicyRequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
         (self.GetUniqueParam('deviceid') is not None and
          len(self.GetUniqueParam('deviceid')) >= 64)):
       return (400, 'Invalid request parameter')
+
+    expected_error = self.GetExpectedError(request_type)
+    if expected_error:
+      return expected_error
+
     if request_type == 'register':
       response = self.ProcessRegister(rmsg.register_request)
     elif request_type == 'certificate_based_register':
-      response = self.ProcessCertBasedRegister(rmsg.register_request)
+      response = self.ProcessCertBasedRegister(
+          rmsg.certificate_based_register_request)
     elif request_type == 'api_authorization':
       response = self.ProcessApiAuthorization(rmsg.service_api_access_request)
     elif request_type == 'unregister':
@@ -401,7 +411,7 @@ class PolicyRequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
     is GoogleEnrollmentToken token from an Authorization header. Returns None
     if no token is present.
     """
-    match = re.match('GoogleEnrollmentToken auth=(\\w+)',
+    match = re.match('GoogleEnrollmentToken token=(\\S+)',
                      self.headers.getheader('Authorization', ''))
     if match:
       return match.group(1)
@@ -450,8 +460,9 @@ class PolicyRequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
     """
     # Unwrap the request
     try:
-      req = self.UnwrapCertificateBasedDeviceRegistrationData(signed_msg)
-    except (Error):
+      req = self.UnwrapCertificateBasedDeviceRegistrationData(
+          signed_msg.signed_request)
+    except (IOError):
       return(400, 'Invalid request')
 
     # TODO(drcrash): Check the certificate itself.
@@ -505,6 +516,12 @@ class PolicyRequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
     """Verifies the signature of |msg| and if it is valid, return the
     certificate based device registration data. If not, throws an
     exception.
+
+    Args:
+      msg: SignedData received from the client.
+
+    Returns:
+      CertificateBasedDeviceRegistrationData
     """
     # TODO(drcrash): Verify signature.
     rdata = dm.CertificateBasedDeviceRegistrationData()
@@ -708,8 +725,15 @@ class PolicyRequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
       A tuple of HTTP status code and response data to send to the client.
     """
     response = dm.DeviceManagementResponse()
+    policy = self.server.GetPolicies()
+    update_allowed = True
+    if ('allow_set_device_attributes' in policy):
+      update_allowed = policy['allow_set_device_attributes']
+
     response.device_attribute_update_permission_response.result = (
-        dm.DeviceAttributeUpdatePermissionResponse.ATTRIBUTE_UPDATE_ALLOWED)
+        dm.DeviceAttributeUpdatePermissionResponse.ATTRIBUTE_UPDATE_ALLOWED
+        if update_allowed else
+        dm.DeviceAttributeUpdatePermissionResponse.ATTRIBUTE_UPDATE_DISALLOWED)
 
     return (200, response)
 
@@ -1208,6 +1232,21 @@ class PolicyRequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
     """Helper for logging an ASCII dump of a protobuf message."""
     logging.debug('%s\n%s' % (label, str(msg)))
 
+  def GetExpectedError(self, request):
+    """
+    Returns the preset HTTP error for |request| if it is defined in
+    configuration.
+
+    Returns:
+      A tuple of HTTP status code and response data to send to the client or
+      None if no error was defined.
+    """
+    policy = self.server.GetPolicies()
+    if 'request_errors' in policy:
+      errors = policy['request_errors']
+      if (request in errors) and (errors[request] > 0):
+        return errors[request], 'Preconfigured error'
+    return None
 
 class PolicyTestServer(testserver_base.BrokenPipeHandlerMixIn,
                        testserver_base.StoppableHTTPServer):
@@ -1219,21 +1258,28 @@ class PolicyTestServer(testserver_base.BrokenPipeHandlerMixIn,
 
     Args:
       server_address: Server host and port.
+      data_dir: Directory that contains files with signature, policy, clients
+        information.
       policy_path: Names the file to read JSON-formatted policy from.
+      client_state_file: Path to file with registered clients.
       private_key_paths: List of paths to read private keys from.
       rotate_keys_automatically: Whether the keys should be rotated in a
         round-robin fashion for each policy request (by default, either the
         key specified in the config or the first key will be used for all
         requests).
+      server_base_url: The server base URL. Used for ExternalPolicyData message.
     """
     testserver_base.StoppableHTTPServer.__init__(self, server_address,
                                                  PolicyRequestHandler)
-    self._registered_tokens = {}
     self.data_dir = data_dir
     self.policy_path = policy_path
-    self.client_state_file = client_state_file
     self.rotate_keys_automatically = rotate_keys_automatically
     self.server_base_url = server_base_url
+
+    #  _registered_tokens and client_state_file kept in sync if the file is set.
+    self._registered_tokens = {}
+    self.client_state_file = client_state_file
+    self.client_state_file_timestamp = 0
 
     self.keys = []
     if private_key_paths:
@@ -1289,13 +1335,11 @@ class PolicyTestServer(testserver_base.BrokenPipeHandlerMixIn,
       pubkey = asn1der.Sequence([ algorithm, asn1der.Bitstring(rsa_pubkey) ])
       entry['public_key'] = pubkey
 
-    # Load client state.
-    if self.client_state_file is not None:
-      try:
-        file_contents = open(self.client_state_file).read()
-        self._registered_tokens = json.loads(file_contents, strict=False)
-      except IOError:
-        pass
+    try:
+      self.ReadClientStateFile()
+    except Exception as e:
+      # Could fail if file is not written yet.
+      logging.info('failed to load client state %s' % e)
 
   def GetPolicies(self):
     """Returns the policies to be used, reloaded from the backend file every
@@ -1454,6 +1498,7 @@ class PolicyTestServer(testserver_base.BrokenPipeHandlerMixIn,
       A dictionary with information about a device or user that is registered by
       dmtoken, or None if the token is not found.
     """
+    self.ReadClientStateFile()
     return self._registered_tokens.get(dmtoken, None)
 
   def LookupByStateKey(self, state_key):
@@ -1466,6 +1511,7 @@ class PolicyTestServer(testserver_base.BrokenPipeHandlerMixIn,
       A dictionary with information about a device or user or None if there is
       no matching record.
     """
+    self.ReadClientStateFile()
     for client in self._registered_tokens.values():
       if state_key.encode('hex') in client.get('state_keys', []):
         return client
@@ -1478,6 +1524,7 @@ class PolicyTestServer(testserver_base.BrokenPipeHandlerMixIn,
     Returns:
       The list of registered clients.
     """
+    self.ReadClientStateFile()
     state_keys = sum([ c.get('state_keys', [])
                        for c in self._registered_tokens.values() ], [])
     hashed_keys = map(lambda key: hashlib.sha256(key.decode('hex')).digest(),
@@ -1496,11 +1543,25 @@ class PolicyTestServer(testserver_base.BrokenPipeHandlerMixIn,
       del self._registered_tokens[dmtoken]
       self.WriteClientState()
 
+  def ReadClientStateFile(self):
+    """ Loads _registered_tokens from client_state_file."""
+    if self.client_state_file is None:
+      return
+    file_timestamp = os.stat(self.client_state_file).st_mtime
+    if file_timestamp == self.client_state_file_timestamp:
+      return
+    logging.info('load client state')
+    file_contents = open(self.client_state_file).read()
+    self._registered_tokens = json.loads(file_contents, strict=False)
+    self.client_state_file_timestamp = file_timestamp
+
   def WriteClientState(self):
     """Writes the client state back to the file."""
     if self.client_state_file is not None:
       json_data = json.dumps(self._registered_tokens)
       open(self.client_state_file, 'w').write(json_data)
+      self.client_state_file_timestamp = os.stat(
+                                         self.client_state_file).st_mtime
 
   def GetBaseFilename(self, policy_selector):
     """Returns the base filename for the given policy_selector.

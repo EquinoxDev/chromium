@@ -22,6 +22,7 @@
 #include "ui/aura/client/capture_client_observer.h"
 #include "ui/aura/window_observer.h"
 #include "ui/aura/window_occlusion_tracker.h"
+#include "ui/base/ime/mojo/ime.mojom.h"
 
 namespace aura {
 class Window;
@@ -124,6 +125,11 @@ class COMPONENT_EXPORT(WINDOW_SERVICE) WindowTree
 
   // Notifies the client that the occlusion state of |windows| have changed.
   void SendOcclusionStates(const std::set<aura::Window*>& windows);
+
+  // Called from WindowService to update display id of ClientRoots contained by
+  // the root windows.
+  void OnWindowTreeHostsDisplayIdChanged(
+      const std::set<aura::Window*>& root_windows);
 
   WindowService* window_service() { return window_service_; }
 
@@ -345,6 +351,8 @@ class COMPONENT_EXPORT(WINDOW_SERVICE) WindowTree
                  mojom::WindowTreeClient* window_tree_client,
                  uint32_t flags);
   bool SetWindowOpacityImpl(const ClientWindowId& window_id, float opacity);
+  bool SetWindowTransparentImpl(const ClientWindowId& window_id,
+                                bool transparent);
   bool SetWindowBoundsImpl(const ClientWindowId& window_id,
                            const gfx::Rect& bounds,
                            const base::Optional<viz::LocalSurfaceIdAllocation>&
@@ -412,6 +420,8 @@ class COMPONENT_EXPORT(WINDOW_SERVICE) WindowTree
   void SetHitTestInsets(Id transport_window_id,
                         const gfx::Insets& mouse,
                         const gfx::Insets& touch) override;
+  void SetShape(Id transport_window_id,
+                const std::vector<gfx::Rect>& shape) override;
   void AttachFrameSinkId(Id transport_window_id,
                          const viz::FrameSinkId& f) override;
   void UnattachFrameSinkId(Id transport_window_id) override;
@@ -427,6 +437,9 @@ class COMPONENT_EXPORT(WINDOW_SERVICE) WindowTree
   void SetWindowOpacity(uint32_t change_id,
                         Id transport_window_id,
                         float opacity) override;
+  void SetWindowTransparent(uint32_t change_id,
+                            Id transport_window_id,
+                            bool transparent) override;
   void AttachCompositorFrameSink(
       Id transport_window_id,
       viz::mojom::CompositorFrameSinkRequest compositor_frame_sink,
@@ -509,6 +522,8 @@ class COMPONENT_EXPORT(WINDOW_SERVICE) WindowTree
   void TrackOcclusionState(Id transport_window_id) override;
   void PauseWindowOcclusionTracking() override;
   void UnpauseWindowOcclusionTracking() override;
+  void ConnectToImeEngine(ime::mojom::ImeEngineRequest engine_request,
+                          ime::mojom::ImeEngineClientPtr client) override;
 
   WindowService* window_service_;
 

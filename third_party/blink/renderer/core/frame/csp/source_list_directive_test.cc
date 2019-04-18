@@ -18,7 +18,8 @@ namespace blink {
 
 class SourceListDirectiveTest : public testing::Test {
  public:
-  SourceListDirectiveTest() : csp(ContentSecurityPolicy::Create()) {}
+  SourceListDirectiveTest()
+      : csp(MakeGarbageCollected<ContentSecurityPolicy>()) {}
 
  protected:
   struct Source {
@@ -45,7 +46,7 @@ class SourceListDirectiveTest : public testing::Test {
         SecurityOrigin::Create(secure_url));
     Document* document = Document::CreateForTest();
     document->SetSecurityOrigin(secure_origin);
-    ContentSecurityPolicy* csp = ContentSecurityPolicy::Create();
+    auto* csp = MakeGarbageCollected<ContentSecurityPolicy>();
     csp->BindToDelegate(document->GetContentSecurityPolicyDelegate());
     return csp;
   }
@@ -1405,6 +1406,22 @@ TEST_F(SourceListDirectiveTest, AllowHostWildcard) {
     String sources = "http://*";
     SourceListDirective source_list("default-src", sources, csp.Get());
     EXPECT_TRUE(source_list.Allows(KURL(base, "http://a.com")));
+  }
+}
+
+TEST_F(SourceListDirectiveTest, AllowHostMixedCase) {
+  KURL base;
+  // Non-wildcard sources should match hosts case-insensitively.
+  {
+    String sources = "http://ExAmPle.com";
+    SourceListDirective source_list("default-src", sources, csp.Get());
+    EXPECT_TRUE(source_list.Allows(KURL(base, "http://example.com")));
+  }
+  // Wildcard sources should match hosts case-insensitively.
+  {
+    String sources = "http://*.ExAmPle.com";
+    SourceListDirective source_list("default-src", sources, csp.Get());
+    EXPECT_TRUE(source_list.Allows(KURL(base, "http://www.example.com")));
   }
 }
 

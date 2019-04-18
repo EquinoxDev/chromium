@@ -141,8 +141,8 @@ public class NewTabPageAdapter extends Adapter<NewTabPageViewHolder>
 
     @Override
     public void onBindViewHolder(NewTabPageViewHolder holder, int position, List<Object> payloads) {
-        if (payloads.isEmpty()) {
-            onBindViewHolder(holder, position);
+        if (payloads == null || payloads.isEmpty()) {
+            mRoot.onBindViewHolder(holder, position, null);
             return;
         }
 
@@ -153,7 +153,7 @@ public class NewTabPageAdapter extends Adapter<NewTabPageViewHolder>
 
     @Override
     public void onBindViewHolder(NewTabPageViewHolder holder, final int position) {
-        mRoot.onBindViewHolder(holder, position, null);
+        onBindViewHolder(holder, position, null);
     }
 
     @Override
@@ -184,8 +184,11 @@ public class NewTabPageAdapter extends Adapter<NewTabPageViewHolder>
         boolean isArticleSectionVisible = mSections.getSection(KnownCategories.ARTICLES) != null;
 
         mAllDismissed.setVisible(areRemoteSuggestionsEnabled && allDismissed);
+        // Always hide footer when in touchless mode since the learn more link will be shown in the
+        // context menu.
         mFooter.setVisible(!SuggestionsConfig.scrollToLoad() && !allDismissed
-                && (areRemoteSuggestionsEnabled || isArticleSectionVisible));
+                && (areRemoteSuggestionsEnabled || isArticleSectionVisible)
+                && SuggestionsConfig.isTouchless());
     }
 
     private boolean areArticlesLoading() {
@@ -285,10 +288,12 @@ public class NewTabPageAdapter extends Adapter<NewTabPageViewHolder>
         return RecyclerView.NO_POSITION;
     }
 
+    @VisibleForTesting
     public SectionList getSectionListForTesting() {
         return mSections;
     }
 
+    @VisibleForTesting
     public InnerNode getRootForTesting() {
         return mRoot;
     }

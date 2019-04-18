@@ -78,7 +78,6 @@ class AcceleratorFilter;
 class ActivationClient;
 class CompoundEventFilter;
 class FocusController;
-class FocusRules;
 class ShadowController;
 class VisibilityController;
 class WindowModalityController;
@@ -94,8 +93,10 @@ class AcceleratorController;
 class AccessibilityController;
 class AccessibilityDelegate;
 class AccessibilityFocusRingController;
+class ArcCustomTabController;
 class AshDBusServices;
 class AshDisplayController;
+class AshFocusRules;
 class AppListControllerImpl;
 class NativeCursorManagerAsh;
 class AshTouchTransformController;
@@ -107,7 +108,6 @@ class BluetoothPowerController;
 class BrightnessControlDelegate;
 class CastConfigController;
 class DisplayOutputProtection;
-class ContainedShellController;
 class CrosDisplayConfig;
 class DesksController;
 class DetachableBaseHandler;
@@ -128,11 +128,14 @@ class FirstRunHelper;
 class FocusCycler;
 class HighContrastController;
 class HighlighterController;
+class HomeScreenController;
 class ImeController;
+class ImeEngineFactoryRegistry;
 class ImeFocusHandler;
 class ImmersiveContext;
 class KeyAccessibilityEnabler;
 class KeyboardBrightnessControlDelegate;
+class KioskNextShellController;
 class AshKeyboardController;
 class LaserPointerController;
 class LocaleUpdateController;
@@ -157,6 +160,7 @@ class PersistentWindowController;
 class PolicyRecommendationRestorer;
 class PowerButtonController;
 class PowerEventObserver;
+class NotificationReporter;
 class PowerPrefs;
 class ProjectingObserver;
 class ResizeShadowController;
@@ -314,13 +318,6 @@ class ASH_EXPORT Shell : public SessionObserver,
   // Called when dictation is ended.
   void OnDictationEnded();
 
-  // Enables the keyboard and associate it with the primary root window
-  // controller.
-  void EnableKeyboard();
-
-  // Hides and disables the virtual keyboard.
-  void DisableKeyboard();
-
   // Test if TabletModeWindowManager is not enabled, and if
   // TabletModeController is not currently setting a display rotation. Or if
   // the |resolution_notification_controller_| is not showing its confirmation
@@ -343,6 +340,9 @@ class ASH_EXPORT Shell : public SessionObserver,
   AppListControllerImpl* app_list_controller() {
     return app_list_controller_.get();
   }
+  ArcCustomTabController* arc_custom_tab_controller() {
+    return arc_custom_tab_controller_.get();
+  }
   AshDisplayController* ash_display_controller() {
     return ash_display_controller_.get();
   }
@@ -364,9 +364,6 @@ class ASH_EXPORT Shell : public SessionObserver,
   }
   CastConfigController* cast_config() { return cast_config_.get(); }
   service_manager::Connector* connector() { return connector_; }
-  ContainedShellController* contained_shell_controller() {
-    return contained_shell_controller_.get();
-  }
   CrosDisplayConfig* cros_display_config() {
     return cros_display_config_.get();
   }
@@ -382,10 +379,8 @@ class ASH_EXPORT Shell : public SessionObserver,
     return display_configuration_controller_.get();
   }
 
-  // TODO(oshima): Move these objects to WindowTreeHostManager.
-  display::DisplayConfigurator* display_configurator() {
-    return display_configurator_.get();
-  }
+  display::DisplayConfigurator* display_configurator();
+
   DisplayColorManager* display_color_manager() {
     return display_color_manager_.get();
   }
@@ -406,9 +401,12 @@ class ASH_EXPORT Shell : public SessionObserver,
   EventTransformationHandler* event_transformation_handler() {
     return event_transformation_handler_.get();
   }
+  HomeScreenController* home_screen_controller() {
+    return home_screen_controller_.get();
+  }
   FirstRunHelper* first_run_helper() { return first_run_helper_.get(); }
   ::wm::FocusController* focus_controller() { return focus_controller_.get(); }
-  ::wm::FocusRules* focus_rules() { return focus_rules_; }
+  AshFocusRules* focus_rules() { return focus_rules_; }
   FocusCycler* focus_cycler() { return focus_cycler_.get(); }
   HighlighterController* highlighter_controller() {
     return highlighter_controller_.get();
@@ -417,12 +415,18 @@ class ASH_EXPORT Shell : public SessionObserver,
     return high_contrast_controller_.get();
   }
   ImeController* ime_controller() { return ime_controller_.get(); }
+  ImeEngineFactoryRegistry* ime_engine_factory_registry() {
+    return ime_engine_factory_registry_.get();
+  }
   ImmersiveContext* immersive_context() { return immersive_context_.get(); }
   KeyAccessibilityEnabler* key_accessibility_enabler() {
     return key_accessibility_enabler_.get();
   }
   KeyboardBrightnessControlDelegate* keyboard_brightness_control_delegate() {
     return keyboard_brightness_control_delegate_.get();
+  }
+  KioskNextShellController* kiosk_next_shell_controller() {
+    return kiosk_next_shell_controller_.get();
   }
   AshKeyboardController* ash_keyboard_controller() {
     return ash_keyboard_controller_.get();
@@ -462,6 +466,9 @@ class ASH_EXPORT Shell : public SessionObserver,
   NightLightController* night_light_controller();
   NoteTakingController* note_taking_controller() {
     return note_taking_controller_.get();
+  }
+  NotificationReporter* notification_reporter() {
+    return notification_reporter_.get();
   }
   OverlayEventFilter* overlay_filter() { return overlay_filter_.get(); }
   PartialMagnificationController* partial_magnification_controller() {
@@ -594,6 +601,9 @@ class ASH_EXPORT Shell : public SessionObserver,
   void ShowContextMenu(const gfx::Point& location_in_screen,
                        ui::MenuSourceType source_type);
 
+  // Removes the AppListController.
+  void RemoveAppListController();
+
   void AddShellObserver(ShellObserver* observer);
   void RemoveShellObserver(ShellObserver* observer);
 
@@ -611,12 +621,17 @@ class ASH_EXPORT Shell : public SessionObserver,
   // Notifies observers that split view mode has ended.
   void NotifySplitViewModeEnded();
 
-  // Notifies observers that fullscreen mode has changed for |root_window|.
+  // Notifies observers that fullscreen mode has changed for |container|.
+  // |container| is always the active desk container.
   void NotifyFullscreenStateChanged(bool is_fullscreen,
-                                    aura::Window* root_window);
+                                    aura::Window* container);
 
   // Notifies observers that |pinned_window| changed its pinned window state.
   void NotifyPinnedStateChanged(aura::Window* pinned_window);
+
+  // Notifies observers that |root_window|'s user work area insets have changed.
+  // This notification is not fired when shelf bounds changed.
+  void NotifyUserWorkAreaInsetsChanged(aura::Window* root_window);
 
   // Notifies observers that |root_window|'s shelf changed alignment.
   // TODO(jamescook): Move to Shelf.
@@ -706,6 +721,7 @@ class ASH_EXPORT Shell : public SessionObserver,
   std::unique_ptr<AccessibilityFocusRingController>
       accessibility_focus_ring_controller_;
   std::unique_ptr<AppListControllerImpl> app_list_controller_;
+  std::unique_ptr<ArcCustomTabController> arc_custom_tab_controller_;
   std::unique_ptr<AshDBusServices> ash_dbus_services_;
   std::unique_ptr<AshDisplayController> ash_display_controller_;
   std::unique_ptr<AssistantController> assistant_controller_;
@@ -714,7 +730,6 @@ class ASH_EXPORT Shell : public SessionObserver,
   std::unique_ptr<CastConfigController> cast_config_;
   std::unique_ptr<CrosDisplayConfig> cros_display_config_;
   service_manager::Connector* const connector_;
-  std::unique_ptr<ContainedShellController> contained_shell_controller_;
   std::unique_ptr<DesksController> desks_controller_;
   std::unique_ptr<DetachableBaseHandler> detachable_base_handler_;
   std::unique_ptr<DetachableBaseNotificationController>
@@ -723,11 +738,14 @@ class ASH_EXPORT Shell : public SessionObserver,
   std::unique_ptr<DragDropController> drag_drop_controller_;
   std::unique_ptr<FirstRunHelper> first_run_helper_;
   std::unique_ptr<FocusCycler> focus_cycler_;
+  std::unique_ptr<HomeScreenController> home_screen_controller_;
   std::unique_ptr<ImeController> ime_controller_;
+  std::unique_ptr<ImeEngineFactoryRegistry> ime_engine_factory_registry_;
   std::unique_ptr<ImeFocusHandler> ime_focus_handler_;
   std::unique_ptr<ImmersiveContext> immersive_context_;
   std::unique_ptr<KeyboardBrightnessControlDelegate>
       keyboard_brightness_control_delegate_;
+  std::unique_ptr<KioskNextShellController> kiosk_next_shell_controller_;
   std::unique_ptr<LocaleUpdateController> locale_update_controller_;
   std::unique_ptr<LoginScreenController> login_screen_controller_;
   std::unique_ptr<LogoutConfirmationController> logout_confirmation_controller_;
@@ -762,7 +780,7 @@ class ASH_EXPORT Shell : public SessionObserver,
   std::unique_ptr<WindowCycleController> window_cycle_controller_;
   std::unique_ptr<OverviewController> overview_controller_;
   // Owned by |focus_controller_|.
-  ::wm::FocusRules* focus_rules_ = nullptr;
+  AshFocusRules* focus_rules_ = nullptr;
   std::unique_ptr<::wm::ShadowController> shadow_controller_;
   std::unique_ptr<::wm::VisibilityController> visibility_controller_;
   std::unique_ptr<::wm::WindowModalityController> window_modality_controller_;
@@ -824,7 +842,6 @@ class ASH_EXPORT Shell : public SessionObserver,
   std::unique_ptr<TrayBluetoothHelper> tray_bluetooth_helper_;
   std::unique_ptr<AshKeyboardController> ash_keyboard_controller_;
   // Controls video output device state.
-  std::unique_ptr<display::DisplayConfigurator> display_configurator_;
   std::unique_ptr<DisplayOutputProtection> display_output_protection_;
   std::unique_ptr<DisplayColorManager> display_color_manager_;
   std::unique_ptr<DisplayErrorObserver> display_error_observer_;
@@ -873,6 +890,8 @@ class ASH_EXPORT Shell : public SessionObserver,
   bool simulate_modal_window_open_for_test_ = false;
 
   std::unique_ptr<MessageCenterController> message_center_controller_;
+
+  std::unique_ptr<NotificationReporter> notification_reporter_;
 
   base::ObserverList<ShellObserver>::Unchecked shell_observers_;
 

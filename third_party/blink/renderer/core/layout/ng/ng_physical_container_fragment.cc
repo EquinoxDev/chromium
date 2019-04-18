@@ -35,6 +35,8 @@ NGPhysicalContainerFragment::NGPhysicalContainerFragment(
     unsigned sub_type)
     : NGPhysicalFragment(builder, type, sub_type),
       num_children_(builder->children_.size()) {
+  has_floating_descendants_ = builder->HasFloatingDescendants();
+
   DCHECK_EQ(builder->children_.size(), builder->offsets_.size());
   // Because flexible arrays need to be the last member in a class, we need to
   // have the buffer passed as a constructor argument and have the actual
@@ -84,8 +86,8 @@ void NGPhysicalContainerFragment::AddOutlineRectsForDescendant(
   if (descendant->IsText() || descendant->IsListMarker())
     return;
 
-  if (const NGPhysicalBoxFragment* descendant_box =
-          ToNGPhysicalBoxFragmentOrNull(descendant.get())) {
+  if (const auto* descendant_box =
+          DynamicTo<NGPhysicalBoxFragment>(descendant.get())) {
     LayoutObject* descendant_layout_object = descendant_box->GetLayoutObject();
     DCHECK(descendant_layout_object);
 
@@ -124,8 +126,8 @@ void NGPhysicalContainerFragment::AddOutlineRectsForDescendant(
     return;
   }
 
-  if (const NGPhysicalLineBoxFragment* descendant_line_box =
-          ToNGPhysicalLineBoxFragmentOrNull(descendant.get())) {
+  if (const auto* descendant_line_box =
+          DynamicTo<NGPhysicalLineBoxFragment>(descendant.get())) {
     descendant_line_box->AddOutlineRectsForNormalChildren(
         outline_rects, additional_offset + descendant.Offset().ToLayoutPoint(),
         outline_type);

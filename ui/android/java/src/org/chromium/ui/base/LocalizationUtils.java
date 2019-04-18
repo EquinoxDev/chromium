@@ -7,7 +7,6 @@ package org.chromium.ui.base;
 import android.content.res.Configuration;
 import android.view.View;
 
-import org.chromium.base.ApiCompatibilityUtils;
 import org.chromium.base.ContextUtils;
 import org.chromium.base.LocaleUtils;
 import org.chromium.base.VisibleForTesting;
@@ -55,8 +54,8 @@ public class LocalizationUtils {
         if (sIsLayoutRtl == null) {
             Configuration configuration =
                     ContextUtils.getApplicationContext().getResources().getConfiguration();
-            sIsLayoutRtl = Boolean.valueOf(ApiCompatibilityUtils.getLayoutDirection(configuration)
-                    == View.LAYOUT_DIRECTION_RTL);
+            sIsLayoutRtl = Boolean.valueOf(
+                    configuration.getLayoutDirection() == View.LAYOUT_DIRECTION_RTL);
         }
 
         return sIsLayoutRtl.booleanValue();
@@ -104,34 +103,6 @@ public class LocalizationUtils {
             case "fil":
                 return "tl"; // Filipino
             default:
-                return language;
-        }
-    }
-
-    /**
-     * Return one default locale-specific PAK file name associated with a given language.
-     *
-     * @param language Language name (e.g. "en").
-     * @return A Chromium-specific locale name (e.g. "en-US") matching the input language
-     *         that can be used to access compressed locale pak files.
-     */
-    public static String getDefaultCompressedPakLocaleForLanguage(String language) {
-        // IMPORTANT: Keep in sync with the mapping found in:
-        // //build/android/gyp/resource_utils.py
-
-        // NOTE: All languages provide locale files named '<language>.pak', except
-        //       for a few exceptions listed below. E.g. for the English language,
-        //       the 'en-US.pak' and 'en-GB.pak' files are provided, and there is
-        //       no 'en.pak' file.
-        switch (language) {
-            case "en":
-                return "en-US";
-            case "pt":
-                return "pt-PT";
-            case "zh":
-                return "zh-CN";
-            default:
-                // NOTE: for Spanish (es), both es.pak and es-419.pak are used. Hence this works.
                 return language;
         }
     }

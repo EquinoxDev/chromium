@@ -85,16 +85,17 @@ class HostResolverMojo::RequestImpl : public ProxyHostResolver::Request,
 
   // mojom::HostResolverRequestClient override
   void ReportResult(int32_t error,
-                    const net::AddressList& address_list) override {
+                    const std::vector<net::IPAddress>& result) override {
     DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
 
     if (error == net::OK)
-      results_ = AddressListToAddresses(address_list);
+      results_ = result;
     if (host_cache_) {
       base::TimeDelta ttl =
           error == net::OK ? kCacheEntryTTL : kNegativeCacheEntryTTL;
-      net::HostCache::Entry entry(error, address_list,
-                                  net::HostCache::Entry::SOURCE_UNKNOWN, ttl);
+      net::HostCache::Entry entry(
+          error, net::AddressList::CreateFromIPAddressList(result, ""),
+          net::HostCache::Entry::SOURCE_UNKNOWN, ttl);
       host_cache_->Set(CacheKeyForRequest(hostname_, operation_), entry,
                        base::TimeTicks::Now(), ttl);
     }
@@ -108,18 +109,16 @@ class HostResolverMojo::RequestImpl : public ProxyHostResolver::Request,
     DCHECK(host_cache_);
 
     net::HostCache::Key key = CacheKeyForRequest(hostname_, operation_);
-    const net::HostCache::Entry* entry =
-        host_cache_->Lookup(key, base::TimeTicks::Now());
-    if (!entry)
+    const std::pair<const net::HostCache::Key, net::HostCache::Entry>*
+        cache_result = host_cache_->Lookup(key, base::TimeTicks::Now());
+    if (!cache_result)
       return net::ERR_DNS_CACHE_MISS;
 
-    results_ = AddressListToAddresses(entry->addresses().value());
-    return entry->error();
+    results_ = AddressListToAddresses(cache_result->second.addresses().value());
+    return cache_result->second.error();
   }
 
-  void OnConnectionError() {
-    ReportResult(net::ERR_FAILED, net::AddressList());
-  }
+  void OnConnectionError() { ReportResult(net::ERR_FAILED, {} /* result */); }
 
   static std::vector<net::IPAddress> AddressListToAddresses(
       net::AddressList address_list) {

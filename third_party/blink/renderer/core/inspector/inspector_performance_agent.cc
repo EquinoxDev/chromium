@@ -49,7 +49,7 @@ void InspectorPerformanceAgent::Restore() {
 }
 
 void InspectorPerformanceAgent::InnerEnable() {
-  instrumenting_agents_->addInspectorPerformanceAgent(this);
+  instrumenting_agents_->AddInspectorPerformanceAgent(this);
   Thread::Current()->AddTaskTimeObserver(this);
   layout_start_ticks_ = TimeTicks();
   recalc_style_start_ticks_ = TimeTicks();
@@ -71,7 +71,7 @@ protocol::Response InspectorPerformanceAgent::disable() {
   if (!enabled_.Get())
     return Response::OK();
   enabled_.Clear();
-  instrumenting_agents_->removeInspectorPerformanceAgent(this);
+  instrumenting_agents_->RemoveInspectorPerformanceAgent(this);
   Thread::Current()->RemoveTaskTimeObserver(this);
   return Response::OK();
 }
@@ -134,7 +134,7 @@ Response InspectorPerformanceAgent::getMetrics(
       protocol::Array<protocol::Performance::Metric>::create();
 
   AppendMetric(result.get(), "Timestamp",
-               TimeTicksInSeconds(CurrentTimeTicks()));
+               CurrentTimeTicks().since_origin().InSecondsF());
 
   // Renderer instance counters.
   for (size_t i = 0; i < ARRAY_SIZE(kInstanceCounterNames); ++i) {
@@ -189,14 +189,21 @@ Response InspectorPerformanceAgent::getMetrics(
   Document* document = inspected_frames_->Root()->GetDocument();
   if (document) {
     AppendMetric(result.get(), "FirstMeaningfulPaint",
-                 TimeTicksInSeconds(
-                     PaintTiming::From(*document).FirstMeaningfulPaint()));
-    AppendMetric(
-        result.get(), "DomContentLoaded",
-        TimeTicksInSeconds(document->GetTiming().DomContentLoadedEventStart()));
-    AppendMetric(
-        result.get(), "NavigationStart",
-        TimeTicksInSeconds(document->Loader()->GetTiming().NavigationStart()));
+                 PaintTiming::From(*document)
+                     .FirstMeaningfulPaint()
+                     .since_origin()
+                     .InSecondsF());
+    AppendMetric(result.get(), "DomContentLoaded",
+                 document->GetTiming()
+                     .DomContentLoadedEventStart()
+                     .since_origin()
+                     .InSecondsF());
+    AppendMetric(result.get(), "NavigationStart",
+                 document->Loader()
+                     ->GetTiming()
+                     .NavigationStart()
+                     .since_origin()
+                     .InSecondsF());
   }
 
   *out_result = std::move(result);

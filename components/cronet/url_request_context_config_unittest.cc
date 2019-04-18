@@ -6,19 +6,24 @@
 
 #include <memory>
 
+#include "base/bind.h"
 #include "base/json/json_writer.h"
+#include "base/logging.h"
 #include "base/strings/string_piece.h"
 #include "base/test/scoped_task_environment.h"
 #include "base/test/values_test_util.h"
 #include "base/values.h"
 #include "build/build_config.h"
+#include "net/base/host_port_pair.h"
+#include "net/base/http_user_agent_settings.h"
+#include "net/base/net_errors.h"
 #include "net/cert/cert_verifier.h"
+#include "net/dns/host_resolver.h"
 #include "net/http/http_network_session.h"
 #include "net/log/net_log.h"
 #include "net/log/net_log_with_source.h"
 #include "net/proxy_resolution/proxy_config.h"
 #include "net/proxy_resolution/proxy_config_service_fixed.h"
-#include "net/url_request/http_user_agent_settings.h"
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_context_builder.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -199,6 +204,7 @@ TEST(URLRequestContextConfigTest, TestExperimentalOptionParsing) {
   EXPECT_FALSE(params->quic_allow_server_migration);
   EXPECT_FALSE(params->quic_migrate_sessions_on_network_change_v2);
   EXPECT_FALSE(params->quic_migrate_sessions_early_v2);
+  EXPECT_FALSE(params->quic_migrate_idle_sessions);
   EXPECT_FALSE(params->quic_retry_on_alternate_network_before_handshake);
   EXPECT_FALSE(params->quic_race_stale_dns_on_connection);
 
@@ -268,10 +274,13 @@ TEST(URLRequestContextConfigTest, TestExperimentalOptionParsing) {
   // Check IPv6 is disabled when on wifi.
   EXPECT_TRUE(context->host_resolver()->GetNoIPv6OnWifi());
 
-  net::HostResolver::RequestInfo info(net::HostPortPair("abcde", 80));
-  net::AddressList addresses;
-  EXPECT_EQ(net::OK, context->host_resolver()->ResolveFromCache(
-                         info, &addresses, net::NetLogWithSource()));
+  // All host resolution expected to be mapped to an immediately-resolvable IP.
+  std::unique_ptr<net::HostResolver::ResolveHostRequest> resolve_request =
+      context->host_resolver()->CreateRequest(net::HostPortPair("abcde", 80),
+                                              net::NetLogWithSource(),
+                                              base::nullopt);
+  EXPECT_EQ(net::OK, resolve_request->Start(
+                         base::BindOnce([](int error) { NOTREACHED(); })));
 
   EXPECT_TRUE(config.network_thread_priority);
   EXPECT_EQ(42.0, config.network_thread_priority.value());
@@ -646,6 +655,8 @@ TEST(URLRequestContextConfigTest, SetQuicConnectionMigrationV2Options) {
       "{\"QUIC\":{\"migrate_sessions_on_network_change_v2\":true,"
       "\"migrate_sessions_early_v2\":true,"
       "\"retry_on_alternate_network_before_handshake\":true,"
+      "\"migrate_idle_sessions\":true,"
+      "\"retransmittable_on_wire_timeout_milliseconds\":1000,"
       "\"idle_session_migration_period_seconds\":15,"
       "\"max_time_on_non_default_network_seconds\":10,"
       "\"max_migrations_to_non_default_network_on_write_error\":3,"
@@ -673,6 +684,8 @@ TEST(URLRequestContextConfigTest, SetQuicConnectionMigrationV2Options) {
   EXPECT_TRUE(params->quic_migrate_sessions_on_network_change_v2);
   EXPECT_TRUE(params->quic_migrate_sessions_early_v2);
   EXPECT_TRUE(params->quic_retry_on_alternate_network_before_handshake);
+  EXPECT_EQ(1000, params->quic_retransmittable_on_wire_timeout_milliseconds);
+  EXPECT_TRUE(params->quic_migrate_idle_sessions);
   EXPECT_EQ(base::TimeDelta::FromSeconds(15),
             params->quic_idle_session_migration_period);
   EXPECT_EQ(base::TimeDelta::FromSeconds(10),

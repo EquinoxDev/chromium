@@ -82,6 +82,8 @@ viz_component("common") {
   sources = [
     "constants.cc",
     "constants.h",
+    "display/overlay_strategy.cc",
+    "display/overlay_strategy.h",
     "display/renderer_settings.cc",
     "display/renderer_settings.h",
     "features.cc",
@@ -120,6 +122,7 @@ viz_component("common") {
     "hit_test/hit_test_data_builder.h",
     "hit_test/hit_test_region_list.cc",
     "hit_test/hit_test_region_list.h",
+    "presentation_feedback_map.h",
     "quads/compositor_frame.cc",
     "quads/compositor_frame.h",
     "quads/compositor_frame_metadata.cc",
@@ -199,6 +202,8 @@ viz_component("common") {
     "traced_value.cc",
     "traced_value.h",
     "viz_common_export.h",
+    "viz_utils.cc",
+    "viz_utils.h",
   ]
 
   deps = [
@@ -232,6 +237,10 @@ viz_component("common") {
     deps += [ "//ui/base" ]
   }
 
+  if (is_android) {
+    deps += [ "//gpu/config" ]
+  }
+
   if (is_chromecast) {
     defines += [ "IS_CHROMECAST" ]
   }
@@ -253,6 +262,7 @@ viz_source_set("unit_tests") {
   never_build_jumbo = true
   testonly = true
   sources = [
+    "display/overlay_strategy_unittest.cc",
     "frame_sinks/begin_frame_args_unittest.cc",
     "frame_sinks/begin_frame_source_unittest.cc",
     "frame_sinks/copy_output_util_unittest.cc",

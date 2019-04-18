@@ -128,7 +128,8 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) NetworkContext
   // TODO(mmenke):  Remove this constructor when the network service ships.
   NetworkContext(NetworkService* network_service,
                  mojom::NetworkContextRequest request,
-                 net::URLRequestContext* url_request_context);
+                 net::URLRequestContext* url_request_context,
+                 const std::vector<std::string>& cors_exempt_header_list);
 
   ~NetworkContext() override;
 
@@ -276,7 +277,9 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) NetworkContext
                        int32_t process_id,
                        int32_t render_frame_id,
                        const url::Origin& origin,
-                       mojom::AuthenticationHandlerPtr auth_handler) override;
+                       uint32_t options,
+                       mojom::AuthenticationHandlerPtr auth_handler,
+                       mojom::TrustedHeaderClientPtr header_client) override;
   void CreateNetLogExporter(mojom::NetLogExporterRequest request) override;
   void ResolveHost(const net::HostPortPair& host,
                    mojom::ResolveHostParametersPtr optional_parameters,
@@ -331,6 +334,9 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) NetworkContext
                    const GURL& url,
                    const base::Optional<std::string>& user_agent,
                    base::Value body) override;
+  void QueueSignedExchangeReport(
+      mojom::SignedExchangeReportPtr report) override;
+
   void AddDomainReliabilityContextForTesting(
       const GURL& origin,
       const GURL& upload_url,
@@ -372,11 +378,6 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) NetworkContext
 
   NetworkServiceProxyDelegate* proxy_delegate() const {
     return proxy_delegate_.get();
-  }
-
-  void set_host_resolver_factory_for_testing(
-      std::unique_ptr<net::HostResolver::Factory> factory) {
-    host_resolver_factory_ = std::move(factory);
   }
 
   void set_network_qualities_pref_delegate_for_testing(
@@ -510,6 +511,8 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) NetworkContext
 
   mojo::StrongBindingSet<mojom::NetLogExporter> net_log_exporter_bindings_;
 
+  // Ordering: this must be after |cookie_manager_| since it points to its
+  // CookieSettings object.
   mojo::StrongBindingSet<mojom::RestrictedCookieManager>
       restricted_cookie_manager_bindings_;
 
@@ -551,8 +554,6 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) NetworkContext
            std::unique_ptr<net::HostResolver>,
            base::UniquePtrComparator>
       host_resolvers_;
-  // Factory used to create any needed private internal net::HostResolvers.
-  std::unique_ptr<net::HostResolver::Factory> host_resolver_factory_;
 
   std::unique_ptr<NetworkServiceProxyDelegate> proxy_delegate_;
 

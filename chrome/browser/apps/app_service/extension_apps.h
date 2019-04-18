@@ -9,6 +9,7 @@
 
 #include "base/macros.h"
 #include "base/scoped_observer.h"
+#include "chrome/browser/apps/app_service/icon_key_util.h"
 #include "chrome/services/app_service/public/mojom/app_service.mojom.h"
 #include "components/content_settings/core/browser/content_settings_observer.h"
 #include "extensions/browser/extension_registry_observer.h"
@@ -50,7 +51,8 @@ class ExtensionApps : public apps::mojom::Publisher,
   // apps::mojom::Publisher overrides.
   void Connect(apps::mojom::SubscriberPtr subscriber,
                apps::mojom::ConnectOptionsPtr opts) override;
-  void LoadIcon(apps::mojom::IconKeyPtr icon_key,
+  void LoadIcon(const std::string& app_id,
+                apps::mojom::IconKeyPtr icon_key,
                 apps::mojom::IconCompression icon_compression,
                 int32_t size_hint_in_dip,
                 bool allow_placeholder_icon,
@@ -86,8 +88,15 @@ class ExtensionApps : public apps::mojom::Publisher,
   bool RunExtensionEnableFlow(const std::string& app_id);
 
   static bool IsBlacklisted(const std::string& app_id);
+
+  static void SetShowInFields(apps::mojom::AppPtr& app,
+                              const extensions::Extension* extension,
+                              Profile* profile);
+  static bool ShouldShow(const extensions::Extension* extension,
+                         Profile* profile);
   static apps::mojom::OptionalBool ShouldShowInAppManagement(
       const extensions::Extension* extension);
+
   void PopulatePermissions(const extensions::Extension* extension,
                            std::vector<mojom::PermissionPtr>* target);
   apps::mojom::AppPtr Convert(const extensions::Extension* extension,
@@ -101,14 +110,11 @@ class ExtensionApps : public apps::mojom::Publisher,
 
   Profile* profile_;
 
-  // |next_u_key_| is incremented every time Convert returns a valid AppPtr, so
-  // that when an app's icon has changed, this apps::mojom::Publisher sends a
-  // different IconKey even though the IconKey's s_key hasn't changed.
-  uint64_t next_u_key_;
-
   ScopedObserver<extensions::ExtensionRegistry,
                  extensions::ExtensionRegistryObserver>
       observer_;
+
+  apps_util::IncrementingIconKeyFactory icon_key_factory_;
 
   apps::mojom::AppType app_type_;
 

@@ -16,7 +16,6 @@
 #include "chrome/browser/ui/app_list/app_list_controller_delegate.h"
 #include "chrome/browser/ui/app_list/arc/arc_app_list_prefs.h"
 #include "chrome/browser/ui/app_list/arc/arc_app_utils.h"
-#include "chrome/browser/ui/app_list/search/search_util.h"
 #include "chrome/grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 
@@ -29,14 +28,21 @@ constexpr char kAppShortcutSearchPrefix[] = "appshortcutsearch://";
 ArcAppShortcutSearchResult::ArcAppShortcutSearchResult(
     arc::mojom::AppShortcutItemPtr data,
     Profile* profile,
-    AppListControllerDelegate* list_controller)
+    AppListControllerDelegate* list_controller,
+    bool is_recommendation)
     : data_(std::move(data)),
       profile_(profile),
       list_controller_(list_controller) {
   SetTitle(base::UTF8ToUTF16(data_->short_label));
   set_id(kAppShortcutSearchPrefix + GetAppId() + "/" + data_->shortcut_id);
-  SetDisplayType(ash::SearchResultDisplayType::kTile);
   SetAccessibleName(ComputeAccessibleName());
+  SetResultType(ash::SearchResultType::kArcAppShortcut);
+
+  if (is_recommendation) {
+    SetDisplayType(ash::SearchResultDisplayType::kRecommendation);
+  } else {
+    SetDisplayType(ash::SearchResultDisplayType::kTile);
+  }
 
   const int icon_dimension =
       app_list::AppListConfig::instance().search_tile_icon_dimension();
@@ -56,9 +62,12 @@ ArcAppShortcutSearchResult::ArcAppShortcutSearchResult(
 ArcAppShortcutSearchResult::~ArcAppShortcutSearchResult() = default;
 
 void ArcAppShortcutSearchResult::Open(int event_flags) {
-  RecordHistogram(PLAY_STORE_APP_SHORTCUT);
   arc::LaunchAppShortcutItem(profile_, GetAppId(), data_->shortcut_id,
                              list_controller_->GetAppListDisplayId());
+}
+
+SearchResultType ArcAppShortcutSearchResult::GetSearchResultType() const {
+  return PLAY_STORE_APP_SHORTCUT;
 }
 
 void ArcAppShortcutSearchResult::OnAppImageUpdated(

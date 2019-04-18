@@ -39,9 +39,6 @@ enum AvatarSyncErrorType {
   NO_SYNC_ERROR,                     // No sync error.
   MANAGED_USER_UNRECOVERABLE_ERROR,  // Unrecoverable error for managed users.
   UNRECOVERABLE_ERROR,               // Unrecoverable error for regular users.
-  // TODO(crbug.com/911153): Remove this value. It is never returned, but some
-  // clients still check for it.
-  SUPERVISED_USER_AUTH_ERROR,  // Auth token error for supervised users.
   AUTH_ERROR,                  // Authentication error.
   UPGRADE_CLIENT_ERROR,        // Out-of-date client error.
   PASSPHRASE_ERROR,            // Sync passphrase error.
@@ -50,7 +47,8 @@ enum AvatarSyncErrorType {
 
 // Returns the high-level sync status, and populates status and link label
 // strings for the current sync status by querying |profile|.
-// |status_label| and |link_label| must either be both null or both non-null.
+// Any of |status_label|, |link_label|, and |action_type| may be null if the
+// caller isn't interested in it.
 MessageType GetStatusLabels(Profile* profile,
                             base::string16* status_label,
                             base::string16* link_label,

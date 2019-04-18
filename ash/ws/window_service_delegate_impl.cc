@@ -6,6 +6,7 @@
 
 #include "ash/accelerators/accelerator_controller.h"
 #include "ash/host/ash_window_tree_host.h"
+#include "ash/ime/ime_engine_factory_registry.h"
 #include "ash/public/interfaces/ash_window_manager.mojom.h"
 #include "ash/root_window_controller.h"
 #include "ash/shell.h"
@@ -82,6 +83,7 @@ WindowServiceDelegateImpl::WindowServiceDelegateImpl() = default;
 WindowServiceDelegateImpl::~WindowServiceDelegateImpl() = default;
 
 std::unique_ptr<aura::Window> WindowServiceDelegateImpl::NewTopLevel(
+    ws::TopLevelProxyWindow* top_level_proxy_window,
     aura::PropertyConverter* property_converter,
     const base::flat_map<std::string, std::vector<uint8_t>>& properties) {
   std::map<std::string, std::vector<uint8_t>> property_map =
@@ -89,8 +91,8 @@ std::unique_ptr<aura::Window> WindowServiceDelegateImpl::NewTopLevel(
   ws::mojom::WindowType window_type =
       aura::GetWindowTypeFromProperties(property_map);
 
-  auto* window = CreateAndParentTopLevelWindow(window_type, property_converter,
-                                               &property_map);
+  auto* window = CreateAndParentTopLevelWindow(
+      top_level_proxy_window, window_type, property_converter, &property_map);
   return base::WrapUnique<aura::Window>(window);
 }
 
@@ -137,7 +139,8 @@ void WindowServiceDelegateImpl::RunWindowMoveLoop(
       ->wm_toplevel_window_event_handler()
       ->AttemptToStartDrag(
           window, location_in_parent, window_component, aura_source,
-          base::BindOnce(&OnMoveLoopCompleted, std::move(callback)));
+          base::BindOnce(&OnMoveLoopCompleted, std::move(callback)),
+          /*update_gesture_target=*/false);
 }
 
 void WindowServiceDelegateImpl::CancelWindowMoveLoop() {
@@ -259,6 +262,13 @@ WindowServiceDelegateImpl::CreateWindowManagerInterface(
                                                           std::move(handle));
   }
   return nullptr;
+}
+
+void WindowServiceDelegateImpl::ConnectToImeEngine(
+    ime::mojom::ImeEngineRequest engine_request,
+    ime::mojom::ImeEngineClientPtr client) {
+  Shell::Get()->ime_engine_factory_registry()->ConnectToImeEngine(
+      std::move(engine_request), std::move(client));
 }
 
 }  // namespace ash

@@ -466,7 +466,7 @@ TEST_F(SQLitePersistentCookieStoreTest, TestLoadCookiesForKey) {
                              NetLogEventPhase::NONE);
 }
 
-TEST_F(SQLitePersistentCookieStoreTest, TestBeforeFlushCallback) {
+TEST_F(SQLitePersistentCookieStoreTest, TestBeforeCommitCallback) {
   InitializeStore(false, false);
 
   struct Counter {
@@ -475,8 +475,8 @@ TEST_F(SQLitePersistentCookieStoreTest, TestBeforeFlushCallback) {
   };
 
   Counter counter;
-  store_->SetBeforeFlushCallback(
-      base::Bind(&Counter::increment, base::Unretained(&counter)));
+  store_->SetBeforeCommitCallback(
+      base::BindRepeating(&Counter::increment, base::Unretained(&counter)));
 
   // The implementation of SQLitePersistentCookieStore::Backend flushes changes
   // after 30s or 512 pending operations. Add 512 cookies to the store to test
@@ -1227,28 +1227,38 @@ TEST_F(SQLitePersistentCookieStoreTest, KeyInconsistency) {
   // Create a cookie on a scheme that doesn't handle cookies by default,
   // and save it.
   std::unique_ptr<CookieMonster> cookie_monster =
-      std::make_unique<CookieMonster>(store_.get(), nullptr, nullptr);
-  cookie_monster->SetCookieableSchemes({"gopher", "http"});
-  ResultSavingCookieCallback<bool> set_cookie_callback;
+      std::make_unique<CookieMonster>(store_.get(), nullptr);
+  ResultSavingCookieCallback<bool> cookie_scheme_callback1;
+  cookie_monster->SetCookieableSchemes({"gopher", "http"},
+                                       cookie_scheme_callback1.MakeCallback());
+  cookie_scheme_callback1.WaitUntilDone();
+  EXPECT_TRUE(cookie_scheme_callback1.result());
+  ResultSavingCookieCallback<CanonicalCookie::CookieInclusionStatus>
+      set_cookie_callback;
   cookie_monster->SetCookieWithOptionsAsync(
       GURL("gopher://subdomain.gopheriffic.com/page"), "A=B; max-age=3600",
       CookieOptions(),
-      base::BindOnce(&ResultSavingCookieCallback<bool>::Run,
+      base::BindOnce(&ResultSavingCookieCallback<
+                         CanonicalCookie::CookieInclusionStatus>::Run,
                      base::Unretained(&set_cookie_callback)));
   set_cookie_callback.WaitUntilDone();
-  EXPECT_TRUE(set_cookie_callback.result());
+  EXPECT_EQ(CanonicalCookie::CookieInclusionStatus::INCLUDE,
+            set_cookie_callback.result());
 
   // Also insert a whole bunch of cookies to slow down the background loading of
   // all the cookies.
   for (int i = 0; i < 50; ++i) {
-    ResultSavingCookieCallback<bool> set_cookie_callback2;
+    ResultSavingCookieCallback<CanonicalCookie::CookieInclusionStatus>
+        set_cookie_callback2;
     cookie_monster->SetCookieWithOptionsAsync(
         GURL(base::StringPrintf("http://example%d.com/", i)),
         "A=B; max-age=3600", CookieOptions(),
-        base::BindOnce(&ResultSavingCookieCallback<bool>::Run,
+        base::BindOnce(&ResultSavingCookieCallback<
+                           CanonicalCookie::CookieInclusionStatus>::Run,
                        base::Unretained(&set_cookie_callback2)));
     set_cookie_callback2.WaitUntilDone();
-    EXPECT_TRUE(set_cookie_callback2.result());
+    EXPECT_EQ(CanonicalCookie::CookieInclusionStatus::INCLUDE,
+              set_cookie_callback2.result());
   }
 
   net::TestClosure flush_closure;
@@ -1261,9 +1271,12 @@ TEST_F(SQLitePersistentCookieStoreTest, KeyInconsistency) {
   // instances, so they should complete before the new PersistentCookieStore
   // starts looking at the state on disk.
   Create(false, false, true /* want current thread to invoke cookie monster */);
-  cookie_monster =
-      std::make_unique<CookieMonster>(store_.get(), nullptr, nullptr);
-  cookie_monster->SetCookieableSchemes({"gopher", "http"});
+  cookie_monster = std::make_unique<CookieMonster>(store_.get(), nullptr);
+  ResultSavingCookieCallback<bool> cookie_scheme_callback2;
+  cookie_monster->SetCookieableSchemes({"gopher", "http"},
+                                       cookie_scheme_callback2.MakeCallback());
+  cookie_scheme_callback2.WaitUntilDone();
+  EXPECT_TRUE(cookie_scheme_callback2.result());
 
   // Now try to get the cookie back.
   GetCookieListCallback get_callback;
@@ -1287,15 +1300,18 @@ TEST_F(SQLitePersistentCookieStoreTest, OpsIfInitFailed) {
       base::CreateDirectory(temp_dir_.GetPath().Append(kCookieFilename)));
   Create(false, false, true /* want current thread to invoke cookie monster */);
   std::unique_ptr<CookieMonster> cookie_monster =
-      std::make_unique<CookieMonster>(store_.get(), nullptr, nullptr);
+      std::make_unique<CookieMonster>(store_.get(), nullptr);
 
-  ResultSavingCookieCallback<bool> set_cookie_callback;
+  ResultSavingCookieCallback<CanonicalCookie::CookieInclusionStatus>
+      set_cookie_callback;
   cookie_monster->SetCookieWithOptionsAsync(
       GURL("http://www.example.com/"), "A=B; max-age=3600", CookieOptions(),
-      base::BindOnce(&ResultSavingCookieCallback<bool>::Run,
+      base::BindOnce(&ResultSavingCookieCallback<
+                         CanonicalCookie::CookieInclusionStatus>::Run,
                      base::Unretained(&set_cookie_callback)));
   set_cookie_callback.WaitUntilDone();
-  EXPECT_TRUE(set_cookie_callback.result());
+  EXPECT_EQ(CanonicalCookie::CookieInclusionStatus::INCLUDE,
+            set_cookie_callback.result());
 
   // Things should commit once going out of scope.
 }

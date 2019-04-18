@@ -13,6 +13,8 @@
 #include "base/strings/utf_string_conversions.h"
 #include "components/autofill/content/renderer/autofill_agent.h"
 #include "components/autofill/content/renderer/password_autofill_agent.h"
+#include "components/content_capture/common/content_capture_features.h"
+#include "components/content_capture/renderer/content_capture_sender.h"
 #include "content/public/renderer/document_state.h"
 #include "content/public/renderer/render_frame.h"
 #include "content/public/renderer/render_view.h"
@@ -156,6 +158,8 @@ AwRenderFrameExt::AwRenderFrameExt(content::RenderFrame* render_frame)
       new autofill::PasswordAutofillAgent(render_frame, &registry_);
   new autofill::AutofillAgent(render_frame, password_autofill_agent, nullptr,
                               &registry_);
+  if (content_capture::features::IsContentCaptureEnabled())
+    new content_capture::ContentCaptureSender(render_frame, &registry_);
 
   // Add myself to the RenderFrame => AwRenderFrameExt register.
   render_frame_ext_map.Get().emplace(render_frame, this);
@@ -230,8 +234,8 @@ bool AwRenderFrameExt::OnMessageReceived(const IPC::Message& message) {
                         OnResetScrollAndScaleState)
     IPC_MESSAGE_HANDLER(AwViewMsg_SetInitialPageScale, OnSetInitialPageScale)
     IPC_MESSAGE_HANDLER(AwViewMsg_SetBackgroundColor, OnSetBackgroundColor)
-    IPC_MESSAGE_HANDLER(AwViewMsg_ShouldSuppressErrorPage,
-                        OnSetShouldSuppressErrorPage)
+    IPC_MESSAGE_HANDLER(AwViewMsg_WillSuppressErrorPage,
+                        OnSetWillSuppressErrorPage)
     IPC_MESSAGE_HANDLER(AwViewMsg_SmoothScroll, OnSmoothScroll)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
@@ -339,20 +343,20 @@ void AwRenderFrameExt::OnSetBackgroundColor(SkColor c) {
 
 void AwRenderFrameExt::OnSmoothScroll(int target_x,
                                       int target_y,
-                                      int duration_ms) {
+                                      uint64_t duration_ms) {
   blink::WebView* webview = GetWebView();
   if (!webview)
     return;
 
-  webview->SmoothScroll(target_x, target_y, static_cast<long>(duration_ms));
+  webview->SmoothScroll(target_x, target_y, duration_ms);
 }
 
-void AwRenderFrameExt::OnSetShouldSuppressErrorPage(bool suppress) {
-  this->should_suppress_error_page_ = suppress;
+void AwRenderFrameExt::OnSetWillSuppressErrorPage(bool suppress) {
+  this->will_suppress_error_page_ = suppress;
 }
 
-bool AwRenderFrameExt::GetShouldSuppressErrorPage() {
-  return this->should_suppress_error_page_;
+bool AwRenderFrameExt::GetWillSuppressErrorPage() {
+  return this->will_suppress_error_page_;
 }
 
 blink::WebView* AwRenderFrameExt::GetWebView() {

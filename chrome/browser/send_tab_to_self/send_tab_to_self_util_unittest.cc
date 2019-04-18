@@ -10,16 +10,20 @@
 #include <vector>
 
 #include "base/bind.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/test/scoped_feature_list.h"
 #include "chrome/browser/sync/device_info_sync_service_factory.h"
 #include "chrome/browser/sync/profile_sync_service_factory.h"
-#include "chrome/browser/sync/profile_sync_test_util.h"
+#include "chrome/browser/sync/send_tab_to_self_sync_service_factory.h"
 #include "chrome/test/base/browser_with_test_window_test.h"
-#include "components/browser_sync/profile_sync_service.h"
+#include "components/send_tab_to_self/features.h"
+#include "components/send_tab_to_self/send_tab_to_self_sync_service.h"
 #include "components/sync/device_info/device_info.h"
 #include "components/sync/device_info/device_info_sync_bridge.h"
 #include "components/sync/device_info/device_info_sync_service.h"
 #include "components/sync/driver/sync_driver_switches.h"
+#include "components/sync/driver/test_sync_service.h"
+#include "content/public/browser/navigation_entry.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "url/gurl.h"
@@ -50,6 +54,8 @@ class TestDeviceInfoTracker : public syncer::DeviceInfoTracker {
   void RemoveObserver(Observer* observer) override {}
   int CountActiveDevices() const override { return active_devices_; }
 
+  void ForcePulseForTest() override {}
+
  protected:
   int active_devices_;
 };
@@ -76,9 +82,6 @@ class TestDeviceInfoSyncService : public syncer::DeviceInfoSyncService {
       override {
     return nullptr;
   }
-  void InitLocalCacheGuid(const std::string& cache_guid,
-                          const std::string& session_name) override {}
-  void ClearLocalCacheGuid() override {}
 
  protected:
   TestDeviceInfoTracker tracker_;
@@ -89,6 +92,11 @@ std::unique_ptr<KeyedService> BuildMockDeviceInfoSyncService(
   return std::make_unique<TestDeviceInfoSyncService>();
 }
 
+std::unique_ptr<KeyedService> BuildTestSyncService(
+    content::BrowserContext* context) {
+  return std::make_unique<syncer::TestSyncService>();
+}
+
 class SendTabToSelfUtilTest : public BrowserWithTestWindowTest {
  public:
   SendTabToSelfUtilTest() = default;
@@ -97,88 +105,84 @@ class SendTabToSelfUtilTest : public BrowserWithTestWindowTest {
   void SetUp() override {
     BrowserWithTestWindowTest::SetUp();
 
-    mock_profile_sync_service_ =
-        static_cast<browser_sync::ProfileSyncServiceMock*>(
-            ProfileSyncServiceFactory::GetInstance()->SetTestingFactoryAndUse(
-                profile(), base::BindRepeating(&BuildMockProfileSyncService)));
+    test_sync_service_ = static_cast<syncer::TestSyncService*>(
+        ProfileSyncServiceFactory::GetInstance()->SetTestingFactoryAndUse(
+            profile(), base::BindRepeating(&BuildTestSyncService)));
+
     mock_device_sync_service_ = static_cast<TestDeviceInfoSyncService*>(
         DeviceInfoSyncServiceFactory::GetInstance()->SetTestingFactoryAndUse(
             profile(), base::BindRepeating(&BuildMockDeviceInfoSyncService)));
 
     incognito_profile_ = profile()->GetOffTheRecordProfile();
     url_ = GURL("https://www.google.com");
+    title_ = base::UTF8ToUTF16(base::StringPiece("Google"));
   }
 
   // Set up all test conditions to let ShouldOfferFeature() return true
   void SetUpAllTrueEnv() {
-    scoped_feature_list_.InitAndEnableFeature(switches::kSyncSendTabToSelf);
+    scoped_feature_list_.InitWithFeatures(
+        {switches::kSyncSendTabToSelf, kSendTabToSelfShowSendingUI}, {});
     syncer::ModelTypeSet enabled_modeltype(syncer::SEND_TAB_TO_SELF);
-    EXPECT_CALL(*mock_profile_sync_service_->GetUserSettingsMock(),
-                GetChosenDataTypes())
-        .WillRepeatedly(testing::Return(enabled_modeltype));
+    test_sync_service_->SetPreferredDataTypes(enabled_modeltype);
 
     mock_device_sync_service_->SetTrackerActiveDevices(2);
 
     AddTab(browser(), url_);
-    NavigateAndCommitActiveTab(url_);
+    NavigateAndCommitActiveTabWithTitle(browser(), url_, title_);
   }
 
   // Set up a environment in which the feature flag is disabled
   void SetUpFeatureDisabledEnv() {
-    scoped_feature_list_.InitAndDisableFeature(switches::kSyncSendTabToSelf);
+    scoped_feature_list_.InitWithFeatures(
+        {}, {switches::kSyncSendTabToSelf, kSendTabToSelfShowSendingUI});
     syncer::ModelTypeSet enabled_modeltype(syncer::SEND_TAB_TO_SELF);
-    EXPECT_CALL(*mock_profile_sync_service_->GetUserSettingsMock(),
-                GetChosenDataTypes())
-        .WillRepeatedly(testing::Return(enabled_modeltype));
+    test_sync_service_->SetPreferredDataTypes(enabled_modeltype);
 
     mock_device_sync_service_->SetTrackerActiveDevices(2);
 
     AddTab(browser(), url_);
-    NavigateAndCommitActiveTab(url_);
+    NavigateAndCommitActiveTabWithTitle(browser(), url_, title_);
   }
 
  protected:
-  browser_sync::ProfileSyncServiceMock* mock_profile_sync_service_;
+  syncer::TestSyncService* test_sync_service_;
   TestDeviceInfoSyncService* mock_device_sync_service_;
-
   base::test::ScopedFeatureList scoped_feature_list_;
   Profile* incognito_profile_;
   GURL url_;
+  base::string16 title_;
 };
 
-TEST_F(SendTabToSelfUtilTest, IsFlagEnabled_True) {
-  scoped_feature_list_.InitAndEnableFeature(switches::kSyncSendTabToSelf);
+TEST_F(SendTabToSelfUtilTest, AreFlagsEnabled_True) {
+  scoped_feature_list_.InitWithFeatures(
+      {switches::kSyncSendTabToSelf, kSendTabToSelfShowSendingUI}, {});
 
-  EXPECT_TRUE(IsFlagEnabled());
+  EXPECT_TRUE(IsSendingEnabled());
+  EXPECT_TRUE(IsReceivingEnabled());
 }
 
-TEST_F(SendTabToSelfUtilTest, IsFlagEnabled_False) {
-  scoped_feature_list_.InitAndDisableFeature(switches::kSyncSendTabToSelf);
-  EXPECT_FALSE(IsFlagEnabled());
+TEST_F(SendTabToSelfUtilTest, AreFlagsEnabled_False) {
+  scoped_feature_list_.InitWithFeatures(
+      {}, {switches::kSyncSendTabToSelf, kSendTabToSelfShowSendingUI});
+
+  EXPECT_FALSE(IsSendingEnabled());
+  EXPECT_FALSE(IsReceivingEnabled());
 }
 
-TEST_F(SendTabToSelfUtilTest, IsUserSyncTypeEnabled_True) {
-  syncer::ModelTypeSet enabled_modeltype(syncer::SEND_TAB_TO_SELF);
-  EXPECT_CALL(*mock_profile_sync_service_->GetUserSettingsMock(),
-              GetChosenDataTypes())
-      .WillRepeatedly(testing::Return(enabled_modeltype));
+TEST_F(SendTabToSelfUtilTest, IsReceivingEnabled_True) {
+  scoped_feature_list_.InitWithFeatures({switches::kSyncSendTabToSelf},
+                                        {kSendTabToSelfShowSendingUI});
 
-  EXPECT_TRUE(IsUserSyncTypeEnabled(profile()));
-
-  EXPECT_CALL(*mock_profile_sync_service_->GetUserSettingsMock(),
-              GetChosenDataTypes())
-      .WillRepeatedly(testing::Return(syncer::ModelTypeSet::All()));
-
-  EXPECT_TRUE(IsUserSyncTypeEnabled(profile()));
+  EXPECT_FALSE(IsSendingEnabled());
+  EXPECT_TRUE(IsReceivingEnabled());
 }
 
-TEST_F(SendTabToSelfUtilTest, IsUserSyncTypeEnabled_False) {
-  syncer::ModelTypeSet disabled_modeltype;
-  EXPECT_CALL(*mock_profile_sync_service_->GetUserSettingsMock(),
-              GetChosenDataTypes())
-      .WillRepeatedly(testing::Return(disabled_modeltype));
+TEST_F(SendTabToSelfUtilTest, IsOnlySendingEnabled_False) {
+  scoped_feature_list_.InitWithFeatures({kSendTabToSelfShowSendingUI},
+                                        {switches::kSyncSendTabToSelf});
 
-  EXPECT_FALSE(IsUserSyncTypeEnabled(profile()));
+  EXPECT_FALSE(IsSendingEnabled());
+  EXPECT_FALSE(IsReceivingEnabled());
 }
 
 TEST_F(SendTabToSelfUtilTest, IsSyncingOnMultipleDevices_True) {
@@ -209,44 +213,6 @@ TEST_F(SendTabToSelfUtilTest, NativePage) {
 
 TEST_F(SendTabToSelfUtilTest, IncognitoMode) {
   EXPECT_FALSE(IsContentRequirementsMet(url_, incognito_profile_));
-}
-
-TEST_F(SendTabToSelfUtilTest, ShouldOfferFeature_True) {
-  SetUpAllTrueEnv();
-
-  EXPECT_TRUE(ShouldOfferFeature(browser()));
-}
-
-TEST_F(SendTabToSelfUtilTest, ShouldOfferFeature_IsFlagEnabled_False) {
-  SetUpFeatureDisabledEnv();
-  EXPECT_FALSE(ShouldOfferFeature(browser()));
-}
-
-TEST_F(SendTabToSelfUtilTest, ShouldOfferFeature_IsUserSyncTypeEnabled_False) {
-  SetUpAllTrueEnv();
-  syncer::ModelTypeSet disabled_modeltype;
-  EXPECT_CALL(*mock_profile_sync_service_->GetUserSettingsMock(),
-              GetChosenDataTypes())
-      .WillRepeatedly(testing::Return(disabled_modeltype));
-
-  EXPECT_FALSE(ShouldOfferFeature(browser()));
-}
-
-TEST_F(SendTabToSelfUtilTest,
-       ShouldOfferFeature_IsSyncingOnMultipleDevices_False) {
-  SetUpAllTrueEnv();
-  mock_device_sync_service_->SetTrackerActiveDevices(0);
-
-  EXPECT_FALSE(ShouldOfferFeature(browser()));
-}
-
-TEST_F(SendTabToSelfUtilTest,
-       ShouldOfferFeature_IsContentRequirementsMet_False) {
-  SetUpAllTrueEnv();
-  url_ = GURL("192.168.0.0");
-  NavigateAndCommitActiveTab(url_);
-
-  EXPECT_FALSE(ShouldOfferFeature(browser()));
 }
 
 }  // namespace

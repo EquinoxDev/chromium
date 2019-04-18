@@ -61,39 +61,43 @@ AppStateController.DEFAULT_SORT_DIRECTION = 'desc';
  */
 AppStateController.prototype.loadInitialViewOptions = function() {
   // Load initial view option.
-  return new Promise(function(fulfill, reject) {
-    chrome.storage.local.get(this.viewOptionStorageKey_, function(values) {
-      if (chrome.runtime.lastError) {
-        reject('Failed to load view options: ' +
-            chrome.runtime.lastError.message);
-      } else {
-        fulfill(values);
-      }
-    });
-  }.bind(this)).then(function(values) {
-    this.viewOptions_ = {};
-    var value = values[this.viewOptionStorageKey_];
-    if (!value) {
-      return;
-    }
-
-    // Load the global default options.
-    try {
-      this.viewOptions_ = JSON.parse(value);
-    } catch (ignore) {}
-
-    // Override with window-specific options.
-    if (window.appState && window.appState.viewOptions) {
-      for (var key in window.appState.viewOptions) {
-        if (window.appState.viewOptions.hasOwnProperty(key)) {
-          this.viewOptions_[key] = window.appState.viewOptions[key];
+  return new Promise((fulfill, reject) => {
+           chrome.storage.local.get(this.viewOptionStorageKey_, values => {
+             if (chrome.runtime.lastError) {
+               reject(
+                   'Failed to load view options: ' +
+                   chrome.runtime.lastError.message);
+             } else {
+               fulfill(values);
+             }
+           });
+         })
+      .then(values => {
+        this.viewOptions_ = {};
+        const value = values[this.viewOptionStorageKey_];
+        if (!value) {
+          return;
         }
-      }
-    }
-  }.bind(this)).catch(function(error) {
-    this.viewOptions_ = {};
-    console.error(error);
-  }.bind(this));
+
+        // Load the global default options.
+        try {
+          this.viewOptions_ = JSON.parse(value);
+        } catch (ignore) {
+        }
+
+        // Override with window-specific options.
+        if (window.appState && window.appState.viewOptions) {
+          for (const key in window.appState.viewOptions) {
+            if (window.appState.viewOptions.hasOwnProperty(key)) {
+              this.viewOptions_[key] = window.appState.viewOptions[key];
+            }
+          }
+        }
+      })
+      .catch(error => {
+        this.viewOptions_ = {};
+        console.error(error);
+      });
 };
 
 /**
@@ -140,7 +144,7 @@ AppStateController.prototype.initialize = function(ui, directoryModel) {
  * Saves current view option.
  */
 AppStateController.prototype.saveViewOptions = function() {
-  var prefs = {
+  const prefs = {
     sortField: this.fileListSortField_,
     sortDirection: this.fileListSortDirection_,
     columnConfig: {},
@@ -148,12 +152,12 @@ AppStateController.prototype.saveViewOptions = function() {
     isAllAndroidFoldersVisible:
         this.directoryModel_.getFileFilter().isAllAndroidFoldersVisible()
   };
-  var cm = this.ui_.listContainer.table.columnModel;
+  const cm = this.ui_.listContainer.table.columnModel;
   prefs.columnConfig = cm.exportColumnConfig();
   // Save the global default.
-  var items = {};
+  const items = {};
   items[this.viewOptionStorageKey_] = JSON.stringify(prefs);
-  chrome.storage.local.set(items, function() {
+  chrome.storage.local.set(items, () => {
     if (chrome.runtime.lastError) {
       console.error(
           'Failed to save view options: ' + chrome.runtime.lastError.message);
@@ -171,7 +175,7 @@ AppStateController.prototype.saveViewOptions = function() {
  * @private
  */
 AppStateController.prototype.onFileListSorted_ = function() {
-  var currentDirectory = this.directoryModel_.getCurrentDirEntry();
+  const currentDirectory = this.directoryModel_.getCurrentDirEntry();
   if (!currentDirectory) {
     return;
   }
@@ -179,7 +183,7 @@ AppStateController.prototype.onFileListSorted_ = function() {
   // Update preferred sort field and direction only when the current directory
   // is not Recent folder.
   if (!util.isRecentRoot(currentDirectory)) {
-    var currentSortStatus = this.directoryModel_.getFileList().sortStatus;
+    const currentSortStatus = this.directoryModel_.getFileList().sortStatus;
     this.fileListSortField_ = currentSortStatus.field;
     this.fileListSortDirection_ = currentSortStatus.direction;
   }
@@ -211,8 +215,8 @@ AppStateController.prototype.onDirectoryChanged_ = function(event) {
   // Sort the file list by:
   // 1) 'date-mofidied' and 'desc' order on Recent folder.
   // 2) preferred field and direction on other folders.
-  var isOnRecent = util.isRecentRoot(event.newDirEntry);
-  var isOnRecentBefore =
+  const isOnRecent = util.isRecentRoot(event.newDirEntry);
+  const isOnRecentBefore =
       event.previousDirEntry && util.isRecentRoot(event.previousDirEntry);
   if (isOnRecent != isOnRecentBefore) {
     if (isOnRecent) {

@@ -34,6 +34,10 @@ extern const base::Feature kUseMultiloginEndpoint;
 
 namespace signin {
 class AccountReconcilorDelegate;
+
+#if defined(OS_ANDROID)
+class ConsistencyCookieManagerAndroid;
+#endif
 }
 
 class SigninClient;
@@ -74,17 +78,17 @@ class AccountReconcilor : public KeyedService,
     virtual ~Observer() {}
 
     // The typical order of events is:
-    // - OnStartReconcile() called at the beginning of StartReconcile().
     // - When reconcile is blocked:
     //   1. current reconcile is aborted with AbortReconcile(),
-    //   2. OnBlockReconcile() is called.
+    //   2. OnStateChanged() is called with SCHEDULED.
+    //   3. OnBlockReconcile() is called.
     // - When reconcile is unblocked:
     //   1. OnUnblockReconcile() is called,
     //   2. reconcile is restarted if needed with StartReconcile(), which
-    //     triggers a call to OnStartReconcile().
+    //     triggers a call to OnStateChanged() with RUNNING.
 
     // Called whe reconcile starts.
-    virtual void OnStartReconcile() {}
+    virtual void OnStateChanged(signin_metrics::AccountReconcilorState state) {}
     // Called when the AccountReconcilor is blocked.
     virtual void OnBlockReconcile() {}
     // Called when the AccountReconcilor is unblocked.
@@ -135,13 +139,16 @@ class AccountReconcilor : public KeyedService,
   friend class AccountReconcilorTest;
   friend class DiceBrowserTestBase;
   FRIEND_TEST_ALL_PREFIXES(AccountReconcilorMirrorEndpointParamTest,
-                           SigninManagerRegistration);
+                           IdentityManagerRegistration);
   FRIEND_TEST_ALL_PREFIXES(AccountReconcilorMirrorEndpointParamTest, Reauth);
   FRIEND_TEST_ALL_PREFIXES(AccountReconcilorMirrorEndpointParamTest,
                            ProfileAlreadyConnected);
   FRIEND_TEST_ALL_PREFIXES(AccountReconcilorTestTable, TableRowTest);
   FRIEND_TEST_ALL_PREFIXES(AccountReconcilorTestDiceMultilogin, TableRowTest);
   FRIEND_TEST_ALL_PREFIXES(AccountReconcilorTestMirrorMultilogin, TableRowTest);
+  FRIEND_TEST_ALL_PREFIXES(AccountReconcilorTestMiceMultilogin, TableRowTest);
+  FRIEND_TEST_ALL_PREFIXES(AccountReconcilorMiceTest,
+                           AccountReconcilorStateScheduled);
   FRIEND_TEST_ALL_PREFIXES(AccountReconcilorDiceEndpointParamTest,
                            DiceTokenServiceRegistration);
   FRIEND_TEST_ALL_PREFIXES(AccountReconcilorDiceEndpointParamTest,
@@ -212,6 +219,8 @@ class AccountReconcilor : public KeyedService,
   FRIEND_TEST_ALL_PREFIXES(AccountReconcilorMirrorEndpointParamTest, Lock);
   FRIEND_TEST_ALL_PREFIXES(AccountReconcilorMethodParamTest,
                            StartReconcileWithSessionInfoExpiredDefault);
+  FRIEND_TEST_ALL_PREFIXES(AccountReconcilorMethodParamTest,
+                           AccountReconcilorStateScheduled);
   FRIEND_TEST_ALL_PREFIXES(AccountReconcilorMirrorEndpointParamTest,
                            AddAccountToCookieCompletedWithBogusAccount);
   FRIEND_TEST_ALL_PREFIXES(AccountReconcilorMirrorEndpointParamTest,
@@ -223,6 +232,7 @@ class AccountReconcilor : public KeyedService,
                            DelegateTimeoutIsNotCalled);
   FRIEND_TEST_ALL_PREFIXES(AccountReconcilorTest,
                            DelegateTimeoutIsNotCalledIfTimeoutIsNotReached);
+  FRIEND_TEST_ALL_PREFIXES(AccountReconcilorTest, MultiloginLogout);
 
   void set_timer_for_testing(std::unique_ptr<base::OneShotTimer> timer);
 
@@ -305,6 +315,16 @@ class AccountReconcilor : public KeyedService,
   // Returns true is multilogin endpoint can be enabled.
   bool IsMultiloginEndpointEnabled() const;
 
+  // Returns true if current array of existing accounts in cookie is different
+  // from the desired one. If this returns false, the multilogin call would be a
+  // no-op.
+  bool CookieNeedsUpdate(
+      const signin::MultiloginParameters& parameters,
+      const std::vector<gaia::ListedAccount>& existing_accounts);
+
+  // Sets the reconcilor state and calls Observer::OnStateChanged() if needed.
+  void SetState(signin_metrics::AccountReconcilorState state);
+
   std::unique_ptr<signin::AccountReconcilorDelegate> delegate_;
 
   // The IdentityManager associated with this reconcilor.
@@ -366,10 +386,17 @@ class AccountReconcilor : public KeyedService,
   // not invalidate the primary token while this is happening.
   int synced_data_deletion_in_progress_count_ = 0;
 
+  signin_metrics::AccountReconcilorState state_;
+
 #if defined(OS_IOS)
   // Stores the WKHTTPSystemCookieStore flag value.
   bool is_wkhttp_system_cookie_store_enabled_ = false;
 #endif  // defined(OS_IOS)
+
+#if defined(OS_ANDROID)
+  std::unique_ptr<signin::ConsistencyCookieManagerAndroid>
+      consistency_cookie_manager_;
+#endif
 
   base::WeakPtrFactory<AccountReconcilor> weak_factory_;
 

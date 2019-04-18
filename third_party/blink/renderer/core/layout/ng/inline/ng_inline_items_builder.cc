@@ -6,9 +6,10 @@
 
 #include <type_traits>
 
-#include "third_party/blink/renderer/core/layout/layout_object.h"
+#include "third_party/blink/renderer/core/layout/layout_inline.h"
 #include "third_party/blink/renderer/core/layout/layout_text.h"
 #include "third_party/blink/renderer/core/layout/ng/inline/layout_ng_text.h"
+#include "third_party/blink/renderer/core/layout/ng/inline/ng_inline_node.h"
 #include "third_party/blink/renderer/core/layout/ng/inline/ng_offset_mapping_builder.h"
 #include "third_party/blink/renderer/core/style/computed_style.h"
 #include "third_party/blink/renderer/platform/fonts/shaping/shape_result_view.h"
@@ -204,7 +205,7 @@ bool NGInlineItemsBuilderTemplate<OffsetMappingBuilder>::BoxInfo::
     ShouldCreateBoxFragmentForChild(const BoxInfo& child) const {
   // When a child inline box has margins, the parent has different width/height
   // from the union of children.
-  if (child.style.HasMargin())
+  if (child.style.MayHaveMargin())
     return true;
 
   // Returns true when parent and child boxes have different font metrics, since
@@ -980,8 +981,6 @@ void NGInlineItemsBuilderTemplate<OffsetMappingBuilder>::EnterInline(
     LayoutObject* node) {
   DCHECK(node);
 
-  mapping_builder_.EnterInline(*node);
-
   // https://drafts.csswg.org/css-writing-modes-3/#bidi-control-codes-injection-table
   const ComputedStyle* style = node->Style();
   if (style->RtlOrdering() == EOrder::kLogical) {
@@ -1056,8 +1055,6 @@ void NGInlineItemsBuilderTemplate<OffsetMappingBuilder>::ExitInline(
     boxes_.pop_back();
 
   Exit(node);
-
-  mapping_builder_.ExitInline(*node);
 }
 
 template <typename OffsetMappingBuilder>
@@ -1075,6 +1072,47 @@ void NGInlineItemsBuilderTemplate<OffsetMappingBuilder>::SetIsSymbolMarker(
   DCHECK(!items_->IsEmpty());
   items_->back().SetIsSymbolMarker(b);
 }
+
+// Ensure this LayoutObject IsInLayoutNGInlineFormattingContext and does not
+// have associated NGPaintFragment.
+template <typename OffsetMappingBuilder>
+void NGInlineItemsBuilderTemplate<OffsetMappingBuilder>::ClearInlineFragment(
+    LayoutObject* object) {
+  NGInlineNode::ClearInlineFragment(object);
+}
+
+template <typename OffsetMappingBuilder>
+void NGInlineItemsBuilderTemplate<OffsetMappingBuilder>::ClearNeedsLayout(
+    LayoutObject* object) {
+  NGInlineNode::ClearNeedsLayout(object);
+
+  // Reset previous items if they cannot be reused to prevent stale items
+  // for subsequent layouts. Items that can be reused have already been
+  // added to the builder.
+  if (object->IsText())
+    ToLayoutText(object)->ClearInlineItems();
+}
+
+template <typename OffsetMappingBuilder>
+void NGInlineItemsBuilderTemplate<
+    OffsetMappingBuilder>::UpdateShouldCreateBoxFragment(LayoutInline* object) {
+  object->UpdateShouldCreateBoxFragment();
+}
+
+// |NGOffsetMappingBuilder| doesn't change states of |LayoutObject|
+template <>
+void NGInlineItemsBuilderTemplate<NGOffsetMappingBuilder>::ClearNeedsLayout(
+    LayoutObject* object) {}
+
+// |NGOffsetMappingBuilder| doesn't change states of |LayoutObject|
+template <>
+void NGInlineItemsBuilderTemplate<NGOffsetMappingBuilder>::ClearInlineFragment(
+    LayoutObject*) {}
+
+// |NGOffsetMappingBuilder| doesn't change states of |LayoutInline|
+template <>
+void NGInlineItemsBuilderTemplate<
+    NGOffsetMappingBuilder>::UpdateShouldCreateBoxFragment(LayoutInline*) {}
 
 template class CORE_TEMPLATE_EXPORT
     NGInlineItemsBuilderTemplate<EmptyOffsetMappingBuilder>;

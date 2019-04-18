@@ -99,6 +99,7 @@ public class SuggestionsRecyclerView extends RecyclerView {
         setFocusable(true);
         setFocusableInTouchMode(true);
         setContentDescription(res.getString(R.string.accessibility_new_tab_page));
+        setClipToPadding(false);
 
         mGestureDetector =
                 new GestureDetector(getContext(), new GestureDetector.SimpleOnGestureListener() {
@@ -129,6 +130,18 @@ public class SuggestionsRecyclerView extends RecyclerView {
      */
     public void setTouchEnabled(boolean enabled) {
         mTouchEnabled = enabled;
+    }
+
+    /**
+     * Returns the approximate adapter position that the user has scrolled to. The purpose of this
+     * value is that it can be stored and later retrieved to restore a scroll position that is
+     * familiar to the user, showing (part of) the same content the user was previously looking at.
+     * This position is valid for that purpose regardless of device orientation changes. Note that
+     * if the underlying data has changed in the meantime, different content would be shown for this
+     * position.
+     */
+    public int getScrollPosition() {
+        return getLinearLayoutManager().findFirstVisibleItemPosition();
     }
 
     /**

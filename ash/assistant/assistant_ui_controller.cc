@@ -35,6 +35,8 @@ constexpr base::TimeDelta kAutoCloseThreshold = base::TimeDelta::FromMinutes(5);
 // Toast -----------------------------------------------------------------------
 
 constexpr int kToastDurationMs = 2500;
+
+constexpr char kStylusPromptToastId[] = "stylus_prompt_for_embedded_ui";
 constexpr char kUnboundServiceToastId[] =
     "assistant_controller_unbound_service";
 
@@ -139,28 +141,18 @@ void AssistantUiController::OnScreenContextRequestStateChanged(
   if (model_.ui_mode() == AssistantUiMode::kLauncherEmbeddedUi)
     return;
 
-  DCHECK(container_view_);
   // Once screen context request state has become idle, it is safe to activate
   // the Assistant widget without causing complications.
-  if (request_state == ScreenContextRequestState::kIdle)
+  if (container_view_ && request_state == ScreenContextRequestState::kIdle)
     container_view_->GetWidget()->Activate();
-}
-
-void AssistantUiController::OnAssistantMiniViewPressed() {
-  InputModality input_modality = assistant_controller_->interaction_controller()
-                                     ->model()
-                                     ->input_modality();
-
-  // When not using stylus input modality, pressing the Assistant mini view
-  // will cause the UI to expand.
-  if (input_modality != InputModality::kStylus)
-    UpdateUiMode(AssistantUiMode::kMainUi);
 }
 
 bool AssistantUiController::OnCaptionButtonPressed(AssistantButtonId id) {
   switch (id) {
     case AssistantButtonId::kBack:
-      UpdateUiMode(AssistantUiMode::kMainUi);
+      UpdateUiMode(app_list_features::IsEmbeddedAssistantUIEnabled()
+                       ? AssistantUiMode::kLauncherEmbeddedUi
+                       : AssistantUiMode::kMainUi);
       return true;
     case AssistantButtonId::kClose:
       CloseUi(AssistantExitPoint::kCloseButton);
@@ -178,11 +170,6 @@ bool AssistantUiController::OnCaptionButtonPressed(AssistantButtonId id) {
 // TODO(dmblack): This event doesn't need to be handled here anymore. Move it
 // out of AssistantUiController.
 void AssistantUiController::OnDialogPlateButtonPressed(AssistantButtonId id) {
-  if (id == AssistantButtonId::kBackInLauncher) {
-    CloseUi(AssistantExitPoint::kBackInLauncher);
-    return;
-  }
-
   if (id != AssistantButtonId::kSettings)
     return;
 
@@ -191,11 +178,26 @@ void AssistantUiController::OnDialogPlateButtonPressed(AssistantButtonId id) {
       assistant::util::CreateAssistantSettingsDeepLink());
 }
 
+void AssistantUiController::OnMiniViewPressed() {
+  InputModality input_modality = assistant_controller_->interaction_controller()
+                                     ->model()
+                                     ->input_modality();
+
+  // When not using stylus input modality, pressing the Assistant mini view
+  // will cause the UI to expand.
+  if (input_modality != InputModality::kStylus)
+    UpdateUiMode(AssistantUiMode::kMainUi);
+}
+
 void AssistantUiController::OnHighlighterEnabledChanged(
     HighlighterEnabledState state) {
-  // TODO(wutao): Behavior is not defined.
-  if (model_.ui_mode() == AssistantUiMode::kLauncherEmbeddedUi)
+  if (app_list_features::IsEmbeddedAssistantUIEnabled()) {
+    if (state == HighlighterEnabledState::kEnabled) {
+      ShowToast(kStylusPromptToastId, IDS_ASH_ASSISTANT_PROMPT_STYLUS);
+      CloseUi(AssistantExitPoint::kStylus);
+    }
     return;
+  }
 
   switch (state) {
     case HighlighterEnabledState::kEnabled:
@@ -216,9 +218,11 @@ void AssistantUiController::OnHighlighterEnabledChanged(
 void AssistantUiController::OnAssistantControllerConstructed() {
   assistant_controller_->interaction_controller()->AddModelObserver(this);
   assistant_controller_->screen_context_controller()->AddModelObserver(this);
+  assistant_controller_->view_delegate()->AddObserver(this);
 }
 
 void AssistantUiController::OnAssistantControllerDestroying() {
+  assistant_controller_->view_delegate()->RemoveObserver(this);
   assistant_controller_->screen_context_controller()->RemoveModelObserver(this);
   assistant_controller_->interaction_controller()->RemoveModelObserver(this);
 
@@ -232,11 +236,7 @@ void AssistantUiController::OnAssistantControllerDestroying() {
 void AssistantUiController::OnDeepLinkReceived(
     assistant::util::DeepLinkType type,
     const std::map<std::string, std::string>& params) {
-  if (!assistant::util::IsWebDeepLinkType(type))
-    return;
-
-  // TODO(wutao): Behavior is not defined.
-  if (model_.ui_mode() == AssistantUiMode::kLauncherEmbeddedUi)
+  if (!assistant::util::IsWebDeepLinkType(type, params))
     return;
 
   ShowUi(AssistantEntryPoint::kDeepLink);
@@ -251,11 +251,11 @@ void AssistantUiController::OnUrlOpened(const GURL& url, bool from_server) {
   // navigation was initiated by a server response. Otherwise the navigation
   // was user initiated so we only hide the UI to retain session state. That way
   // the user can choose to resume their session if they are so inclined.
-  // However, we close the UI if it is in the |kLauncherEmbeddedUi| mode, where
-  // we only maintain |kVisible| and |kClosed| two states.
+  // However, we close the UI if the feature |IsEmbeddedAssistantUIEnabled| is
+  // enabled, where we only maintain |kVisible| and |kClosed| two states.
   if (from_server)
     CloseUi(AssistantExitPoint::kNewBrowserTabFromServer);
-  else if (model_.ui_mode() == AssistantUiMode::kLauncherEmbeddedUi)
+  else if (app_list_features::IsEmbeddedAssistantUIEnabled())
     CloseUi(AssistantExitPoint::kNewBrowserTabFromUser);
   else
     HideUi(AssistantExitPoint::kNewBrowserTabFromUser);
@@ -331,10 +331,11 @@ void AssistantUiController::OnUiVisibilityChanged(
 
   // Metalayer should not be sticky. Disable when the UI is no longer visible.
   if (old_visibility == AssistantVisibility::kVisible) {
-    Shell::Get()->highlighter_controller()->AbortSession();
+    if (exit_point != AssistantExitPoint::kStylus)
+      Shell::Get()->highlighter_controller()->AbortSession();
 
     // Only record the exit point when Assistant UI becomes invisible to
-    // avoid duplicate happens (e.g., pressing ESC key).
+    // avoid recording duplicate events (e.g. pressing ESC key).
     assistant::util::RecordAssistantExitPoint(exit_point.value());
   }
 }
@@ -359,11 +360,7 @@ void AssistantUiController::ShowUi(AssistantEntryPoint entry_point) {
     return;
   }
 
-  if (app_list_features::IsEmbeddedAssistantUIEnabled() &&
-      assistant::util::IsEmbeddedUiEntryPoint(entry_point)) {
-    // No container view when embedded in launcher.
-    DCHECK(!container_view_);
-
+  if (app_list_features::IsEmbeddedAssistantUIEnabled()) {
     model_.SetUiMode(AssistantUiMode::kLauncherEmbeddedUi);
     model_.SetVisible(entry_point);
     return;
@@ -407,9 +404,6 @@ void AssistantUiController::CloseUi(AssistantExitPoint exit_point) {
     container_view_->GetWidget()->CloseNow();
     DCHECK_EQ(nullptr, container_view_);
   }
-
-  // Reset to default state.
-  model_.SetUiMode(AssistantUiMode::kMainUi);
 }
 
 void AssistantUiController::ToggleUi(
@@ -440,17 +434,16 @@ void AssistantUiController::UpdateUiMode(
   if (ui_mode.has_value()) {
     AssistantUiMode mode = ui_mode.value();
     // TODO(wutao): Behavior is not defined.
-    if (model_.ui_mode() == AssistantUiMode::kLauncherEmbeddedUi) {
+    if (model_.ui_mode() == AssistantUiMode::kLauncherEmbeddedUi)
       DCHECK_NE(AssistantUiMode::kMiniUi, mode);
-      DCHECK_NE(AssistantUiMode::kWebUi, mode);
-    }
     model_.SetUiMode(mode);
     return;
   }
 
-  // TODO(wutao): Behavior is not defined.
-  if (model_.ui_mode() == AssistantUiMode::kLauncherEmbeddedUi)
+  if (app_list_features::IsEmbeddedAssistantUIEnabled()) {
+    model_.SetUiMode(AssistantUiMode::kLauncherEmbeddedUi);
     return;
+  }
 
   InputModality input_modality = assistant_controller_->interaction_controller()
                                      ->model()
@@ -570,6 +563,9 @@ AssistantContainerView* AssistantUiController::GetViewForTest() {
 }
 
 void AssistantUiController::CreateContainerView() {
+  DCHECK(!container_view_);
+  DCHECK(!app_list_features::IsEmbeddedAssistantUIEnabled());
+
   container_view_ =
       new AssistantContainerView(assistant_controller_->view_delegate());
   container_view_->GetWidget()->AddObserver(this);

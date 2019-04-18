@@ -60,7 +60,7 @@ function DirectoryTreeNamingController(
   this.inputElement_.spellcheck = false;
   this.inputElement_.addEventListener('keydown', this.onKeyDown_.bind(this));
   this.inputElement_.addEventListener('blur', this.commitRename_.bind(this));
-  this.inputElement_.addEventListener('click', function(event) {
+  this.inputElement_.addEventListener('click', event => {
     // Stop propagation of click event to prevent it being captured by directory
     // item and current directory is changed to editing item.
     event.stopPropagation();
@@ -87,18 +87,17 @@ DirectoryTreeNamingController.prototype.getInputElement = function() {
  */
 DirectoryTreeNamingController.prototype.attachAndStart = function(
     directoryItem, isRemovableRoot, volumeInfo) {
-
   this.isRemovableRoot_ = isRemovableRoot;
   this.volumeInfo_ = this.isRemovableRoot_ ? assert(volumeInfo) : null;
 
-  if (!!this.currentDirectoryItem_) {
+  if (this.currentDirectoryItem_) {
     return;
   }
 
   this.currentDirectoryItem_ = directoryItem;
   this.currentDirectoryItem_.setAttribute('renaming', true);
 
-  var renameInputElementPlaceholder =
+  const renameInputElementPlaceholder =
       this.currentDirectoryItem_.firstElementChild.getElementsByClassName(
           'rename-placeholder');
 
@@ -126,13 +125,11 @@ DirectoryTreeNamingController.prototype.commitRename_ = function() {
   }
   this.editting_ = false;
 
-  var entry = this.currentDirectoryItem_.entry;
-  var newName = this.inputElement_.value;
+  const entry = this.currentDirectoryItem_.entry;
+  const newName = this.inputElement_.value;
 
-  // If new name is the same as current name or empty (only for removable
-  // devices), do nothing.
-  if (newName === this.currentDirectoryItem_.label ||
-      (newName.length == 0 && this.isRemovableRoot_)) {
+  // If new name is the same as current name or empty, do nothing.
+  if (newName === this.currentDirectoryItem_.label || newName.length == 0) {
     this.detach_();
     return;
   }
@@ -142,22 +139,23 @@ DirectoryTreeNamingController.prototype.commitRename_ = function() {
     util.validateExternalDriveName(newName, assert(this.volumeInfo_))
         .then(
             this.performExternalDriveRename_.bind(this, entry, newName),
-            function(errorMessage) {
-              this.alertDialog_.show(errorMessage, this.detach_.bind(this));
-            }.bind(this));
+            errorMessage => {
+              this.alertDialog_.show(
+                  /** @type {string} */ (errorMessage),
+                  this.detach_.bind(this));
+            });
   } else {
     // Validate new name.
     new Promise(entry.getParent.bind(entry))
-        .then(function(parentEntry) {
+        .then(parentEntry => {
           return util.validateFileName(
               parentEntry, newName,
               !this.directoryModel_.getFileFilter().isHiddenFilesVisible());
-        }.bind(this))
-        .then(
-            this.performRename_.bind(this, entry, newName),
-            function(errorMessage) {
-              this.alertDialog_.show(errorMessage, this.detach_.bind(this));
-            }.bind(this));
+        })
+        .then(this.performRename_.bind(this, entry, newName), errorMessage => {
+          this.alertDialog_.show(
+              /** @type {string} */ (errorMessage), this.detach_.bind(this));
+        });
   }
 };
 
@@ -169,8 +167,8 @@ DirectoryTreeNamingController.prototype.commitRename_ = function() {
  */
 DirectoryTreeNamingController.prototype.performRename_ = function(
     entry, newName) {
-  var renamingCurrentDirectory = util.isSameEntry(entry,
-      this.directoryModel_.getCurrentDirEntry());
+  const renamingCurrentDirectory =
+      util.isSameEntry(entry, this.directoryModel_.getCurrentDirEntry());
   if (renamingCurrentDirectory) {
     this.directoryModel_.setIgnoringCurrentDirectoryDeletion(true /* ignore */);
   }
@@ -179,10 +177,10 @@ DirectoryTreeNamingController.prototype.performRename_ = function(
   // new name in the UI before actual rename is completed.
   new Promise(util.rename.bind(null, entry, newName))
       .then(
-          function(newEntry) {
+          newEntry => {
             // Show new name before detaching input element to prevent showing
             // old name.
-            var label =
+            const label =
                 this.currentDirectoryItem_.firstElementChild.querySelector(
                     '.label');
             label.textContent = newName;
@@ -200,15 +198,15 @@ DirectoryTreeNamingController.prototype.performRename_ = function(
                   this.directoryModel_.setIgnoringCurrentDirectoryDeletion.bind(
                       this.directoryModel_, false /* not ignore */));
             }
-          }.bind(this),
-          function(error) {
+          },
+          error => {
             this.directoryModel_.setIgnoringCurrentDirectoryDeletion(
                 false /* not ignore*/);
             this.detach_();
 
-            this.alertDialog_.show(
-                util.getRenameErrorMessage(error, entry, newName));
-          }.bind(this));
+            this.alertDialog_.show(util.getRenameErrorMessage(
+                /** @type {DOMError} */ (error), entry, newName));
+          });
 };
 
 /**
@@ -223,7 +221,7 @@ DirectoryTreeNamingController.prototype.performExternalDriveRename_ = function(
   chrome.fileManagerPrivate.renameVolume(this.volumeInfo_.volumeId, newName);
   // Show new name before detaching input element to prevent showing old
   // name.
-  var label =
+  const label =
       this.currentDirectoryItem_.firstElementChild.querySelector('.label');
   label.textContent = newName;
 
@@ -250,7 +248,7 @@ DirectoryTreeNamingController.prototype.cancelRename_ = function() {
 DirectoryTreeNamingController.prototype.detach_ = function() {
   assert(!!this.currentDirectoryItem_);
 
-  var renameInputElementPlaceholder =
+  const renameInputElementPlaceholder =
       this.currentDirectoryItem_.firstElementChild.getElementsByClassName(
           'rename-placeholder');
 

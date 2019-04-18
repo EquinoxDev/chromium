@@ -45,11 +45,13 @@
 #include "base/test/metrics/user_action_tester.h"
 #include "media/base/media_switches.h"
 #include "services/media_session/public/cpp/test/test_media_controller.h"
+#include "services/media_session/public/mojom/media_session.mojom.h"
 #include "services/ws/public/mojom/window_tree_constants.mojom.h"
 #include "ui/aura/client/aura_constants.h"
 #include "ui/aura/test/test_window_delegate.h"
 #include "ui/aura/test/test_windows.h"
 #include "ui/aura/window.h"
+#include "ui/base/accelerators/media_keys_util.h"
 #include "ui/base/accelerators/test_accelerator_target.h"
 #include "ui/base/ime/chromeos/fake_ime_keyboard.h"
 #include "ui/base/ime/chromeos/ime_keyboard.h"
@@ -892,7 +894,7 @@ TEST_F(AcceleratorControllerTest, GlobalAcceleratorsToggleAppListFullscreen) {
   base::RunLoop().RunUntilIdle();
   GetAppListTestHelper()->CheckVisibility(true);
   GetAppListTestHelper()->CheckState(
-      app_list::AppListViewState::FULLSCREEN_ALL_APPS);
+      ash::mojom::AppListViewState::kFullscreenAllApps);
   histogram_tester.ExpectTotalCount(app_list::kAppListToggleMethodHistogram,
                                     ++toggle_count_total);
   histogram_tester.ExpectBucketCount(app_list::kAppListToggleMethodHistogram,
@@ -910,7 +912,7 @@ TEST_F(AcceleratorControllerTest, GlobalAcceleratorsToggleAppListFullscreen) {
       ui::Accelerator(ui::VKEY_BROWSER_SEARCH, ui::EF_NONE)));
   base::RunLoop().RunUntilIdle();
   GetAppListTestHelper()->CheckVisibility(true);
-  GetAppListTestHelper()->CheckState(app_list::AppListViewState::PEEKING);
+  GetAppListTestHelper()->CheckState(ash::mojom::AppListViewState::kPeeking);
   histogram_tester.ExpectTotalCount(app_list::kAppListToggleMethodHistogram,
                                     ++toggle_count_total);
   histogram_tester.ExpectBucketCount(app_list::kAppListToggleMethodHistogram,
@@ -922,7 +924,7 @@ TEST_F(AcceleratorControllerTest, GlobalAcceleratorsToggleAppListFullscreen) {
   base::RunLoop().RunUntilIdle();
   GetAppListTestHelper()->CheckVisibility(true);
   GetAppListTestHelper()->CheckState(
-      app_list::AppListViewState::FULLSCREEN_ALL_APPS);
+      ash::mojom::AppListViewState::kFullscreenAllApps);
   histogram_tester.ExpectTotalCount(app_list::kAppListToggleMethodHistogram,
                                     ++toggle_count_total);
   histogram_tester.ExpectBucketCount(app_list::kAppListToggleMethodHistogram,
@@ -940,7 +942,7 @@ TEST_F(AcceleratorControllerTest, GlobalAcceleratorsToggleAppListFullscreen) {
       ui::Accelerator(ui::VKEY_BROWSER_SEARCH, ui::EF_NONE)));
   base::RunLoop().RunUntilIdle();
   GetAppListTestHelper()->CheckVisibility(true);
-  GetAppListTestHelper()->CheckState(app_list::AppListViewState::PEEKING);
+  GetAppListTestHelper()->CheckState(ash::mojom::AppListViewState::kPeeking);
   histogram_tester.ExpectTotalCount(app_list::kAppListToggleMethodHistogram,
                                     ++toggle_count_total);
   histogram_tester.ExpectBucketCount(app_list::kAppListToggleMethodHistogram,
@@ -951,14 +953,14 @@ TEST_F(AcceleratorControllerTest, GlobalAcceleratorsToggleAppListFullscreen) {
   generator->ReleaseKey(ui::VKEY_0, ui::EF_NONE);
   base::RunLoop().RunUntilIdle();
   GetAppListTestHelper()->CheckVisibility(true);
-  GetAppListTestHelper()->CheckState(app_list::AppListViewState::HALF);
+  GetAppListTestHelper()->CheckState(ash::mojom::AppListViewState::kHalf);
   // Shift+VKEY_BROWSER_SEARCH transitions to FULLSCREEN_SEARCH.
   EXPECT_TRUE(ProcessInController(
       ui::Accelerator(ui::VKEY_BROWSER_SEARCH, ui::EF_SHIFT_DOWN)));
   base::RunLoop().RunUntilIdle();
   GetAppListTestHelper()->CheckVisibility(true);
   GetAppListTestHelper()->CheckState(
-      app_list::AppListViewState::FULLSCREEN_SEARCH);
+      ash::mojom::AppListViewState::kFullscreenSearch);
   histogram_tester.ExpectTotalCount(app_list::kAppListToggleMethodHistogram,
                                     ++toggle_count_total);
   histogram_tester.ExpectBucketCount(app_list::kAppListToggleMethodHistogram,
@@ -1662,11 +1664,15 @@ struct MediaSessionAcceleratorTestConfig {
   // Runs the test with the media session service enabled.
   bool service_enabled;
 
-  // Runs the test with the supplied action enabled.
+  // Runs the test with the supplied action enabled and will also send the media
+  // session info to the controller.
   base::Optional<MediaSessionAction> with_action_enabled;
 
   // If true then we should expect the action will handle the media keys.
   bool eligible_action = false;
+
+  // If true then we should force forwarding the action to the client.
+  bool force_key_handling = false;
 };
 
 }  // namespace
@@ -1700,13 +1706,18 @@ class MediaSessionAcceleratorTest
     media_controller->SetClient(client_->CreateAssociatedPtrInfo());
     media_controller->SetMediaSessionControllerForTest(
         controller_->CreateMediaControllerPtr());
+    media_controller->SetForceMediaClientKeyHandling(
+        GetParam().force_key_handling);
     media_controller->FlushForTesting();
   }
 
-  void MaybeEnableAction() {
+  void MaybeEnableMediaSession(
+      media_session::mojom::MediaPlaybackState playback_state) {
     if (!GetParam().with_action_enabled)
       return;
+
     SimulateActionsChanged(GetParam().with_action_enabled);
+    SimulatePlaybackState(playback_state);
   }
 
   void SimulateActionsChanged(base::Optional<MediaSessionAction> action) {
@@ -1729,10 +1740,32 @@ class MediaSessionAcceleratorTest
 
   bool eligible_action() const { return GetParam().eligible_action; }
 
+  bool force_key_handling() const { return GetParam().force_key_handling; }
+
+  void ExpectActionRecorded(ui::MediaHardwareKeyAction action) {
+    histogram_tester_.ExpectBucketCount(
+        ui::kMediaHardwareKeyActionHistogramName,
+        static_cast<base::HistogramBase::Sample>(action), 1);
+  }
+
  private:
+  void SimulatePlaybackState(
+      media_session::mojom::MediaPlaybackState playback_state) {
+    media_session::mojom::MediaSessionInfoPtr session_info(
+        media_session::mojom::MediaSessionInfo::New());
+
+    session_info->state =
+        media_session::mojom::MediaSessionInfo::SessionState::kActive;
+    session_info->playback_state = playback_state;
+
+    controller()->SimulateMediaSessionInfoChanged(std::move(session_info));
+    controller()->Flush();
+  }
+
   std::unique_ptr<TestMediaClient> client_;
   std::unique_ptr<media_session::test::TestMediaController> controller_;
 
+  base::HistogramTester histogram_tester_;
   base::test::ScopedFeatureList scoped_feature_list_;
 
   DISALLOW_COPY_AND_ASSIGN(MediaSessionAcceleratorTest);
@@ -1765,7 +1798,15 @@ INSTANTIATE_TEST_SUITE_P(
                                           MediaSessionAction::kSeekBackward},
         MediaSessionAcceleratorTestConfig{false,
                                           MediaSessionAction::kSeekForward},
-        MediaSessionAcceleratorTestConfig{false, MediaSessionAction::kStop}));
+        MediaSessionAcceleratorTestConfig{false, MediaSessionAction::kStop},
+        MediaSessionAcceleratorTestConfig{true, MediaSessionAction::kPlay,
+                                          false, true},
+        MediaSessionAcceleratorTestConfig{true, MediaSessionAction::kPause,
+                                          false, true},
+        MediaSessionAcceleratorTestConfig{true, MediaSessionAction::kNextTrack,
+                                          false, true},
+        MediaSessionAcceleratorTestConfig{
+            true, MediaSessionAction::kPreviousTrack, false, true}));
 
 TEST_P(MediaSessionAcceleratorTest, MediaPlaybackAcceleratorsBehavior) {
   const ui::KeyboardCode media_keys[] = {ui::VKEY_MEDIA_NEXT_TRACK,
@@ -1804,7 +1845,7 @@ TEST_P(MediaSessionAcceleratorTest, MediaPlaybackAcceleratorsBehavior) {
 }
 
 TEST_P(MediaSessionAcceleratorTest, MediaGlobalAccelerators_NextTrack) {
-  MaybeEnableAction();
+  MaybeEnableMediaSession(media_session::mojom::MediaPlaybackState::kPaused);
 
   EXPECT_EQ(0, client()->handle_media_next_track_count());
   EXPECT_EQ(0, controller()->next_track_count());
@@ -1812,35 +1853,71 @@ TEST_P(MediaSessionAcceleratorTest, MediaGlobalAccelerators_NextTrack) {
   ProcessInController(ui::Accelerator(ui::VKEY_MEDIA_NEXT_TRACK, ui::EF_NONE));
   Shell::Get()->media_controller()->FlushForTesting();
 
-  if (service_enabled() && eligible_action()) {
+  if (service_enabled() && eligible_action() && !force_key_handling()) {
     EXPECT_EQ(0, client()->handle_media_next_track_count());
     EXPECT_EQ(1, controller()->next_track_count());
   } else {
     EXPECT_EQ(1, client()->handle_media_next_track_count());
     EXPECT_EQ(0, controller()->next_track_count());
   }
+
+  ExpectActionRecorded(ui::MediaHardwareKeyAction::kNextTrack);
 }
 
-TEST_P(MediaSessionAcceleratorTest, MediaGlobalAccelerators_PlayPause) {
-  MaybeEnableAction();
+TEST_P(MediaSessionAcceleratorTest, MediaGlobalAccelerators_Play) {
+  MaybeEnableMediaSession(media_session::mojom::MediaPlaybackState::kPaused);
 
   EXPECT_EQ(0, client()->handle_media_play_pause_count());
-  EXPECT_EQ(0, controller()->toggle_suspend_resume_count());
+  EXPECT_EQ(0, controller()->resume_count());
 
   ProcessInController(ui::Accelerator(ui::VKEY_MEDIA_PLAY_PAUSE, ui::EF_NONE));
   Shell::Get()->media_controller()->FlushForTesting();
 
   if (service_enabled() && eligible_action()) {
     EXPECT_EQ(0, client()->handle_media_play_pause_count());
-    EXPECT_EQ(1, controller()->toggle_suspend_resume_count());
+    EXPECT_EQ(1, controller()->resume_count());
+
+    // If media session handles the key then we should always know the playback
+    // state so we can record a more granular action.
+    ExpectActionRecorded(ui::MediaHardwareKeyAction::kPlay);
   } else {
     EXPECT_EQ(1, client()->handle_media_play_pause_count());
-    EXPECT_EQ(0, controller()->toggle_suspend_resume_count());
+    EXPECT_EQ(0, controller()->resume_count());
+
+    // If we pass through to the client we don't know whether the action will
+    // play or pause so we should record a generic "play/pause" action.
+    ExpectActionRecorded(ui::MediaHardwareKeyAction::kPlayPause);
+  }
+}
+
+TEST_P(MediaSessionAcceleratorTest, MediaGlobalAccelerators_Pause) {
+  MaybeEnableMediaSession(media_session::mojom::MediaPlaybackState::kPlaying);
+
+  EXPECT_EQ(0, client()->handle_media_play_pause_count());
+  EXPECT_EQ(0, controller()->suspend_count());
+
+  ProcessInController(ui::Accelerator(ui::VKEY_MEDIA_PLAY_PAUSE, ui::EF_NONE));
+  Shell::Get()->media_controller()->FlushForTesting();
+
+  if (service_enabled() && eligible_action() && !force_key_handling()) {
+    EXPECT_EQ(0, client()->handle_media_play_pause_count());
+    EXPECT_EQ(1, controller()->suspend_count());
+
+    // If media session handles the key then we should always know the playback
+    // state so we can record a more granular action.
+    ExpectActionRecorded(ui::MediaHardwareKeyAction::kPause);
+  } else {
+    EXPECT_EQ(1, client()->handle_media_play_pause_count());
+    EXPECT_EQ(0, controller()->suspend_count());
+
+    // If we pass through to the client we don't know whether the action will
+    // play or pause so we should record a generic "play/pause" action.
+    ExpectActionRecorded(ui::MediaHardwareKeyAction::kPlayPause);
   }
 }
 
 TEST_P(MediaSessionAcceleratorTest, MediaGlobalAccelerators_PrevTrack) {
-  MaybeEnableAction();
+  MaybeEnableMediaSession(media_session::mojom::MediaPlaybackState::kPaused);
 
   EXPECT_EQ(0, client()->handle_media_prev_track_count());
   EXPECT_EQ(0, controller()->previous_track_count());
@@ -1848,69 +1925,117 @@ TEST_P(MediaSessionAcceleratorTest, MediaGlobalAccelerators_PrevTrack) {
   ProcessInController(ui::Accelerator(ui::VKEY_MEDIA_PREV_TRACK, ui::EF_NONE));
   Shell::Get()->media_controller()->FlushForTesting();
 
-  if (service_enabled() && eligible_action()) {
+  if (service_enabled() && eligible_action() && !force_key_handling()) {
     EXPECT_EQ(0, client()->handle_media_prev_track_count());
     EXPECT_EQ(1, controller()->previous_track_count());
   } else {
     EXPECT_EQ(1, client()->handle_media_prev_track_count());
     EXPECT_EQ(0, controller()->previous_track_count());
   }
+
+  ExpectActionRecorded(ui::MediaHardwareKeyAction::kPreviousTrack);
 }
 
 TEST_P(MediaSessionAcceleratorTest,
        MediaGlobalAccelerators_UpdateAction_Disable) {
-  MaybeEnableAction();
+  MaybeEnableMediaSession(media_session::mojom::MediaPlaybackState::kPaused);
 
-  EXPECT_EQ(0, client()->handle_media_play_pause_count());
-  EXPECT_EQ(0, controller()->toggle_suspend_resume_count());
+  EXPECT_EQ(0, client()->handle_media_next_track_count());
+  EXPECT_EQ(0, controller()->next_track_count());
 
-  ProcessInController(ui::Accelerator(ui::VKEY_MEDIA_PLAY_PAUSE, ui::EF_NONE));
+  ProcessInController(ui::Accelerator(ui::VKEY_MEDIA_NEXT_TRACK, ui::EF_NONE));
   Shell::Get()->media_controller()->FlushForTesting();
 
-  if (service_enabled() && eligible_action()) {
-    EXPECT_EQ(0, client()->handle_media_play_pause_count());
-    EXPECT_EQ(1, controller()->toggle_suspend_resume_count());
+  if (service_enabled() && eligible_action() && !force_key_handling()) {
+    EXPECT_EQ(0, client()->handle_media_next_track_count());
+    EXPECT_EQ(1, controller()->next_track_count());
   } else {
-    EXPECT_EQ(1, client()->handle_media_play_pause_count());
-    EXPECT_EQ(0, controller()->toggle_suspend_resume_count());
+    EXPECT_EQ(1, client()->handle_media_next_track_count());
+    EXPECT_EQ(0, controller()->next_track_count());
   }
 
   SimulateActionsChanged(base::nullopt);
 
-  ProcessInController(ui::Accelerator(ui::VKEY_MEDIA_PLAY_PAUSE, ui::EF_NONE));
+  ProcessInController(ui::Accelerator(ui::VKEY_MEDIA_NEXT_TRACK, ui::EF_NONE));
   Shell::Get()->media_controller()->FlushForTesting();
 
-  if (service_enabled() && eligible_action()) {
-    EXPECT_EQ(1, client()->handle_media_play_pause_count());
-    EXPECT_EQ(1, controller()->toggle_suspend_resume_count());
+  if (service_enabled() && eligible_action() && !force_key_handling()) {
+    EXPECT_EQ(1, client()->handle_media_next_track_count());
+    EXPECT_EQ(1, controller()->next_track_count());
   } else {
-    EXPECT_EQ(2, client()->handle_media_play_pause_count());
-    EXPECT_EQ(0, controller()->toggle_suspend_resume_count());
+    EXPECT_EQ(2, client()->handle_media_next_track_count());
+    EXPECT_EQ(0, controller()->next_track_count());
   }
 }
 
 TEST_P(MediaSessionAcceleratorTest,
        MediaGlobalAccelerators_UpdateAction_Enable) {
-  EXPECT_EQ(0, client()->handle_media_play_pause_count());
-  EXPECT_EQ(0, controller()->toggle_suspend_resume_count());
+  EXPECT_EQ(0, client()->handle_media_next_track_count());
+  EXPECT_EQ(0, controller()->next_track_count());
 
-  ProcessInController(ui::Accelerator(ui::VKEY_MEDIA_PLAY_PAUSE, ui::EF_NONE));
+  ProcessInController(ui::Accelerator(ui::VKEY_MEDIA_NEXT_TRACK, ui::EF_NONE));
   Shell::Get()->media_controller()->FlushForTesting();
 
-  EXPECT_EQ(1, client()->handle_media_play_pause_count());
-  EXPECT_EQ(0, controller()->toggle_suspend_resume_count());
+  EXPECT_EQ(1, client()->handle_media_next_track_count());
+  EXPECT_EQ(0, controller()->next_track_count());
 
-  MaybeEnableAction();
+  MaybeEnableMediaSession(media_session::mojom::MediaPlaybackState::kPaused);
 
-  ProcessInController(ui::Accelerator(ui::VKEY_MEDIA_PLAY_PAUSE, ui::EF_NONE));
+  ProcessInController(ui::Accelerator(ui::VKEY_MEDIA_NEXT_TRACK, ui::EF_NONE));
   Shell::Get()->media_controller()->FlushForTesting();
 
-  if (service_enabled() && eligible_action()) {
-    EXPECT_EQ(1, client()->handle_media_play_pause_count());
-    EXPECT_EQ(1, controller()->toggle_suspend_resume_count());
+  if (service_enabled() && eligible_action() && !force_key_handling()) {
+    EXPECT_EQ(1, client()->handle_media_next_track_count());
+    EXPECT_EQ(1, controller()->next_track_count());
   } else {
-    EXPECT_EQ(2, client()->handle_media_play_pause_count());
-    EXPECT_EQ(0, controller()->toggle_suspend_resume_count());
+    EXPECT_EQ(2, client()->handle_media_next_track_count());
+    EXPECT_EQ(0, controller()->next_track_count());
+  }
+}
+
+TEST_P(MediaSessionAcceleratorTest,
+       MediaGlobalAccelerators_UpdateForceKeyHandling) {
+  MaybeEnableMediaSession(media_session::mojom::MediaPlaybackState::kPaused);
+
+  EXPECT_EQ(0, client()->handle_media_next_track_count());
+  EXPECT_EQ(0, controller()->next_track_count());
+
+  ProcessInController(ui::Accelerator(ui::VKEY_MEDIA_NEXT_TRACK, ui::EF_NONE));
+  Shell::Get()->media_controller()->FlushForTesting();
+
+  if (service_enabled() && eligible_action() && !force_key_handling()) {
+    EXPECT_EQ(0, client()->handle_media_next_track_count());
+    EXPECT_EQ(1, controller()->next_track_count());
+  } else {
+    EXPECT_EQ(1, client()->handle_media_next_track_count());
+    EXPECT_EQ(0, controller()->next_track_count());
+  }
+
+  // Update the force media client key handling setting. It may have been
+  // previously set if |force_key_handling| is true.
+  Shell::Get()->media_controller()->SetForceMediaClientKeyHandling(false);
+
+  ProcessInController(ui::Accelerator(ui::VKEY_MEDIA_NEXT_TRACK, ui::EF_NONE));
+  Shell::Get()->media_controller()->FlushForTesting();
+
+  if (service_enabled() && force_key_handling()) {
+    // If we had |force_key_handling| true the first time we pressed the play
+    // pause key then we should see the previous action that was forward to the
+    // client. Since the service is enabled, the second action will be handled
+    // by the controller.
+    EXPECT_EQ(1, client()->handle_media_next_track_count());
+    EXPECT_EQ(1, controller()->next_track_count());
+  } else if (service_enabled() && eligible_action()) {
+    // If we had |force_key_handling| disabled the whole time and the service
+    // enabled then both actions should be handled in the controller.
+    EXPECT_EQ(0, client()->handle_media_next_track_count());
+    EXPECT_EQ(2, controller()->next_track_count());
+  } else {
+    // If we had |force_key_handling| disabled the whole time and the service
+    // disabled then both actions should fallback to the client because there is
+    // nothing in Ash to handle them.
+    EXPECT_EQ(2, client()->handle_media_next_track_count());
+    EXPECT_EQ(0, controller()->next_track_count());
   }
 }
 

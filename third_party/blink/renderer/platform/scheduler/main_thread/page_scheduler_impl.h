@@ -22,6 +22,7 @@
 #include "third_party/blink/renderer/platform/scheduler/public/page_lifecycle_state.h"
 #include "third_party/blink/renderer/platform/scheduler/public/page_scheduler.h"
 #include "third_party/blink/renderer/platform/scheduler/public/thread_scheduler.h"
+#include "third_party/blink/renderer/platform/wtf/allocator.h"
 
 namespace base {
 namespace trace_event {
@@ -55,6 +56,7 @@ class PLATFORM_EXPORT PageSchedulerImpl : public PageScheduler {
   void SetKeepActive(bool) override;
   bool IsMainFrameLocal() const override;
   void SetIsMainFrameLocal(bool is_local) override;
+  void OnLocalMainFrameNetworkAlmostIdle() override;
 
   std::unique_ptr<FrameScheduler> CreateFrameScheduler(
       FrameScheduler::Delegate* delegate,
@@ -73,8 +75,10 @@ class PLATFORM_EXPORT PageSchedulerImpl : public PageScheduler {
       int max_task_starvation_count) override;
   void AudioStateChanged(bool is_audio_playing) override;
   bool IsAudioPlaying() const override;
+  WTF::HashSet<SchedulingPolicy::Feature>
+  GetActiveFeaturesOptingOutFromBackForwardCache() const override;
   bool IsExemptFromBudgetBasedThrottling() const override;
-  bool HasActiveConnectionForTest() const override;
+  bool OptedOutFromAggressiveThrottlingForTest() const override;
   bool RequestBeginMainFrameNotExpected(bool new_state) override;
 
   // Virtual for testing.
@@ -82,15 +86,19 @@ class PLATFORM_EXPORT PageSchedulerImpl : public PageScheduler {
 
   bool IsPageVisible() const;
   bool IsFrozen() const;
-  // PageSchedulerImpl::HasActiveConnection can be used in non-test code,
-  // while PageScheduler::HasActiveConnectionForTest can't.
-  bool HasActiveConnection() const;
+  // PageSchedulerImpl::OptedOutFromAggressiveThrottling can be used in non-test
+  // code, while PageScheduler::OptedOutFromAggressiveThrottlingForTest can't.
+  bool OptedOutFromAggressiveThrottling() const;
   // Note that the frame can throttle queues even when the page is not throttled
   // (e.g. for offscreen frames or recently backgrounded pages).
   bool IsThrottled() const;
   bool KeepActive() const;
 
   bool IsLoading() const;
+
+  // An "ordinary" PageScheduler is responsible for is a fully-featured page
+  // owned by a web view.
+  bool IsOrdinary() const;
 
   void RegisterFrameSchedulerImpl(FrameSchedulerImpl* frame_scheduler);
 
@@ -99,12 +107,14 @@ class PLATFORM_EXPORT PageSchedulerImpl : public PageScheduler {
   void Unregister(FrameSchedulerImpl*);
   void OnNavigation();
 
-  void OnConnectionUpdated();
+  void OnAggressiveThrottlingStatusUpdated();
 
   void OnTraceLogEnabled();
 
   // Return a number of child web frame schedulers for this PageScheduler.
   size_t FrameCount() const;
+
+  PageLifecycleState GetPageLifecycleState() const;
 
   // Generally UKMs are asssociated with the main frame of a page, but the
   // implementation allows to request a recorder from any local frame with
@@ -155,11 +165,14 @@ class PLATFORM_EXPORT PageSchedulerImpl : public PageScheduler {
   };
 
   class PageLifecycleStateTracker {
+    USING_FAST_MALLOC(PageLifecycleStateTracker);
+
    public:
     explicit PageLifecycleStateTracker(PageSchedulerImpl*, PageLifecycleState);
     ~PageLifecycleStateTracker() = default;
 
     void SetPageLifecycleState(PageLifecycleState);
+    PageLifecycleState GetPageLifecycleState() const;
 
    private:
     static base::Optional<PageLifecycleStateTransition>
@@ -231,10 +244,11 @@ class PLATFORM_EXPORT PageSchedulerImpl : public PageScheduler {
   MainThreadSchedulerImpl* main_thread_scheduler_;
 
   PageVisibilityState page_visibility_;
+  base::TimeTicks page_visibility_changed_time_;
   AudioState audio_state_;
   bool is_frozen_;
   bool reported_background_throttling_since_navigation_;
-  bool has_active_connection_;
+  bool opted_out_from_aggressive_throttling_;
   bool nested_runloop_;
   bool is_main_frame_local_;
   bool is_throttled_;
@@ -244,7 +258,15 @@ class PLATFORM_EXPORT PageSchedulerImpl : public PageScheduler {
   CancelableClosureHolder do_throttle_page_callback_;
   CancelableClosureHolder on_audio_silent_closure_;
   CancelableClosureHolder do_freeze_page_callback_;
-  base::TimeDelta delay_for_background_tab_freezing_;
+  const base::TimeDelta delay_for_background_tab_freezing_;
+
+  // Whether a background page can be frozen before
+  // |delay_for_background_tab_freezing_| if network is idle.
+  const bool freeze_on_network_idle_enabled_;
+
+  // Delay after which a background page can be frozen if network is idle.
+  const base::TimeDelta delay_for_background_and_network_idle_tab_freezing_;
+
   std::unique_ptr<PageLifecycleStateTracker> page_lifecycle_state_tracker_;
   base::WeakPtrFactory<PageSchedulerImpl> weak_factory_;
 

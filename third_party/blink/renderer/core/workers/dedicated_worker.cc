@@ -51,20 +51,6 @@ namespace blink {
 
 namespace {
 
-service_manager::mojom::blink::InterfaceProviderPtrInfo
-ConnectToWorkerInterfaceProvider(
-    ExecutionContext* execution_context,
-    scoped_refptr<const SecurityOrigin> script_origin) {
-  DCHECK(!features::IsPlzDedicatedWorkerEnabled());
-  mojom::blink::DedicatedWorkerHostFactoryPtr worker_host_factory;
-  execution_context->GetInterfaceProvider()->GetInterface(&worker_host_factory);
-  service_manager::mojom::blink::InterfaceProviderPtrInfo
-      interface_provider_ptr;
-  worker_host_factory->CreateDedicatedWorker(
-      script_origin, mojo::MakeRequest(&interface_provider_ptr));
-  return interface_provider_ptr;
-}
-
 // Indicates whether the origin of worker top-level script's request URL is
 // same-origin as the parent execution context's origin or not.
 // This is used for UMA and thus the existing values should not be changed.
@@ -155,6 +141,10 @@ DedicatedWorker::DedicatedWorker(ExecutionContext* context,
       options_(options),
       context_proxy_(
           MakeGarbageCollected<DedicatedWorkerMessagingProxy>(context, this)),
+      factory_client_(
+          Platform::Current()->CreateDedicatedWorkerHostFactoryClient(
+              this,
+              GetExecutionContext()->GetInterfaceProvider())),
       v8_stack_trace_id_(ThreadDebugger::From(context->GetIsolate())
                              ->StoreCurrentStackTrace("Worker Created")) {
   DCHECK(context->IsContextThread());
@@ -225,17 +215,17 @@ void DedicatedWorker::Start() {
           script_request_url_, MakeRequest(&blob_url_token));
     }
 
-    DCHECK(!factory_client_);
-    factory_client_ =
-        Platform::Current()->CreateDedicatedWorkerHostFactoryClient(
-            this, GetExecutionContext()->GetInterfaceProvider());
     factory_client_->CreateWorkerHost(
         script_request_url_,
         WebSecurityOrigin(GetExecutionContext()->GetSecurityOrigin()),
         blob_url_token.PassInterface().PassHandle());
-    // Continue in OnScriptLoaded().
+    // Continue in OnScriptLoadStarted() or OnScriptLoadStartFailed().
     return;
   }
+
+  factory_client_->CreateWorkerHostDeprecated(
+      WebSecurityOrigin(GetExecutionContext()->GetSecurityOrigin()));
+
   if (base::FeatureList::IsEnabled(
           features::kOffMainThreadDedicatedWorkerScriptFetch) ||
       options_->type() == "module") {
@@ -309,13 +299,13 @@ bool DedicatedWorker::HasPendingActivity() const {
 
 void DedicatedWorker::OnWorkerHostCreated(
     mojo::ScopedMessagePipeHandle interface_provider) {
-  DCHECK(features::IsPlzDedicatedWorkerEnabled());
+  DCHECK(!interface_provider_);
   interface_provider_ = service_manager::mojom::blink::InterfaceProviderPtrInfo(
       std::move(interface_provider),
       service_manager::mojom::blink::InterfaceProvider::Version_);
 }
 
-void DedicatedWorker::OnScriptLoaded() {
+void DedicatedWorker::OnScriptLoadStarted() {
   DCHECK(features::IsPlzDedicatedWorkerEnabled());
   // Specify empty source code here because scripts will be fetched on the
   // worker thread.
@@ -324,7 +314,7 @@ void DedicatedWorker::OnScriptLoaded() {
       network::mojom::ReferrerPolicy::kDefault, String() /* source_code */);
 }
 
-void DedicatedWorker::OnScriptLoadFailed() {
+void DedicatedWorker::OnScriptLoadStartFailed() {
   DCHECK(features::IsPlzDedicatedWorkerEnabled());
   context_proxy_->DidFailToFetchScript();
   factory_client_.reset();
@@ -336,12 +326,8 @@ void DedicatedWorker::DispatchErrorEventForScriptFetchFailure() {
   DispatchEvent(*Event::CreateCancelable(event_type_names::kError));
 }
 
-const String DedicatedWorker::Name() const {
-  return options_->name();
-}
-
 WorkerClients* DedicatedWorker::CreateWorkerClients() {
-  WorkerClients* worker_clients = WorkerClients::Create();
+  auto* worker_clients = MakeGarbageCollected<WorkerClients>();
   CoreInitializer::GetInstance().ProvideLocalFileSystemToWorker(
       *worker_clients);
   CoreInitializer::GetInstance().ProvideIndexedDBClientToWorker(
@@ -365,7 +351,7 @@ WorkerClients* DedicatedWorker::CreateWorkerClients() {
 
 void DedicatedWorker::OnResponse() {
   DCHECK(GetExecutionContext()->IsContextThread());
-  probe::didReceiveScriptResponse(GetExecutionContext(),
+  probe::DidReceiveScriptResponse(GetExecutionContext(),
                                   classic_script_loader_->Identifier());
 }
 
@@ -393,7 +379,7 @@ void DedicatedWorker::OnFinished() {
     ContinueStart(script_response_url,
                   OffMainThreadWorkerScriptFetchOption::kDisabled,
                   referrer_policy, classic_script_loader_->SourceText());
-    probe::scriptImported(GetExecutionContext(),
+    probe::ScriptImported(GetExecutionContext(),
                           classic_script_loader_->Identifier(),
                           classic_script_loader_->SourceText());
   }
@@ -441,29 +427,10 @@ DedicatedWorker::CreateGlobalScopeCreationParams(
                                       ? mojom::ScriptType::kClassic
                                       : mojom::ScriptType::kModule;
 
-  // TODO(nhiroki): Create WebWorkerFetchContext using |factory_client_| when
-  // PlzDedicatedWorker is enabled (https://crbug.com/906991).
-  scoped_refptr<WebWorkerFetchContext> web_worker_fetch_context;
-  if (auto* document = DynamicTo<Document>(GetExecutionContext())) {
-    LocalFrame* frame = document->GetFrame();
-    web_worker_fetch_context = frame->Client()->CreateWorkerFetchContext();
-    web_worker_fetch_context->SetApplicationCacheHostID(
-        frame->Loader()
-            .GetDocumentLoader()
-            ->GetApplicationCacheHost()
-            ->GetHostID());
-    web_worker_fetch_context->SetIsOnSubframe(!frame->IsMainFrame());
-  } else if (auto* scope =
-                 DynamicTo<WorkerGlobalScope>(GetExecutionContext())) {
-    web_worker_fetch_context =
-        static_cast<WorkerFetchContext&>(scope->Fetcher()->Context())
-            .GetWebWorkerFetchContext()
-            ->CloneForNestedWorker(scope->GetTaskRunner(TaskType::kNetworking));
-  }
-
+  DCHECK(interface_provider_);
   return std::make_unique<GlobalScopeCreationParams>(
-      script_url, script_type, off_main_thread_fetch_option,
-      GetExecutionContext()->UserAgent(), std::move(web_worker_fetch_context),
+      script_url, script_type, off_main_thread_fetch_option, options_->name(),
+      GetExecutionContext()->UserAgent(), CreateWebWorkerFetchContext(),
       GetExecutionContext()->GetContentSecurityPolicy()->Headers(),
       referrer_policy, GetExecutionContext()->GetSecurityOrigin(),
       GetExecutionContext()->IsSecureContext(),
@@ -472,13 +439,41 @@ DedicatedWorker::CreateGlobalScopeCreationParams(
       OriginTrialContext::GetTokens(GetExecutionContext()).get(),
       parent_devtools_token, std::move(settings), kV8CacheOptionsDefault,
       nullptr /* worklet_module_responses_map */,
-      interface_provider_
-          ? std::move(interface_provider_)
-          : ConnectToWorkerInterfaceProvider(
-                GetExecutionContext(), SecurityOrigin::Create(script_url)),
-      CreateBeginFrameProviderParams(),
+      std::move(interface_provider_), CreateBeginFrameProviderParams(),
       GetExecutionContext()->GetSecurityContext().GetFeaturePolicy(),
       GetExecutionContext()->GetAgentClusterID());
+}
+
+scoped_refptr<WebWorkerFetchContext>
+DedicatedWorker::CreateWebWorkerFetchContext() {
+  // This worker is being created by the document.
+  if (auto* document = DynamicTo<Document>(GetExecutionContext())) {
+    scoped_refptr<WebWorkerFetchContext> web_worker_fetch_context;
+    LocalFrame* frame = document->GetFrame();
+    if (features::IsPlzDedicatedWorkerEnabled()) {
+      web_worker_fetch_context =
+          frame->Client()->CreateWorkerFetchContextForPlzDedicatedWorker(
+              factory_client_.get());
+    } else {
+      web_worker_fetch_context = frame->Client()->CreateWorkerFetchContext();
+      web_worker_fetch_context->SetApplicationCacheHostID(
+          frame->Loader()
+              .GetDocumentLoader()
+              ->GetApplicationCacheHost()
+              ->GetHostID());
+    }
+    web_worker_fetch_context->SetIsOnSubframe(!frame->IsMainFrame());
+    return web_worker_fetch_context;
+  }
+
+  // This worker is being created by an existing worker (i.e., nested workers).
+  // Clone the worker fetch context from the parent's one.
+  // TODO(nhiroki): Create WebWorkerFetchContext using |factory_client_| when
+  // PlzDedicatedWorker is enabled (https://crbug.com/906991).
+  auto* scope = To<WorkerGlobalScope>(GetExecutionContext());
+  return static_cast<WorkerFetchContext&>(scope->Fetcher()->Context())
+      .GetWebWorkerFetchContext()
+      ->CloneForNestedWorker(scope->GetTaskRunner(TaskType::kNetworking));
 }
 
 const AtomicString& DedicatedWorker::InterfaceName() const {

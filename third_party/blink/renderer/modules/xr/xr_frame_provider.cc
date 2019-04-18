@@ -53,7 +53,7 @@ std::unique_ptr<TransformationMatrix> getPoseMatrix(
     return nullptr;
 
   std::unique_ptr<TransformationMatrix> pose_matrix =
-      TransformationMatrix::Create();
+      std::make_unique<TransformationMatrix>();
 
   TransformationMatrix::DecomposedType decomp;
 
@@ -213,9 +213,7 @@ void XRFrameProvider::ScheduleNonImmersiveFrame() {
   TRACE_EVENT0("gpu", __FUNCTION__);
   DCHECK(!immersive_session_)
       << "Scheduling should be done via the exclusive session if present.";
-  DCHECK(xr_->xrMagicWindowProviderPtr())
-      << "If there is no exclusive session, it should be impossible to "
-         "schedule a frame without a MagicWindowProvider.";
+  DCHECK(xr_->xrMagicWindowProviderPtr() || !HasARSession());
 
   if (pending_non_immersive_vsync_)
     return;
@@ -230,10 +228,22 @@ void XRFrameProvider::ScheduleNonImmersiveFrame() {
   if (!doc)
     return;
 
+  // This is cleared by either OnNonImmersiveFrameData (GetFrameData callback)
+  // or by OnNonImmersiveVSync (XRFrameProviderRequestCallback's invoke)
+  // Currently the only way for neither of these methods to be called is
+  // if we don't have a MagicWindowProvider and we have an AR Session
+  // which is guaranteed by our above DCheck.
   pending_non_immersive_vsync_ = true;
 
-  xr_->xrMagicWindowProviderPtr()->GetFrameData(WTF::Bind(
-      &XRFrameProvider::OnNonImmersiveFrameData, WrapWeakPersistent(this)));
+  // If we have a Magic Window provider, request frame data and flag that
+  // we're waiting for it.  If not, clear any pose data, so that
+  // ProcessScheduledFrame handles it appropriately.
+  if (xr_->xrMagicWindowProviderPtr()) {
+    xr_->xrMagicWindowProviderPtr()->GetFrameData(WTF::Bind(
+        &XRFrameProvider::OnNonImmersiveFrameData, WrapWeakPersistent(this)));
+  } else {
+    frame_pose_ = nullptr;
+  }
 
   // TODO(https://crbug.com/839253): Generalize the pass-through images
   // code path so that it also works for immersive sessions on an AR device
@@ -405,8 +415,12 @@ void XRFrameProvider::ProcessScheduledFrame(
     }
 #endif
     if (frame_data && (frame_data->left_eye || frame_data->right_eye)) {
-      immersive_session_->UpdateDisplayInfo(frame_data->left_eye,
-                                            frame_data->right_eye);
+      immersive_session_->UpdateEyeParameters(frame_data->left_eye,
+                                              frame_data->right_eye);
+    }
+
+    if (frame_data && frame_data->stage_parameters_updated) {
+      immersive_session_->UpdateStageParameters(frame_data->stage_parameters);
     }
     immersive_session_->OnFrame(high_res_now_ms, std::move(pose_matrix),
                                 buffer_mailbox_holder_, base::nullopt,

@@ -127,8 +127,8 @@ void SocketAsyncApiFunction::OpenFirewallHole(const std::string& address,
 
     base::PostTaskWithTraits(
         FROM_HERE, {BrowserThread::UI},
-        base::Bind(&SocketAsyncApiFunction::OpenFirewallHoleOnUIThread, this,
-                   type, local_address.port(), socket_id));
+        base::BindOnce(&SocketAsyncApiFunction::OpenFirewallHoleOnUIThread,
+                       this, type, local_address.port(), socket_id));
     return;
   }
 #endif
@@ -148,8 +148,8 @@ void SocketAsyncApiFunction::OpenFirewallHoleOnUIThread(
       manager->Open(type, port, extension_id()).release());
   base::PostTaskWithTraits(
       FROM_HERE, {BrowserThread::IO},
-      base::Bind(&SocketAsyncApiFunction::OnFirewallHoleOpened, this, socket_id,
-                 base::Passed(&hole)));
+      base::BindOnce(&SocketAsyncApiFunction::OnFirewallHoleOpened, this,
+                     socket_id, std::move(hole)));
 }
 
 void SocketAsyncApiFunction::OnFirewallHoleOpened(
@@ -358,7 +358,7 @@ void SocketConnectFunction::StartConnect() {
   }
 
   socket->Connect(addresses_,
-                  base::BindRepeating(&SocketConnectFunction::OnConnect, this));
+                  base::BindOnce(&SocketConnectFunction::OnConnect, this));
 }
 
 void SocketConnectFunction::OnConnect(int result) {
@@ -604,7 +604,7 @@ void SocketWriteFunction::AsyncWorkStart() {
   }
 
   socket->Write(io_buffer_, io_buffer_size_,
-                base::BindRepeating(&SocketWriteFunction::OnCompleted, this));
+                base::BindOnce(&SocketWriteFunction::OnCompleted, this));
 }
 
 void SocketWriteFunction::OnCompleted(int bytes_written) {
@@ -633,9 +633,8 @@ void SocketRecvFromFunction::AsyncWorkStart() {
     return;
   }
 
-  socket->RecvFrom(
-      params_->buffer_size.get() ? *params_->buffer_size : 4096,
-      base::BindRepeating(&SocketRecvFromFunction::OnCompleted, this));
+  socket->RecvFrom(params_->buffer_size.get() ? *params_->buffer_size : 4096,
+                   base::BindOnce(&SocketRecvFromFunction::OnCompleted, this));
 }
 
 void SocketRecvFromFunction::OnCompleted(int bytes_read,
@@ -735,7 +734,7 @@ void SocketSendToFunction::StartSendTo() {
   }
 
   socket->SendTo(io_buffer_, io_buffer_size_, addresses_.front(),
-                 base::BindRepeating(&SocketSendToFunction::OnCompleted, this));
+                 base::BindOnce(&SocketSendToFunction::OnCompleted, this));
 }
 
 void SocketSendToFunction::OnCompleted(int bytes_written) {
@@ -923,7 +922,7 @@ void SocketJoinGroupFunction::AsyncWorkStart() {
 
   static_cast<UDPSocket*>(socket)->JoinGroup(
       params_->address,
-      base::BindRepeating(&SocketJoinGroupFunction::OnCompleted, this));
+      base::BindOnce(&SocketJoinGroupFunction::OnCompleted, this));
 }
 
 void SocketJoinGroupFunction::OnCompleted(int result) {
@@ -976,7 +975,7 @@ void SocketLeaveGroupFunction::AsyncWorkStart() {
 
   static_cast<UDPSocket*>(socket)->LeaveGroup(
       params_->address,
-      base::BindRepeating(&SocketLeaveGroupFunction::OnCompleted, this));
+      base::BindOnce(&SocketLeaveGroupFunction::OnCompleted, this));
 }
 
 void SocketLeaveGroupFunction::OnCompleted(int result) {

@@ -4,7 +4,7 @@
 
 #include <vector>
 
-#include "cc/base/lap_timer.h"
+#include "base/timer/lap_timer.h"
 #include "cc/paint/draw_image.h"
 #include "cc/paint/paint_image_builder.h"
 #include "cc/raster/tile_task.h"
@@ -87,7 +87,7 @@ class GpuImageDecodeCachePerfTest
     }
   }
 
-  LapTimer timer_;
+  base::LapTimer timer_;
   scoped_refptr<TestInProcessContextProvider> context_provider_;
   std::unique_ptr<GpuImageDecodeCache> cache_;
 };
@@ -151,7 +151,7 @@ TEST_P(GpuImageDecodeCachePerfTestNoSw, DecodeWithMips) {
       surface->getCanvas()->drawImageRect(decoded_image.image().get(),
                                           SkRect::MakeWH(1024, 2048),
                                           SkRect::MakeWH(614, 1229), &paint);
-      surface->prepareForExternalIO();
+      surface->flush();
     }
 
     cache_->DrawWithImageFinished(image, decoded_image);

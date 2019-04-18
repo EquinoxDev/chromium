@@ -138,8 +138,9 @@ class COMPONENT_EXPORT(WINDOW_SERVICE) WindowService
       const base::UnguessableToken& embed_token);
 
   // Completes a previous call to ScheduleEmbedForExistingClient(). |window|
-  // is the Window to perform the embedding in. See the mojom for details on
-  // |embed_flags| and |embed_token|.
+  // is the Window to perform the embedding in. This replaces any pre-existing
+  // embedding in |window|. Returns true on success. See the mojom for details
+  // on |embed_flags| and |embed_token|.
   bool CompleteScheduleEmbedForExistingClient(
       aura::Window* window,
       const base::UnguessableToken& embed_token,
@@ -169,6 +170,13 @@ class COMPONENT_EXPORT(WINDOW_SERVICE) WindowService
   // |changed_metrics| is a bitmask of the DisplayObserver::DisplayMetric.
   void OnDisplayMetricsChanged(const display::Display& display,
                                uint32_t changed_metrics);
+
+  // Called after WindowTreeHosts have changed display ids. |root_windows| is
+  // the set of root windows of the changed WindowTreeHosts. Clients that have
+  // windows contained by the root windows needs to be updated with the new
+  // display ids.
+  void OnWindowTreeHostsDisplayIdChanged(
+      const std::set<aura::Window*>& root_windows);
 
   // Returns an id useful for debugging. See ProxyWindow::GetIdForDebugging()
   // for details.

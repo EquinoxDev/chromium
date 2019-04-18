@@ -807,7 +807,8 @@ void DevToolsWindow::Show(const DevToolsToggleAction& action) {
     main_web_contents_->SetDelegate(this);
 
     TabStripModel* tab_strip_model = inspected_browser->tab_strip_model();
-    tab_strip_model->ActivateTabAt(inspected_tab_index, true);
+    tab_strip_model->ActivateTabAt(inspected_tab_index,
+                                   {TabStripModel::GestureType::kOther});
 
     inspected_window->UpdateDevTools();
     main_web_contents_->SetInitialFocus();
@@ -1064,7 +1065,7 @@ GURL DevToolsWindow::GetDevToolsURL(Profile* profile,
       url = kDefaultFrontendURL + remote_base;
       if (can_dock)
         url += "&can_dock=true";
-      if (panel.size())
+      if (!panel.empty())
         url += "&panel=" + panel;
       break;
     case kFrontendWorker:
@@ -1544,6 +1545,8 @@ void DevToolsWindow::SetOpenNewWindowForPopups(bool value) {
 void DevToolsWindow::CreateDevToolsBrowser() {
   PrefService* prefs = profile_->GetPrefs();
   if (!prefs->GetDictionary(prefs::kAppWindowPlacement)->HasKey(kDevToolsApp)) {
+    // Ensure there is always a default size so that
+    // BrowserFrame::InitBrowserFrame can retrieve it later.
     DictionaryPrefUpdate update(prefs, prefs::kAppWindowPlacement);
     base::DictionaryValue* wp_prefs = update.Get();
     auto dev_tools_defaults = std::make_unique<base::DictionaryValue>();

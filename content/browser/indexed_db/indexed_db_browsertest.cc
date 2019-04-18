@@ -4,6 +4,8 @@
 
 #include <stddef.h>
 #include <stdint.h>
+
+#include <functional>
 #include <utility>
 
 #include "base/bind.h"
@@ -90,7 +92,9 @@ class IndexedDBBrowserTest : public ContentBrowserTest,
         failure_class, failure_method, fail_on_instance_num, fail_on_call_num);
   }
 
-  void SimpleTest(const GURL& test_url, bool incognito = false) {
+  void SimpleTest(const GURL& test_url,
+                  bool incognito = false,
+                  Shell** shell_out = nullptr) {
     // The test page will perform tests on IndexedDB, then navigate to either
     // a #pass or #fail ref.
     Shell* the_browser = incognito ? CreateOffTheRecordBrowser() : shell();
@@ -107,6 +111,8 @@ class IndexedDBBrowserTest : public ContentBrowserTest,
           &js_result));
       FAIL() << "Failed: " << js_result;
     }
+    if (shell_out)
+      *shell_out = the_browser;
   }
 
   void NavigateAndWaitForTitle(Shell* shell,
@@ -305,6 +311,21 @@ IN_PROC_BROWSER_TEST_F(IndexedDBBrowserTest, Bug109187Test) {
 
   // Just navigate to the URL. Test will crash if it fails.
   NavigateToURLBlockUntilNavigationsComplete(shell(), url, 1);
+}
+
+IN_PROC_BROWSER_TEST_F(IndexedDBBrowserTest, Bug941965Test) {
+  // Double-open an incognito window to test that saving & reading a blob from
+  // indexeddb works.
+  Shell* incognito_browser = nullptr;
+  SimpleTest(GetTestUrl("indexeddb", "simple_blob_read.html"), true,
+             &incognito_browser);
+  ASSERT_TRUE(incognito_browser);
+  incognito_browser->Close();
+  incognito_browser = nullptr;
+  SimpleTest(GetTestUrl("indexeddb", "simple_blob_read.html"), true,
+             &incognito_browser);
+  ASSERT_TRUE(incognito_browser);
+  incognito_browser->Close();
 }
 
 class IndexedDBBrowserTestWithLowQuota : public IndexedDBBrowserTest {
@@ -718,9 +739,8 @@ std::unique_ptr<net::test_server::HttpResponse> CorruptDBRequestHandler(
         base::WaitableEvent::ResetPolicy::AUTOMATIC,
         base::WaitableEvent::InitialState::NOT_SIGNALED);
     context->TaskRunner()->PostTask(
-        FROM_HERE,
-        base::BindOnce(&CorruptIndexedDBDatabase, base::ConstRef(context),
-                       origin, &signal_when_finished));
+        FROM_HERE, base::BindOnce(&CorruptIndexedDBDatabase, std::cref(context),
+                                  origin, &signal_when_finished));
     signal_when_finished.Wait();
 
     std::unique_ptr<net::test_server::BasicHttpResponse> http_response(

@@ -4,6 +4,7 @@
 
 #include "third_party/blink/renderer/core/inspector/devtools_session.h"
 
+#include "base/containers/span.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_controller.h"
 #include "third_party/blink/renderer/core/frame/local_frame.h"
 #include "third_party/blink/renderer/core/frame/use_counter.h"
@@ -50,8 +51,8 @@ mojom::blink::DevToolsMessagePtr WrapMessage(
     result->data = std::move(message.binary);
   } else {
     WTF::StringUTF8Adaptor adaptor(message.json);
-    result->data = mojo_base::BigBuffer(base::make_span(
-        reinterpret_cast<const uint8_t*>(adaptor.Data()), adaptor.length()));
+    result->data =
+        mojo_base::BigBuffer(base::as_bytes(base::make_span(adaptor)));
   }
   return result;
 }
@@ -147,7 +148,7 @@ DevToolsSession::DevToolsSession(
   bool restore = !!session_state_.ReattachState();
   v8_session_state_.InitFrom(&session_state_);
   agent_->client_->AttachSession(this, restore);
-  agent_->probe_sink_->addDevToolsSession(this);
+  agent_->probe_sink_->AddDevToolsSession(this);
   if (restore) {
     for (wtf_size_t i = 0; i < agents_.size(); i++)
       agents_[i]->Restore();
@@ -183,7 +184,7 @@ void DevToolsSession::Detach() {
   host_ptr_.reset();
   io_session_->DeleteSoon();
   io_session_ = nullptr;
-  agent_->probe_sink_->removeDevToolsSession(this);
+  agent_->probe_sink_->RemoveDevToolsSession(this);
   inspector_backend_dispatcher_.reset();
   for (wtf_size_t i = agents_.size(); i > 0; i--)
     agents_[i - 1]->Dispose();
@@ -207,7 +208,7 @@ void DevToolsSession::DispatchProtocolCommand(
 void DevToolsSession::DispatchProtocolCommandImpl(int call_id,
                                                   const String& method,
                                                   std::vector<uint8_t> data) {
-  bool binary_protocol = data.size() && data[0] == 0xD8;
+  bool binary_protocol = !data.empty() && data[0] == 0xD8;
   if (binary_protocol)
     uses_binary_protocol_.Set(true);
 

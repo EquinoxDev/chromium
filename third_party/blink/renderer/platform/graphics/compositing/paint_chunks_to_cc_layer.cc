@@ -16,12 +16,15 @@
 #include "third_party/blink/renderer/platform/graphics/paint/paint_chunk_subset.h"
 #include "third_party/blink/renderer/platform/graphics/paint/property_tree_state.h"
 #include "third_party/blink/renderer/platform/graphics/paint/raster_invalidation_tracking.h"
+#include "third_party/blink/renderer/platform/wtf/allocator.h"
 
 namespace blink {
 
 namespace {
 
 class ConversionContext {
+  STACK_ALLOCATED();
+
  public:
   ConversionContext(const PropertyTreeState& layer_state,
                     const gfx::Vector2dF& layer_offset,
@@ -292,7 +295,7 @@ static bool CombineClip(const ClipPaintPropertyNode& clip,
   const auto& parent_transform_space = clip.Parent()->LocalTransformSpace();
   if (&transform_space != &parent_transform_space &&
       (transform_space.Parent() != &parent_transform_space ||
-       !transform_space.Matrix().IsIdentity()))
+       !transform_space.IsIdentity()))
     return false;
 
   // Don't combine two rounded clip rects.
@@ -331,17 +334,16 @@ void ConversionContext::SwitchToClip(
       &LowestCommonAncestor(target_clip, *current_clip_).Unalias();
   while (current_clip_ != lca_clip) {
     if (!state_stack_.size() || state_stack_.back().type != StateEntry::kClip) {
+      // This bug is known to happen in pre-CompositeAfterPaint due to some
+      // clip-escaping corner cases that are very difficult to fix in legacy
+      // architecture. In CompositeAfterPaint this should never happen.
 #if DCHECK_IS_ON()
       DLOG(ERROR) << "Error: Chunk has a clip that escaped its layer's or "
-                     "effect's clip."
-                  << "\ntarget_clip:\n"
+                  << "effect's clip.\ntarget_clip:\n"
                   << target_clip.ToTreeString().Utf8().data()
                   << "current_clip_:\n"
                   << current_clip_->ToTreeString().Utf8().data();
 #endif
-      // This bug is known to happen in SPv1 due to some clip-escaping corner
-      // cases that are very difficult to fix in legacy architecture.
-      // In CAP this should never happen.
       if (RuntimeEnabledFeatures::CompositeAfterPaintEnabled())
         NOTREACHED();
       break;
@@ -436,15 +438,21 @@ void ConversionContext::SwitchToEffect(
   while (current_effect_ != &lca_effect) {
     // This EndClips() and the later EndEffect() pop to the parent effect.
     EndClips();
+    // This bug is known to happen in pre-CompositeAfterPaint due to some
+    // effect-escaping corner cases that are very difficult to fix in legacy
+    // architecture. In CompositeAfterPaint this should never happen.
+    if (!state_stack_.size()) {
 #if DCHECK_IS_ON()
-    DCHECK(state_stack_.size())
-        << "Error: Chunk has an effect that escapes layer's effect.\n"
-        << "target_effect:\n"
-        << target_effect.ToTreeString().Utf8().data() << "current_effect_:\n"
-        << current_effect_->ToTreeString().Utf8().data();
+      DLOG(ERROR) << "Error: Chunk has an effect that escapes layer's effect.\n"
+                  << "target_effect:\n"
+                  << target_effect.ToTreeString().Utf8().data()
+                  << "current_effect_:\n"
+                  << current_effect_->ToTreeString().Utf8().data();
 #endif
-    if (!state_stack_.size())
-      break;
+      if (RuntimeEnabledFeatures::CompositeAfterPaintEnabled())
+        NOTREACHED();
+      return;
+    }
     EndEffect();
   }
 
@@ -703,7 +711,7 @@ void ConversionContext::Convert(const PaintChunkSubset& paint_chunks,
       cc_list_.EndPaintOfUnpaired(
           chunk_to_layer_mapper_.MapVisualRect(item.VisualRect()));
     }
-    UpdateEffectBounds(chunk.bounds, chunk_state.Transform());
+    UpdateEffectBounds(FloatRect(chunk.bounds), chunk_state.Transform());
   }
 }
 

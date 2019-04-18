@@ -25,6 +25,7 @@ import android.widget.TextView;
 
 import org.chromium.base.ApiCompatibilityUtils;
 import org.chromium.chrome.R;
+import org.chromium.chrome.browser.util.ColorUtils;
 import org.chromium.chrome.browser.util.KeyNavigationUtil;
 import org.chromium.chrome.browser.widget.TintedDrawable;
 
@@ -154,7 +155,7 @@ public class SuggestionView extends ViewGroup implements OnClickListener {
         if (getMeasuredWidth() == 0) return;
 
         boolean refineVisible = mRefineView.getVisibility() == VISIBLE;
-        boolean isRtl = ApiCompatibilityUtils.isLayoutRtl(this);
+        boolean isRtl = getLayoutDirection() == LAYOUT_DIRECTION_RTL;
         int contentsViewOffsetX = isRtl && refineVisible ? mRefineWidth : 0;
         mContentsView.layout(contentsViewOffsetX, 0,
                 contentsViewOffsetX + mContentsView.getMeasuredWidth(),
@@ -280,7 +281,7 @@ public class SuggestionView extends ViewGroup implements OnClickListener {
     void initRefineIcon(boolean useDarkColors) {
         if (mRefineIcon != null) return;
         @ColorRes
-        int tintId = useDarkColors ? R.color.dark_mode_tint : R.color.light_mode_tint;
+        int tintId = ColorUtils.getIconTintRes(!useDarkColors);
         mRefineIcon = TintedDrawable.constructTintedDrawable(
                 getContext(), R.drawable.btn_suggestion_refine, tintId);
         mRefineIcon.setBounds(
@@ -295,7 +296,7 @@ public class SuggestionView extends ViewGroup implements OnClickListener {
     void updateRefineIconTint(boolean useDarkColors) {
         if (mRefineIcon == null) return;
         @ColorRes
-        int tintId = useDarkColors ? R.color.dark_mode_tint : R.color.light_mode_tint;
+        int tintId = ColorUtils.getIconTintRes(!useDarkColors);
         mRefineIcon.setTint(AppCompatResources.getColorStateList(getContext(), tintId));
         mRefineView.postInvalidateOnAnimation();
     }
@@ -326,7 +327,7 @@ public class SuggestionView extends ViewGroup implements OnClickListener {
         if (!mContentsView.mAllowTint || mContentsView.mSuggestionIcon == null) return;
         DrawableCompat.setTint(mContentsView.mSuggestionIcon,
                 ApiCompatibilityUtils.getColor(getContext().getResources(),
-                        useDarkTint ? R.color.dark_mode_tint : R.color.white_mode_tint));
+                        useDarkTint ? R.color.standard_mode_tint : R.color.white_mode_tint));
         mContentsView.invalidate();
     }
 
@@ -377,7 +378,7 @@ public class SuggestionView extends ViewGroup implements OnClickListener {
         SuggestionContentsContainer(Context context, Drawable backgroundDrawable) {
             super(context);
 
-            ApiCompatibilityUtils.setLayoutDirection(this, View.LAYOUT_DIRECTION_INHERIT);
+            setLayoutDirection(View.LAYOUT_DIRECTION_INHERIT);
 
             setBackground(backgroundDrawable);
             setClickable(true);
@@ -404,7 +405,7 @@ public class SuggestionView extends ViewGroup implements OnClickListener {
             mTextLine1.setLayoutParams(
                     new LayoutParams(LayoutParams.WRAP_CONTENT, mSuggestionHeight));
             mTextLine1.setSingleLine();
-            ApiCompatibilityUtils.setTextAlignment(mTextLine1, TEXT_ALIGNMENT_VIEW_START);
+            mTextLine1.setTextAlignment(TEXT_ALIGNMENT_VIEW_START);
             addView(mTextLine1);
 
             mTextLine2 = new TextView(context);
@@ -412,7 +413,7 @@ public class SuggestionView extends ViewGroup implements OnClickListener {
                     new LayoutParams(LayoutParams.WRAP_CONTENT, mSuggestionHeight));
             mTextLine2.setSingleLine();
             mTextLine2.setVisibility(INVISIBLE);
-            ApiCompatibilityUtils.setTextAlignment(mTextLine2, TEXT_ALIGNMENT_VIEW_START);
+            mTextLine2.setTextAlignment(TEXT_ALIGNMENT_VIEW_START);
             addView(mTextLine2);
 
             mAnswerImage = new ImageView(context);
@@ -429,7 +430,7 @@ public class SuggestionView extends ViewGroup implements OnClickListener {
                 canvas.save();
                 float suggestionIconLeft =
                         (mSuggestionIconWidthPx - mSuggestionIcon.getIntrinsicWidth()) / 2f;
-                if (ApiCompatibilityUtils.isLayoutRtl(this)) {
+                if (getLayoutDirection() == LAYOUT_DIRECTION_RTL) {
                     suggestionIconLeft += getMeasuredWidth() - mSuggestionIconWidthPx;
                 }
                 float suggestionIconTop =
@@ -499,7 +500,7 @@ public class SuggestionView extends ViewGroup implements OnClickListener {
                     mSuggestionDelegate.getAdditionalTextLine1StartPadding(
                             mTextLine1, r - l - mSuggestionStartOffsetPx);
 
-            if (ApiCompatibilityUtils.isLayoutRtl(this)) {
+            if (getLayoutDirection() == LAYOUT_DIRECTION_RTL) {
                 int rightStartPos = r - l - mSuggestionStartOffsetPx;
                 mTextLine1.layout(
                         0, line1Top, rightStartPos - line1AdditionalStartPadding, line1Bottom);

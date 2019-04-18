@@ -8,7 +8,7 @@ import java.util.HashMap;
 import java.util.Map;
 
 /**
- * The default {@link TaskExecutor} which maps directly to base::TaskScheduler.
+ * The default {@link TaskExecutor} which maps directly to base::ThreadPool.
  */
 class DefaultTaskExecutor implements TaskExecutor {
     Map<TaskTraits, TaskRunner> mTraitsToRunnerMap = new HashMap<>();
@@ -51,5 +51,10 @@ class DefaultTaskExecutor implements TaskExecutor {
             }
             runner.postDelayedTask(task, delay);
         }
+    }
+
+    @Override
+    public boolean canRunTaskImmediately(TaskTraits traits) {
+        return false;
     }
 }

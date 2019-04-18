@@ -12,8 +12,8 @@
 #include "chrome/browser/sync/test/integration/secondary_account_helper.h"
 #include "chrome/browser/sync/test/integration/single_client_status_change_checker.h"
 #include "chrome/browser/sync/test/integration/sync_test.h"
-#include "components/browser_sync/profile_sync_service.h"
 #include "components/sync/base/model_type.h"
+#include "components/sync/driver/profile_sync_service.h"
 #include "components/sync/driver/sync_driver_switches.h"
 
 namespace {
@@ -30,10 +30,7 @@ syncer::ModelTypeSet AllowedTypesInStandaloneTransportMode() {
 class SingleClientSecondaryAccountSyncTest : public SyncTest {
  public:
   SingleClientSecondaryAccountSyncTest() : SyncTest(SINGLE_CLIENT) {
-    features_.InitWithFeatures(
-        /*enabled_features=*/{switches::kSyncStandaloneTransport,
-                              switches::kSyncSupportSecondaryAccount},
-        /*disabled_features=*/{});
+    features_.InitAndEnableFeature(switches::kSyncSupportSecondaryAccount);
   }
   ~SingleClientSecondaryAccountSyncTest() override {}
 
@@ -59,30 +56,6 @@ class SingleClientSecondaryAccountSyncTest : public SyncTest {
 
   DISALLOW_COPY_AND_ASSIGN(SingleClientSecondaryAccountSyncTest);
 };
-
-class SingleClientSecondaryAccountWithoutStandaloneTransportSyncTest
-    : public SingleClientSecondaryAccountSyncTest {
- public:
-  SingleClientSecondaryAccountWithoutStandaloneTransportSyncTest() {
-    features_.InitAndDisableFeature(switches::kSyncStandaloneTransport);
-  }
-
- private:
-  base::test::ScopedFeatureList features_;
-};
-
-IN_PROC_BROWSER_TEST_F(
-    SingleClientSecondaryAccountWithoutStandaloneTransportSyncTest,
-    DoesNotStartSyncWithStandaloneTransportDisabled) {
-  ASSERT_TRUE(SetupClients()) << "SetupClients() failed.";
-
-  // Since standalone transport is disabled, just signing in (without making the
-  // account Chrome's primary one) should *not* start the Sync machinery.
-  secondary_account_helper::SignInSecondaryAccount(
-      profile(), &test_url_loader_factory_, "user@email.com");
-  EXPECT_EQ(syncer::SyncService::TransportState::DISABLED,
-            GetSyncService(0)->GetTransportState());
-}
 
 class SingleClientSecondaryAccountWithoutSecondaryAccountSupportSyncTest
     : public SingleClientSecondaryAccountSyncTest {
@@ -165,6 +138,7 @@ IN_PROC_BROWSER_TEST_F(SingleClientSecondaryAccountSyncTest,
   // Simulate the user opting in to full Sync: Make the account primary, and
   // set first-time setup to complete.
   secondary_account_helper::MakeAccountPrimary(profile(), "user@email.com");
+  GetSyncService(0)->GetUserSettings()->SetSyncRequested(true);
   GetSyncService(0)->GetUserSettings()->SetFirstSetupComplete();
 
   EXPECT_TRUE(GetClient(0)->AwaitSyncSetupCompletion());

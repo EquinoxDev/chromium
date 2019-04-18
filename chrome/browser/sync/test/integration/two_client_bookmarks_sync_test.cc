@@ -22,11 +22,11 @@
 #include "chrome/browser/sync/test/integration/sync_test.h"
 #include "chrome/browser/sync/test/integration/updated_progress_marker_checker.h"
 #include "components/bookmarks/browser/bookmark_node.h"
-#include "components/browser_sync/profile_sync_service.h"
 #include "components/policy/core/common/mock_configuration_policy_provider.h"
 #include "components/policy/core/common/policy_map.h"
 #include "components/policy/core/common/policy_types.h"
 #include "components/policy/policy_constants.h"
+#include "components/sync/driver/profile_sync_service.h"
 #include "components/sync/driver/sync_driver_switches.h"
 #include "components/sync/driver/sync_service.h"
 #include "components/sync/engine/cycle/sync_cycle_snapshot.h"
@@ -1336,16 +1336,8 @@ IN_PROC_BROWSER_TEST_P(TwoClientBookmarksSyncTestIncludingUssTests,
   ASSERT_FALSE(ContainsDuplicateBookmarks(0));
 }
 
-// Flaky on windows, see htpp://crbug.com/919877
-#if defined(OS_WIN)
-#define MAYBE_MC_MergeSimpleBMHierarchyEqualSetsUnderBMBar \
-  DISABLED_MC_MergeSimpleBMHierarchyEqualSetsUnderBMBar
-#else
-#define MAYBE_MC_MergeSimpleBMHierarchyEqualSetsUnderBMBar \
-  MC_MergeSimpleBMHierarchyEqualSetsUnderBMBar
-#endif
 IN_PROC_BROWSER_TEST_P(TwoClientBookmarksSyncTestIncludingUssTests,
-                       MAYBE_MC_MergeSimpleBMHierarchyEqualSetsUnderBMBar) {
+                       MC_MergeSimpleBMHierarchyEqualSetsUnderBMBar) {
   ASSERT_TRUE(SetupClients()) << "SetupClients() failed.";
   DisableVerifier();
 
@@ -1356,8 +1348,14 @@ IN_PROC_BROWSER_TEST_P(TwoClientBookmarksSyncTestIncludingUssTests,
     ASSERT_NE(nullptr, AddURL(1, i, title, url));
   }
 
-  ASSERT_TRUE(SetupSync()) << "SetupSync() failed.";
+  // Enable sync on Client 0 and wait until bookmarks are committed.
+  ASSERT_TRUE(GetClient(0)->SetupSync()) << "GetClient(0)->SetupSync() failed.";
+  ASSERT_TRUE(UpdatedProgressMarkerChecker(GetSyncService(0)).Wait());
+
+  // Enable sync on Client 1 and wait until all bookmarks are merged.
+  ASSERT_TRUE(GetClient(1)->SetupSync()) << "GetClient(1)->SetupSync() failed.";
   ASSERT_TRUE(BookmarksMatchChecker().Wait());
+
   ASSERT_FALSE(ContainsDuplicateBookmarks(0));
 }
 
@@ -1384,10 +1382,9 @@ IN_PROC_BROWSER_TEST_P(TwoClientBookmarksSyncTestIncludingUssTests,
   ASSERT_FALSE(ContainsDuplicateBookmarks(0));
 }
 
-// This test is flaky, see htpp://crbug.com/908771
 // Merge moderately complex bookmark models.
 IN_PROC_BROWSER_TEST_P(TwoClientBookmarksSyncTestIncludingUssTests,
-                       DISABLED_MC_MergeDifferentBMModelsModeratelyComplex) {
+                       MC_MergeDifferentBMModelsModeratelyComplex) {
   ASSERT_TRUE(SetupClients()) << "SetupClients() failed.";
   DisableVerifier();
 
@@ -1421,7 +1418,13 @@ IN_PROC_BROWSER_TEST_P(TwoClientBookmarksSyncTestIncludingUssTests,
     ASSERT_NE(nullptr, AddURL(0, title, url));
     ASSERT_NE(nullptr, AddURL(1, title, url));
   }
-  ASSERT_TRUE(SetupSync()) << "SetupSync() failed.";
+
+  // Enable sync on Client 0 and wait until bookmarks are committed.
+  ASSERT_TRUE(GetClient(0)->SetupSync()) << "GetClient(0)->SetupSync() failed.";
+  ASSERT_TRUE(UpdatedProgressMarkerChecker(GetSyncService(0)).Wait());
+
+  // Enable sync on Client 1 and wait until all bookmarks are merged.
+  ASSERT_TRUE(GetClient(1)->SetupSync()) << "GetClient(1)->SetupSync() failed.";
   ASSERT_TRUE(BookmarksMatchChecker().Wait());
   ASSERT_FALSE(ContainsDuplicateBookmarks(0));
 }
@@ -1889,7 +1892,7 @@ IN_PROC_BROWSER_TEST_P(TwoClientBookmarksSyncTestIncludingUssTests,
   ASSERT_TRUE(GetClient(0)->AwaitMutualSyncCycleCompletion(GetClient(1)));
   ASSERT_TRUE(IsEncryptionComplete(0));
   ASSERT_TRUE(IsEncryptionComplete(1));
-  ASSERT_TRUE(GetSyncService(1)->IsPassphraseRequired());
+  ASSERT_TRUE(GetSyncService(1)->GetUserSettings()->IsPassphraseRequired());
 
   // Client 0 adds bookmarks between the first two and between the second two.
   ASSERT_NE(nullptr, AddURL(0, 1, IndexedURLTitle(3), GURL(IndexedURL(3))));

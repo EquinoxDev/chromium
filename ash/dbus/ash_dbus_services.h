@@ -22,12 +22,7 @@ class AshDBusServices {
   AshDBusServices();
   ~AshDBusServices();
 
-  // Emit ash-initialized upstart signal to start Chrome OS tasks that expect
-  // that ash is listening to D-Bus signals they emit.
-  void EmitAshInitialized();
-
  private:
-  bool initialized_dbus_thread_{false};
   std::unique_ptr<chromeos::CrosDBusService> display_service_;
   std::unique_ptr<chromeos::CrosDBusService> liveness_service_;
   std::unique_ptr<chromeos::CrosDBusService> url_handler_service_;

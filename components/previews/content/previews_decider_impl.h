@@ -131,6 +131,14 @@ class PreviewsDeciderImpl : public PreviewsDecider,
   void SetEffectiveConnectionType(
       net::EffectiveConnectionType effective_connection_type);
 
+  PreviewsOptimizationGuide* previews_opt_guide() const {
+    return previews_opt_guide_.get();
+  }
+
+  // When a preview is reloaded, this is called. No Previews are allowed for
+  // params::SingleOptOutDuration after that reload is reported.
+  void AddPreviewReload();
+
  protected:
   // Sets a blacklist for testing.
   void SetPreviewsBlacklistForTesting(
@@ -177,10 +185,6 @@ class PreviewsDeciderImpl : public PreviewsDecider,
 
   std::unique_ptr<PreviewsBlackList> previews_black_list_;
 
-  // Only used when the blacklist has been disabled to allow "Show Original" to
-  // function as expected. The time of the most recent opt out event.
-  base::Time last_opt_out_time_;
-
   // Holds optimization guidance from the server.
   std::unique_ptr<PreviewsOptimizationGuide> previews_opt_guide_;
 
@@ -200,6 +204,8 @@ class PreviewsDeciderImpl : public PreviewsDecider,
       net::EffectiveConnectionType::EFFECTIVE_CONNECTION_TYPE_UNKNOWN;
 
   base::Clock* clock_;
+
+  base::Optional<base::Time> recent_preview_reload_time_;
 
   // Whether the preview is enabled. Valid after Initialize() is called.
   PreviewsIsEnabledCallback is_enabled_callback_;

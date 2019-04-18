@@ -62,6 +62,12 @@ class MODULES_EXPORT PictureInPictureControllerImpl
   // recently.
   HTMLVideoElement* AutoPictureInPictureElement() const;
 
+  // Returns whether entering Auto Picture-in-Picture is allowed.
+  bool IsEnterAutoPictureInPictureAllowed() const;
+
+  // Returns whether exiting Auto Picture-in-Picture is allowed.
+  bool IsExitAutoPictureInPictureAllowed() const;
+
   // Implementation of PictureInPictureController.
   void EnterPictureInPicture(HTMLVideoElement*,
                              ScriptPromiseResolver*) override;
@@ -70,6 +76,7 @@ class MODULES_EXPORT PictureInPictureControllerImpl
   void RemoveFromAutoPictureInPictureElementsList(HTMLVideoElement*) override;
   Status IsElementAllowed(const HTMLVideoElement&) const override;
   bool IsPictureInPictureElement(const Element*) const override;
+  bool IsPictureInPictureShadowHost(const Element&) const override;
   void OnPictureInPictureStateChange() override;
 
   // Implementation of PictureInPictureDelegate.
@@ -97,6 +104,10 @@ class MODULES_EXPORT PictureInPictureControllerImpl
   // Makes sure the `picture_in_picture_service_` is set. Returns whether it was
   // initialized successfully.
   bool EnsureService();
+
+  // Returns true if video has an audio track and if MuteButton origin trial is
+  // enabled. Otherwise it returns false.
+  bool ShouldShowMuteButton(const HTMLVideoElement& element);
 
   // The Picture-in-Picture element for the associated document.
   Member<HTMLVideoElement> picture_in_picture_element_;

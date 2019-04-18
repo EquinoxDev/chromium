@@ -5,6 +5,7 @@
 package org.chromium.chrome.browser.download.ui;
 
 import android.app.Activity;
+import android.content.ActivityNotFoundException;
 import android.content.ComponentName;
 import android.content.Intent;
 import android.os.Handler;
@@ -19,12 +20,14 @@ import android.view.ViewGroup;
 import org.chromium.base.CollectionUtil;
 import org.chromium.base.DiscardableReferencePool;
 import org.chromium.base.FileUtils;
+import org.chromium.base.Log;
 import org.chromium.base.ObserverList;
 import org.chromium.base.TraceEvent;
 import org.chromium.base.VisibleForTesting;
 import org.chromium.base.metrics.RecordHistogram;
 import org.chromium.base.metrics.RecordUserAction;
-import org.chromium.base.task.AsyncTask;
+import org.chromium.base.task.PostTask;
+import org.chromium.base.task.TaskTraits;
 import org.chromium.chrome.browser.ChromeApplication;
 import org.chromium.chrome.browser.ChromeFeatureList;
 import org.chromium.chrome.browser.download.DownloadManagerService;
@@ -49,7 +52,6 @@ import org.chromium.chrome.browser.widget.selection.SelectionDelegate;
 import org.chromium.chrome.download.R;
 import org.chromium.components.offline_items_collection.OfflineContentProvider;
 
-import java.io.File;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -69,7 +71,8 @@ public class DownloadManagerUi implements OnMenuItemClickListener, SearchDelegat
 
         DownloadBackendProvider(DiscardableReferencePool referencePool, UIDelegate uiDelegate) {
             mSelectionDelegate = new DownloadItemSelectionDelegate();
-            mThumbnailProvider = new ThumbnailProviderImpl(referencePool);
+            mThumbnailProvider = new ThumbnailProviderImpl(
+                    referencePool, ThumbnailProviderImpl.ClientType.DOWNLOAD_HOME);
             mUIDelegate = uiDelegate;
         }
 
@@ -125,38 +128,31 @@ public class DownloadManagerUi implements OnMenuItemClickListener, SearchDelegat
             List<DownloadHistoryItemWrapper> items = (List<DownloadHistoryItemWrapper>) actionData;
 
             // Deletion was not undone. Remove downloads from backend.
-            final ArrayList<File> filesToDelete = new ArrayList<>();
+            final ArrayList<String> filesToDelete = new ArrayList<>();
 
             // Some types of DownloadHistoryItemWrappers delete their own files when #remove()
             // is called. Determine which files are not deleted by the #remove() call.
             // TODO(qinmin): handle the case wrappedItem.getFilePath() returns a content Uri.
             for (int i = 0; i < items.size(); i++) {
                 DownloadHistoryItemWrapper wrappedItem  = items.get(i);
-                if (!wrappedItem.removePermanently())
-                    filesToDelete.add(new File(wrappedItem.getFilePath()));
+                if (!wrappedItem.removePermanently()) filesToDelete.add(wrappedItem.getFilePath());
             }
 
             // Delete the files associated with the download items (if necessary) using a single
-            // AsyncTask that batch deletes all of the files. The thread pool has a finite
+            // task that batch deletes all of the files. The thread pool has a finite
             // number of tasks that can be queued at once. If too many tasks are queued an
             // exception is thrown. See crbug.com/643811.
             // On Android M, Android DownloadManager may not delete the actual file, so we need to
             // delete the files here.
             if (filesToDelete.size() != 0) {
-                new AsyncTask<Void>() {
-                    @Override
-                    public Void doInBackground() {
-                        FileUtils.batchDeleteFiles(filesToDelete);
-                        return null;
-                    }
-                }
-                        .executeOnExecutor(AsyncTask.THREAD_POOL_EXECUTOR);
+                PostTask.postTask(TaskTraits.BEST_EFFORT_MAY_BLOCK,
+                        () -> { FileUtils.batchDeleteFiles(filesToDelete); });
             }
-
             RecordUserAction.record("Android.DownloadManager.Delete");
         }
     }
 
+    private static final String TAG = "DownloadManagerUi";
     private static final int PREFETCH_BUNDLE_OPEN_DELAY_MS = 500;
 
     private static BackendProvider sProviderForTests;
@@ -197,7 +193,7 @@ public class DownloadManagerUi implements OnMenuItemClickListener, SearchDelegat
         mActivity = activity;
         ChromeApplication application = (ChromeApplication) activity.getApplication();
         mBackendProvider = sProviderForTests == null
-                ? new DownloadBackendProvider(application.getReferencePool(), this)
+                ? new DownloadBackendProvider(ChromeApplication.getReferencePool(), this)
                 : sProviderForTests;
         mSnackbarManager = snackbarManager;
 
@@ -237,7 +233,7 @@ public class DownloadManagerUi implements OnMenuItemClickListener, SearchDelegat
                 isLocationEnabled ? R.id.with_settings_close_menu_id : R.id.close_menu_id;
 
         mToolbar = (DownloadManagerToolbar) mSelectableListLayout.initializeToolbar(
-                R.layout.download_manager_toolbar, mBackendProvider.getSelectionDelegate(), 0, null,
+                R.layout.download_manager_toolbar, mBackendProvider.getSelectionDelegate(), 0,
                 normalGroupId, R.id.selection_mode_menu_group, this, true, isSeparateActivity);
         mToolbar.getMenu().setGroupVisible(normalGroupId, true);
         mToolbar.setManager(this);
@@ -252,7 +248,7 @@ public class DownloadManagerUi implements OnMenuItemClickListener, SearchDelegat
         }
 
         mSelectableListLayout.configureWideDisplayStyle();
-        mHistoryAdapter.initialize(mBackendProvider, mSelectableListLayout.getUiConfig());
+        mHistoryAdapter.initialize(activity, mBackendProvider, mSelectableListLayout.getUiConfig());
 
         mUndoDeletionSnackbarController = new UndoDeletionSnackbarController();
         enableStorageInfoHeader(mHistoryAdapter.shouldShowStorageInfoHeader());
@@ -448,8 +444,12 @@ public class DownloadManagerUi implements OnMenuItemClickListener, SearchDelegat
     }
 
     private void startShareIntent(Intent intent) {
-        mActivity.startActivity(Intent.createChooser(
-                intent, mActivity.getString(R.string.share_link_chooser_title)));
+        try {
+            mActivity.startActivity(Intent.createChooser(
+                    intent, mActivity.getString(R.string.share_link_chooser_title)));
+        } catch (ActivityNotFoundException e) {
+            Log.e(TAG, "Cannot find activity for sharing");
+        }
     }
 
     private void deleteItems(List<DownloadHistoryItemWrapper> items) {

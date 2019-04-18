@@ -12,14 +12,20 @@
 #include <vector>
 
 #include "base/macros.h"
+#include "base/memory/weak_ptr.h"
+#include "base/time/time.h"
+#include "components/history/core/browser/history_service_observer.h"
 #include "components/send_tab_to_self/send_tab_to_self_entry.h"
 #include "components/send_tab_to_self/send_tab_to_self_model.h"
 #include "components/sync/base/model_type.h"
-#include "components/sync/device_info/local_device_info_provider.h"
+#include "components/sync/model/model_type_store.h"
 #include "components/sync/model/model_type_sync_bridge.h"
 
+namespace history {
+class HistoryService;
+}  // namespace history
+
 namespace syncer {
-class LocalDeviceInfoProvider;
 class ModelTypeChangeProcessor;
 }  // namespace syncer
 
@@ -32,14 +38,15 @@ namespace send_tab_to_self {
 // Interface for a persistence layer for send tab to self.
 // All interface methods have to be called on main thread.
 class SendTabToSelfBridge : public syncer::ModelTypeSyncBridge,
-                            public SendTabToSelfModel {
+                            public SendTabToSelfModel,
+                            public history::HistoryServiceObserver {
  public:
-  // |local_device_info_provider| must not be null and must outlive this object.
   // |clock| must not be null and must outlive this object.
   SendTabToSelfBridge(
       std::unique_ptr<syncer::ModelTypeChangeProcessor> change_processor,
-      syncer::LocalDeviceInfoProvider* local_device_info_provider,
-      base::Clock* clock);
+      base::Clock* clock,
+      syncer::OnceModelTypeStoreFactory create_store_callback,
+      history::HistoryService* history_service);
   ~SendTabToSelfBridge() override;
 
   // syncer::ModelTypeSyncBridge overrides.
@@ -61,12 +68,22 @@ class SendTabToSelfBridge : public syncer::ModelTypeSyncBridge,
   void DeleteAllEntries() override;
   const SendTabToSelfEntry* GetEntryByGUID(
       const std::string& guid) const override;
-  const SendTabToSelfEntry* AddEntry(const GURL& url,
-                                     const std::string& title,
-                                     base::Time navigation_time) override;
-
+  const SendTabToSelfEntry* AddEntry(
+      const GURL& url,
+      const std::string& title,
+      base::Time navigation_time,
+      const std::string& target_device_cache_guid) override;
   void DeleteEntry(const std::string& guid) override;
   void DismissEntry(const std::string& guid) override;
+  bool IsReady() override;
+
+  // history::HistoryServiceObserver:
+  void OnURLsDeleted(history::HistoryService* history_service,
+                     const history::DeletionInfo& deletion_info) override;
+
+  // For testing only.
+  static std::unique_ptr<syncer::ModelTypeStore> DestroyAndStealStoreForTest(
+      std::unique_ptr<SendTabToSelfBridge> bridge);
 
  private:
   using SendTabToSelfEntries =
@@ -82,22 +99,46 @@ class SendTabToSelfBridge : public syncer::ModelTypeSyncBridge,
   void NotifyRemoteSendTabToSelfEntryDeleted(
       const std::vector<std::string>& guids);
 
-  // Used as callback given to LocalDeviceInfoProvider.
-  void OnDeviceProviderInitialized();
+  // Notify all observers that the model is loaded;
+  void NotifySendTabToSelfModelLoaded();
+
+  // Methods used as callbacks given to DataTypeStore.
+  void OnStoreCreated(const base::Optional<syncer::ModelError>& error,
+                      std::unique_ptr<syncer::ModelTypeStore> store);
+  void OnReadAllData(std::unique_ptr<SendTabToSelfEntries> initial_entries,
+                     std::unique_ptr<std::string> local_device_name,
+                     const base::Optional<syncer::ModelError>& error);
+  void OnReadAllMetadata(const base::Optional<syncer::ModelError>& error,
+                         std::unique_ptr<syncer::MetadataBatch> metadata_batch);
+  void OnCommit(const base::Optional<syncer::ModelError>& error);
+
+  // Persists the changes in the given aggregators
+  void Commit(std::unique_ptr<syncer::ModelTypeStore::WriteBatch> batch);
+
+  // Returns a specific entry for editing. Returns null if the entry does not
+  // exist.
+  SendTabToSelfEntry* GetMutableEntryByGUID(const std::string& guid) const;
+
+  // Delete expired entries.
+  void DoGarbageCollection();
 
   // |entries_| is keyed by GUIDs.
   SendTabToSelfEntries entries_;
 
-  syncer::LocalDeviceInfoProvider* const local_device_info_provider_;
+  // |clock_| isn't owned.
+  const base::Clock* const clock_;
+
+  // |history_service_| isn't owned.
+  history::HistoryService* const history_service_;
 
   std::string local_device_name_;
 
-  const base::Clock* const clock_;
+  // In charge of actually persisting changes to disk, or loading previous data.
+  std::unique_ptr<syncer::ModelTypeStore> store_;
 
-  // Used to listen for provider initialization. If the provider is already
-  // initialized during our constructor then the subscription is never used.
-  std::unique_ptr<syncer::LocalDeviceInfoProvider::Subscription>
-      device_subscription_;
+  // A pointer to the most recently used entry used for deduplication.
+  const SendTabToSelfEntry* mru_entry_;
+  base::WeakPtrFactory<SendTabToSelfBridge> weak_ptr_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(SendTabToSelfBridge);
 };

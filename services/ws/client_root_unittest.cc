@@ -7,8 +7,11 @@
 #include <string>
 #include <vector>
 
+#include "base/command_line.h"
+#include "services/ws/proxy_window.h"
 #include "services/ws/public/cpp/property_type_converters.h"
 #include "services/ws/public/mojom/window_manager.mojom.h"
+#include "services/ws/top_level_proxy_window.h"
 #include "services/ws/window_service.h"
 #include "services/ws/window_service_test_setup.h"
 #include "services/ws/window_tree_test_helper.h"
@@ -18,6 +21,9 @@
 #include "ui/aura/window.h"
 #include "ui/aura/window_observer.h"
 #include "ui/aura/window_tracker.h"
+#include "ui/display/display_switches.h"
+#include "ui/gfx/geometry/vector2d_conversions.h"
+#include "ui/gfx/transform.h"
 
 namespace ws {
 namespace {
@@ -53,7 +59,7 @@ class CascadingPropertyTestHelper : public aura::WindowObserver {
 
 // Verifies a property change that occurs while servicing a property change from
 // the client results in notifying the client of the new property.
-TEST(ClientRoot, CascadingPropertyChange) {
+TEST(ClientRootTest, CascadingPropertyChange) {
   WindowServiceTestSetup setup;
   aura::Window* top_level =
       setup.window_tree_test_helper()->NewTopLevelWindow();
@@ -87,7 +93,7 @@ TEST(ClientRoot, CascadingPropertyChange) {
 }
 
 // Verifies embedded clients are notified of changes in screen bounds.
-TEST(ClientRoot, EmbedBoundsInScreen) {
+TEST(ClientRootTest, EmbedBoundsInScreen) {
   WindowServiceTestSetup setup;
   aura::Window* embed_window = setup.window_tree_test_helper()->NewWindow();
   embed_window->SetBounds(gfx::Rect(1, 2, 3, 4));
@@ -103,14 +109,13 @@ TEST(ClientRoot, EmbedBoundsInScreen) {
   EXPECT_TRUE(embedding_helper->changes()->empty());
   top_level->AddChild(window);
   std::vector<Change>* embedding_changes = embedding_helper->changes();
-  auto iter =
-      FirstChangeOfType(*embedding_changes, CHANGE_TYPE_NODE_BOUNDS_CHANGED);
-  ASSERT_NE(iter, embedding_changes->end());
-  EXPECT_EQ(gfx::Rect(1, 2, 3, 4), iter->bounds);
+  // Screen bounds of |embed_window| is the same as its initial bounds. Hence
+  // no bounds change fired.
   embedding_changes->clear();
 
   window->SetBounds(gfx::Rect(11, 12, 100, 100));
-  iter = FirstChangeOfType(*embedding_changes, CHANGE_TYPE_NODE_BOUNDS_CHANGED);
+  auto iter =
+      FirstChangeOfType(*embedding_changes, CHANGE_TYPE_NODE_BOUNDS_CHANGED);
   ASSERT_NE(iter, embedding_changes->end());
   EXPECT_EQ(gfx::Rect(12, 14, 3, 4), iter->bounds);
   embedding_changes->clear();
@@ -121,7 +126,7 @@ TEST(ClientRoot, EmbedBoundsInScreen) {
   EXPECT_EQ(gfx::Rect(112, 64, 3, 4), iter->bounds);
 }
 
-TEST(ClientRoot, EmbedWindowServerVisibilityChanges) {
+TEST(ClientRootTest, EmbedWindowServerVisibilityChanges) {
   WindowServiceTestSetup setup;
   aura::Window* embed_window = setup.window_tree_test_helper()->NewWindow();
   embed_window->SetBounds(gfx::Rect(1, 2, 3, 4));
@@ -220,7 +225,7 @@ TEST(ClientRoot, EmbedWindowServerVisibilityChanges) {
   }
 }
 
-TEST(ClientRoot, EmbedWindowClientVisibilityChanges) {
+TEST(ClientRootTest, EmbedWindowClientVisibilityChanges) {
   WindowServiceTestSetup setup;
   aura::Window* embed_window = setup.window_tree_test_helper()->NewWindow();
   embed_window->SetBounds(gfx::Rect(1, 2, 3, 4));
@@ -245,6 +250,75 @@ TEST(ClientRoot, EmbedWindowClientVisibilityChanges) {
                                                                  false);
   EXPECT_FALSE(embed_window->TargetVisibility());
   EXPECT_TRUE(embedding_changes->empty());
+}
+
+TEST(ClientRootTest, ForceVisible) {
+  WindowServiceTestSetup setup;
+  aura::Window* window = setup.window_tree_test_helper()->NewTopLevelWindow();
+  setup.changes()->clear();
+  EXPECT_FALSE(window->IsVisible());
+
+  {
+    // Verify calling ForceWindowVisible() results in notifying the client the
+    // window is visible (even though the underlying aura::Window is not).
+    auto force = setup.window_tree()
+                     ->GetClientRootForWindow(window)
+                     ->ForceWindowVisible();
+    EXPECT_FALSE(window->IsVisible());
+    EXPECT_EQ("VisibilityChanged window=0,1 visible=true",
+              SingleChangeToDescription(*setup.changes()));
+    setup.changes()->clear();
+  }
+
+  // Destroying |force| should notify the client the window is hidden.
+  EXPECT_FALSE(window->IsVisible());
+  EXPECT_EQ("VisibilityChanged window=0,1 visible=false",
+            SingleChangeToDescription(*setup.changes()));
+}
+
+TEST(ClientRootTest, TransformShouldntAffectBounds) {
+  WindowServiceTestSetup setup;
+  aura::Window* top_level =
+      setup.window_tree_test_helper()->NewTopLevelWindow();
+  top_level->SetBounds(gfx::Rect(50, 60, 100, 200));
+  gfx::Transform transform;
+  gfx::Vector2dF translate(20, 30);
+  transform.Translate(translate);
+  top_level->SetTransform(transform);
+  top_level->Show();
+
+  setup.changes()->clear();
+  gfx::Rect new_bounds(100, 120, 100, 200);
+  top_level->SetBounds(new_bounds);
+  EXPECT_EQ(new_bounds + gfx::ToFlooredVector2d(translate),
+            top_level->GetBoundsInScreen());
+  auto iter =
+      FirstChangeOfType(*setup.changes(), CHANGE_TYPE_NODE_BOUNDS_CHANGED);
+  ASSERT_NE(iter, setup.changes()->end());
+  EXPECT_EQ(new_bounds, iter->bounds);
+  setup.changes()->clear();
+
+  top_level->SetTransform(gfx::Transform());
+  EXPECT_EQ(new_bounds, top_level->GetBoundsInScreen());
+  EXPECT_EQ(
+      setup.changes()->end(),
+      FirstChangeOfType(*setup.changes(), CHANGE_TYPE_NODE_BOUNDS_CHANGED));
+}
+
+TEST(ClientRootTest, SurfaceIdGeneratedWhenSizeChangesWithFractionalScale) {
+  base::CommandLine::ForCurrentProcess()->AppendSwitchASCII(
+      switches::kForceDeviceScaleFactor, ".9");
+  WindowServiceTestSetup setup;
+  aura::Window* top_level =
+      setup.window_tree_test_helper()->NewTopLevelWindow();
+  top_level->SetBounds(gfx::Rect(50, 60, 500, 200));
+  ProxyWindow* top_level_proxy_window = ProxyWindow::GetMayBeNull(top_level);
+  ASSERT_TRUE(top_level_proxy_window->local_surface_id_allocation());
+  auto initial_lsi = *top_level_proxy_window->local_surface_id_allocation();
+  top_level->SetBounds(gfx::Rect(50, 60, 501, 200));
+  ASSERT_TRUE(top_level_proxy_window->local_surface_id_allocation());
+  EXPECT_NE(*top_level_proxy_window->local_surface_id_allocation(),
+            initial_lsi);
 }
 
 }  // namespace

@@ -29,15 +29,15 @@
 #include "ios/chrome/browser/browser_state/test_chrome_browser_state.h"
 #include "ios/chrome/browser/chrome_url_constants.h"
 #import "ios/chrome/browser/device_sharing/device_sharing_manager.h"
-#include "ios/chrome/browser/experimental_flags.h"
 #import "ios/chrome/browser/geolocation/omnibox_geolocation_config.h"
 #import "ios/chrome/browser/metrics/ios_profile_session_durations_service.h"
 #import "ios/chrome/browser/metrics/ios_profile_session_durations_service_factory.h"
 #include "ios/chrome/browser/ntp_snippets/ios_chrome_content_suggestions_service_factory.h"
 #import "ios/chrome/browser/signin/authentication_service_factory.h"
 #import "ios/chrome/browser/signin/authentication_service_fake.h"
+#include "ios/chrome/browser/system_flags.h"
 #import "ios/chrome/browser/tabs/tab_model.h"
-#import "ios/chrome/browser/ui/browser_view_controller.h"
+#import "ios/chrome/browser/ui/browser_view/browser_view_controller.h"
 #import "ios/chrome/browser/ui/commands/application_commands.h"
 #import "ios/chrome/browser/ui/commands/browser_commands.h"
 #import "ios/chrome/browser/ui/commands/open_new_tab_command.h"
@@ -141,7 +141,7 @@ class FakeProfileSessionDurationsService
   }
   void OnSessionEnded(base::TimeDelta session_length) override {
     ++session_ended_count_;
-  };
+  }
 
   // IOSProfileSessionDurationsService:
   int session_started_count() const { return session_started_count_; }
@@ -375,7 +375,7 @@ class AppStateWithThreadTest : public PlatformTest {
     base::Lock* lock = new base::Lock;
 
     base::PostTaskWithTraits(FROM_HERE, {web::WebThread::IO},
-                             base::Bind(&createTracker, &created, lock));
+                             base::BindOnce(&createTracker, &created, lock));
 
     CFTimeInterval start = CACurrentMediaTime();
 

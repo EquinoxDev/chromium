@@ -31,7 +31,6 @@
 #include "cc/tiles/software_image_decode_cache.h"
 #include "third_party/blink/public/platform/platform.h"
 #include "third_party/blink/public/platform/web_data.h"
-#include "third_party/blink/renderer/platform/drag_image.h"
 #include "third_party/blink/renderer/platform/geometry/float_point.h"
 #include "third_party/blink/renderer/platform/geometry/float_rect.h"
 #include "third_party/blink/renderer/platform/geometry/float_size.h"
@@ -46,9 +45,12 @@
 #include "third_party/blink/renderer/platform/histogram.h"
 #include "third_party/blink/renderer/platform/instrumentation/tracing/trace_event.h"
 #include "third_party/blink/renderer/platform/shared_buffer.h"
+#include "third_party/blink/renderer/platform/wtf/allocator.h"
 #include "third_party/blink/renderer/platform/wtf/std_lib_extras.h"
 #include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
+#include "third_party/skia/include/core/SkCanvas.h"
 #include "third_party/skia/include/core/SkImage.h"
+#include "third_party/skia/include/core/SkSurface.h"
 
 #include <math.h>
 #include <tuple>
@@ -56,6 +58,8 @@
 namespace blink {
 
 class CombinedImageDecodeCache {
+  USING_FAST_MALLOC(CombinedImageDecodeCache);
+
  public:
   CombinedImageDecodeCache(size_t locked_memory_limit_bytes)
       : locked_memory_limit_bytes_(locked_memory_limit_bytes) {
@@ -88,9 +92,7 @@ Image::Image(ImageObserver* observer, bool is_multipart)
     : image_observer_disabled_(false),
       image_observer_(observer),
       stable_image_id_(PaintImage::GetNextId()),
-      is_multipart_(is_multipart),
-      high_contrast_classification_(
-          HighContrastClassification::kNotClassified) {}
+      is_multipart_(is_multipart) {}
 
 Image::~Image() = default;
 
@@ -123,6 +125,57 @@ scoped_refptr<Image> Image::LoadPlatformResource(const char* name) {
   return image;
 }
 
+// static
+PaintImage Image::ResizeAndOrientImage(
+    const PaintImage& image,
+    ImageOrientation orientation,
+    FloatSize image_scale,
+    float opacity,
+    InterpolationQuality interpolation_quality) {
+  IntSize size(image.width(), image.height());
+  size.Scale(image_scale.Width(), image_scale.Height());
+  AffineTransform transform;
+  if (orientation != kDefaultImageOrientation) {
+    if (orientation.UsesWidthAsHeight())
+      size = size.TransposedSize();
+    transform *= orientation.TransformFromDefault(FloatSize(size));
+  }
+  transform.ScaleNonUniform(image_scale.Width(), image_scale.Height());
+
+  if (size.IsEmpty())
+    return PaintImage();
+
+  if (transform.IsIdentity() && opacity == 1) {
+    // Nothing to adjust, just use the original.
+    DCHECK_EQ(image.width(), size.Width());
+    DCHECK_EQ(image.height(), size.Height());
+    return image;
+  }
+
+  const SkImageInfo info =
+      SkImageInfo::MakeN32(size.Width(), size.Height(), kPremul_SkAlphaType,
+                           SkColorSpace::MakeSRGB());
+  sk_sp<SkSurface> surface = SkSurface::MakeRaster(info);
+  if (!surface)
+    return PaintImage();
+
+  SkPaint paint;
+  DCHECK_GE(opacity, 0);
+  DCHECK_LE(opacity, 1);
+  paint.setAlpha(opacity * 255);
+  paint.setFilterQuality(interpolation_quality == kInterpolationNone
+                             ? kNone_SkFilterQuality
+                             : kHigh_SkFilterQuality);
+
+  SkCanvas* canvas = surface->getCanvas();
+  canvas->concat(AffineTransformToSkMatrix(transform));
+  canvas->drawImage(image.GetSkImage(), 0, 0, &paint);
+
+  return PaintImageBuilder::WithProperties(std::move(image))
+      .set_image(surface->makeImageSnapshot(), PaintImage::GetNextContentId())
+      .TakePaintImage();
+}
+
 Image::SizeAvailability Image::SetData(scoped_refptr<SharedBuffer> data,
                                        bool all_data_received) {
   encoded_image_data_ = std::move(data);
@@ -147,8 +200,8 @@ sk_sp<PaintShader> CreatePatternShader(const PaintImage& image,
                                        SkFilterQuality quality_to_use,
                                        bool should_antialias,
                                        const FloatSize& spacing,
-                                       SkShader::TileMode tmx,
-                                       SkShader::TileMode tmy) {
+                                       SkTileMode tmx,
+                                       SkTileMode tmy) {
   if (spacing.IsZero()) {
     return PaintShader::MakeImage(image, tmx, tmy, &shader_matrix);
   }
@@ -169,13 +222,9 @@ sk_sp<PaintShader> CreatePatternShader(const PaintImage& image,
                                       tile_rect, tmx, tmy, &shader_matrix);
 }
 
-SkShader::TileMode ComputeTileMode(float left,
-                                   float right,
-                                   float min,
-                                   float max) {
+SkTileMode ComputeTileMode(float left, float right, float min, float max) {
   DCHECK(left < right);
-  return left >= min && right <= max ? SkShader::kClamp_TileMode
-                                     : SkShader::kRepeat_TileMode;
+  return left >= min && right <= max ? SkTileMode::kClamp : SkTileMode::kRepeat;
 }
 
 }  // anonymous namespace
@@ -284,9 +333,8 @@ bool Image::ApplyShader(PaintFlags& flags, const SkMatrix& local_matrix) {
   if (!image)
     return false;
 
-  flags.setShader(PaintShader::MakeImage(image, SkShader::kRepeat_TileMode,
-                                         SkShader::kRepeat_TileMode,
-                                         &local_matrix));
+  flags.setShader(PaintShader::MakeImage(image, SkTileMode::kRepeat,
+                                         SkTileMode::kRepeat, &local_matrix));
   if (!flags.HasShader())
     return false;
 
@@ -307,7 +355,7 @@ SkBitmap Image::AsSkBitmapForCurrentFrame(
       IsBitmapImage()) {
     ImageOrientation orientation =
         ToBitmapImage(this)->CurrentFrameOrientation();
-    paint_image = DragImage::ResizeAndOrientImage(paint_image, orientation);
+    paint_image = ResizeAndOrientImage(paint_image, orientation);
     if (!paint_image)
       return {};
   }
@@ -319,6 +367,46 @@ SkBitmap Image::AsSkBitmapForCurrentFrame(
   SkBitmap bitmap;
   sk_image->asLegacyBitmap(&bitmap);
   return bitmap;
+}
+
+DarkModeClassification Image::GetDarkModeClassification(
+    const FloatRect& src_rect) {
+  // Assuming that multiple uses of the same sprite region all have the same
+  // size, only the top left corner coordinates of the src_rect are used to
+  // generate the key for caching and retrieving the classification.
+  ClassificationKey key(src_rect.X(), src_rect.Y());
+  std::map<ClassificationKey, DarkModeClassification>::iterator result =
+      dark_mode_classifications_.find(key);
+  if (result == dark_mode_classifications_.end())
+    return DarkModeClassification::kNotClassified;
+
+  return result->second;
+}
+
+void Image::AddDarkModeClassification(
+    const FloatRect& src_rect,
+    DarkModeClassification dark_mode_classification) {
+  // Add the classification in the map only if the image is not classified yet.
+  DCHECK(GetDarkModeClassification(src_rect) ==
+         DarkModeClassification::kNotClassified);
+  ClassificationKey key(src_rect.X(), src_rect.Y());
+  dark_mode_classifications_[key] = dark_mode_classification;
+}
+
+bool Image::ShouldApplyDarkModeFilter(const FloatRect& src_rect) {
+  // Check if the image has already been classified.
+  DarkModeClassification result = GetDarkModeClassification(src_rect);
+  if (result != DarkModeClassification::kNotClassified)
+    return result == DarkModeClassification::kApplyDarkModeFilter;
+
+  result = ClassifyImageForDarkMode(src_rect);
+
+  // Store the classification result using src_rect's location
+  // as a key for the map.
+  if (ShouldCacheDarkModeClassification())
+    AddDarkModeClassification(src_rect, result);
+
+  return result == DarkModeClassification::kApplyDarkModeFilter;
 }
 
 }  // namespace blink

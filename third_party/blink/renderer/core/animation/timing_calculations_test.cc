@@ -43,63 +43,40 @@ TEST(AnimationTimingCalculationsTest, ActiveTime) {
 
   // Before Phase
   timing.start_delay = 10;
+  EXPECT_TRUE(
+      IsNull(CalculateActiveTime(20, Timing::FillMode::FORWARDS, 0,
+                                 AnimationEffect::kPhaseBefore, timing)));
   EXPECT_TRUE(IsNull(CalculateActiveTime(
-      20, Timing::FillMode::FORWARDS, 0, AnimationEffect::kPhaseActive,
-      AnimationEffect::kPhaseBefore, timing)));
-  EXPECT_TRUE(IsNull(CalculateActiveTime(
-      20, Timing::FillMode::NONE, 0, AnimationEffect::kPhaseActive,
-      AnimationEffect::kPhaseBefore, timing)));
+      20, Timing::FillMode::NONE, 0, AnimationEffect::kPhaseBefore, timing)));
   EXPECT_EQ(0, CalculateActiveTime(20, Timing::FillMode::BACKWARDS, 0,
-                                   AnimationEffect::kPhaseActive,
                                    AnimationEffect::kPhaseBefore, timing));
   EXPECT_EQ(0, CalculateActiveTime(20, Timing::FillMode::BOTH, 0,
-                                   AnimationEffect::kPhaseActive,
                                    AnimationEffect::kPhaseBefore, timing));
   timing.start_delay = -10;
   EXPECT_EQ(5, CalculateActiveTime(20, Timing::FillMode::BACKWARDS, -5,
-                                   AnimationEffect::kPhaseActive,
                                    AnimationEffect::kPhaseBefore, timing));
 
   // Active Phase
   timing.start_delay = 10;
-  // Active, and parent Before
-  EXPECT_TRUE(IsNull(CalculateActiveTime(
-      20, Timing::FillMode::NONE, 15, AnimationEffect::kPhaseBefore,
-      AnimationEffect::kPhaseActive, timing)));
-  EXPECT_TRUE(IsNull(CalculateActiveTime(
-      20, Timing::FillMode::FORWARDS, 15, AnimationEffect::kPhaseBefore,
-      AnimationEffect::kPhaseActive, timing)));
-  // Active, and parent After
-  EXPECT_TRUE(IsNull(CalculateActiveTime(
-      20, Timing::FillMode::NONE, 15, AnimationEffect::kPhaseAfter,
-      AnimationEffect::kPhaseActive, timing)));
-  EXPECT_TRUE(IsNull(CalculateActiveTime(
-      20, Timing::FillMode::BACKWARDS, 15, AnimationEffect::kPhaseAfter,
-      AnimationEffect::kPhaseActive, timing)));
-  // Active, and parent Active
   EXPECT_EQ(5, CalculateActiveTime(20, Timing::FillMode::FORWARDS, 15,
-                                   AnimationEffect::kPhaseActive,
                                    AnimationEffect::kPhaseActive, timing));
 
   // After Phase
   timing.start_delay = 10;
   EXPECT_EQ(21, CalculateActiveTime(21, Timing::FillMode::FORWARDS, 45,
-                                    AnimationEffect::kPhaseActive,
                                     AnimationEffect::kPhaseAfter, timing));
   EXPECT_EQ(21, CalculateActiveTime(21, Timing::FillMode::BOTH, 45,
-                                    AnimationEffect::kPhaseActive,
                                     AnimationEffect::kPhaseAfter, timing));
+  EXPECT_TRUE(
+      IsNull(CalculateActiveTime(21, Timing::FillMode::BACKWARDS, 45,
+                                 AnimationEffect::kPhaseAfter, timing)));
   EXPECT_TRUE(IsNull(CalculateActiveTime(
-      21, Timing::FillMode::BACKWARDS, 45, AnimationEffect::kPhaseActive,
-      AnimationEffect::kPhaseAfter, timing)));
-  EXPECT_TRUE(IsNull(CalculateActiveTime(
-      21, Timing::FillMode::NONE, 45, AnimationEffect::kPhaseActive,
-      AnimationEffect::kPhaseAfter, timing)));
+      21, Timing::FillMode::NONE, 45, AnimationEffect::kPhaseAfter, timing)));
 
   // None
-  EXPECT_TRUE(IsNull(CalculateActiveTime(
-      32, Timing::FillMode::NONE, NullValue(), AnimationEffect::kPhaseNone,
-      AnimationEffect::kPhaseNone, timing)));
+  EXPECT_TRUE(
+      IsNull(CalculateActiveTime(32, Timing::FillMode::NONE, NullValue(),
+                                 AnimationEffect::kPhaseNone, timing)));
 }
 
 TEST(AnimationTimingCalculationsTest, OffsetActiveTime) {
@@ -143,24 +120,55 @@ TEST(AnimationTimingCalculationsTest, IterationTime) {
 }
 
 TEST(AnimationTimingCalculationsTest, CurrentIteration) {
-  Timing timing;
+  // If the active time is null.
+  EXPECT_TRUE(IsNull(CalculateCurrentIteration(AnimationEffect::kPhaseAfter,
+                                               /*active_time=*/NullValue(),
+                                               /*iteration_duration=*/1.0,
+                                               /*iteration_count=*/1.0,
+                                               /*iteration_start=*/1.0)));
 
-  // calculateCurrentIteration(
-  //     iterationDuration, iterationTime, scaledActiveTime, timing)
+  // If the active time is zero.
+  EXPECT_EQ(0, CalculateCurrentIteration(AnimationEffect::kPhaseAfter,
+                                         /*active_time=*/0.0,
+                                         /*iteration_duration=*/1.0,
+                                         /*iteration_count=*/0.0,
+                                         /*iteration_start=*/0.0));
 
-  // if the scaled active time is null
-  EXPECT_TRUE(IsNull(CalculateCurrentIteration(1, 1, NullValue(), timing)));
+  // If the iteration count is infinite.
+  const double inf = std::numeric_limits<double>::infinity();
+  EXPECT_EQ(inf, CalculateCurrentIteration(AnimationEffect::kPhaseAfter,
+                                           /*active_time=*/1.0,
+                                           /*iteration_duration=*/1.0,
+                                           /*iteration_count=*/inf,
+                                           /*iteration_start=*/1.0));
 
-  // if the scaled active time is zero
-  EXPECT_EQ(0, CalculateCurrentIteration(1, 1, 0, timing));
+  // If iteration duration is zero, calculate progress based on iteration count.
+  EXPECT_EQ(3, CalculateCurrentIteration(AnimationEffect::kPhaseActive,
+                                         /*active_time=*/3.0,
+                                         /*iteration_duration=*/0.0,
+                                         /*iteration_count=*/3.0,
+                                         /*iteration_start=*/0.0));
+  // ...unless in before phase, in which case progress is zero.
+  EXPECT_EQ(0, CalculateCurrentIteration(AnimationEffect::kPhaseBefore,
+                                         /*active_time=*/3.0,
+                                         /*iteration_duration=*/0.0,
+                                         /*iteration_count=*/3.0,
+                                         /*iteration_start=*/0.0));
 
-  // if the iteration time equals the iteration duration
-  timing.iteration_start = 4;
-  timing.iteration_count = 7;
-  EXPECT_EQ(10, CalculateCurrentIteration(5, 5, 9, timing));
+  // Hold the endpoint of the final iteration of ending precisely on an
+  // iteration boundary.
+  EXPECT_EQ(2, CalculateCurrentIteration(AnimationEffect::kPhaseAfter,
+                                         /*active_time=*/3.0,
+                                         /*iteration_duration=*/1.0,
+                                         /*iteration_count=*/3.0,
+                                         /*iteration_start=*/0.0));
 
-  // otherwise
-  EXPECT_EQ(3, CalculateCurrentIteration(3.2, 3.1, 10, timing));
+  // Otherwise.
+  EXPECT_EQ(2, CalculateCurrentIteration(AnimationEffect::kPhaseAfter,
+                                         /*active_time=*/2.5,
+                                         /*iteration_duration=*/1.0,
+                                         /*iteration_count=*/0.0,
+                                         /*iteration_start=*/0.0));
 }
 
 TEST(AnimationTimingCalculationsTest, DirectedTime) {

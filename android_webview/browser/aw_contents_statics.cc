@@ -3,10 +3,11 @@
 // found in the LICENSE file.
 
 #include "android_webview/browser/aw_browser_context.h"
+#include "android_webview/browser/aw_content_browser_client.h"
 #include "android_webview/browser/aw_contents.h"
 #include "android_webview/browser/aw_contents_io_thread_client.h"
-#include "android_webview/browser/aw_safe_browsing_whitelist_manager.h"
 #include "android_webview/browser/net/aw_url_request_context_getter.h"
+#include "android_webview/browser/safe_browsing/aw_safe_browsing_whitelist_manager.h"
 #include "base/android/jni_array.h"
 #include "base/android/jni_string.h"
 #include "base/android/scoped_java_ref.h"
@@ -18,6 +19,7 @@
 #include "components/version_info/version_info.h"
 #include "content/public/browser/browser_task_traits.h"
 #include "content/public/browser/browser_thread.h"
+#include "content/public/browser/render_process_host.h"
 #include "content/public/browser/storage_partition.h"
 #include "content/public/common/url_constants.h"
 #include "jni/AwContentsStatics_jni.h"
@@ -122,7 +124,18 @@ void JNI_AwContentsStatics_SetServiceWorkerIoThreadClient(
 void JNI_AwContentsStatics_SetCheckClearTextPermitted(
     JNIEnv* env,
     jboolean permitted) {
+  // Notify both the legacy and NS code paths of this setting. We do this
+  // because this method may be called before we initialize the FeatureList
+  // during AwMainDelegate::PostEarlyInitialization (which means we can't
+  // reliably know at this point if we're in the NetworkService or legacy code
+  // path).
+  AwContentBrowserClient::set_check_cleartext_permitted(permitted);
   AwURLRequestContextGetter::set_check_cleartext_permitted(permitted);
+}
+
+// static
+jboolean JNI_AwContentsStatics_IsMultiProcessEnabled(JNIEnv* env) {
+  return !content::RenderProcessHost::run_renderer_in_process();
 }
 
 }  // namespace android_webview

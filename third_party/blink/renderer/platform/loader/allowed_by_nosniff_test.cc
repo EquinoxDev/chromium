@@ -35,9 +35,10 @@ class MockConsoleLogger : public GarbageCollectedFinalized<MockConsoleLogger>,
   USING_GARBAGE_COLLECTED_MIXIN(MockConsoleLogger);
 
  public:
-  MOCK_METHOD2(AddInfoMessage, void(Source, const String&));
-  MOCK_METHOD2(AddWarningMessage, void(Source, const String&));
-  MOCK_METHOD2(AddErrorMessage, void(Source, const String&));
+  MOCK_METHOD3(AddConsoleMessage,
+               void(mojom::ConsoleMessageSource,
+                    mojom::ConsoleMessageLevel,
+                    const String&));
 };
 
 }  // namespace
@@ -110,7 +111,7 @@ TEST_F(AllowedByNosniffTest, AllowedOrNot) {
     Persistent<MockConsoleLogger> logger =
         MakeGarbageCollected<MockConsoleLogger>();
     ResourceResponse response(url);
-    response.SetHTTPHeaderField("Content-Type", testcase.mimetype);
+    response.SetHttpHeaderField("Content-Type", testcase.mimetype);
 
     // Nosniff 'legacy' setting: Both worker + non-worker obey the 'allowed'
     // setting. Warnings for any blocked script.
@@ -118,7 +119,7 @@ TEST_F(AllowedByNosniffTest, AllowedOrNot) {
     RuntimeEnabledFeatures::SetWorkerNosniffWarnEnabled(false);
     EXPECT_CALL(*context, CountUsage(_)).Times(::testing::AnyNumber());
     if (!testcase.allowed)
-      EXPECT_CALL(*logger, AddErrorMessage(_, _));
+      EXPECT_CALL(*logger, AddConsoleMessage(_, _, _));
     EXPECT_EQ(testcase.allowed,
               AllowedByNosniff::MimeTypeAsScript(*context, logger, response,
                                                  MimeTypeCheck::kLax, false));
@@ -126,7 +127,7 @@ TEST_F(AllowedByNosniffTest, AllowedOrNot) {
 
     EXPECT_CALL(*context, CountUsage(_)).Times(::testing::AnyNumber());
     if (!testcase.allowed)
-      EXPECT_CALL(*logger, AddErrorMessage(_, _));
+      EXPECT_CALL(*logger, AddConsoleMessage(_, _, _));
     EXPECT_EQ(testcase.allowed,
               AllowedByNosniff::MimeTypeAsScript(
                   *context, logger, response, MimeTypeCheck::kStrict, false));
@@ -139,7 +140,7 @@ TEST_F(AllowedByNosniffTest, AllowedOrNot) {
 
     EXPECT_CALL(*context, CountUsage(_)).Times(::testing::AnyNumber());
     if (!testcase.allowed)
-      EXPECT_CALL(*logger, AddErrorMessage(_, _));
+      EXPECT_CALL(*logger, AddConsoleMessage(_, _, _));
     EXPECT_EQ(testcase.allowed,
               AllowedByNosniff::MimeTypeAsScript(*context, logger, response,
                                                  MimeTypeCheck::kLax, false));
@@ -147,7 +148,7 @@ TEST_F(AllowedByNosniffTest, AllowedOrNot) {
 
     EXPECT_CALL(*context, CountUsage(_)).Times(::testing::AnyNumber());
     if (!testcase.strict_allowed)
-      EXPECT_CALL(*logger, AddErrorMessage(_, _));
+      EXPECT_CALL(*logger, AddConsoleMessage(_, _, _));
     EXPECT_EQ(testcase.strict_allowed,
               AllowedByNosniff::MimeTypeAsScript(
                   *context, logger, response, MimeTypeCheck::kStrict, false));
@@ -160,7 +161,7 @@ TEST_F(AllowedByNosniffTest, AllowedOrNot) {
 
     EXPECT_CALL(*context, CountUsage(_)).Times(::testing::AnyNumber());
     if (!testcase.allowed)
-      EXPECT_CALL(*logger, AddErrorMessage(_, _));
+      EXPECT_CALL(*logger, AddConsoleMessage(_, _, _));
     EXPECT_EQ(testcase.allowed,
               AllowedByNosniff::MimeTypeAsScript(*context, logger, response,
                                                  MimeTypeCheck::kLax, false));
@@ -168,7 +169,7 @@ TEST_F(AllowedByNosniffTest, AllowedOrNot) {
 
     EXPECT_CALL(*context, CountUsage(_)).Times(::testing::AnyNumber());
     if (!testcase.strict_allowed)
-      EXPECT_CALL(*logger, AddErrorMessage(_, _));
+      EXPECT_CALL(*logger, AddConsoleMessage(_, _, _));
     EXPECT_EQ(testcase.allowed,
               AllowedByNosniff::MimeTypeAsScript(
                   *context, logger, response, MimeTypeCheck::kStrict, false));
@@ -221,7 +222,7 @@ TEST_F(AllowedByNosniffTest, Counters) {
     Persistent<MockConsoleLogger> logger =
         MakeGarbageCollected<MockConsoleLogger>();
     ResourceResponse response(KURL(testcase.url));
-    response.SetHTTPHeaderField("Content-Type", testcase.mimetype);
+    response.SetHttpHeaderField("Content-Type", testcase.mimetype);
 
     EXPECT_CALL(*context, CountUsage(testcase.expected));
     EXPECT_CALL(*context, CountUsage(::testing::Ne(testcase.expected)))
@@ -265,12 +266,13 @@ TEST_F(AllowedByNosniffTest, AllTheSchemes) {
         ResourceFetcherInit(*properties, context, CreateTaskRunner()));
     Persistent<MockConsoleLogger> logger =
         MakeGarbageCollected<MockConsoleLogger>();
-    EXPECT_CALL(*logger, AddErrorMessage(_, _)).Times(::testing::AnyNumber());
+    EXPECT_CALL(*logger, AddConsoleMessage(_, _, _))
+        .Times(::testing::AnyNumber());
     SCOPED_TRACE(testing::Message() << "\n  url: " << testcase.url
                                     << "\n  allowed: " << testcase.allowed);
     ResourceResponse response(KURL(testcase.url));
-    response.SetHTTPHeaderField("Content-Type", "invalid");
-    response.SetHTTPHeaderField("X-Content-Type-Options", "nosniff");
+    response.SetHttpHeaderField("Content-Type", "invalid");
+    response.SetHttpHeaderField("X-Content-Type-Options", "nosniff");
     EXPECT_EQ(testcase.allowed,
               AllowedByNosniff::MimeTypeAsScript(*context, logger, response,
                                                  MimeTypeCheck::kLax, false));

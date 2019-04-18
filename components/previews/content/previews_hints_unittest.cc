@@ -17,7 +17,7 @@
 #include "components/optimization_guide/hints_component_info.h"
 #include "components/optimization_guide/proto/hints.pb.h"
 #include "components/previews/content/hint_cache.h"
-#include "components/previews/content/hint_cache_leveldb_store.h"
+#include "components/previews/content/hint_cache_store.h"
 #include "components/previews/content/previews_hints_util.h"
 #include "components/previews/core/previews_features.h"
 #include "components/previews/core/previews_switches.h"
@@ -77,10 +77,9 @@ class PreviewsHintsTest : public testing::Test {
 
   void SetUp() override {
     ASSERT_TRUE(temp_dir_.CreateUniqueTempDir());
-    hint_cache_ =
-        std::make_unique<HintCache>(std::make_unique<HintCacheLevelDBStore>(
-            temp_dir_.GetPath(),
-            scoped_task_environment_.GetMainThreadTaskRunner()));
+    hint_cache_ = std::make_unique<HintCache>(std::make_unique<HintCacheStore>(
+        temp_dir_.GetPath(),
+        scoped_task_environment_.GetMainThreadTaskRunner()));
 
     is_store_initialized_ = false;
     hint_cache_->Initialize(
@@ -260,6 +259,26 @@ TEST_F(PreviewsHintsTest, LogHintCacheMatch) {
       5 /* EFFECTIVE_CONNECTION_TYPE_4G */, 1);
 }
 
+TEST_F(PreviewsHintsTest, IsBlacklistedReturnsTrueIfNoBloomFilter) {
+  base::test::ScopedFeatureList scoped_list;
+  scoped_list.InitAndEnableFeature(features::kLitePageServerPreviews);
+
+  optimization_guide::proto::Configuration config;
+  ParseConfig(config);
+
+  EXPECT_FALSE(HasLitePageRedirectBlacklist());
+
+  EXPECT_FALSE(previews_hints()->IsBlacklisted(GURL("https://black.com/path"),
+                                               PreviewsType::LOFI));
+
+  EXPECT_TRUE(previews_hints()->IsBlacklisted(
+      GURL("https://black.com/path"), PreviewsType::LITE_PAGE_REDIRECT));
+  EXPECT_TRUE(previews_hints()->IsBlacklisted(
+      GURL("https://joe.black.com/path"), PreviewsType::LITE_PAGE_REDIRECT));
+  EXPECT_TRUE(previews_hints()->IsBlacklisted(
+      GURL("https://nonblack.com"), PreviewsType::LITE_PAGE_REDIRECT));
+}
+
 TEST_F(PreviewsHintsTest, IsBlacklisted) {
   base::test::ScopedFeatureList scoped_list;
   scoped_list.InitAndEnableFeature(features::kLitePageServerPreviews);
@@ -280,33 +299,6 @@ TEST_F(PreviewsHintsTest, IsBlacklisted) {
   EXPECT_TRUE(previews_hints()->IsBlacklisted(
       GURL("https://black.com/path"), PreviewsType::LITE_PAGE_REDIRECT));
   EXPECT_TRUE(previews_hints()->IsBlacklisted(
-      GURL("https://joe.black.com/path"), PreviewsType::LITE_PAGE_REDIRECT));
-  EXPECT_FALSE(previews_hints()->IsBlacklisted(
-      GURL("https://nonblack.com"), PreviewsType::LITE_PAGE_REDIRECT));
-}
-
-TEST_F(PreviewsHintsTest, IgnoreLitePageRedirectBlacklist) {
-  base::test::ScopedFeatureList scoped_list;
-  scoped_list.InitAndEnableFeature(features::kLitePageServerPreviews);
-
-  BloomFilter blacklist_bloom_filter(kBlackBlacklistBloomFilterNumHashFunctions,
-                                     kBlackBlacklistBloomFilterNumBits);
-  PopulateBlackBlacklistBloomFilter(&blacklist_bloom_filter);
-
-  optimization_guide::proto::Configuration config;
-  AddBlacklistBloomFilterToConfig(blacklist_bloom_filter,
-                                  kBlackBlacklistBloomFilterNumHashFunctions,
-                                  kBlackBlacklistBloomFilterNumBits, &config);
-  ParseConfig(config);
-
-  base::CommandLine::ForCurrentProcess()->AppendSwitch(
-      switches::kIgnoreLitePageRedirectOptimizationBlacklist);
-
-  EXPECT_FALSE(previews_hints()->IsBlacklisted(GURL("https://black.com/path"),
-                                               PreviewsType::LOFI));
-  EXPECT_FALSE(previews_hints()->IsBlacklisted(
-      GURL("https://black.com/path"), PreviewsType::LITE_PAGE_REDIRECT));
-  EXPECT_FALSE(previews_hints()->IsBlacklisted(
       GURL("https://joe.black.com/path"), PreviewsType::LITE_PAGE_REDIRECT));
   EXPECT_FALSE(previews_hints()->IsBlacklisted(
       GURL("https://nonblack.com"), PreviewsType::LITE_PAGE_REDIRECT));
@@ -338,7 +330,7 @@ TEST_F(PreviewsHintsTest, ParseConfigWithInsufficientConfigDetails) {
       "Previews.OptimizationFilterStatus.LitePageRedirect",
       2 /* FAILED_SERVER_BLACKLIST_BAD_CONFIG */, 1);
 
-  EXPECT_FALSE(previews_hints()->IsBlacklisted(
+  EXPECT_TRUE(previews_hints()->IsBlacklisted(
       GURL("https://black.com/path"), PreviewsType::LITE_PAGE_REDIRECT));
 }
 
@@ -370,7 +362,7 @@ TEST_F(PreviewsHintsTest, ParseConfigWithTooLargeBlacklist) {
       "Previews.OptimizationFilterStatus.LitePageRedirect",
       3 /* FAILED_SERVER_BLACKLIST_TOO_BIG */, 1);
 
-  EXPECT_FALSE(previews_hints()->IsBlacklisted(
+  EXPECT_TRUE(previews_hints()->IsBlacklisted(
       GURL("https://black.com/path"), PreviewsType::LITE_PAGE_REDIRECT));
 }
 
@@ -466,7 +458,10 @@ TEST_F(PreviewsHintsTest, IsWhitelistedOutParams) {
 }
 
 TEST_F(PreviewsHintsTest,
-       IsWhitelistedForNoScriptInPageHintsWithResourceLoadingHintsDisabled) {
+       IsWhitelistedForSecondOptimizationNoScriptWithFirstDisabled) {
+  base::test::ScopedFeatureList scoped_list;
+  scoped_list.InitWithFeatures({features::kNoScriptPreviews},
+                               {features::kResourceLoadingHints});
   optimization_guide::proto::Configuration config;
 
   optimization_guide::proto::Hint* hint1 = config.add_hints();
@@ -475,11 +470,14 @@ TEST_F(PreviewsHintsTest,
 
   // Page hint with NOSCRIPT optimization
   optimization_guide::proto::PageHint* page_hint1 = hint1->add_page_hints();
-  page_hint1->set_page_pattern("/has_noscript/");
-  optimization_guide::proto::Optimization* optimization_with_inflation_percent =
+  page_hint1->set_page_pattern("/has_multiple_optimizations/");
+  optimization_guide::proto::Optimization* optimization1 =
       page_hint1->add_whitelisted_optimizations();
-  optimization_with_inflation_percent->set_optimization_type(
-      optimization_guide::proto::NOSCRIPT);
+  optimization1->set_optimization_type(
+      optimization_guide::proto::RESOURCE_LOADING);
+  optimization_guide::proto::Optimization* optimization2 =
+      page_hint1->add_whitelisted_optimizations();
+  optimization2->set_optimization_type(optimization_guide::proto::NOSCRIPT);
 
   ParseConfig(config);
 
@@ -487,8 +485,48 @@ TEST_F(PreviewsHintsTest,
   net::EffectiveConnectionType ect_threshold =
       net::EffectiveConnectionType::EFFECTIVE_CONNECTION_TYPE_UNKNOWN;
   EXPECT_TRUE(MaybeLoadHintAndCheckIsWhitelisted(
-      GURL("https://www.somedomain.org/has_noscript/"), PreviewsType::NOSCRIPT,
-      &inflation_percent, &ect_threshold));
+      GURL("https://www.somedomain.org/has_multiple_optimizations/"),
+      PreviewsType::NOSCRIPT, &inflation_percent, &ect_threshold));
+  EXPECT_FALSE(MaybeLoadHintAndCheckIsWhitelisted(
+      GURL("https://www.somedomain.org/has_multiple_optimizations/"),
+      PreviewsType::RESOURCE_LOADING_HINTS, &inflation_percent,
+      &ect_threshold));
+}
+
+TEST_F(PreviewsHintsTest,
+       IsWhitelistedForSecondOptimizationResourceLoadingWithFirstDisabled) {
+  base::test::ScopedFeatureList scoped_list;
+  scoped_list.InitWithFeatures({features::kResourceLoadingHints},
+                               {features::kNoScriptPreviews});
+  optimization_guide::proto::Configuration config;
+
+  optimization_guide::proto::Hint* hint1 = config.add_hints();
+  hint1->set_key("somedomain.org");
+  hint1->set_key_representation(optimization_guide::proto::HOST_SUFFIX);
+
+  // Page hint with NOSCRIPT optimization
+  optimization_guide::proto::PageHint* page_hint1 = hint1->add_page_hints();
+  page_hint1->set_page_pattern("/has_multiple_optimizations/");
+  optimization_guide::proto::Optimization* optimization1 =
+      page_hint1->add_whitelisted_optimizations();
+  optimization1->set_optimization_type(optimization_guide::proto::NOSCRIPT);
+  optimization_guide::proto::Optimization* optimization2 =
+      page_hint1->add_whitelisted_optimizations();
+  optimization2->set_optimization_type(
+      optimization_guide::proto::RESOURCE_LOADING);
+
+  ParseConfig(config);
+
+  int inflation_percent = 0;
+  net::EffectiveConnectionType ect_threshold =
+      net::EffectiveConnectionType::EFFECTIVE_CONNECTION_TYPE_UNKNOWN;
+  EXPECT_TRUE(MaybeLoadHintAndCheckIsWhitelisted(
+      GURL("https://www.somedomain.org/has_multiple_optimizations/"),
+      PreviewsType::RESOURCE_LOADING_HINTS, &inflation_percent,
+      &ect_threshold));
+  EXPECT_FALSE(MaybeLoadHintAndCheckIsWhitelisted(
+      GURL("https://www.somedomain.org/has_multiple_optimizations/"),
+      PreviewsType::NOSCRIPT, &inflation_percent, &ect_threshold));
 }
 
 TEST_F(PreviewsHintsTest, IsWhitelistedForExperimentalPreview) {
@@ -532,12 +570,7 @@ TEST_F(PreviewsHintsTest, IsWhitelistedForExperimentalPreview) {
       optimization_guide::proto::LOADING_BLOCK_RESOURCE);
   default_resourcehint->set_resource_pattern("default_resource.js");
 
-  base::HistogramTester histogram_tester;
-
   ParseConfig(config);
-
-  histogram_tester.ExpectUniqueSample(
-      "ResourceLoadingHints.ResourceHints.TotalReceived", 2, 1);
 
   // Test with the experiment disabled.
   {
@@ -590,6 +623,154 @@ TEST_F(PreviewsHintsTest, IsWhitelistedForExperimentalPreview) {
   }
 }
 
+TEST_F(PreviewsHintsTest, IsWhitelistedForNoopExperimentalPreview) {
+  base::test::ScopedFeatureList scoped_list;
+  scoped_list.InitAndEnableFeature(features::kResourceLoadingHints);
+  optimization_guide::proto::Configuration config;
+
+  optimization_guide::proto::Hint* hint1 = config.add_hints();
+  hint1->set_key("somedomain.org");
+  hint1->set_key_representation(optimization_guide::proto::HOST_SUFFIX);
+
+  // Page hint for "/experimental_preview/"
+  optimization_guide::proto::PageHint* page_hint1 = hint1->add_page_hints();
+  page_hint1->set_page_pattern("/experimental_preview/");
+  page_hint1->set_max_ect_trigger(
+      optimization_guide::proto::EffectiveConnectionType::
+          EFFECTIVE_CONNECTION_TYPE_3G);
+
+  // First add OPTIMIZATION_NONE as no-op experimental PageHint optimization.
+  optimization_guide::proto::Optimization* experimental_optimization =
+      page_hint1->add_whitelisted_optimizations();
+  experimental_optimization->set_experiment_name("foo_experiment");
+  experimental_optimization->set_optimization_type(
+      optimization_guide::proto::OPTIMIZATION_NONE);
+
+  // Add a non-experimental PageHint optimization with same resource pattern.
+  optimization_guide::proto::Optimization* default_pagehint_optimization =
+      page_hint1->add_whitelisted_optimizations();
+  default_pagehint_optimization->set_optimization_type(
+      optimization_guide::proto::RESOURCE_LOADING);
+  optimization_guide::proto::ResourceLoadingHint* default_resourcehint =
+      default_pagehint_optimization->add_resource_loading_hints();
+  default_resourcehint->set_loading_optimization_type(
+      optimization_guide::proto::LOADING_BLOCK_RESOURCE);
+  default_resourcehint->set_resource_pattern("default_resource.js");
+
+  ParseConfig(config);
+
+  // Test with the experiment disabled.
+  {
+    // Verify resource loading hints whitelisted.
+    int inflation_percent = 0;
+    net::EffectiveConnectionType ect_threshold =
+        net::EffectiveConnectionType::EFFECTIVE_CONNECTION_TYPE_UNKNOWN;
+    EXPECT_TRUE(MaybeLoadHintAndCheckIsWhitelisted(
+        GURL("https://www.somedomain.org/experimental_preview/"
+             "experimental_resource.js"),
+        PreviewsType::RESOURCE_LOADING_HINTS, &inflation_percent,
+        &ect_threshold));
+  }
+
+  // Now enable the experiment and verify experimental no-op screens the
+  // resource loading hints from being whitelisted.
+  {
+    base::test::ScopedFeatureList scoped_list2;
+    scoped_list2.InitAndEnableFeatureWithParameters(
+        features::kOptimizationHintsExperiments,
+        {{"experiment_name", "foo_experiment"}});
+
+    int inflation_percent = 0;
+    net::EffectiveConnectionType ect_threshold =
+        net::EffectiveConnectionType::EFFECTIVE_CONNECTION_TYPE_2G;
+    EXPECT_FALSE(MaybeLoadHintAndCheckIsWhitelisted(
+        GURL("https://www.somedomain.org/experimental_preview/"
+             "experimental_resource.js"),
+        PreviewsType::RESOURCE_LOADING_HINTS, &inflation_percent,
+        &ect_threshold));
+  }
+}
+
+TEST_F(PreviewsHintsTest, IsWhitelistedForExcludedExperimentalPreview) {
+  base::test::ScopedFeatureList scoped_list;
+  scoped_list.InitAndEnableFeature(features::kResourceLoadingHints);
+  optimization_guide::proto::Configuration config;
+
+  optimization_guide::proto::Hint* hint1 = config.add_hints();
+  hint1->set_key("somedomain.org");
+  hint1->set_key_representation(optimization_guide::proto::HOST_SUFFIX);
+
+  // Page hint for "/experimental_preview/"
+  optimization_guide::proto::PageHint* page_hint1 = hint1->add_page_hints();
+  page_hint1->set_page_pattern("/experimental_preview/");
+
+  // First add PageHint optimization excluded from experiment.
+  optimization_guide::proto::Optimization* optimization =
+      page_hint1->add_whitelisted_optimizations();
+  optimization->set_excluded_experiment_name("foo_experiment");
+  optimization->set_optimization_type(
+      optimization_guide::proto::RESOURCE_LOADING);
+  optimization_guide::proto::ResourceLoadingHint* resourcehint =
+      optimization->add_resource_loading_hints();
+  resourcehint->set_loading_optimization_type(
+      optimization_guide::proto::LOADING_BLOCK_RESOURCE);
+  resourcehint->set_resource_pattern("excluded_experiment_resource.js");
+
+  // Add a fall-through PageHint optimization with same resource pattern.
+  optimization_guide::proto::Optimization* fallthrough_pagehint_optimization =
+      page_hint1->add_whitelisted_optimizations();
+  fallthrough_pagehint_optimization->set_optimization_type(
+      optimization_guide::proto::RESOURCE_LOADING);
+  optimization_guide::proto::ResourceLoadingHint* fallthrough_resourcehint =
+      fallthrough_pagehint_optimization->add_resource_loading_hints();
+  fallthrough_resourcehint->set_loading_optimization_type(
+      optimization_guide::proto::LOADING_BLOCK_RESOURCE);
+  fallthrough_resourcehint->set_resource_pattern("fallthrough_resource.js");
+
+  ParseConfig(config);
+
+  int inflation_percent = 0;
+  net::EffectiveConnectionType ect_threshold =
+      net::EffectiveConnectionType::EFFECTIVE_CONNECTION_TYPE_UNKNOWN;
+
+  // Test with the experiment disabled and verify first optimization allowed.
+  {
+    EXPECT_TRUE(MaybeLoadHintAndCheckIsWhitelisted(
+        GURL("https://www.somedomain.org/experimental_preview/"
+             "not_excluded_case"),
+        PreviewsType::RESOURCE_LOADING_HINTS, &inflation_percent,
+        &ect_threshold));
+
+    std::vector<std::string> patterns_to_block;
+    previews_hints()->GetResourceLoadingHints(
+        GURL("https://www.somedomain.org/experimental_preview/"),
+        &patterns_to_block);
+    EXPECT_EQ(1ul, patterns_to_block.size());
+    EXPECT_EQ("excluded_experiment_resource.js", patterns_to_block[0]);
+  }
+
+  // Now enable the experiment and verify first optimization excluded.
+  {
+    base::test::ScopedFeatureList scoped_list2;
+    scoped_list2.InitAndEnableFeatureWithParameters(
+        features::kOptimizationHintsExperiments,
+        {{"experiment_name", "foo_experiment"}});
+
+    EXPECT_TRUE(MaybeLoadHintAndCheckIsWhitelisted(
+        GURL("https://www.somedomain.org/experimental_preview/"
+             "fallthrough_case"),
+        PreviewsType::RESOURCE_LOADING_HINTS, &inflation_percent,
+        &ect_threshold));
+
+    std::vector<std::string> patterns_to_block;
+    previews_hints()->GetResourceLoadingHints(
+        GURL("https://www.somedomain.org/experimental_preview/"),
+        &patterns_to_block);
+    EXPECT_EQ(1ul, patterns_to_block.size());
+    EXPECT_EQ("fallthrough_resource.js", patterns_to_block[0]);
+  }
+}
+
 TEST_F(PreviewsHintsTest, ParseDuplicateConfigs) {
   base::test::ScopedFeatureList scoped_list;
   scoped_list.InitAndEnableFeature(features::kResourceLoadingHints);
@@ -616,8 +797,6 @@ TEST_F(PreviewsHintsTest, ParseDuplicateConfigs) {
     ParseConfig(config);
     histogram_tester.ExpectUniqueSample("Previews.ProcessHintsResult",
                                         1 /* kProcessedPreviewsHints */, 1);
-    histogram_tester.ExpectUniqueSample(
-        "ResourceLoadingHints.ResourceHints.TotalReceived", 1, 1);
   }
 
   // Test the second time parsing the config. This will be treated by the cache

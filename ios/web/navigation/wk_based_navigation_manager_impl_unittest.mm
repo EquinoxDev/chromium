@@ -11,6 +11,7 @@
 #include "base/strings/sys_string_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/test/metrics/histogram_tester.h"
+#include "ios/web/common/features.h"
 #import "ios/web/navigation/navigation_manager_delegate.h"
 #import "ios/web/navigation/navigation_manager_impl.h"
 #import "ios/web/navigation/wk_navigation_util.h"
@@ -84,6 +85,7 @@ class MockNavigationManagerDelegate : public NavigationManagerDelegate {
                     NavigationItem*,
                     NavigationInitiationType,
                     bool));
+  MOCK_METHOD0(GetPendingItem, NavigationItemImpl*());
 
  private:
   WebState* GetWebState() override { return nullptr; }
@@ -639,9 +641,15 @@ TEST_F(WKBasedNavigationManagerTest, RestoreSessionWithHistory) {
   EXPECT_EQ(url.spec(), pending_item->GetVirtualURL());
   EXPECT_EQ("Test Website 0", base::UTF16ToUTF8(pending_item->GetTitle()));
 
+  std::string testwebui_url = web::features::WebUISchemeHandlingEnabled()
+                                  ? "testwebui://test/"
+                                  : "about:blank?for=testwebui%3A%2F%2Ftest%2F";
+
   EXPECT_EQ("{\"offset\":0,\"titles\":[\"Test Website 0\",\"\"],"
-            "\"urls\":[\"about:blank?for=testwebui%3A%2F%2Ftest%2F\","
-            "\"http://www.1.com/\"]}",
+            "\"urls\":[\"" +
+                testwebui_url +
+                "\","
+                "\"http://www.1.com/\"]}",
             ExtractRestoredSession(pending_url));
 
   // Check that cached visible item is returned.

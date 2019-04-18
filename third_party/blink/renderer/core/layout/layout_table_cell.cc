@@ -214,24 +214,6 @@ void LayoutTableCell::ComputePreferredLogicalWidths() {
   }
 }
 
-void LayoutTableCell::AddLayerHitTestRects(
-    LayerHitTestRects& layer_rects,
-    const PaintLayer* current_layer,
-    const LayoutPoint& layer_offset,
-    TouchAction supported_fast_actions,
-    const LayoutRect& container_rect,
-    TouchAction container_whitelisted_touch_action) const {
-  LayoutPoint adjusted_layer_offset = layer_offset;
-  // LayoutTableCell's location includes the offset of it's containing
-  // LayoutTableRow, so we need to subtract that again here (as for
-  // LayoutTableCell::offsetFromContainer.
-  if (Parent())
-    adjusted_layer_offset -= ParentBox()->LocationOffset();
-  LayoutBox::AddLayerHitTestRects(
-      layer_rects, current_layer, adjusted_layer_offset, supported_fast_actions,
-      container_rect, container_whitelisted_touch_action);
-}
-
 void LayoutTableCell::ComputeIntrinsicPadding(int collapsed_height,
                                               int row_height,
                                               EVerticalAlign vertical_align,
@@ -457,6 +439,9 @@ void LayoutTableCell::StyleDidChange(StyleDifference diff,
 
   LayoutBlockFlow::StyleDidChange(diff, old_style);
   SetHasBoxDecorationBackground(true);
+
+  if (Row() && Section() && Table() && Table()->ShouldCollapseBorders())
+    SetHasNonCollapsedBorderDecoration(false);
 
   if (!old_style)
     return;
@@ -1161,9 +1146,10 @@ void LayoutTableCell::ScrollbarsChanged(bool horizontal_scrollbar_changed,
 
 LayoutTableCell* LayoutTableCell::CreateAnonymous(
     Document* document,
-    scoped_refptr<ComputedStyle> style) {
+    scoped_refptr<ComputedStyle> style,
+    LegacyLayout legacy) {
   LayoutTableCell* layout_object =
-      LayoutObjectFactory::CreateTableCell(*document, *style);
+      LayoutObjectFactory::CreateTableCell(*document, *style, legacy);
   layout_object->SetDocumentForAnonymous(document);
   layout_object->SetStyle(std::move(style));
   return layout_object;
@@ -1174,8 +1160,10 @@ LayoutTableCell* LayoutTableCell::CreateAnonymousWithParent(
   scoped_refptr<ComputedStyle> new_style =
       ComputedStyle::CreateAnonymousStyleWithDisplay(parent->StyleRef(),
                                                      EDisplay::kTableCell);
+  LegacyLayout legacy =
+      parent->ForceLegacyLayout() ? LegacyLayout::kForce : LegacyLayout::kAuto;
   LayoutTableCell* new_cell = LayoutTableCell::CreateAnonymous(
-      &parent->GetDocument(), std::move(new_style));
+      &parent->GetDocument(), std::move(new_style), legacy);
   return new_cell;
 }
 

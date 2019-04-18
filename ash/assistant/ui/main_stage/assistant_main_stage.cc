@@ -251,7 +251,8 @@ void AssistantMainStage::OnViewPreferredSizeChanged(views::View* view) {
   PreferredSizeChanged();
 }
 
-void AssistantMainStage::OnViewVisibilityChanged(views::View* view) {
+void AssistantMainStage::OnViewVisibilityChanged(views::View* view,
+                                                 views::View* starting_view) {
   PreferredSizeChanged();
 }
 
@@ -428,6 +429,9 @@ void AssistantMainStage::OnActivateQuery() {
   using assistant::util::CreateLayerAnimationSequence;
   using assistant::util::CreateOpacityElement;
   using assistant::util::CreateTransformElement;
+
+  if (!committed_query_view_)
+    return;
 
   // Clear the previously active query.
   OnActiveQueryCleared();

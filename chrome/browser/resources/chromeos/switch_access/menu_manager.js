@@ -15,7 +15,7 @@ class MenuManager {
   constructor(navigationManager, desktop) {
     /**
      * A list of the Menu actions that are currently enabled.
-     * @private {!Array<MenuManager.Action>}
+     * @private {!Array<!SAConstants.MenuAction>}
      */
     this.actions_ = [];
 
@@ -69,17 +69,19 @@ class MenuManager {
     }
 
     const actions = this.getActionsForNode_(navNode);
+    // getActionsForNode_ will return null when there is only one interesting
+    // action (selection) specific to this node. In this case, rather than
+    // forcing the user to repeatedly disambiguate, we will simply select by
+    // default.
+    if (actions === null) {
+      this.navigationManager_.selectCurrentNode();
+      return;
+    }
+
     this.inMenu_ = true;
     if (actions !== this.actions_) {
       this.actions_ = actions;
       this.menuPanel_.setActions(this.actions_);
-    }
-
-    const firstNode =
-        this.menuNode().find({role: chrome.automation.RoleType.BUTTON});
-    if (firstNode) {
-      this.node_ = firstNode;
-      this.updateFocusRing_();
     }
 
     if (navNode.location) {
@@ -87,6 +89,16 @@ class MenuManager {
           true, navNode.location, actions.length);
     } else {
       console.log('Unable to show Switch Access menu.');
+    }
+
+    let firstNode =
+        this.menuNode().find({role: chrome.automation.RoleType.BUTTON});
+    while (firstNode && !this.isActionAvailable_(firstNode.htmlAttributes.id))
+      firstNode = firstNode.nextSibling;
+
+    if (firstNode) {
+      this.node_ = firstNode;
+      this.updateFocusRing_();
     }
   }
 
@@ -100,7 +112,7 @@ class MenuManager {
       this.node_ = null;
 
     chrome.accessibilityPrivate.setSwitchAccessMenuState(
-        false, MenuManager.EmptyLocation, 0);
+        false, SAConstants.EMPTY_LOCATION, 0);
   }
 
   /**
@@ -217,16 +229,16 @@ class MenuManager {
   }
 
   /**
-   * Determines which menu actions are relevant, given the current node.
+   * Determines which menu actions are relevant, given the current node. If
+   * there are no node-specific actions, return |null|, to indicate that we
+   * should select the current node automatically.
+   *
    * @param {!chrome.automation.AutomationNode} node
-   * @return {!Array<MenuManager.Action>}
+   * @return {Array<!SAConstants.MenuAction>}
    * @private
    */
   getActionsForNode_(node) {
-    let actions = [MenuManager.Action.SELECT, MenuManager.Action.OPTIONS];
-
-    if (SwitchAccessPredicate.isTextInput(node))
-      actions.push(MenuManager.Action.DICTATION);
+    let actions = [];
 
     let scrollableAncestor = node;
     while (!scrollableAncestor.scrollable && scrollableAncestor.parent)
@@ -234,42 +246,75 @@ class MenuManager {
 
     if (scrollableAncestor.scrollable) {
       if (scrollableAncestor.scrollX > scrollableAncestor.scrollXMin)
-        actions.push(MenuManager.Action.SCROLL_LEFT);
+        actions.push(SAConstants.MenuAction.SCROLL_LEFT);
       if (scrollableAncestor.scrollX < scrollableAncestor.scrollXMax)
-        actions.push(MenuManager.Action.SCROLL_RIGHT);
+        actions.push(SAConstants.MenuAction.SCROLL_RIGHT);
       if (scrollableAncestor.scrollY > scrollableAncestor.scrollYMin)
-        actions.push(MenuManager.Action.SCROLL_UP);
+        actions.push(SAConstants.MenuAction.SCROLL_UP);
       if (scrollableAncestor.scrollY < scrollableAncestor.scrollYMax)
-        actions.push(MenuManager.Action.SCROLL_DOWN);
+        actions.push(SAConstants.MenuAction.SCROLL_DOWN);
     }
-    const standardActions = /** @type {!Array<MenuManager.Action>} */ (
-        node.standardActions.filter(action => action in MenuManager.Action));
+    const standardActions = /** @type {!Array<!SAConstants.MenuAction>} */ (
+        node.standardActions.filter(
+            action => action in SAConstants.MenuAction));
 
-    return actions.concat(standardActions);
+    actions = actions.concat(standardActions);
+
+    if (SwitchAccessPredicate.isTextInput(node)) {
+      actions.push(SAConstants.MenuAction.KEYBOARD);
+      actions.push(SAConstants.MenuAction.DICTATION);
+    } else if (actions.length > 0) {
+      actions.push(SAConstants.MenuAction.SELECT);
+    }
+
+    if (actions.length === 0)
+      return null;
+
+    actions.push(SAConstants.MenuAction.OPTIONS);
+    return actions;
   }
 
   /**
-   * Receive a message from the Switch Access menu, and perform the appropriate
-   * action.
+   * Verify if a specified action is available in the current menu.
+   * @param {!SAConstants.MenuAction} action
+   * @return {boolean}
    * @private
+   */
+  isActionAvailable_(action) {
+    if (!this.inMenu_)
+      return false;
+    return this.actions_.includes(action);
+  }
+
+  /**
+   * Perform a specified action on the Switch Access menu.
+   * @param {!SAConstants.MenuAction} action
    */
   performAction(action) {
     this.exit();
 
-    if (action === MenuManager.Action.SELECT)
-      this.navigationManager_.selectCurrentNode();
-    else if (action === MenuManager.Action.DICTATION)
-      chrome.accessibilityPrivate.toggleDictation();
-    else if (action === MenuManager.Action.OPTIONS)
-      window.switchAccess.showOptionsPage();
-    else if (
-        action === MenuManager.Action.SCROLL_DOWN ||
-        action === MenuManager.Action.SCROLL_UP ||
-        action === MenuManager.Action.SCROLL_LEFT ||
-        action === MenuManager.Action.SCROLL_RIGHT)
-      this.navigationManager_.scroll(action);
-    else
-      this.navigationManager_.performActionOnCurrentNode(action);
+    switch (action) {
+      case SAConstants.MenuAction.SELECT:
+        this.navigationManager_.selectCurrentNode();
+        break;
+      case SAConstants.MenuAction.KEYBOARD:
+        this.navigationManager_.openKeyboard();
+        break;
+      case SAConstants.MenuAction.DICTATION:
+        chrome.accessibilityPrivate.toggleDictation();
+        break;
+      case SAConstants.MenuAction.OPTIONS:
+        window.switchAccess.showOptionsPage();
+        break;
+      case SAConstants.MenuAction.SCROLL_DOWN:
+      case SAConstants.MenuAction.SCROLL_UP:
+      case SAConstants.MenuAction.SCROLL_LEFT:
+      case SAConstants.MenuAction.SCROLL_RIGHT:
+        this.navigationManager_.scroll(action);
+        break;
+      default:
+        this.navigationManager_.performActionOnCurrentNode(action);
+    }
   }
 
   /**
@@ -289,7 +334,12 @@ class MenuManager {
 
     if (!this.inMenu_ || !this.node_)
       return;
-    const id = this.node_.htmlAttributes.id;
+    let id = this.node_.htmlAttributes.id;
+
+    // If the selection will close the menu, highlight the back button.
+    if (id === SAConstants.MENU_ID)
+      id = SAConstants.BACK_ID;
+
     const enable = !opt_clear;
     this.menuPanel_.setFocusRing(id, enable);
   }
@@ -316,43 +366,3 @@ class MenuManager {
     return this.node_;
   }
 }
-
-/**
- * Actions available in the Switch Access Menu.
- * @enum {string}
- * @const
- */
-MenuManager.Action = {
-  DECREMENT: chrome.automation.ActionType.DECREMENT,
-  DICTATION: 'dictation',
-  INCREMENT: chrome.automation.ActionType.INCREMENT,
-  // This opens the Switch Access settings in a new Chrome tab.
-  OPTIONS: 'options',
-  SCROLL_BACKWARD: chrome.automation.ActionType.SCROLL_BACKWARD,
-  SCROLL_DOWN: chrome.automation.ActionType.SCROLL_DOWN,
-  SCROLL_FORWARD: chrome.automation.ActionType.SCROLL_FORWARD,
-  SCROLL_LEFT: chrome.automation.ActionType.SCROLL_LEFT,
-  SCROLL_RIGHT: chrome.automation.ActionType.SCROLL_RIGHT,
-  SCROLL_UP: chrome.automation.ActionType.SCROLL_UP,
-  // This either performs the default action or enters a new scope, as
-  // applicable.
-  SELECT: 'select',
-  SHOW_CONTEXT_MENU: chrome.automation.ActionType.SHOW_CONTEXT_MENU
-};
-
-/**
- * The ID for the div containing the Switch Access menu.
- * @const
- */
-MenuManager.MenuId = 'switchaccess_menu_actions';
-
-/**
- * Empty location, used for hiding the menu.
- * @const
- */
-MenuManager.EmptyLocation = {
-  left: 0,
-  top: 0,
-  width: 0,
-  height: 0
-};

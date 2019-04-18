@@ -35,6 +35,9 @@ namespace chromeos {
 
 namespace {
 
+// Ignore changes to signal strength less than this value for active networks.
+const int kSignalStrengthChangeThreshold = 5;
+
 bool ConnectionStateChanged(const NetworkState* network,
                             const std::string& prev_connection_state,
                             bool prev_is_captive_portal) {
@@ -99,13 +102,16 @@ class NetworkStateHandler::ActiveNetworkState {
       : guid_(network->guid()),
         connection_state_(network->connection_state()),
         activation_state_(network->activation_state()),
-        connect_requested_(network->connect_requested()) {}
+        connect_requested_(network->connect_requested()),
+        signal_strength_(network->signal_strength()) {}
 
   bool MatchesNetworkState(const NetworkState* network) {
     return guid_ == network->guid() &&
            connection_state_ == network->connection_state() &&
            activation_state_ == network->activation_state() &&
-           connect_requested_ == network->connect_requested();
+           connect_requested_ == network->connect_requested() &&
+           (abs(signal_strength_ - network->signal_strength()) <
+            kSignalStrengthChangeThreshold);
   }
 
  private:
@@ -119,6 +125,8 @@ class NetworkStateHandler::ActiveNetworkState {
   const std::string activation_state_;
   // The connect_requested state affects 'connecting' in the UI.
   const bool connect_requested_;
+  // We care about signal strength changes to active networks.
+  const int signal_strength_;
 };
 
 const char NetworkStateHandler::kDefaultCheckPortalList[] =
@@ -1012,15 +1020,21 @@ void NetworkStateHandler::GetDeviceListByType(const NetworkTypePattern& type,
 
 void NetworkStateHandler::RequestScan(const NetworkTypePattern& type) {
   NET_LOG_USER("RequestScan", type.ToDebugString());
-
-  if (type.MatchesType(shill::kTypeWifi)) {
-    shill_property_handler_->RequestScanByType(shill::kTypeWifi);
+  if (type.MatchesPattern(NetworkTypePattern::WiFi())) {
+    if (IsTechnologyEnabled(NetworkTypePattern::WiFi()))
+      shill_property_handler_->RequestScanByType(shill::kTypeWifi);
+    else if (type.Equals(NetworkTypePattern::WiFi()))
+      return;  // Skip notify if disabled and wifi only requested.
   }
-  if (type.Equals(NetworkTypePattern::Primitive(shill::kTypeCellular))) {
+  if (type.Equals(NetworkTypePattern::Cellular())) {
     // Only request a Cellular scan if Cellular is requested explicitly.
-    shill_property_handler_->RequestScanByType(shill::kTypeCellular);
+    if (IsTechnologyEnabled(NetworkTypePattern::Cellular()))
+      shill_property_handler_->RequestScanByType(shill::kTypeCellular);
+    else
+      return;  // Skip notify if disabled and cellular only requested.
   }
 
+  // Note: for Tether we initiate the scan in the observer.
   NotifyScanRequested(type);
 }
 
@@ -1359,6 +1373,7 @@ void NetworkStateHandler::UpdateNetworkServiceProperty(
   if (request_update)
     RequestUpdateForNetwork(service_path);
 
+  bool notify_active = false;
   std::string value_str;
   value.GetAsString(&value_str);
   if (key == shill::kSignalStrengthProperty || key == shill::kWifiBSsid ||
@@ -1372,6 +1387,9 @@ void NetworkStateHandler::UpdateNetworkServiceProperty(
       return;
     // Otherwise do not trigger 'default network changed'.
     notify_default = false;
+    // Notify signal strength changes for active networks.
+    if (key == shill::kSignalStrengthProperty)
+      notify_active = true;
   }
 
   LogPropertyUpdated(network, key, value);
@@ -1379,6 +1397,8 @@ void NetworkStateHandler::UpdateNetworkServiceProperty(
     NotifyNetworkConnectionStateChanged(network);
   if (notify_default)
     NotifyDefaultNetworkChanged();
+  if (notify_active)
+    NotifyIfActiveNetworksChanged();
   NotifyNetworkPropertiesUpdated(network);
   if (sort_networks)
     SortNetworkList(true /* ensure_cellular */);

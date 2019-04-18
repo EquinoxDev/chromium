@@ -15,6 +15,7 @@
 #include "content/common/visual_properties.h"
 #include "content/public/common/common_param_traits.h"
 #include "ipc/ipc_message_macros.h"
+#include "third_party/blink/public/common/frame/occlusion_state.h"
 #include "third_party/blink/public/common/screen_orientation/web_screen_orientation_type.h"
 #include "third_party/blink/public/platform/web_float_point.h"
 #include "third_party/blink/public/platform/web_float_rect.h"
@@ -62,6 +63,7 @@ IPC_STRUCT_TRAITS_BEGIN(content::VisualProperties)
   IPC_STRUCT_TRAITS_MEMBER(capture_sequence_number)
   IPC_STRUCT_TRAITS_MEMBER(zoom_level)
   IPC_STRUCT_TRAITS_MEMBER(page_scale_factor)
+  IPC_STRUCT_TRAITS_MEMBER(is_pinch_gesture_active)
 IPC_STRUCT_TRAITS_END()
 
 // Traits for WebDeviceEmulationParams.
@@ -155,9 +157,10 @@ IPC_MESSAGE_ROUTED0(WidgetMsg_DisableDeviceEmulation)
 IPC_MESSAGE_ROUTED0(WidgetMsg_WasHidden)
 
 // Tells the render view that it is no longer hidden (see WasHidden).
-IPC_MESSAGE_ROUTED2(WidgetMsg_WasShown,
+IPC_MESSAGE_ROUTED3(WidgetMsg_WasShown,
                     base::TimeTicks /* show_request_timestamp */,
-                    bool /* was_evicted */)
+                    bool /* was_evicted */,
+                    base::TimeTicks /* tab_switch_start_time */)
 
 // Activate/deactivate the RenderWidget (i.e., set its controls' tint
 // accordingly, etc.).
@@ -187,11 +190,11 @@ IPC_MESSAGE_ROUTED2(WidgetMsg_UpdateScreenRects,
 IPC_MESSAGE_ROUTED1(WidgetMsg_ForceRedraw, int /* snapshot_id */)
 
 // Sets the viewport intersection and compositor raster area on the widget for
-// an out-of-process iframe.
+// an out-of-process iframe. Also see FrameMsg_UpdateViewportIntersection.
 IPC_MESSAGE_ROUTED3(WidgetMsg_SetViewportIntersection,
                     gfx::Rect /* viewport_intersection */,
                     gfx::Rect /* compositor_visible_rect */,
-                    bool /* occluded or obscured */)
+                    blink::FrameOcclusionState /* occlusion_state */)
 
 // Sent to an OOPIF widget when the browser receives a FrameHostMsg_SetIsInert
 // from the target widget's embedding renderer changing its inertness. When a
@@ -311,13 +314,6 @@ IPC_MESSAGE_ROUTED2(WidgetHostMsg_FrameSwapMessages,
 // Indicates that the render widget has been closed in response to a
 // Close message.
 IPC_MESSAGE_CONTROL1(WidgetHostMsg_Close_ACK, int /* old_route_id */)
-
-// Sent from an inactive renderer for the browser to route to the active
-// renderer, instructing it to close.
-//
-// TODO(http://crbug.com/419087): Move this thing to Frame as it's a signal
-// from a swapped out frame to the mainframe of the frame tree.
-IPC_MESSAGE_ROUTED0(WidgetHostMsg_RouteCloseEvent)
 
 // Sent in reply to WidgetMsg_WaitForNextFrameForTests.
 IPC_MESSAGE_ROUTED0(WidgetHostMsg_WaitForNextFrameForTests_ACK)

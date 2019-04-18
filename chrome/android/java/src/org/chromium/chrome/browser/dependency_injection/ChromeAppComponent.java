@@ -6,8 +6,11 @@ package org.chromium.chrome.browser.dependency_injection;
 
 import org.chromium.chrome.browser.AppHooksModule;
 import org.chromium.chrome.browser.browserservices.ClearDataDialogResultRecorder;
+import org.chromium.chrome.browser.browserservices.TrustedWebActivityClient;
+import org.chromium.chrome.browser.browserservices.permissiondelegation.TrustedWebActivityPermissionManager;
 import org.chromium.chrome.browser.contextual_suggestions.ContextualSuggestionsModule;
 import org.chromium.chrome.browser.contextual_suggestions.EnabledStateMonitor;
+import org.chromium.chrome.browser.customtabs.CustomTabsClientFileProcessor;
 import org.chromium.chrome.browser.customtabs.CustomTabsConnection;
 import org.chromium.chrome.browser.customtabs.dependency_injection.CustomTabActivityComponent;
 import org.chromium.chrome.browser.customtabs.dependency_injection.CustomTabActivityModule;
@@ -34,10 +37,14 @@ public interface ChromeAppComponent {
     CustomTabsConnection resolveCustomTabsConnection();
     ChromePreferenceManager resolvePreferenceManager();
     ClearDataDialogResultRecorder resolveTwaClearDataDialogRecorder();
+    TrustedWebActivityPermissionManager resolveTwaPermissionManager();
+    TrustedWebActivityClient resolveTrustedWebActivityClient();
 
     // Temporary getters for DI migration process. All of these getters
     // should eventually be replaced with constructor injection.
     EnabledStateMonitor resolveContextualSuggestionsEnabledStateMonitor();
 
     ExternalAuthUtils resolveExternalAuthUtils();
+
+    CustomTabsClientFileProcessor resolveCustomTabsFileProcessor();
 }

@@ -72,7 +72,7 @@ bool DOMWindow::IsWindowOrWorkerGlobalScope() const {
 
 Location* DOMWindow::location() const {
   if (!location_)
-    location_ = Location::Create(const_cast<DOMWindow*>(this));
+    location_ = MakeGarbageCollected<Location>(const_cast<DOMWindow*>(this));
   return location_.Get();
 }
 
@@ -132,7 +132,7 @@ void DOMWindow::postMessage(v8::Isolate* isolate,
                             const WindowPostMessageOptions* options,
                             ExceptionState& exception_state) {
   LocalDOMWindow* incumbent_window = IncumbentDOMWindow(isolate);
-  UseCounter::Count(incumbent_window->GetFrame(),
+  UseCounter::Count(incumbent_window->document(),
                     WebFeature::kWindowPostMessage);
 
   Transferables transferables;
@@ -247,21 +247,23 @@ String DOMWindow::CrossDomainAccessErrorMessage(
   // aren't replicated.  For now, construct the URL using the replicated
   // origin for RemoteFrames. If the target frame is remote and sandboxed,
   // there isn't anything else to show other than "null" for its origin.
-  KURL target_url = IsLocalDOMWindow()
-                        ? blink::ToLocalDOMWindow(this)->document()->Url()
+  auto* local_dom_window = DynamicTo<LocalDOMWindow>(this);
+  KURL target_url = local_dom_window
+                        ? local_dom_window->document()->Url()
                         : KURL(NullURL(), target_origin->ToString());
-  if (GetFrame()->GetSecurityContext()->IsSandboxed(kSandboxOrigin) ||
-      accessing_window->document()->IsSandboxed(kSandboxOrigin)) {
+  if (GetFrame()->GetSecurityContext()->IsSandboxed(WebSandboxFlags::kOrigin) ||
+      accessing_window->document()->IsSandboxed(WebSandboxFlags::kOrigin)) {
     message = "Blocked a frame at \"" +
               SecurityOrigin::Create(active_url)->ToString() +
               "\" from accessing a frame at \"" +
               SecurityOrigin::Create(target_url)->ToString() + "\". ";
-    if (GetFrame()->GetSecurityContext()->IsSandboxed(kSandboxOrigin) &&
-        accessing_window->document()->IsSandboxed(kSandboxOrigin))
+    if (GetFrame()->GetSecurityContext()->IsSandboxed(
+            WebSandboxFlags::kOrigin) &&
+        accessing_window->document()->IsSandboxed(WebSandboxFlags::kOrigin))
       return "Sandbox access violation: " + message +
              " Both frames are sandboxed and lack the \"allow-same-origin\" "
              "flag.";
-    if (GetFrame()->GetSecurityContext()->IsSandboxed(kSandboxOrigin))
+    if (GetFrame()->GetSecurityContext()->IsSandboxed(WebSandboxFlags::kOrigin))
       return "Sandbox access violation: " + message +
              " The frame being accessed is sandboxed and lacks the "
              "\"allow-same-origin\" flag.";
@@ -332,7 +334,8 @@ void DOMWindow::Close(LocalDOMWindow* incumbent_window) {
       !allow_scripts_to_close_windows) {
     active_document->domWindow()->GetFrameConsole()->AddMessage(
         ConsoleMessage::Create(
-            kJSMessageSource, kWarningMessageLevel,
+            mojom::ConsoleMessageSource::kJavaScript,
+            mojom::ConsoleMessageLevel::kWarning,
             "Scripts may close only the windows that were opened by it."));
     return;
   }
@@ -341,10 +344,10 @@ void DOMWindow::Close(LocalDOMWindow* incumbent_window) {
     return;
 
   ExecutionContext* execution_context = nullptr;
-  if (IsLocalDOMWindow()) {
-    execution_context = blink::ToLocalDOMWindow(this)->GetExecutionContext();
+  if (auto* local_dom_window = DynamicTo<LocalDOMWindow>(this)) {
+    execution_context = local_dom_window->GetExecutionContext();
   }
-  probe::breakableLocation(execution_context, "DOMWindow.close");
+  probe::BreakableLocation(execution_context, "DOMWindow.close");
 
   page->CloseSoon();
 
@@ -457,25 +460,26 @@ void DOMWindow::DoPostMessage(scoped_refptr<SerializedScriptValue> message,
 
   String source_origin = security_origin->ToString();
 
-  KURL target_url = IsLocalDOMWindow()
-                        ? blink::ToLocalDOMWindow(this)->document()->Url()
+  auto* local_dom_window = DynamicTo<LocalDOMWindow>(this);
+  KURL target_url = local_dom_window
+                        ? local_dom_window->document()->Url()
                         : KURL(NullURL(), GetFrame()
                                               ->GetSecurityContext()
                                               ->GetSecurityOrigin()
                                               ->ToString());
   if (MixedContentChecker::IsMixedContent(source_document->GetSecurityOrigin(),
                                           target_url)) {
-    UseCounter::Count(source->GetFrame(),
+    UseCounter::Count(source_document,
                       WebFeature::kPostMessageFromSecureToInsecure);
   } else if (MixedContentChecker::IsMixedContent(
                  GetFrame()->GetSecurityContext()->GetSecurityOrigin(),
                  source_document->Url())) {
-    UseCounter::Count(source->GetFrame(),
+    UseCounter::Count(source_document,
                       WebFeature::kPostMessageFromInsecureToSecure);
     if (MixedContentChecker::IsMixedContent(
             GetFrame()->Tree().Top().GetSecurityContext()->GetSecurityOrigin(),
             source_document->Url())) {
-      UseCounter::Count(source->GetFrame(),
+      UseCounter::Count(source_document,
                         WebFeature::kPostMessageFromInsecureToSecureToplevel);
     }
   }
@@ -484,16 +488,25 @@ void DOMWindow::DoPostMessage(scoped_refptr<SerializedScriptValue> message,
           target_url, RedirectStatus::kNoRedirect,
           SecurityViolationReportingPolicy::kSuppressReporting)) {
     UseCounter::Count(
-        source->GetFrame(),
+        source_document,
         WebFeature::kPostMessageOutgoingWouldBeBlockedByConnectSrc);
   }
   UserActivation* user_activation = nullptr;
   if (options->includeUserActivation())
     user_activation = UserActivation::CreateSnapshot(source);
 
-  MessageEvent* event =
-      MessageEvent::Create(std::move(channels), std::move(message),
-                           source_origin, String(), source, user_activation);
+  MessageEvent* event = MessageEvent::Create(
+      std::move(channels), std::move(message), source_origin, String(), source,
+      user_activation, options->transferUserActivation());
+
+  // Transfer user activation state in the source's renderer when
+  // |transferUserActivation| is true.
+  LocalFrame* source_frame = source->GetFrame();
+  if (RuntimeEnabledFeatures::UserActivationPostMessageTransferEnabled() &&
+      options->transferUserActivation() &&
+      LocalFrame::HasTransientUserActivation(source_frame)) {
+    GetFrame()->TransferActivationFrom(source_frame);
+  }
 
   SchedulePostMessage(event, std::move(target), source_document);
 }

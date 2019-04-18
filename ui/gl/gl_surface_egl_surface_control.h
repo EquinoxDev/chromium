@@ -86,7 +86,8 @@ class GL_EXPORT GLSurfaceEGLSurfaceControl : public GLSurfaceEGL {
 
   struct SurfaceState {
     SurfaceState();
-    explicit SurfaceState(const SurfaceControl::Surface& parent);
+    SurfaceState(const SurfaceControl::Surface& parent,
+                 const std::string& name);
     ~SurfaceState();
 
     SurfaceState(SurfaceState&& other);
@@ -98,6 +99,7 @@ class GL_EXPORT GLSurfaceEGLSurfaceControl : public GLSurfaceEGL {
     gfx::Rect src;
     gfx::OverlayTransform transform = gfx::OVERLAY_TRANSFORM_NONE;
     bool opaque = true;
+    gfx::ColorSpace color_space;
 
     // Indicates whether buffer for this layer was updated in the currently
     // pending transaction, or the last transaction submitted if there isn't
@@ -131,31 +133,31 @@ class GL_EXPORT GLSurfaceEGLSurfaceControl : public GLSurfaceEGL {
       ResourceRefs released_resources,
       SurfaceControl::TransactionStats transaction_stats);
 
+  const std::string root_surface_name_;
+  const std::string child_surface_name_;
+
   // The rect of the native window backing this surface.
   gfx::Rect window_rect_;
 
   // Holds the surface state changes made since the last call to SwapBuffers.
   base::Optional<SurfaceControl::Transaction> pending_transaction_;
-
-  // The list of Surfaces and the corresponding state. The initial
-  // |pending_surfaces_count_| surfaces in this list are surfaces with state
-  // mutated since the last SwapBuffers with the updates collected in
-  // |pending_transaction_|.
-  // On the next SwapBuffers, the updates in the transaction are applied
-  // atomically and any surfaces in |surface_list_| which are not reused in this
-  // frame are destroyed.
-  std::vector<SurfaceState> surface_list_;
   size_t pending_surfaces_count_ = 0u;
-
   // Resources in the pending frame, for which updates are being
   // collected in |pending_transaction_|. These are resources for which the
   // pending transaction has a ref but they have not been applied and
   // transferred to the framework.
   ResourceRefs pending_frame_resources_;
 
-  // Resources in the current frame sent to the framework. The
-  // framework is assumed to retain ownership of these resources until the next
-  // frame update.
+  // Transactions waiting to be applied once the previous transaction is acked.
+  std::queue<SurfaceControl::Transaction> pending_transaction_queue_;
+
+  // The list of Surfaces and the corresponding state based on the most recent
+  // updates.
+  std::vector<SurfaceState> surface_list_;
+
+  // Resources in the previous transaction sent or queued to be sent to the
+  // framework. The framework is assumed to retain ownership of these resources
+  // until the next frame update.
   ResourceRefs current_frame_resources_;
 
   // The root surface tied to the ANativeWindow that places the content of this
@@ -164,6 +166,9 @@ class GL_EXPORT GLSurfaceEGLSurfaceControl : public GLSurfaceEGL {
 
   // The last context made current with this surface.
   scoped_refptr<GLContext> context_;
+
+  // Set if a transaction was applied and we are waiting for it to be acked.
+  bool transaction_ack_pending_ = false;
 
   scoped_refptr<base::SingleThreadTaskRunner> gpu_task_runner_;
   base::WeakPtrFactory<GLSurfaceEGLSurfaceControl> weak_factory_;

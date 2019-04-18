@@ -71,17 +71,38 @@ class FakeModuleInstallerBackend extends ModuleInstallerBackend {
     private boolean installInternal(String moduleName) {
         Context context = ContextUtils.getApplicationContext();
         int versionCode = BuildInfo.getInstance().versionCode;
+
         // Get list of all files at path where SplitCompat looks for downloaded modules.
         // May change in future releases of the Play Core SDK.
-        File[] srcModuleFiles = new File(MODULES_SRC_DIRECTORY_PATH).listFiles();
+        File srcModuleDir = new File(MODULES_SRC_DIRECTORY_PATH);
+        if (!srcModuleDir.exists()) {
+            Log.e(TAG, "Modules source directory does not exist");
+            return false;
+        }
+        if (!srcModuleDir.canRead()) {
+            Log.e(TAG, "Cannot read modules source directory");
+            return false;
+        }
+        if (!srcModuleDir.isDirectory()) {
+            Log.e(TAG, "Modules source directory is not a directory");
+            return false;
+        }
+        File[] srcModuleFiles = srcModuleDir.listFiles();
+        if (srcModuleFiles == null) {
+            Log.e(TAG, "Cannot get list of files in modules source directory");
+            return false;
+        }
+
+        // Check if any apks for the module are actually installed.
+        boolean no_module_apks_installed = true;
 
         for (File srcModuleFile : srcModuleFiles) {
-            // Take only source APK files.
-            if (srcModuleFile.getName().endsWith(".apk")) {
+            // Take only source APK files of the specified module.
+            String srcModuleFileName = srcModuleFile.getName();
+            if (srcModuleFileName.endsWith(".apk") && srcModuleFileName.startsWith(moduleName)) {
                 // Construct destination file corresponding to each source file.
                 File dstModuleFile = joinPaths(context.getFilesDir().getPath(), "splitcompat",
-                        Integer.toString(versionCode), "unverified-splits",
-                        srcModuleFile.getName());
+                        Integer.toString(versionCode), "unverified-splits", srcModuleFileName);
 
                 // NOTE: Need to give Chrome storage permission for this to work.
                 try {
@@ -95,11 +116,21 @@ class FakeModuleInstallerBackend extends ModuleInstallerBackend {
                         FileOutputStream ostream = new FileOutputStream(dstModuleFile)) {
                     ostream.getChannel().transferFrom(
                             istream.getChannel(), 0, istream.getChannel().size());
+                    if (srcModuleFileName.equals(moduleName + ".apk")) {
+                        // Base apk of the module must be installed for install
+                        // to be successful.
+                        no_module_apks_installed = false;
+                    }
                 } catch (RuntimeException | IOException e) {
                     Log.e(TAG, "Failed to install module apk %s", dstModuleFile.getName(), e);
                     return false;
                 }
             }
+        }
+
+        if (no_module_apks_installed) {
+            Log.e(TAG, "Did not find any module APKs");
+            return false;
         }
 
         // Check that the module's signature matches Chrome's.

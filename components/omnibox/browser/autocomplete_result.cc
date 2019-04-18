@@ -22,9 +22,9 @@
 #include "components/omnibox/browser/autocomplete_provider.h"
 #include "components/omnibox/browser/autocomplete_provider_client.h"
 #include "components/omnibox/browser/match_compare.h"
-#include "components/omnibox/browser/omnibox_field_trial.h"
 #include "components/omnibox/browser/omnibox_pedal.h"
 #include "components/omnibox/browser/omnibox_pedal_provider.h"
+#include "components/omnibox/common/omnibox_features.h"
 #include "components/strings/grit/components_strings.h"
 #include "components/url_formatter/url_fixer.h"
 #include "third_party/metrics_proto/omnibox_event.pb.h"
@@ -461,11 +461,14 @@ void AutocompleteResult::SortAndDedupMatches(
     // For each duplicate match, append its duplicates to that of the best
     // match, then append it, before we erase it.
     for (auto i = std::next(best_match); i != duplicate_matches.end(); ++i) {
-      (*best_match)->duplicate_matches.insert(
-          (*best_match)->duplicate_matches.end(),
-          (*i)->duplicate_matches.begin(),
-          (*i)->duplicate_matches.end());
-      (*best_match)->duplicate_matches.push_back(**i);
+      auto& match = **i;
+      for (auto& dup_match : match.duplicate_matches)
+        (*best_match)->duplicate_matches.push_back(std::move(dup_match));
+      // Erase the duplicates before copying it. We don't need them any more.
+      match.duplicate_matches.erase(match.duplicate_matches.begin(),
+                                    match.duplicate_matches.end());
+      // Copy, don't move, because we need these below.
+      (*best_match)->duplicate_matches.push_back(match);
     }
   }
 
@@ -518,8 +521,8 @@ std::list<ACMatches::iterator>::iterator AutocompleteResult::BetterMatch(
   CompareWithDemoteByType<AutocompleteMatch> compare_demote_by_type(
       page_classification);
 
-  // The following logic enforces two constraints we care about regarding the
-  // the characteristics of the candidate matches.
+  // The following logic enforces constraints we care about regarding the
+  // the characteristics of the candidate matches. In order of priority:
   //
   // Entity suggestions:
   //   Entity suggestions are always preferred over non-entity suggestions,
@@ -538,6 +541,11 @@ std::list<ACMatches::iterator>::iterator AutocompleteResult::BetterMatch(
   // Note that together these two constraints enforce an overall constraint,
   // that if either candidate has allowed_to_be_default_match = true, the match
   // which is preferred will always have allowed_to_be_default_match = true.
+  //
+  // Document suggestions:
+  //   The icon and display of document suggestions are preferred over
+  //   history, bookmark, etc. items. The actual URLs may be different, but
+  //   logically dedupe to the same entity to which we'll navigate.
   if ((*first)->type == ACMatchType::SEARCH_SUGGEST_ENTITY &&
       (*second)->type != ACMatchType::SEARCH_SUGGEST_ENTITY &&
       (*first)->fill_into_edit == (*second)->fill_into_edit) {
@@ -564,6 +572,14 @@ std::list<ACMatches::iterator>::iterator AutocompleteResult::BetterMatch(
     non_preferred_match = second;
   } else if ((*second)->allowed_to_be_default_match &&
              !(*first)->allowed_to_be_default_match) {
+    preferred_match = second;
+    non_preferred_match = first;
+  } else if ((*first)->type == ACMatchType::DOCUMENT_SUGGESTION &&
+             (*second)->type != ACMatchType::DOCUMENT_SUGGESTION) {
+    preferred_match = first;
+    non_preferred_match = second;
+  } else if ((*first)->type != ACMatchType::DOCUMENT_SUGGESTION &&
+             (*second)->type == ACMatchType::DOCUMENT_SUGGESTION) {
     preferred_match = second;
     non_preferred_match = first;
   } else {
@@ -611,7 +627,9 @@ void AutocompleteResult::MaybeCullTailSuggestions(ACMatches* matches) {
   // unlikely, as we normally would expect the search-what-you-typed suggestion
   // as a default match (and that's a non-tail suggestion).
   if (non_tail_default == matches->end()) {
-    base::EraseIf(*matches, std::not1(is_tail));
+    base::EraseIf(*matches, [&is_tail](const AutocompleteMatch& match) {
+      return !is_tail(match);
+    });
     return;
   }
   // Determine if there are both tail and non-tail matches, excluding the
@@ -686,7 +704,7 @@ void AutocompleteResult::MergeMatchesByProvider(
       AutocompleteMatch match = *i;
       match.relevance = std::min(max_relevance, match.relevance);
       match.from_previous = true;
-      matches_.push_back(match);
+      matches_.push_back(std::move(match));
       delta--;
     }
   }

@@ -59,6 +59,16 @@ constexpr char kAppListPeekingToFullscreenHistogram[] =
 // The UMA histogram that logs how the app list is shown.
 constexpr char kAppListToggleMethodHistogram[] = "Apps.AppListShowSource";
 
+// The UMA histogram that logs the index launched item in the results list and
+// the query length.
+constexpr char kAppListResultLaunchIndexAndQueryLength[] =
+    "Apps.AppListResultLaunchIndexAndQueryLength";
+
+// The UMA histogram that logs the index launched item in the app tile list and
+// the query length.
+constexpr char kAppListTileLaunchIndexAndQueryLength[] =
+    "Apps.AppListTileLaunchIndexAndQueryLength";
+
 // The UMA histogram that logs which page gets opened by the user.
 constexpr char kPageOpenedHistogram[] = "Apps.AppListPageOpened";
 
@@ -174,19 +184,32 @@ enum AppListPageSwitcherSource {
   kMouseWheelScroll = 4,
   kMousePadScroll = 5,
   kDragAppToBorder = 6,
-  kMaxAppListPageSwitcherSource = 7,
+  kMoveAppWithKeyboard = 7,
+  kMaxAppListPageSwitcherSource = 8,
 };
 
 // The different ways to move an app in app list's apps grid. These values are
 // written to logs. New enum values can be added, but existing enums must never
 // be renumbered or deleted and reused.
 enum AppListAppMovingType {
-  kMoveIntoFolder = 0,
-  kMoveOutOfFolder = 1,
+  kMoveByDragIntoFolder = 0,
+  kMoveByDragOutOfFolder = 1,
   kMoveIntoAnotherFolder = 2,
-  kReorderInFolder = 3,
-  kReorderInTopLevel = 4,
-  kMaxAppListAppMovingType = 5,
+  kReorderByDragInFolder = 3,
+  kReorderByDragInTopLevel = 4,
+  kReorderByKeyboardInFolder = 5,
+  kReorderByKeyboardInTopLevel = 6,
+  kMoveByKeyboardIntoFolder = 7,
+  kMoveByKeyboardOutOfFolder = 8,
+  kMaxAppListAppMovingType = 9,
+};
+
+// Different places a search result can be launched from. These values do not
+// persist to logs, so can be changed as-needed. However, changes should be
+// reflected in RecordSearchLaunchIndexAndQueryLength().
+enum SearchResultLaunchLocation {
+  kResultList = 0,
+  kTileList = 1,
 };
 
 void RecordFolderShowHideAnimationSmoothness(int actual_frames,
@@ -195,7 +218,8 @@ void RecordFolderShowHideAnimationSmoothness(int actual_frames,
 
 void RecordPaginationAnimationSmoothness(int actual_frames,
                                          int ideal_duration_ms,
-                                         float refresh_rate);
+                                         float refresh_rate,
+                                         bool is_tablet_mode);
 
 void RecordZeroStateSearchResultUserActionHistogram(
     ZeroStateSearchResultUserActionType action);
@@ -203,10 +227,18 @@ void RecordZeroStateSearchResultUserActionHistogram(
 void RecordZeroStateSearchResultRemovalHistogram(
     ZeroStateSearchResutRemovalConfirmation removal_decision);
 
+APP_LIST_EXPORT void RecordSearchAbandonWithQueryLengthHistogram(
+    int query_length);
+
 APP_LIST_EXPORT void RecordSearchResultOpenSource(
     const SearchResult* result,
     const AppListModel* model,
     const SearchModel* search_model);
+
+APP_LIST_EXPORT void RecordSearchLaunchIndexAndQueryLength(
+    SearchResultLaunchLocation launch_location,
+    int query_length,
+    int suggestion_index);
 
 }  // namespace app_list
 

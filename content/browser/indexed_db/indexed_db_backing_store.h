@@ -30,6 +30,7 @@
 #include "content/browser/indexed_db/indexed_db_pre_close_task_queue.h"
 #include "content/browser/indexed_db/leveldb/leveldb_iterator.h"
 #include "content/browser/indexed_db/leveldb/leveldb_transaction.h"
+#include "content/browser/indexed_db/scopes/disjoint_range_lock_manager.h"
 #include "content/common/content_export.h"
 #include "storage/browser/blob/blob_data_handle.h"
 #include "third_party/blink/public/common/indexeddb/indexeddb_key.h"
@@ -380,6 +381,9 @@ class CONTENT_EXPORT IndexedDBBackingStore
 
     DISALLOW_COPY_AND_ASSIGN(Cursor);
   };
+
+  enum class Mode { kInMemory, kOnDisk };
+
   // Schedule an immediate blob journal cleanup if we reach this number of
   // requests.
   static constexpr const int kMaxJournalCleanRequests = 50;
@@ -391,7 +395,8 @@ class CONTENT_EXPORT IndexedDBBackingStore
   static constexpr const base::TimeDelta kInitialJournalCleaningWindowTime =
       base::TimeDelta::FromSeconds(2);
 
-  IndexedDBBackingStore(IndexedDBFactory* indexed_db_factory,
+  IndexedDBBackingStore(Mode backing_store_mode,
+                        IndexedDBFactory* indexed_db_factory,
                         const url::Origin& origin,
                         const base::FilePath& blob_path,
                         std::unique_ptr<LevelDBDatabase> db,
@@ -568,15 +573,18 @@ class CONTENT_EXPORT IndexedDBBackingStore
   // an otherwise healthy backing store.
   leveldb::Status RevertSchemaToV2();
 
+  bool is_incognito() const { return backing_store_mode_ == Mode::kInMemory; }
+
   base::WeakPtr<IndexedDBBackingStore> AsWeakPtr() {
     return weak_factory_.GetWeakPtr();
   }
+
+  DisjointRangeLockManager* lock_manager() { return &lock_manager_; }
 
  protected:
   friend class base::RefCounted<IndexedDBBackingStore>;
   virtual ~IndexedDBBackingStore();
 
-  bool is_incognito() const { return !indexed_db_factory_; }
 
   leveldb::Status AnyDatabaseContainsBlobs(LevelDBTransaction* transaction,
                                            bool* blobs_exist);
@@ -633,6 +641,7 @@ class CONTENT_EXPORT IndexedDBBackingStore
   // Can run a journal cleaning job if one is pending.
   void DidCommitTransaction();
 
+  Mode backing_store_mode_;
   IndexedDBFactory* indexed_db_factory_;
   const url::Origin origin_;
   base::FilePath blob_path_;
@@ -669,6 +678,9 @@ class CONTENT_EXPORT IndexedDBBackingStore
   // complete. While > 0, temporary journal entries may exist so out-of-band
   // journal cleaning must be deferred.
   size_t committing_transaction_count_;
+
+  DisjointRangeLockManager lock_manager_ = {kIndexedDBLockLevelCount};
+
 #if DCHECK_IS_ON()
   bool initialized_ = false;
 #endif

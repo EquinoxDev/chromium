@@ -143,6 +143,9 @@ const char kGoogleAccountActivityControlsURL[] =
 
 const char kGoogleAccountURL[] = "https://myaccount.google.com";
 
+const char kGoogleAccountChooserURL[] =
+    "https://accounts.google.com/AccountChooser";
+
 const char kGooglePasswordManagerURL[] = "https://passwords.google.com";
 
 const char kLearnMoreReportingURL[] =
@@ -153,9 +156,8 @@ const char kLegacySupervisedUserManagementDisplayURL[] =
 const char kLegacySupervisedUserManagementURL[] =
     "https://www.chrome.com/manage";
 
-// TODO(nicolaso): Replace with a p-link once it's ready. b/117655761
 const char kManagedUiLearnMoreUrl[] =
-    "https://support.google.com/chromebook/answer/1331549";
+    "https://support.google.com/chromebook/?p=is_chrome_managed";
 
 const char kMyActivityUrlInClearBrowsingData[] =
     "https://myactivity.google.com/myactivity/?utm_source=chrome_cbd";

@@ -51,6 +51,9 @@ DirectContextProvider::DirectContextProvider(
                                        command_buffer->service(), &outputter_,
                                        group.get()));
 
+  if (gpu_preferences.enable_gpu_service_logging)
+    decoder->SetLogCommands(true);
+
   command_buffer->set_handler(decoder.get());
 
   gpu::ContextCreationAttribs attribs;
@@ -100,6 +103,10 @@ DirectContextProvider::DirectContextProvider(
 
   base::trace_event::MemoryDumpManager::GetInstance()->RegisterDumpProvider(
       this, "viz::DirectContextProvider", base::ThreadTaskRunnerHandle::Get());
+
+  // TraceEndCHROMIUM is implicit when the context is destroyed
+  gles2_implementation_->TraceBeginCHROMIUM("VizCompositor",
+                                            "DisplayCompositor");
 }
 
 DirectContextProvider::~DirectContextProvider() {
@@ -133,10 +140,12 @@ void DirectContextProvider::SetGLRendererCopierRequiredState(
   // Get into known state (see
   // SkiaOutputSurfaceImplOnGpu::ScopedUseContextProvider).
   gles2_implementation_->BindFramebuffer(GL_FRAMEBUFFER, 0);
-  gles2_implementation_->Disable(GL_SCISSOR_TEST);
-  gles2_implementation_->Disable(GL_STENCIL_TEST);
-  gles2_implementation_->Disable(GL_BLEND);
-  gles2_implementation_->ActiveTexture(GL_TEXTURE0);
+
+  decoder_->RestoreActiveTexture();
+  decoder_->RestoreProgramBindings();
+  decoder_->RestoreAllAttributes();
+  decoder_->RestoreGlobalState();
+  decoder_->RestoreBufferBindings();
 
   if (texture_client_id) {
     if (!framebuffer_id_)

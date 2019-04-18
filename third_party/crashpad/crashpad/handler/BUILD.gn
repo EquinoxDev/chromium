@@ -84,7 +84,7 @@ static_library("handler") {
   }
 
   if (crashpad_is_fuchsia) {
-    deps += [ "../third_party/fuchsia:zx" ]
+    deps += [ "../third_party/fuchsia" ]
   }
 }
 
@@ -165,6 +165,23 @@ if (crashpad_is_android) {
     outputs = [
       "$root_out_dir/libcrashpad_handler.so",
     ]
+  }
+
+  crashpad_executable("crashpad_handler_trampoline") {
+    set_sources_assignment_filter([])
+    output_name = "libcrashpad_handler_trampoline.so"
+
+    sources = [
+      "linux/handler_trampoline.cc",
+    ]
+
+    ldflags = [ "-llog" ]
+
+    if (crashpad_is_in_chromium) {
+      no_default_deps = true
+    }
+    remove_configs =
+        [ "//build/config/android:default_orderfile_instrumentation" ]
   }
 }
 

@@ -6,6 +6,8 @@
 
 #include <fuchsia/io/cpp/fidl.h>
 
+#include "base/fuchsia/file_utils.h"
+
 namespace base {
 namespace fuchsia {
 
@@ -18,7 +20,7 @@ StartupContext::StartupContext(::fuchsia::sys::StartupInfo startup_info)
 
   // Find the /svc directory and wrap it into a ServiceDirectoryClient.
   for (size_t i = 0; i < startup_info_.flat_namespace.paths.size(); ++i) {
-    if (startup_info_.flat_namespace.paths[i] == "/svc") {
+    if (startup_info_.flat_namespace.paths[i] == kServiceDirectoryPath) {
       incoming_services_ = std::make_unique<ServiceDirectoryClient>(
           fidl::InterfaceHandle<::fuchsia::io::Directory>(
               std::move(startup_info_.flat_namespace.directories[i])));
@@ -28,13 +30,14 @@ StartupContext::StartupContext(::fuchsia::sys::StartupInfo startup_info)
 <<<<<<< HEAD
 =======
 
-  // TODO(https://crbug.com/933834): Remove this workaround when we migrate to
+  // TODO(https://crbug.com/933834): Remove these workarounds when we migrate to
   // the new component manager.
   if (!incoming_services_ && startup_info_.launch_info.flat_namespace) {
     LOG(WARNING) << "Falling back to LaunchInfo namespace";
     for (size_t i = 0;
          i < startup_info_.launch_info.flat_namespace->paths.size(); ++i) {
-      if (startup_info_.launch_info.flat_namespace->paths[i] == "/svc") {
+      if (startup_info_.launch_info.flat_namespace->paths[i] ==
+          kServiceDirectoryPath) {
         incoming_services_ = std::make_unique<ServiceDirectoryClient>(
             fidl::InterfaceHandle<::fuchsia::io::Directory>(std::move(
                 startup_info_.launch_info.flat_namespace->directories[i])));
@@ -42,12 +45,36 @@ StartupContext::StartupContext(::fuchsia::sys::StartupInfo startup_info)
       }
     }
   }
+<<<<<<< HEAD
 >>>>>>> 1edcc2f128d290860af09401391ae79df290b5f3
+=======
+  if (!incoming_services_ && startup_info_.launch_info.additional_services) {
+    LOG(WARNING) << "Falling back to additional ServiceList services";
+
+    // Construct a ServiceDirectory and publish the additional services into it.
+    fidl::InterfaceHandle<::fuchsia::io::Directory> incoming_directory;
+    additional_services_.Bind(
+        std::move(startup_info_.launch_info.additional_services->provider));
+    additional_services_directory_ =
+        std::make_unique<ServiceDirectory>(incoming_directory.NewRequest());
+    for (auto& name : startup_info_.launch_info.additional_services->names) {
+      additional_services_directory_->AddServiceUnsafe(
+          name, base::BindRepeating(
+                    &::fuchsia::sys::ServiceProvider::ConnectToService,
+                    base::Unretained(additional_services_.get()), name));
+    }
+
+    // Publish those services to the caller as |incoming_services_|.
+    incoming_services_ = std::make_unique<ServiceDirectoryClient>(
+        fidl::InterfaceHandle<::fuchsia::io::Directory>(
+            std::move(incoming_directory)));
+  }
+>>>>>>> 2d57e5b8afc6d01b344a8d95d3470d46b35845c5
 }
 
 StartupContext::~StartupContext() = default;
 
-base::fuchsia::ServiceDirectory* StartupContext::public_services() {
+ServiceDirectory* StartupContext::public_services() {
   if (!public_services_ && startup_info_.launch_info.directory_request) {
     public_services_ = std::make_unique<ServiceDirectory>(
         fidl::InterfaceRequest<::fuchsia::io::Directory>(

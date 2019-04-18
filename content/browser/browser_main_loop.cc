@@ -39,7 +39,7 @@
 #include "base/synchronization/waitable_event.h"
 #include "base/system/system_monitor.h"
 #include "base/task/post_task.h"
-#include "base/task/task_scheduler/initialization_util.h"
+#include "base/task/thread_pool/initialization_util.h"
 #include "base/threading/thread.h"
 #include "base/threading/thread_restrictions.h"
 #include "base/threading/thread_task_runner_handle.h"
@@ -99,7 +99,7 @@
 #include "content/browser/webui/url_data_manager.h"
 #include "content/common/content_switches_internal.h"
 #include "content/common/service_manager/service_manager_connection_impl.h"
-#include "content/common/task_scheduler.h"
+#include "content/common/thread_pool_util.h"
 #include "content/public/browser/browser_main_parts.h"
 #include "content/public/browser/browser_task_traits.h"
 #include "content/public/browser/browser_thread.h"
@@ -145,7 +145,7 @@
 #include "sql/sql_memory_dump_provider.h"
 #include "ui/base/clipboard/clipboard.h"
 #include "ui/base/ui_base_features.h"
-#include "ui/display/display_switches.h"
+#include "ui/display/display_features.h"
 #include "ui/gfx/font_render_params.h"
 #include "ui/gfx/switches.h"
 
@@ -180,6 +180,7 @@
 #include "content/browser/renderer_host/browser_compositor_view_mac.h"
 #include "content/browser/theme_helper_mac.h"
 #include "ui/accelerated_widget_mac/window_resize_helper_mac.h"
+#include "ui/base/now_playing/remote_command_center_delegate.h"
 #endif
 
 #if defined(OS_WIN)
@@ -301,10 +302,6 @@ static void SetUpGLibLogHandler() {
   }
 }
 #endif  // defined(USE_GLIB)
-
-void OnStoppedStartupTracing(const base::FilePath& trace_file) {
-  VLOG(0) << "Completed startup tracing to " << trace_file.value();
-}
 
 // Tell compiler not to inline this function so it's possible to tell what
 // thread was unresponsive by inspecting the callstack.
@@ -515,6 +512,17 @@ BrowserMainLoop* g_current_browser_main_loop = nullptr;
 
 #if defined(OS_ANDROID)
 bool g_browser_main_loop_shutting_down = false;
+
+namespace {
+// Whether or not BrowserMainLoop::CreateStartupTasks() posts any tasks.
+bool g_post_startup_tasks = true;
+}  // namespace
+
+// static
+void BrowserMainLoop::EnableStartupTasks(bool enabled) {
+  g_post_startup_tasks = enabled;
+}
+
 #endif
 
 // BrowserMainLoop construction / destruction =============================
@@ -531,7 +539,7 @@ media::AudioManager* BrowserMainLoop::GetAudioManager() {
 
 BrowserMainLoop::BrowserMainLoop(
     const MainFunctionParams& parameters,
-    std::unique_ptr<base::TaskScheduler::ScopedExecutionFence>
+    std::unique_ptr<base::ThreadPool::ScopedExecutionFence>
         scoped_execution_fence)
     : parameters_(parameters),
       parsed_command_line_(parameters.command_line),
@@ -540,11 +548,11 @@ BrowserMainLoop::BrowserMainLoop(
       scoped_execution_fence_(std::move(scoped_execution_fence)) {
   DCHECK(!g_current_browser_main_loop);
   DCHECK(scoped_execution_fence_)
-      << "TaskScheduler must be halted before kicking off content.";
+      << "ThreadPool must be halted before kicking off content.";
   g_current_browser_main_loop = this;
 
-  if (GetContentClient()->browser()->ShouldCreateTaskScheduler()) {
-    DCHECK(base::TaskScheduler::GetInstance());
+  if (GetContentClient()->browser()->ShouldCreateThreadPool()) {
+    DCHECK(base::ThreadPool::GetInstance());
   }
 }
 
@@ -617,7 +625,7 @@ int BrowserMainLoop::EarlyInitialization() {
       return pre_early_init_error_code;
   }
 
-#if defined(OS_ANDROID) || defined(OS_CHROMEOS)
+#if defined(OS_ANDROID) || defined(OS_CHROMEOS) || defined(USE_OZONE)
   // Up the priority of the UI thread unless it was already high (since recent
   // versions of Android (O+) do this automatically).
   if (base::PlatformThread::GetCurrentThreadPriority() <
@@ -790,7 +798,10 @@ void BrowserMainLoop::PostMainMessageLoopStart() {
       skia::SkiaMemoryDumpProvider::GetInstance(), "Skia", nullptr);
   base::trace_event::MemoryDumpManager::GetInstance()->RegisterDumpProvider(
       sql::SqlMemoryDumpProvider::GetInstance(), "Sql", nullptr);
+#if !defined(OS_CHROMEOS)
+  // Chrome Remote Desktop needs TransitionalURLLoaderFactoryOwner on ChromeOS.
   network::TransitionalURLLoaderFactoryOwner::DisallowUsageInProcess();
+#endif
 }
 
 int BrowserMainLoop::PreCreateThreads() {
@@ -868,9 +879,15 @@ void BrowserMainLoop::CreateStartupTasks() {
 
   DCHECK(!startup_task_runner_);
 #if defined(OS_ANDROID)
+  // Some java scheduler tests need to test migration to C++, but the browser
+  // environment isn't set up fully and if these tasks run they may crash.
+  if (!g_post_startup_tasks)
+    return;
+
   startup_task_runner_ = std::make_unique<StartupTaskRunner>(
       base::BindOnce(&BrowserStartupComplete),
-      base::ThreadTaskRunnerHandle::Get());
+      base::CreateSingleThreadTaskRunnerWithTraits(
+          {BrowserThread::UI, BrowserTaskType::kBootstrap}));
 #else
   startup_task_runner_ = std::make_unique<StartupTaskRunner>(
       base::OnceCallback<void(int)>(), base::ThreadTaskRunnerHandle::Get());
@@ -933,7 +950,7 @@ void BrowserMainLoop::SynchronouslyFlushStartupTasks() {
 int BrowserMainLoop::CreateThreads() {
   TRACE_EVENT0("startup,rail", "BrowserMainLoop::CreateThreads");
 
-  // Release the TaskScheduler's threads.
+  // Release the ThreadPool's threads.
   scoped_execution_fence_.reset();
 
   // The |io_thread| can have optionally been injected into Init(), but if not,
@@ -961,8 +978,11 @@ int BrowserMainLoop::PostCreateThreads() {
 
 int BrowserMainLoop::PreMainMessageLoopRun() {
 #if defined(OS_ANDROID)
+  bool use_display_wide_color_gamut =
+      GetContentClient()->browser()->GetWideColorGamutHeuristic() ==
+      ContentBrowserClient::WideColorGamutHeuristic::kUseDisplay;
   // Let screen instance be overridable by parts.
-  ui::SetScreenAndroid();
+  ui::SetScreenAndroid(use_display_wide_color_gamut);
 #endif
 
   if (parts_) {
@@ -1011,7 +1031,7 @@ void BrowserMainLoop::ShutdownThreadsAndCleanUp() {
   // Also allow waiting to join threads.
   // TODO(https://crbug.com/800808): Ideally this (and the above SetIOAllowed()
   // would be scoped allowances). That would be one of the first step to ensure
-  // no persistent work is being done after TaskScheduler::Shutdown() in order
+  // no persistent work is being done after ThreadPool::Shutdown() in order
   // to move towards atomic shutdown.
   base::ThreadRestrictions::SetWaitAllowed(true);
   base::PostTaskWithTraits(
@@ -1099,8 +1119,8 @@ void BrowserMainLoop::ShutdownThreadsAndCleanUp() {
   }
 
   {
-    TRACE_EVENT0("shutdown", "BrowserMainLoop::Subsystem:TaskScheduler");
-    base::TaskScheduler::GetInstance()->Shutdown();
+    TRACE_EVENT0("shutdown", "BrowserMainLoop::Subsystem:ThreadPool");
+    base::ThreadPool::GetInstance()->Shutdown();
   }
 
   // Must happen after the IO thread is shutdown since this may be accessed from
@@ -1176,10 +1196,6 @@ void BrowserMainLoop::GetCompositingModeReporter(
 
   compositing_mode_reporter_impl_->BindRequest(std::move(request));
 #endif
-}
-
-void BrowserMainLoop::StopStartupTracingTimer() {
-  startup_trace_timer_.Stop();
 }
 
 void BrowserMainLoop::InitializeMainThread() {
@@ -1262,7 +1278,7 @@ int BrowserMainLoop::BrowserThreadsStarted() {
     compositing_mode_reporter_impl_ =
         std::make_unique<viz::CompositingModeReporterImpl>();
 
-    if (base::FeatureList::IsEnabled(features::kVizDisplayCompositor)) {
+    if (features::IsVizDisplayCompositorEnabled()) {
       auto transport_factory = std::make_unique<VizProcessTransportFactory>(
           BrowserGpuChannelHostFactory::instance(), GetResizeTaskRunner(),
           compositing_mode_reporter_impl_.get());
@@ -1322,12 +1338,11 @@ int BrowserMainLoop::BrowserThreadsStarted() {
   }
 
 #if defined(OS_WIN)
-  if (base::FeatureList::IsEnabled(features::kHighDynamicRange))
+  if (base::FeatureList::IsEnabled(display::features::kHighDynamicRange))
     HDRProxy::Initialize();
   system_message_window_.reset(new media::SystemMessageWindowWin);
 #elif defined(OS_LINUX) && defined(USE_UDEV)
-  device_monitor_linux_.reset(
-      new media::DeviceMonitorLinux(io_thread_->task_runner()));
+  device_monitor_linux_ = std::make_unique<media::DeviceMonitorLinux>();
 #elif defined(OS_MACOSX)
   // On Mac, the audio task runner must belong to the main thread.
   // See audio_thread_impl.cc and https://crbug.com/158170.
@@ -1439,11 +1454,15 @@ int BrowserMainLoop::BrowserThreadsStarted() {
 
   if (base::FeatureList::IsEnabled(features::kFontSrcLocalMatching)) {
     content::DWriteFontLookupTableBuilder::GetInstance()
-        ->ScheduleBuildFontUniqueNameTable();
+        ->SchedulePrepareFontUniqueNameTable();
   }
 #endif
 
   if (MediaKeysListenerManager::IsMediaKeysListenerManagerEnabled()) {
+#if defined(OS_MACOSX)
+    remote_command_center_delegate_ =
+        now_playing::RemoteCommandCenterDelegate::Create();
+#endif
     media_keys_listener_manager_ =
         std::make_unique<MediaKeysListenerManagerImpl>(
             content::ServiceManagerConnection::GetForProcess()->GetConnector());
@@ -1589,25 +1608,9 @@ void BrowserMainLoop::InitializeMojo() {
   // Start startup tracing through TracingController's interface. TraceLog has
   // been enabled in content_main_runner where threads are not available. Now We
   // need to start tracing for all other tracing agents, which require threads.
-  auto* trace_startup_config = tracing::TraceStartupConfig::GetInstance();
-  if (trace_startup_config->IsEnabled()) {
-    // This checks kTraceConfigFile switch.
-    TracingController::GetInstance()->StartTracing(
-        trace_startup_config->GetTraceConfig(),
-        TracingController::StartTracingDoneCallback());
-  } else if (parsed_command_line_.HasSwitch(switches::kTraceToConsole)) {
-    TracingController::GetInstance()->StartTracing(
-        tracing::GetConfigForTraceToConsole(),
-        TracingController::StartTracingDoneCallback());
-  }
-  // Start tracing to a file for certain duration if needed. Only do this after
-  // starting the main message loop to avoid calling
-  // MessagePumpForUI::ScheduleWork() before MessagePumpForUI::Start() as it
-  // will crash the browser.
-  if (trace_startup_config->IsTracingStartupForDuration()) {
-    TRACE_EVENT0("startup", "BrowserMainLoop::InitStartupTracingForDuration");
-    InitStartupTracingForDuration();
-  }
+  // We can only do this after starting the main message loop to avoid calling
+  // MessagePumpForUI::ScheduleWork() before MessagePumpForUI::Start().
+  TracingControllerImpl::GetInstance()->StartStartupTracingIfNeeded();
 
   if (parts_) {
     parts_->ServiceManagerConnectionStarted(
@@ -1617,46 +1620,6 @@ void BrowserMainLoop::InitializeMojo() {
 #if BUILDFLAG(MOJO_RANDOM_DELAYS_ENABLED)
   mojo::BeginRandomMojoDelays();
 #endif
-}
-
-base::FilePath BrowserMainLoop::GetStartupTraceFileName() const {
-  base::FilePath trace_file;
-
-  trace_file = tracing::TraceStartupConfig::GetInstance()->GetResultFile();
-  if (trace_file.empty()) {
-#if defined(OS_ANDROID)
-    TracingControllerAndroid::GenerateTracingFilePath(&trace_file);
-#else
-    // Default to saving the startup trace into the current dir.
-    trace_file = base::FilePath().AppendASCII("chrometrace.log");
-#endif
-  }
-
-  return trace_file;
-}
-
-void BrowserMainLoop::InitStartupTracingForDuration() {
-  DCHECK(tracing::TraceStartupConfig::GetInstance()
-             ->IsTracingStartupForDuration());
-
-  startup_trace_file_ = GetStartupTraceFileName();
-
-  startup_trace_timer_.Start(
-      FROM_HERE,
-      base::TimeDelta::FromSeconds(
-          tracing::TraceStartupConfig::GetInstance()->GetStartupDuration()),
-      this, &BrowserMainLoop::EndStartupTracing);
-}
-
-void BrowserMainLoop::EndStartupTracing() {
-  // Do nothing if startup tracing is already stopped.
-  if (!tracing::TraceStartupConfig::GetInstance()->IsEnabled())
-    return;
-
-  TracingController::GetInstance()->StopTracing(
-      TracingController::CreateFileEndpoint(
-          startup_trace_file_,
-          base::Bind(OnStoppedStartupTracing, startup_trace_file_)));
 }
 
 void BrowserMainLoop::InitializeAudio() {

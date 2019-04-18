@@ -32,15 +32,13 @@ const char kSkipChildren[] = "@NO_CHILDREN_DUMP";
 
 }  // namespace
 
-AccessibilityTreeFormatter::AccessibilityTreeFormatter()
-    : show_ids_(false) {
-}
+AccessibilityTreeFormatter::AccessibilityTreeFormatter() : show_ids_(false) {}
 
-AccessibilityTreeFormatter::~AccessibilityTreeFormatter() {
-}
+AccessibilityTreeFormatter::~AccessibilityTreeFormatter() {}
 
 void AccessibilityTreeFormatter::FormatAccessibilityTree(
-    BrowserAccessibility* root, base::string16* contents) {
+    BrowserAccessibility* root,
+    base::string16* contents) {
   std::unique_ptr<base::DictionaryValue> dict = BuildAccessibilityTree(root);
   RecursiveFormatAccessibilityTree(*(dict.get()), contents);
 }
@@ -89,23 +87,23 @@ AccessibilityTreeFormatter::FilterAccessibilityTree(
 }
 
 void AccessibilityTreeFormatter::RecursiveFormatAccessibilityTree(
-    const base::DictionaryValue& dict, base::string16* contents, int depth) {
+    const base::DictionaryValue& dict,
+    base::string16* contents,
+    int depth) {
   // Check dictionary against node filters, may require us to skip this node
   // and its children.
   if (MatchesNodeFilters(dict))
     return;
 
-  base::string16 indent = base::string16(depth * kIndentSymbolCount,
-                                         kIndentSymbol);
+  base::string16 indent =
+      base::string16(depth * kIndentSymbolCount, kIndentSymbol);
   base::string16 line = indent + ProcessTreeForOutput(dict);
   if (line.find(base::ASCIIToUTF16(kSkipString)) != base::string16::npos)
     return;
 
   // Replace literal newlines with "<newline>"
-  base::ReplaceChars(line,
-                     base::ASCIIToUTF16("\n"),
-                     base::ASCIIToUTF16("<newline>"),
-                     &line);
+  base::ReplaceChars(line, base::ASCIIToUTF16("\n"),
+                     base::ASCIIToUTF16("<newline>"), &line);
 
   *contents += line + base::ASCIIToUTF16("\n");
   if (line.find(base::ASCIIToUTF16(kSkipChildren)) != base::string16::npos)
@@ -129,6 +127,11 @@ void AccessibilityTreeFormatter::SetPropertyFilters(
 void AccessibilityTreeFormatter::SetNodeFilters(
     const std::vector<NodeFilter>& node_filters) {
   node_filters_ = node_filters;
+}
+
+const base::FilePath::StringType
+AccessibilityTreeFormatter::GetVersionSpecificExpectedFileSuffix() {
+  return FILE_PATH_LITERAL("");
 }
 
 // static
@@ -182,7 +185,9 @@ bool AccessibilityTreeFormatter::MatchesNodeFilters(
 }
 
 base::string16 AccessibilityTreeFormatter::FormatCoordinates(
-    const char* name, const char* x_name, const char* y_name,
+    const char* name,
+    const char* x_name,
+    const char* y_name,
     const base::DictionaryValue& value) {
   int x, y;
   value.GetInteger(x_name, &x);
@@ -211,4 +216,13 @@ bool AccessibilityTreeFormatter::WriteAttribute(bool include_by_default,
   return true;
 }
 
+void AccessibilityTreeFormatter::AddPropertyFilter(
+    std::vector<PropertyFilter>* property_filters,
+    std::string filter,
+    PropertyFilter::Type type) {
+  property_filters->push_back(PropertyFilter(base::ASCIIToUTF16(filter), type));
+}
+
+void AccessibilityTreeFormatter::AddDefaultFilters(
+    std::vector<PropertyFilter>* property_filters) {}
 }  // namespace content

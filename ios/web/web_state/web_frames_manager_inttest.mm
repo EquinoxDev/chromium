@@ -4,7 +4,7 @@
 
 #include "base/ios/ios_util.h"
 #include "base/test/scoped_feature_list.h"
-#include "ios/web/public/features.h"
+#include "ios/web/common/features.h"
 #import "ios/web/public/navigation_manager.h"
 #import "ios/web/public/test/web_view_content_test_util.h"
 #import "ios/web/public/test/web_view_interaction_test_util.h"
@@ -101,7 +101,7 @@ TEST_P(WebFramesManagerTest, SingleWebFrame) {
   EXPECT_TRUE(main_web_frame->IsMainFrame());
   EXPECT_FALSE(main_web_frame->GetFrameId().empty());
   EXPECT_EQ(url.GetOrigin(), main_web_frame->GetSecurityOrigin());
-};
+}
 
 // Tests that the WebFramesManager correctly adds a unique WebFrame after a
 // webpage navigates back.
@@ -138,7 +138,7 @@ TEST_P(WebFramesManagerTest, SingleWebFrameBack) {
 
   EXPECT_EQ(1ul, frames_manager->GetAllWebFrames().size());
   EXPECT_EQ(frame_id, frames_manager->GetMainWebFrame()->GetFrameId());
-};
+}
 
 // Tests that the WebFramesManager correctly adds a unique WebFrame after a
 // webpage navigates back from a clicked link.
@@ -188,7 +188,7 @@ TEST_P(WebFramesManagerTest, SingleWebFrameLinkNavigationBackForward) {
   ASSERT_EQ(1ul, frames_manager->GetAllWebFrames().size());
   EXPECT_FALSE(frames_manager->GetMainWebFrame()->GetFrameId().empty());
   EXPECT_NE(frame_id, frames_manager->GetMainWebFrame()->GetFrameId());
-};
+}
 
 // Tests that the WebFramesManager correctly adds a unique WebFrame after a
 // webpage navigates back from a clicked same page link.
@@ -225,7 +225,7 @@ TEST_P(WebFramesManagerTest, SingleWebFrameSamePageNavigationBackForward) {
   ASSERT_EQ(1ul, frames_manager->GetAllWebFrames().size());
   EXPECT_FALSE(frames_manager->GetMainWebFrame()->GetFrameId().empty());
   EXPECT_EQ(main_web_frame, frames_manager->GetMainWebFrame());
-};
+}
 
 INSTANTIATE_TEST_SUITE_P(ProgrammaticWebFramesManagerTest,
                          WebFramesManagerTest,

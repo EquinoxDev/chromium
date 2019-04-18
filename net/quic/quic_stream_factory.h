@@ -36,12 +36,12 @@
 #include "net/quic/quic_session_key.h"
 #include "net/socket/client_socket_pool.h"
 #include "net/ssl/ssl_config_service.h"
-#include "net/third_party/quic/core/http/quic_client_push_promise_index.h"
-#include "net/third_party/quic/core/quic_config.h"
-#include "net/third_party/quic/core/quic_crypto_stream.h"
-#include "net/third_party/quic/core/quic_packets.h"
-#include "net/third_party/quic/core/quic_server_id.h"
-#include "net/third_party/quic/platform/api/quic_string_piece.h"
+#include "net/third_party/quiche/src/quic/core/http/quic_client_push_promise_index.h"
+#include "net/third_party/quiche/src/quic/core/quic_config.h"
+#include "net/third_party/quiche/src/quic/core/quic_crypto_stream.h"
+#include "net/third_party/quiche/src/quic/core/quic_packets.h"
+#include "net/third_party/quiche/src/quic/core/quic_server_id.h"
+#include "net/third_party/quiche/src/quic/platform/api/quic_string_piece.h"
 
 namespace base {
 class Value;
@@ -82,6 +82,12 @@ const int kIdleConnectionTimeoutSeconds = 30;
 
 // Sessions can migrate if they have been idle for less than this period.
 const int kDefaultIdleSessionMigrationPeriodSeconds = 30;
+
+// The maximum time allowed to have no retransmittable packets on the wire
+// (after sending the first retransmittable packet) if
+// |migrate_session_early_v2_| is true. PING frames will be sent as needed to
+// enforce this.
+const int64_t kDefaultRetransmittableOnWireTimeoutMillisecs = 100;
 
 // The default maximum time QUIC session could be on non-default network before
 // migrate back to default network.
@@ -250,11 +256,13 @@ class NET_EXPORT_PRIVATE QuicStreamFactory
       bool mark_quic_broken_when_network_blackholes,
       int idle_connection_timeout_seconds,
       int reduced_ping_timeout_seconds,
+      int retransmittable_on_wire_timeout_milliseconds_,
       int max_time_before_crypto_handshake_seconds,
       int max_idle_time_before_crypto_handshake_seconds,
       bool migrate_sessions_on_network_change_v2,
       bool migrate_sessions_early_v2,
       bool retry_on_alternate_network_before_handshake,
+      bool migrate_idle_sessions,
       base::TimeDelta idle_session_migration_period,
       base::TimeDelta max_time_on_non_default_network,
       int max_migrations_to_non_default_network_on_write_error,
@@ -527,6 +535,9 @@ class NET_EXPORT_PRIVATE QuicStreamFactory
   quic::QuicTime::Delta ping_timeout_;
   quic::QuicTime::Delta reduced_ping_timeout_;
 
+  // Timeout for how long the wire can have no retransmittable packets.
+  quic::QuicTime::Delta retransmittable_on_wire_timeout_;
+
   // If more than |yield_after_packets_| packets have been read or more than
   // |yield_after_duration_| time has passed, then
   // QuicChromiumPacketReader::StartReading() yields by doing a PostTask().
@@ -555,6 +566,10 @@ class NET_EXPORT_PRIVATE QuicStreamFactory
   // network, and is updated OnNetworkMadeDefault.
   // Otherwise, always set to NetworkChangeNotifier::kInvalidNetwork.
   NetworkChangeNotifier::NetworkHandle default_network_;
+
+  // Set if idle sessions can be migrated within
+  // |idle_session_migration_period_| when connection migration is triggered.
+  const bool migrate_idle_sessions_;
 
   // Sessions can migrate if they have been idle for less than this period.
   const base::TimeDelta idle_session_migration_period_;

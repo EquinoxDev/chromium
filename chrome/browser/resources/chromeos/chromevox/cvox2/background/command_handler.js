@@ -297,6 +297,7 @@ CommandHandler.onCommand = function(command) {
   var skipSync = false;
   var didNavigate = false;
   var tryScrolling = true;
+  var skipSettingSelection = false;
   switch (command) {
     case 'nextCharacter':
       didNavigate = true;
@@ -379,10 +380,12 @@ CommandHandler.onCommand = function(command) {
       dir = Dir.BACKWARD;
       pred = AutomationPredicate.image;
       predErrorMsg = 'no_previous_graphic';
+      skipSettingSelection = true;
       break;
     case 'nextGraphic':
       pred = AutomationPredicate.image;
       predErrorMsg = 'no_next_graphic';
+      skipSettingSelection = true;
       break;
     case 'nextHeading':
       pred = AutomationPredicate.heading;
@@ -673,10 +676,12 @@ CommandHandler.onCommand = function(command) {
             true);
       } else {
         var root = ChromeVoxState.instance.currentRange.start.node.root;
-        if (root && root.anchorObject && root.focusObject) {
+        if (root && root.selectionStartObject && root.selectionEndObject) {
           var sel = new cursors.Range(
-              new cursors.Cursor(root.anchorObject, root.anchorOffset),
-              new cursors.Cursor(root.focusObject, root.focusOffset));
+              new cursors.Cursor(
+                  root.selectionStartObject, root.selectionStartOffset),
+              new cursors.Cursor(
+                  root.selectionEndObject, root.selectionEndOffset));
           var o = new Output()
                       .format('@end_selection')
                       .withSpeechAndBraille(sel, sel, Output.EventType.NAVIGATE)
@@ -1024,8 +1029,10 @@ CommandHandler.onCommand = function(command) {
     }
   }
 
-  if (current)
-    ChromeVoxState.instance.navigateToRange(current, undefined, speechProps);
+  if (current) {
+    ChromeVoxState.instance.navigateToRange(
+        current, undefined, speechProps, skipSettingSelection);
+  }
 
   return false;
 };

@@ -9,6 +9,7 @@
 
 #include "third_party/blink/renderer/core/layout/layout_block_flow.h"
 #include "third_party/blink/renderer/core/layout/layout_inline.h"
+#include "third_party/blink/renderer/core/layout/layout_list_marker.h"
 #include "third_party/blink/renderer/core/layout/layout_object.h"
 #include "third_party/blink/renderer/core/layout/layout_text.h"
 #include "third_party/blink/renderer/core/layout/logical_values.h"
@@ -59,26 +60,6 @@ unsigned EstimateOffsetMappingItemsCount(const LayoutBlockFlow& block) {
   // LayoutObjects.
   // TODO(layout-dev): Unify the two functions and make them less hacky.
   return EstimateInlineItemsCount(block) / 4;
-}
-
-// Ensure this LayoutObject IsInLayoutNGInlineFormattingContext and does not
-// have associated NGPaintFragment.
-void ClearInlineFragment(LayoutObject* object) {
-  object->SetIsInLayoutNGInlineFormattingContext(true);
-  object->SetFirstInlineFragment(nullptr);
-}
-
-void ClearNeedsLayout(LayoutObject* object) {
-  object->ClearNeedsLayout();
-  object->ClearNeedsCollectInlines();
-
-  ClearInlineFragment(object);
-
-  // Reset previous items if they cannot be reused to prevent stale items
-  // for subsequent layouts. Items that can be reused have already been
-  // added to the builder.
-  if (object->IsText())
-    ToLayoutText(object)->ClearInlineItems();
 }
 
 // This class marks appropriate line box fragments as dirty.
@@ -183,6 +164,18 @@ class ItemsBuilderForMarkLineBoxesDirty {
     return has_floating_or_out_of_flow_positioned_;
   }
 
+  void ClearInlineFragment(LayoutObject* object) {
+    NGInlineNode::ClearInlineFragment(object);
+  }
+
+  void ClearNeedsLayout(LayoutObject* object) {
+    NGInlineNode::ClearNeedsLayout(object);
+  }
+
+  void UpdateShouldCreateBoxFragment(LayoutInline* object) {
+    object->UpdateShouldCreateBoxFragment();
+  }
+
  private:
   bool has_floating_or_out_of_flow_positioned_ = false;
 };
@@ -201,8 +194,7 @@ template <typename ItemsBuilder>
 void CollectInlinesInternal(LayoutBlockFlow* block,
                             ItemsBuilder* builder,
                             String* previous_text,
-                            NGLineBoxMarker* marker,
-                            bool update_layout) {
+                            NGLineBoxMarker* marker) {
   builder->EnterBlock(block->Style());
   LayoutObject* node = GetLayoutObjectForFirstChildNode(block);
 
@@ -232,24 +224,21 @@ void CollectInlinesInternal(LayoutBlockFlow* block,
       if (marker && marker->HandleText(layout_text))
         marker = nullptr;
 
-      if (update_layout)
-        ClearNeedsLayout(layout_text);
+      builder->ClearNeedsLayout(layout_text);
 
     } else if (node->IsFloating()) {
       builder->AppendFloating(node);
       if (builder->ShouldAbort())
         return;
 
-      if (update_layout)
-        ClearInlineFragment(node);
+      builder->ClearInlineFragment(node);
 
     } else if (node->IsOutOfFlowPositioned()) {
       builder->AppendOutOfFlowPositioned(node);
       if (builder->ShouldAbort())
         return;
 
-      if (update_layout)
-        ClearInlineFragment(node);
+      builder->ClearInlineFragment(node);
 
     } else if (node->IsAtomicInlineLevel()) {
       if (node->IsLayoutNGListMarker() || node->IsListMarker()) {
@@ -266,8 +255,7 @@ void CollectInlinesInternal(LayoutBlockFlow* block,
         if (marker && marker->HandleAtomicInline(ToLayoutBox(node)))
           marker = nullptr;
 
-        if (update_layout)
-          ClearInlineFragment(node);
+        builder->ClearInlineFragment(node);
       }
 
     } else {
@@ -276,8 +264,7 @@ void CollectInlinesInternal(LayoutBlockFlow* block,
       // box to prevent having inline/block-mixed children.
       DCHECK(node->IsInline());
       LayoutInline* layout_inline = ToLayoutInline(node);
-      if (update_layout)
-        layout_inline->UpdateShouldCreateBoxFragment();
+      builder->UpdateShouldCreateBoxFragment(layout_inline);
 
       builder->EnterInline(layout_inline);
 
@@ -292,9 +279,7 @@ void CollectInlinesInternal(LayoutBlockFlow* block,
 
       // An empty inline node.
       builder->ExitInline(layout_inline);
-
-      if (update_layout)
-        ClearNeedsLayout(layout_inline);
+      builder->ClearNeedsLayout(layout_inline);
     }
 
     // Find the next sibling, or parent, until we reach |block|.
@@ -304,16 +289,14 @@ void CollectInlinesInternal(LayoutBlockFlow* block,
         break;
       }
       node = GetLayoutObjectForParentNode(node);
-      if (node == block) {
+      if (node == block || !node) {
         // Set |node| to |nullptr| to break out of the outer loop.
         node = nullptr;
         break;
       }
       DCHECK(node->IsInline());
       builder->ExitInline(node);
-
-      if (update_layout)
-        ClearNeedsLayout(node);
+      builder->ClearNeedsLayout(node);
     }
   }
   builder->ExitBlock();
@@ -434,9 +417,7 @@ void NGInlineNode::ComputeOffsetMapping(LayoutBlockFlow* layout_block_flow,
   NGInlineItemsBuilderForOffsetMapping builder(&items);
   builder.GetOffsetMappingBuilder().ReserveCapacity(
       EstimateOffsetMappingItemsCount(*layout_block_flow));
-  const bool update_layout = false;
-  CollectInlinesInternal(layout_block_flow, &builder, nullptr, nullptr,
-                         update_layout);
+  CollectInlinesInternal(layout_block_flow, &builder, nullptr, nullptr);
 
   // For non-NG object, we need the text, and also the inline items to resolve
   // bidi levels. Otherwise |data| already has the text from the pre-layout
@@ -459,29 +440,25 @@ void NGInlineNode::ComputeOffsetMapping(LayoutBlockFlow* layout_block_flow,
 }
 
 const NGOffsetMapping* NGInlineNode::GetOffsetMapping(
-    LayoutBlockFlow* layout_block_flow,
-    std::unique_ptr<NGOffsetMapping>* storage) {
+    LayoutBlockFlow* layout_block_flow) {
   DCHECK(!layout_block_flow->GetDocument().NeedsLayoutTreeUpdate());
 
   // If |layout_block_flow| is LayoutNG, compute from |NGInlineNode|.
   if (layout_block_flow->IsLayoutNGMixin()) {
     NGInlineNode node(layout_block_flow);
-    if (node.IsPrepareLayoutFinished())
-      return node.ComputeOffsetMappingIfNeeded();
-
-    // When this is not laid out yet, compute each time it is requested.
-    // TODO(kojii): We could still keep the result for later uses but it would
-    // add more states. Reconsider if this turned out to be needed.
+    CHECK(node.IsPrepareLayoutFinished());
+    return node.ComputeOffsetMappingIfNeeded();
   }
 
-  // If this is not LayoutNG, compute the offset mapping and store in |storage|.
-  // The caller is responsible to keep |storage| for the life cycle.
-  DCHECK(storage);
+  // If this is not LayoutNG, compute the offset mapping and store into
+  // |LayoutBlockFlowRateData|.
+  if (const NGOffsetMapping* mapping = layout_block_flow->GetOffsetMapping())
+    return mapping;
   NGInlineNodeData data;
   ComputeOffsetMapping(layout_block_flow, &data);
-  *storage = std::move(data.offset_mapping);
-  DCHECK(*storage);
-  return storage->get();
+  NGOffsetMapping* const mapping = data.offset_mapping.get();
+  layout_block_flow->SetOffsetMapping(std::move(data.offset_mapping));
+  return mapping;
 }
 
 // Depth-first-scan of all LayoutInline and LayoutText nodes that make up this
@@ -504,10 +481,8 @@ void NGInlineNode::CollectInlines(NGInlineNodeData* data,
       previous_data ? &previous_data->text_content : nullptr;
   data->items.ReserveCapacity(EstimateInlineItemsCount(*block));
   NGInlineItemsBuilder builder(&data->items);
-  const bool update_layout = true;
   CollectInlinesInternal(block, &builder, previous_text,
-                         marker.has_value() ? &marker.value() : nullptr,
-                         update_layout);
+                         marker.has_value() ? &*marker : nullptr);
   data->text_content = builder.ToString();
 
   // Set |is_bidi_enabled_| for all UTF-16 strings for now, because at this
@@ -670,10 +645,23 @@ void NGInlineNode::ShapeText(NGInlineItemsData* data,
       continue;
     }
 
-    const Font& font = start_item.Style()->GetFont();
+    const ComputedStyle& start_style = *start_item.Style();
+    const Font& font = start_style.GetFont();
     TextDirection direction = start_item.Direction();
     unsigned end_index = index + 1;
     unsigned end_offset = start_item.EndOffset();
+
+    // Symbol marker is painted as graphics. Create a ShapeResult of space
+    // glyphs with the desired size to make it less special for line breaker.
+    if (UNLIKELY(start_item.IsSymbolMarker())) {
+      LayoutUnit symbol_width = LayoutListMarker::WidthOfSymbol(start_style);
+      DCHECK_GT(symbol_width, 0);
+      start_item.shape_result_ = ShapeResult::CreateForSpaces(
+          &font, direction, start_item.StartOffset(), start_item.Length(),
+          symbol_width);
+      index++;
+      continue;
+    }
 
     // Scan forward until an item is encountered that should trigger a shaping
     // break. This ensures that adjacent text items are shaped together whenever
@@ -753,7 +741,7 @@ void NGInlineNode::ShapeText(NGInlineItemsData* data,
           start_item.CreateRunSegmenterRange();
       range.end = end_offset;
       shape_result = shaper.Shape(&font, direction, start_item.StartOffset(),
-                                  end_offset, &range);
+                                  end_offset, range);
     } else {
       shape_result = data->segments->ShapeText(
           &shaper, &font, direction, start_item.StartOffset(), end_offset,
@@ -960,8 +948,7 @@ scoped_refptr<const NGLayoutResult> NGInlineNode::Layout(
     NGInlineChildLayoutContext* context) {
   PrepareLayoutIfNeeded();
 
-  const NGInlineBreakToken* inline_break_token =
-      ToNGInlineBreakToken(break_token);
+  const auto* inline_break_token = To<NGInlineBreakToken>(break_token);
   NGInlineLayoutAlgorithm algorithm(*this, constraint_space, inline_break_token,
                                     context);
   return algorithm.Layout();
@@ -1006,8 +993,7 @@ bool NGInlineNode::PrepareReuseFragments(
 bool NGInlineNode::MarkLineBoxesDirty(LayoutBlockFlow* block_flow) {
   NGLineBoxMarker marker(block_flow->PaintFragment());
   ItemsBuilderForMarkLineBoxesDirty builder;
-  const bool update_layout = true;
-  CollectInlinesInternal(block_flow, &builder, nullptr, &marker, update_layout);
+  CollectInlinesInternal(block_flow, &builder, nullptr, &marker);
   return !builder.ShouldAbort();
 }
 
@@ -1016,7 +1002,8 @@ static LayoutUnit ComputeContentSize(
     WritingMode container_writing_mode,
     const MinMaxSizeInput& input,
     NGLineBreakerMode mode,
-    const NGConstraintSpace* constraint_space) {
+    NGLineBreaker::MaxSizeCache* max_size_cache,
+    base::Optional<LayoutUnit>* max_size_out) {
   const ComputedStyle& style = node.Style();
   WritingMode writing_mode = style.GetWritingMode();
   LayoutUnit available_inline_size =
@@ -1035,22 +1022,116 @@ static LayoutUnit ComputeContentSize(
 
   NGExclusionSpace empty_exclusion_space;
   NGPositionedFloatVector empty_leading_floats;
-  Vector<LayoutObject*> floats_for_min_max;
   NGLineLayoutOpportunity line_opportunity(available_inline_size);
   LayoutUnit result;
   LayoutUnit previous_floats_inline_size =
       input.float_left_inline_size + input.float_right_inline_size;
   DCHECK_GE(previous_floats_inline_size, 0);
-  NGLineBreaker line_breaker(
-      node, mode, space, line_opportunity, empty_leading_floats,
-      /* handled_leading_floats_index */ 0u,
-      /* break_token */ nullptr, &empty_exclusion_space,
-      input.percentage_resolution_block_size, &floats_for_min_max);
+  NGLineBreaker line_breaker(node, mode, space, line_opportunity,
+                             empty_leading_floats,
+                             /* handled_leading_floats_index */ 0u,
+                             /* break_token */ nullptr, &empty_exclusion_space);
+  line_breaker.SetMaxSizeCache(max_size_cache);
+  const NGInlineItemsData& items_data = line_breaker.ItemsData();
+
+  // This struct computes the max size from the line break results for the min
+  // size.
+  struct MaxSizeFromMinSize {
+    LayoutUnit position;
+    LayoutUnit max_size;
+    const NGInlineItemsData& items_data;
+    const NGInlineItem* next_item;
+    const NGLineBreaker::MaxSizeCache& max_size_cache;
+    bool is_after_break = true;
+
+    explicit MaxSizeFromMinSize(
+        const NGInlineItemsData& items_data,
+        const NGLineBreaker::MaxSizeCache& max_size_cache)
+        : items_data(items_data),
+          next_item(items_data.items.begin()),
+          max_size_cache(max_size_cache) {}
+
+    // Add all text items up to |end|. The line break results for min size
+    // may break text into multiple lines, and may remove trailing spaces. For
+    // max size, use the original text widths from NGInlineItem instead.
+    void AddTextUntil(const NGInlineItem* end) {
+      DCHECK(end);
+      for (; next_item != end; ++next_item) {
+        if (next_item->Type() == NGInlineItem::kText) {
+          DCHECK(next_item->TextShapeResult());
+          const ShapeResult& shape_result = *next_item->TextShapeResult();
+          position += shape_result.SnappedWidth().ClampNegativeToZero();
+        }
+      }
+    }
+
+    void ForceLineBreak(const NGInlineItem& item) {
+      // Add all text up to the forced break. There may be spaces that were
+      // removed during the line breaking.
+      AddTextUntil(&item);
+      next_item = std::next(&item);
+      // Reset |position| to zero.
+      max_size = std::max(max_size, position);
+      position = LayoutUnit();
+      is_after_break = true;
+    }
+
+    LayoutUnit Finish(const NGInlineItem* end) {
+      AddTextUntil(end);
+      return std::max(position, max_size);
+    }
+
+    bool ComputeFromMinSize(const NGLineInfo& line_info) {
+      if (is_after_break) {
+        position += line_info.TextIndent();
+        is_after_break = false;
+      }
+
+      for (const NGInlineItemResult& result : line_info.Results()) {
+        const NGInlineItem& item = *result.item;
+        if (item.Type() == NGInlineItem::kText) {
+          // Text in NGInlineItemResult may be wrapped and trailing spaces
+          // may be removed. Ignore them, but add text later from
+          // NGInlineItem.
+          continue;
+        }
+        if (item.Type() == NGInlineItem::kAtomicInline) {
+          // The max-size for atomic inlines are cached in |max_size_cache|.
+          unsigned item_index = &item - items_data.items.begin();
+          position += max_size_cache[item_index];
+          continue;
+        }
+        if (item.Type() == NGInlineItem::kControl) {
+          UChar c = items_data.text_content[item.StartOffset()];
+          if (c == kNewlineCharacter) {
+            ForceLineBreak(item);
+            continue;
+          }
+          // Tabulation characters change the widths by their positions, so
+          // their widths for the max size may be different from the widths for
+          // the min size. Fall back to 2 pass for now.
+          if (c == kTabulationCharacter)
+            return false;
+        }
+        position += result.inline_size;
+      }
+      return true;
+    }
+  };
+  // Instantiate |MaxSizeFromMinSize| if we can compute the max size in 1 pass.
+  base::Optional<MaxSizeFromMinSize> max_size_from_min_size;
+  if (mode == NGLineBreakerMode::kMinContent && !previous_floats_inline_size) {
+    DCHECK(max_size_cache);
+    max_size_from_min_size.emplace(items_data, *max_size_cache);
+  }
+
+  Vector<LayoutObject*> floats_for_min_max;
   do {
     floats_for_min_max.Shrink(0);
 
     NGLineInfo line_info;
-    line_breaker.NextLine(&line_info);
+    line_breaker.NextLine(input.percentage_resolution_block_size,
+                          &floats_for_min_max, &line_info);
     if (line_info.Results().IsEmpty())
       break;
 
@@ -1066,6 +1147,15 @@ static LayoutUnit ComputeContentSize(
     // Earlier floats can only be assumed to affect the first line, so clear
     // them now.
     previous_floats_inline_size = LayoutUnit();
+
+    // Compute the max size from the line break result for the min size.
+    if (max_size_from_min_size.has_value()) {
+      // If there were floats, fall back to 2 pass for now.
+      if (!floats_for_min_max.IsEmpty() ||
+          !max_size_from_min_size->ComputeFromMinSize(line_info)) {
+        max_size_from_min_size.reset();
+      }
+    }
 
     for (auto* floating_object : floats_for_min_max) {
       DCHECK(floating_object->IsFloating());
@@ -1109,6 +1199,16 @@ static LayoutUnit ComputeContentSize(
     result = std::max(result, inline_size + floats_inline_size);
   } while (!line_breaker.IsFinished());
 
+  if (max_size_from_min_size.has_value()) {
+    *max_size_out = max_size_from_min_size->Finish(items_data.items.end());
+    // Check the max size matches to the value computed from 2 pass.
+    DCHECK_EQ(**max_size_out,
+              ComputeContentSize(node, container_writing_mode, input,
+                                 NGLineBreakerMode::kMaxContent, max_size_cache,
+                                 nullptr))
+        << node.GetLayoutBox();
+  }
+
   return result;
 }
 
@@ -1118,26 +1218,25 @@ MinMaxSize NGInlineNode::ComputeMinMaxSize(
     const NGConstraintSpace* constraint_space) {
   PrepareLayoutIfNeeded();
 
-  // Run line breaking with 0 and indefinite available width.
-
-  // TODO(kojii): There are several ways to make this more efficient and faster
-  // than runnning two line breaking.
-
   // Compute the max of inline sizes of all line boxes with 0 available inline
   // size. This gives the min-content, the width where lines wrap at every
   // break opportunity.
+  NGLineBreaker::MaxSizeCache max_size_cache;
   MinMaxSize sizes;
-  sizes.min_size =
-      ComputeContentSize(*this, container_writing_mode, input,
-                         NGLineBreakerMode::kMinContent, constraint_space);
+  base::Optional<LayoutUnit> max_size;
+  sizes.min_size = ComputeContentSize(*this, container_writing_mode, input,
+                                      NGLineBreakerMode::kMinContent,
+                                      &max_size_cache, &max_size);
 
-  // Compute the sum of inline sizes of all inline boxes with no line breaks.
-  // TODO(kojii): NGConstraintSpaceBuilder does not allow NGSizeIndefinite
-  // inline available size. We can allow it, or make this more efficient
-  // without using NGLineBreaker.
-  sizes.max_size =
-      ComputeContentSize(*this, container_writing_mode, input,
-                         NGLineBreakerMode::kMaxContent, constraint_space);
+  // If the max size is also computed, use it.
+  if (max_size.has_value()) {
+    sizes.max_size = *max_size;
+  } else {
+    // Compute the sum of inline sizes of all inline boxes with no line breaks.
+    sizes.max_size = ComputeContentSize(*this, container_writing_mode, input,
+                                        NGLineBreakerMode::kMaxContent,
+                                        &max_size_cache, nullptr);
+  }
 
   // Negative text-indent can make min > max. Ensure min is the minimum size.
   sizes.min_size = std::min(sizes.min_size, sizes.max_size);

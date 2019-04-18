@@ -187,8 +187,8 @@ void AddToHomescreenDataFetcher::OnDidGetWebApplicationInfo(
 
   installable_manager_->GetData(
       ParamsToPerformManifestAndIconFetch(),
-      base::Bind(&AddToHomescreenDataFetcher::OnDidGetManifestAndIcons,
-                 weak_ptr_factory_.GetWeakPtr()));
+      base::BindOnce(&AddToHomescreenDataFetcher::OnDidGetManifestAndIcons,
+                     weak_ptr_factory_.GetWeakPtr()));
 }
 
 void AddToHomescreenDataFetcher::StopTimer() {
@@ -259,8 +259,8 @@ void AddToHomescreenDataFetcher::OnDidGetManifestAndIcons(
 
   installable_manager_->GetData(
       ParamsToPerformInstallableCheck(),
-      base::Bind(&AddToHomescreenDataFetcher::OnDidPerformInstallableCheck,
-                 weak_ptr_factory_.GetWeakPtr()));
+      base::BindOnce(&AddToHomescreenDataFetcher::OnDidPerformInstallableCheck,
+                     weak_ptr_factory_.GetWeakPtr()));
 }
 
 void AddToHomescreenDataFetcher::OnDidPerformInstallableCheck(
@@ -273,8 +273,8 @@ void AddToHomescreenDataFetcher::OnDidPerformInstallableCheck(
   installable_manager_->RecordAddToHomescreenNoTimeout();
 
   bool webapk_compatible =
-      (data.error_code == NO_ERROR_DETECTED && data.valid_manifest &&
-       data.has_worker && AreWebManifestUrlsWebApkCompatible(*data.manifest) &&
+      (data.errors.empty() && data.valid_manifest && data.has_worker &&
+       AreWebManifestUrlsWebApkCompatible(*data.manifest) &&
        ChromeWebApkHost::CanInstallWebApk());
   observer_->OnUserTitleAvailable(
       webapk_compatible ? shortcut_info_.name : shortcut_info_.user_title,

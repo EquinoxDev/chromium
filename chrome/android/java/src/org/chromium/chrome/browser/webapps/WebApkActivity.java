@@ -11,9 +11,12 @@ import android.os.SystemClock;
 import org.chromium.base.VisibleForTesting;
 import org.chromium.base.library_loader.LibraryLoader;
 import org.chromium.base.metrics.RecordHistogram;
+import org.chromium.chrome.browser.AppHooks;
 import org.chromium.chrome.browser.IntentHandler;
 import org.chromium.chrome.browser.metrics.WebApkSplashscreenMetrics;
 import org.chromium.chrome.browser.metrics.WebApkUma;
+import org.chromium.chrome.browser.util.IntentUtils;
+import org.chromium.webapk.lib.common.WebApkConstants;
 
 /**
  * An Activity is designed for WebAPKs (native Android apps) and displays a webapp in a nearly
@@ -50,6 +53,18 @@ public class WebApkActivity extends WebappActivity {
     }
 
     @Override
+    public boolean shouldPreferLightweightFre(Intent intent) {
+        // We cannot use getWebApkPackageName() because
+        // {@link WebappActivity#performPreInflationStartup()} may not have been called yet.
+        String webApkPackageName =
+                IntentUtils.safeGetStringExtra(intent, WebApkConstants.EXTRA_WEBAPK_PACKAGE_NAME);
+
+        // Use the lightweight FRE for unbound WebAPKs.
+        return webApkPackageName != null
+                && !webApkPackageName.startsWith(WebApkConstants.WEBAPK_PACKAGE_PREFIX);
+    }
+
+    @Override
     public String getWebApkPackageName() {
         return getWebappInfo().webApkPackageName();
     }
@@ -58,6 +73,12 @@ public class WebApkActivity extends WebappActivity {
     public void onResume() {
         super.onResume();
         mStartTime = SystemClock.elapsedRealtime();
+    }
+
+    @Override
+    public void onResumeWithNative() {
+        super.onResumeWithNative();
+        AppHooks.get().setDisplayModeForActivity(getWebappInfo().displayMode(), this);
     }
 
     @Override
@@ -106,9 +127,9 @@ public class WebApkActivity extends WebappActivity {
     }
 
     @Override
-    public void preInflationStartup() {
+    public void performPreInflationStartup() {
         // Decide whether to record startup UMA histograms. This is a similar check to the one done
-        // in ChromeTabbedActivity.preInflationStartup refer to the comment there for why.
+        // in ChromeTabbedActivity.performPreInflationStartup refer to the comment there for why.
         if (!LibraryLoader.getInstance().isInitialized()) {
             getActivityTabStartupMetricsTracker().trackStartupMetrics(STARTUP_UMA_HISTOGRAM_SUFFIX);
             // If there is a saved instance state, then the intent (and its stored timestamp) might
@@ -119,7 +140,7 @@ public class WebApkActivity extends WebappActivity {
                 mWebApkSplashscreenMetrics.trackSplashscreenMetrics(shellLaunchTimestampMs);
             }
         }
-        super.preInflationStartup();
+        super.performPreInflationStartup();
     }
 
     @Override

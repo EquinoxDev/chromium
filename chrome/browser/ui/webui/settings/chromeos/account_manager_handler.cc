@@ -12,13 +12,12 @@
 #include "base/macros.h"
 #include "base/values.h"
 #include "chrome/browser/chromeos/profiles/profile_helper.h"
+#include "chrome/browser/policy/profile_policy_connector_factory.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/webui/chromeos/account_manager_welcome_dialog.h"
 #include "chrome/browser/ui/webui/settings/settings_page_ui_handler.h"
 #include "chrome/browser/ui/webui/signin/inline_login_handler_dialog_chromeos.h"
-#include "chromeos/account_manager/account_manager.h"
-#include "chromeos/account_manager/account_manager_factory.h"
-#include "components/signin/core/browser/account_tracker_service.h"
+#include "chromeos/components/account_manager/account_manager_factory.h"
 #include "components/user_manager/user.h"
 #include "google_apis/gaia/google_service_auth_error.h"
 #include "third_party/skia/include/core/SkBitmap.h"
@@ -31,6 +30,19 @@ namespace chromeos {
 namespace settings {
 
 namespace {
+
+constexpr char kFamilyLink[] = "Family Link";
+
+std::string GetEnterpriseDomainFromUsername(const std::string& username) {
+  size_t email_separator_pos = username.find('@');
+  bool is_email = email_separator_pos != std::string::npos &&
+                  email_separator_pos < username.length() - 1;
+
+  if (!is_email)
+    return std::string();
+
+  return gaia::ExtractDomainName(username);
+}
 
 AccountManager::AccountKey GetAccountKeyFromJsCallback(
     const base::DictionaryValue* const dictionary) {
@@ -52,15 +64,27 @@ AccountManager::AccountKey GetAccountKeyFromJsCallback(
   return AccountManager::AccountKey{id, account_type};
 }
 
+bool IsSameAccount(const AccountManager::AccountKey& account_key,
+                   const AccountId& account_id) {
+  switch (account_key.account_type) {
+    case chromeos::account_manager::AccountType::ACCOUNT_TYPE_GAIA:
+      return (account_id.GetAccountType() == AccountType::GOOGLE) &&
+             (account_id.GetGaiaId() == account_key.id);
+    case chromeos::account_manager::AccountType::ACCOUNT_TYPE_ACTIVE_DIRECTORY:
+      return (account_id.GetAccountType() == AccountType::ACTIVE_DIRECTORY) &&
+             (account_id.GetObjGuid() == account_key.id);
+    case chromeos::account_manager::AccountType::ACCOUNT_TYPE_UNSPECIFIED:
+      return false;
+  }
+}
+
 }  // namespace
 
 AccountManagerUIHandler::AccountManagerUIHandler(
     AccountManager* account_manager,
-    AccountTrackerService* account_tracker_service,
     identity::IdentityManager* identity_manager)
     : account_manager_(account_manager),
       identity_manager_(identity_manager),
-      account_mapper_util_(account_tracker_service),
       account_manager_observer_(this),
       identity_manager_observer_(this),
       weak_factory_(this) {
@@ -101,13 +125,13 @@ void AccountManagerUIHandler::HandleGetAccounts(const base::ListValue* args) {
   base::Value callback_id = args->GetList()[0].Clone();
 
   account_manager_->GetAccounts(
-      base::BindOnce(&AccountManagerUIHandler::GetAccountsCallbackHandler,
+      base::BindOnce(&AccountManagerUIHandler::OnGetAccounts,
                      weak_factory_.GetWeakPtr(), std::move(callback_id)));
 }
 
-void AccountManagerUIHandler::GetAccountsCallbackHandler(
+void AccountManagerUIHandler::OnGetAccounts(
     base::Value callback_id,
-    std::vector<AccountManager::AccountKey> account_keys) {
+    const std::vector<AccountManager::Account>& stored_accounts) {
   base::ListValue accounts;
 
   const AccountId device_account_id =
@@ -116,7 +140,8 @@ void AccountManagerUIHandler::GetAccountsCallbackHandler(
           ->GetAccountId();
 
   base::DictionaryValue device_account;
-  for (const auto& account_key : account_keys) {
+  for (const auto& stored_account : stored_accounts) {
+    const AccountManager::AccountKey& account_key = stored_account.key;
     // We are only interested in listing GAIA accounts.
     if (account_key.account_type !=
         account_manager::AccountType::ACCOUNT_TYPE_GAIA) {
@@ -128,20 +153,15 @@ void AccountManagerUIHandler::GetAccountsCallbackHandler(
     account.SetInteger("accountType", account_key.account_type);
     account.SetBoolean("isDeviceAccount", false);
 
-    const std::string oauth_account_id =
-        account_mapper_util_.AccountKeyToOAuthAccountId(account_key);
-    account.SetBoolean(
-        "isSignedIn",
-        identity_manager_->HasAccountWithRefreshToken(oauth_account_id) &&
-            !identity_manager_
-                 ->HasAccountWithRefreshTokenInPersistentErrorState(
-                     oauth_account_id));
-
     base::Optional<AccountInfo> maybe_account_info =
         identity_manager_->FindAccountInfoForAccountWithRefreshTokenByGaiaId(
             account_key.id);
     DCHECK(maybe_account_info.has_value());
 
+    account.SetBoolean(
+        "isSignedIn",
+        !identity_manager_->HasAccountWithRefreshTokenInPersistentErrorState(
+            maybe_account_info->account_id));
     account.SetString("fullName", maybe_account_info->full_name);
     account.SetString("email", maybe_account_info->email);
     if (!maybe_account_info->account_image.IsEmpty()) {
@@ -157,7 +177,7 @@ void AccountManagerUIHandler::GetAccountsCallbackHandler(
                             default_icon.GetRepresentation(1.0f).GetBitmap()));
     }
 
-    if (account_mapper_util_.IsEqual(account_key, device_account_id)) {
+    if (IsSameAccount(account_key, device_account_id)) {
       device_account = std::move(account);
     } else {
       accounts.GetList().push_back(std::move(account));
@@ -167,6 +187,19 @@ void AccountManagerUIHandler::GetAccountsCallbackHandler(
   // Device account must show up at the top.
   if (!device_account.empty()) {
     device_account.SetBoolean("isDeviceAccount", true);
+
+    // Check if user is managed.
+    const Profile* const profile = Profile::FromWebUI(web_ui());
+    if (profile->IsChild()) {
+      device_account.SetString("organization", kFamilyLink);
+    } else if (policy::ProfilePolicyConnectorFactory::IsProfileManaged(
+                   profile)) {
+      device_account.SetString(
+          "organization",
+          GetEnterpriseDomainFromUsername(
+              identity_manager_->GetPrimaryAccountInfo().email));
+    }
+
     accounts.GetList().insert(accounts.GetList().begin(),
                               std::move(device_account));
   }
@@ -202,7 +235,7 @@ void AccountManagerUIHandler::HandleRemoveAccount(const base::ListValue* args) {
           ->GetAccountId();
   const AccountManager::AccountKey account_key =
       GetAccountKeyFromJsCallback(dictionary);
-  if (account_mapper_util_.IsEqual(account_key, device_account_id)) {
+  if (IsSameAccount(account_key, device_account_id)) {
     // It should not be possible to remove a device account.
     return;
   }
@@ -230,12 +263,12 @@ void AccountManagerUIHandler::OnJavascriptDisallowed() {
 // guarantee that |AccountManager| (our source of truth) will have a newly added
 // account by the time |IdentityManager| has it.
 void AccountManagerUIHandler::OnTokenUpserted(
-    const AccountManager::AccountKey& account_key) {
+    const AccountManager::Account& account) {
   RefreshUI();
 }
 
 void AccountManagerUIHandler::OnAccountRemoved(
-    const AccountManager::AccountKey& account_key) {
+    const AccountManager::Account& account) {
   RefreshUI();
 }
 

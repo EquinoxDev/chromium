@@ -7,7 +7,6 @@
 
 #include <fuchsia/sys/cpp/fidl.h>
 #include <fuchsia/ui/app/cpp/fidl.h>
-#include <fuchsia/ui/viewsv1/cpp/fidl.h>
 #include <lib/fidl/cpp/binding.h>
 #include <lib/fidl/cpp/binding_set.h>
 #include <memory>
@@ -16,10 +15,10 @@
 #include <vector>
 
 #include "base/fuchsia/scoped_service_binding.h"
-#include "base/fuchsia/service_directory.h"
 #include "base/fuchsia/service_directory_client.h"
 #include "base/fuchsia/startup_context.h"
 #include "base/logging.h"
+#include "fuchsia/base/lifecycle_impl.h"
 #include "fuchsia/fidl/chromium/web/cpp/fidl.h"
 #include "url/gurl.h"
 
@@ -30,11 +29,8 @@ class WebContentRunner;
 // resources and service bindings.  Runners for specialized web-based content
 // (e.g. Cast applications) can extend this class to configure the Frame to
 // their needs, publish additional APIs, etc.
-// TODO(crbug.com/899348): Remove fuchsia::ui::viewsv1::ViewProvider after
-// SCN-1033 is closed.
 class WebComponent : public fuchsia::sys::ComponentController,
-                     public fuchsia::ui::app::ViewProvider,
-                     public fuchsia::ui::viewsv1::ViewProvider {
+                     public fuchsia::ui::app::ViewProvider {
  public:
   // Creates a WebComponent encapsulating a web.Frame. A ViewProvider service
   // will be published to the service-directory specified by |startup_context|,
@@ -65,11 +61,6 @@ class WebComponent : public fuchsia::sys::ComponentController,
       fidl::InterfaceHandle<fuchsia::sys::ServiceProvider> outgoing_services)
       override;
 
-  // fuchsia::ui::viewsv1::ViewProvider implementation.
-  void CreateView(
-      fidl::InterfaceRequest<fuchsia::ui::viewsv1token::ViewOwner> view_owner,
-      fidl::InterfaceRequest<fuchsia::sys::ServiceProvider> services) override;
-
   // Reports the supplied exit-code and reason to the |controller_binding_| and
   // requests that the |runner_| delete this component.
   virtual void DestroyComponent(int termination_exit_code,
@@ -87,7 +78,9 @@ class WebComponent : public fuchsia::sys::ComponentController,
 
   chromium::web::FramePtr frame_;
 
+  // Bindings used to manage the lifetime of this component instance.
   fidl::Binding<fuchsia::sys::ComponentController> controller_binding_;
+  std::unique_ptr<cr_fuchsia::LifecycleImpl> lifecycle_;
 
   // Incoming services provided at component creation.
   std::unique_ptr<base::fuchsia::ServiceDirectoryClient> additional_services_;
@@ -96,13 +89,9 @@ class WebComponent : public fuchsia::sys::ComponentController,
   std::vector<std::string> additional_service_names_;
 
   // Objects used for binding and exporting the ViewProvider service.
-  std::unique_ptr<base::fuchsia::ServiceDirectory> service_directory_;
   std::unique_ptr<
       base::fuchsia::ScopedServiceBinding<fuchsia::ui::app::ViewProvider>>
       view_provider_binding_;
-  std::unique_ptr<
-      base::fuchsia::ScopedServiceBinding<fuchsia::ui::viewsv1::ViewProvider>>
-      legacy_view_provider_binding_;
 
   // Termination reason and exit-code to be reported via the
   // sys::ComponentController::OnTerminated event.

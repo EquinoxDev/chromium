@@ -70,7 +70,7 @@
 #include "third_party/blink/renderer/platform/loader/fetch/resource_response.h"
 #include "third_party/blink/renderer/platform/mhtml/mhtml_archive.h"
 #include "third_party/blink/renderer/platform/mhtml/mhtml_parser.h"
-#include "third_party/blink/renderer/platform/serialized_resource.h"
+#include "third_party/blink/renderer/platform/mhtml/serialized_resource.h"
 #include "third_party/blink/renderer/platform/shared_buffer.h"
 #include "third_party/blink/renderer/platform/weborigin/kurl.h"
 #include "third_party/blink/renderer/platform/wtf/assertions.h"
@@ -277,10 +277,11 @@ bool MHTMLFrameSerializerDelegate::ShouldIgnoreAttribute(
 
 bool MHTMLFrameSerializerDelegate::RewriteLink(const Element& element,
                                                String& rewritten_link) {
-  if (!element.IsFrameOwnerElement())
+  auto* frame_owner = DynamicTo<HTMLFrameOwnerElement>(element);
+  if (!frame_owner)
     return false;
 
-  Frame* frame = ToHTMLFrameOwnerElement(&element)->ContentFrame();
+  Frame* frame = frame_owner->ContentFrame();
   if (!frame)
     return false;
 
@@ -398,8 +399,7 @@ WebThreadSafeData WebFrameSerializer::GenerateMHTMLHeader(
   DCHECK(frame);
   DCHECK(delegate);
 
-  WebLocalFrameImpl* web_local_frame = ToWebLocalFrameImpl(frame);
-  DCHECK(web_local_frame);
+  auto* web_local_frame = To<WebLocalFrameImpl>(frame);
 
   Document* document = web_local_frame->GetFrame()->GetDocument();
 
@@ -419,7 +419,7 @@ WebThreadSafeData WebFrameSerializer::GenerateMHTMLParts(
   DCHECK(web_delegate);
 
   // Translate arguments from public to internal blink APIs.
-  LocalFrame* frame = ToWebLocalFrameImpl(web_frame)->GetFrame();
+  LocalFrame* frame = To<WebLocalFrameImpl>(web_frame)->GetFrame();
   MHTMLArchive::EncodingPolicy encoding_policy =
       web_delegate->UseBinaryEncoding()
           ? MHTMLArchive::EncodingPolicy::kUseBinaryEncoding
@@ -441,8 +441,7 @@ WebThreadSafeData WebFrameSerializer::GenerateMHTMLParts(
 
   TRACE_EVENT_END1("page-serialization",
                    "WebFrameSerializer::generateMHTMLParts serializing",
-                   "resource count",
-                   static_cast<unsigned long long>(resources.size()));
+                   "resource count", static_cast<uint64_t>(resources.size()));
 
   // There was an error serializing the frame (e.g. of an image resource).
   if (resources.IsEmpty())
@@ -472,8 +471,10 @@ WebThreadSafeData WebFrameSerializer::GenerateMHTMLParts(
 bool WebFrameSerializer::Serialize(
     WebLocalFrame* frame,
     WebFrameSerializerClient* client,
-    WebFrameSerializer::LinkRewritingDelegate* delegate) {
-  WebFrameSerializerImpl serializer_impl(frame, client, delegate);
+    WebFrameSerializer::LinkRewritingDelegate* delegate,
+    bool save_with_empty_url) {
+  WebFrameSerializerImpl serializer_impl(frame, client, delegate,
+                                         save_with_empty_url);
   return serializer_impl.Serialize();
 }
 
@@ -493,16 +494,6 @@ WebString WebFrameSerializer::GenerateMarkOfTheWebDeclaration(
   builder.Append(FrameSerializer::MarkOfTheWebDeclaration(url));
   builder.Append(" -->\n");
   return builder.ToString();
-}
-
-WebString WebFrameSerializer::GenerateBaseTagDeclaration(
-    const WebString& base_target) {
-  // TODO(yosin) We should call |FrameSerializer::baseTagDeclarationOf()|.
-  if (base_target.IsEmpty())
-    return String("<base href=\".\">");
-  String base_string = "<base href=\".\" target=\"" +
-                       static_cast<const String&>(base_target) + "\">";
-  return base_string;
 }
 
 }  // namespace blink

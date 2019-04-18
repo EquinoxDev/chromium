@@ -6,6 +6,10 @@
 
 #include <stdint.h>
 
+#include <memory>
+#include <string>
+#include <utility>
+
 #include "base/bind.h"
 #include "base/logging.h"
 #include "base/macros.h"
@@ -181,7 +185,7 @@ class ResourceFetcherImpl::ClientImpl : public network::mojom::URLLoaderClient {
     // Existing callers need URL and HTTP status code. URL is already set in
     // Start().
     if (response_head.headers)
-      response_.SetHTTPStatusCode(response_head.headers->response_code());
+      response_.SetHttpStatusCode(response_head.headers->response_code());
   }
   void OnReceiveRedirect(
       const net::RedirectInfo& redirect_info,
@@ -282,6 +286,11 @@ void ResourceFetcherImpl::SetHeader(const std::string& header,
   } else {
     request_.headers.SetHeader(header, value);
   }
+}
+
+void ResourceFetcherImpl::SetFetchRequestMode(
+    network::mojom::FetchRequestMode fetch_request_mode) {
+  request_.fetch_request_mode = fetch_request_mode;
 }
 
 void ResourceFetcherImpl::Start(

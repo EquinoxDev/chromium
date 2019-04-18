@@ -129,8 +129,9 @@ void HTMLMetaElement::ParseContentAttribute(
     String message =
         "Error parsing a meta element's content: ';' is not a valid key-value "
         "pair separator. Please use ',' instead.";
-    document->AddConsoleMessage(ConsoleMessage::Create(
-        kRenderingMessageSource, kWarningMessageLevel, message));
+    document->AddConsoleMessage(
+        ConsoleMessage::Create(mojom::ConsoleMessageSource::kRendering,
+                               mojom::ConsoleMessageLevel::kWarning, message));
   }
 }
 
@@ -402,7 +403,8 @@ static const char* ViewportErrorMessageTemplate(ViewportErrorCode error_code) {
   return kErrors[error_code];
 }
 
-static MessageLevel ViewportErrorMessageLevel(ViewportErrorCode error_code) {
+static mojom::ConsoleMessageLevel ViewportErrorMessageLevel(
+    ViewportErrorCode error_code) {
   switch (error_code) {
     case kTruncatedViewportArgumentValueError:
     case kTargetDensityDpiUnsupported:
@@ -410,11 +412,11 @@ static MessageLevel ViewportErrorMessageLevel(ViewportErrorCode error_code) {
     case kUnrecognizedViewportArgumentValueError:
     case kMaximumScaleTooLargeError:
     case kViewportFitUnsupported:
-      return kWarningMessageLevel;
+      return mojom::ConsoleMessageLevel::kWarning;
   }
 
   NOTREACHED();
-  return kErrorMessageLevel;
+  return mojom::ConsoleMessageLevel::kError;
 }
 
 void HTMLMetaElement::ReportViewportWarning(Document* document,
@@ -432,8 +434,9 @@ void HTMLMetaElement::ReportViewportWarning(Document* document,
 
   // FIXME: This message should be moved off the console once a solution to
   // https://bugs.webkit.org/show_bug.cgi?id=103274 exists.
-  document->AddConsoleMessage(ConsoleMessage::Create(
-      kRenderingMessageSource, ViewportErrorMessageLevel(error_code), message));
+  document->AddConsoleMessage(
+      ConsoleMessage::Create(mojom::ConsoleMessageSource::kRendering,
+                             ViewportErrorMessageLevel(error_code), message));
 }
 
 void HTMLMetaElement::GetViewportDescriptionFromContentAttribute(
@@ -476,6 +479,9 @@ void HTMLMetaElement::ProcessViewportContentAttribute(
 
 void HTMLMetaElement::ProcessSupportedColorSchemes(
     const AtomicString& content) {
+  if (!RuntimeEnabledFeatures::MetaSupportedColorSchemesEnabled())
+    return;
+
   SpaceSplitString supported_schemes_strings(content.LowerASCII());
   size_t count = supported_schemes_strings.size();
   ColorSchemeSet supported_schemes;

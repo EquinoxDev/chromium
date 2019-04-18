@@ -53,6 +53,8 @@
 #include "net/base/chunked_upload_data_stream.h"
 #include "net/base/directory_listing.h"
 #include "net/base/elements_upload_data_stream.h"
+#include "net/base/escape.h"
+#include "net/base/layered_network_delegate.h"
 #include "net/base/load_flags.h"
 #include "net/base/load_timing_info.h"
 #include "net/base/load_timing_info_test_util.h"
@@ -554,10 +556,9 @@ BlockingNetworkDelegate::BlockingNetworkDelegate(BlockMode block_mode)
       retval_(OK),
       auth_retval_(AUTH_REQUIRED_RESPONSE_NO_ACTION),
       block_on_(0),
-      target_auth_credentials_(NULL),
+      target_auth_credentials_(nullptr),
       stage_blocked_for_callback_(NOT_BLOCKED),
-      weak_factory_(this) {
-}
+      weak_factory_(this) {}
 
 void BlockingNetworkDelegate::RunUntilBlocked() {
   base::RunLoop run_loop;
@@ -604,7 +605,7 @@ void BlockingNetworkDelegate::RunCallback(int response,
 void BlockingNetworkDelegate::RunAuthCallback(AuthRequiredResponse response,
                                               AuthCallback callback) {
   if (auth_retval_ == AUTH_REQUIRED_RESPONSE_SET_AUTH) {
-    ASSERT_TRUE(target_auth_credentials_ != NULL);
+    ASSERT_TRUE(target_auth_credentials_ != nullptr);
     *target_auth_credentials_ = auth_credentials_;
   }
   std::move(callback).Run(response);
@@ -1337,7 +1338,7 @@ TEST_F(URLRequestTest, FileDirCancelTest) {
   }
 
   // Take out mock resource provider.
-  NetModule::SetResourceProvider(NULL);
+  NetModule::SetResourceProvider(nullptr);
 }
 
 TEST_F(URLRequestTest, FileDirOutputSanity) {
@@ -1460,7 +1461,7 @@ TEST_F(URLRequestTest, ResolveShortcutTest) {
   {
     Microsoft::WRL::ComPtr<IShellLink> shell;
     ASSERT_TRUE(SUCCEEDED(::CoCreateInstance(
-        CLSID_ShellLink, NULL, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&shell))));
+        CLSID_ShellLink, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&shell))));
     Microsoft::WRL::ComPtr<IPersistFile> persist;
     ASSERT_TRUE(SUCCEEDED(shell.CopyTo(persist.GetAddressOf())));
     EXPECT_TRUE(SUCCEEDED(shell->SetPath(base::as_wcstr(app_path.value()))));
@@ -1483,14 +1484,14 @@ TEST_F(URLRequestTest, ResolveShortcutTest) {
     GetFileAttributesEx(base::as_wcstr(app_path.value()), GetFileExInfoStandard,
                         &data);
     HANDLE file = CreateFile(base::as_wcstr(app_path.value()), GENERIC_READ,
-                             FILE_SHARE_READ, NULL, OPEN_EXISTING,
-                             FILE_ATTRIBUTE_NORMAL, NULL);
+                             FILE_SHARE_READ, nullptr, OPEN_EXISTING,
+                             FILE_ATTRIBUTE_NORMAL, nullptr);
     EXPECT_NE(INVALID_HANDLE_VALUE, file);
     std::unique_ptr<char[]> buffer(new char[data.nFileSizeLow]);
     DWORD read_size;
     BOOL result;
-    result = ReadFile(file, buffer.get(), data.nFileSizeLow,
-                      &read_size, NULL);
+    result =
+        ReadFile(file, buffer.get(), data.nFileSizeLow, &read_size, nullptr);
     std::string content(buffer.get(), read_size);
     CloseHandle(file);
 
@@ -1826,8 +1827,7 @@ class MockURLRequestInterceptor : public URLRequestInterceptor {
 // Inherit PlatformTest since we require the autorelease pool on Mac OS X.
 class URLRequestInterceptorTest : public URLRequestTest {
  public:
-  URLRequestInterceptorTest() : URLRequestTest(), interceptor_(NULL) {
-  }
+  URLRequestInterceptorTest() : URLRequestTest(), interceptor_(nullptr) {}
 
   ~URLRequestInterceptorTest() override {
     // URLRequestJobs may post clean-up tasks on destruction.
@@ -2427,8 +2427,9 @@ TEST_F(URLRequestTest, MAYBE_NetworkDelegateProxyError) {
   d.RunUntilComplete();
 
   // Check we see a failed request.
-  // The proxy server is not set before failure.
-  EXPECT_FALSE(req->proxy_server().is_valid());
+  // The proxy server should be set before failure.
+  EXPECT_EQ(ProxyServer::FromPacString("PROXY myproxy:70"),
+            req->proxy_server());
   EXPECT_EQ(ERR_PROXY_CONNECTION_FAILED, d.request_status());
 
   EXPECT_EQ(1, network_delegate.error_count());
@@ -2588,6 +2589,154 @@ TEST_F(URLRequestTest, DelayedCookieCallback) {
                 != std::string::npos);
     EXPECT_EQ(0, network_delegate.blocked_get_cookies_count());
     EXPECT_EQ(0, network_delegate.blocked_set_cookie_count());
+  }
+}
+
+class FilteringTestLayeredNetworkDelegate : public LayeredNetworkDelegate {
+ public:
+  FilteringTestLayeredNetworkDelegate(
+      std::unique_ptr<NetworkDelegate> network_delegate)
+      : LayeredNetworkDelegate(std::move((network_delegate))),
+        set_cookie_called_count_(0),
+        blocked_set_cookie_count_(0) {}
+  ~FilteringTestLayeredNetworkDelegate() override = default;
+
+  bool OnCanSetCookieInternal(const URLRequest& request,
+                              const net::CanonicalCookie& cookie,
+                              CookieOptions* options,
+                              bool allowed_from_caller) override {
+    // Filter out cookies with the same name as |cookie_name_filter_| and
+    // combine with |allowed_from_caller|.
+    bool allowed =
+        allowed_from_caller && !(cookie.Name() == cookie_name_filter_);
+
+    ++set_cookie_called_count_;
+
+    if (!allowed)
+      ++blocked_set_cookie_count_;
+
+    return allowed;
+  }
+
+  void SetCookieFilter(std::string filter) {
+    cookie_name_filter_ = std::move(filter);
+  }
+
+  int set_cookie_called_count() { return set_cookie_called_count_; }
+
+  int blocked_set_cookie_count() { return blocked_set_cookie_count_; }
+
+  void ResetSetCookieCalledCount() { set_cookie_called_count_ = 0; }
+
+  void ResetBlockedSetCookieCount() { blocked_set_cookie_count_ = 0; }
+
+ private:
+  std::string cookie_name_filter_;
+  int set_cookie_called_count_;
+  int blocked_set_cookie_count_;
+};
+
+TEST_F(URLRequestTest, DelayedCookieCallbackAsync) {
+  HttpTestServer test_server;
+  ASSERT_TRUE(test_server.Start());
+
+  TestURLRequestContext async_context;
+  std::unique_ptr<DelayedCookieMonster> delayed_cm =
+      std::make_unique<DelayedCookieMonster>();
+  async_context.set_cookie_store(delayed_cm.get());
+  FilteringTestLayeredNetworkDelegate async_filter_network_delegate(
+      std::make_unique<TestNetworkDelegate>());
+  async_filter_network_delegate.SetCookieFilter("CookieBlockedOnCanGetCookie");
+  async_context.set_network_delegate(&async_filter_network_delegate);
+  TestDelegate async_delegate;
+
+  TestURLRequestContext sync_context;
+  std::unique_ptr<CookieMonster> cm =
+      std::make_unique<CookieMonster>(nullptr, nullptr);
+  sync_context.set_cookie_store(cm.get());
+  FilteringTestLayeredNetworkDelegate sync_filter_network_delegate(
+      std::make_unique<TestNetworkDelegate>());
+  sync_filter_network_delegate.SetCookieFilter("CookieBlockedOnCanGetCookie");
+  sync_context.set_network_delegate(&sync_filter_network_delegate);
+  TestDelegate sync_delegate;
+
+  // Add a secure cookie so we can try to set an insecure cookie and have
+  // SetCanonicalCookie (and therefore SetCookieWithOptions) fail.
+  GURL::Replacements replace_scheme;
+  replace_scheme.SetSchemeStr("https");
+  GURL url = test_server.base_url().ReplaceComponents(replace_scheme);
+
+  delayed_cm->SetCookieWithOptionsAsync(url, "AlreadySetCookie=1;Secure",
+                                        CookieOptions(),
+                                        CookieStore::SetCookiesCallback());
+  cm->SetCookieWithOptionsAsync(url, "AlreadySetCookie=1;Secure",
+                                CookieOptions(),
+                                CookieStore::SetCookiesCallback());
+
+  std::vector<std::string> cookie_lines(
+      {// Fails on CanonicalCookie::Create for trying to create a secure cookie
+       // on an insecure host.
+       "CookieNotSet=1;Secure",
+       // Fail in FilteringTestLayeredNetworkDelegate::CanGetCookie.
+       "CookieBlockedOnCanGetCookie=1",
+       // Fails in SetCanonicalCookie for trying to overwrite a secure cookie
+       // with an insecure cookie.
+       "AlreadySetCookie=1",
+       // Succeeds and added cookie to store. Delayed (which makes the callback
+       // run asynchronously) in DelayedCookieMonster.
+       "CookieSet=1"});
+
+  for (auto first_cookie_line : cookie_lines) {
+    for (auto second_cookie_line : cookie_lines) {
+      // Run with the delayed cookie monster.
+      std::unique_ptr<URLRequest> request = async_context.CreateRequest(
+          test_server.GetURL("/set-cookie?" + first_cookie_line + "&" +
+                             second_cookie_line),
+          DEFAULT_PRIORITY, &async_delegate, TRAFFIC_ANNOTATION_FOR_TESTS);
+
+      request->Start();
+      async_delegate.RunUntilComplete();
+      EXPECT_THAT(async_delegate.request_status(), IsOk());
+
+      // Run with the regular cookie monster.
+      request = sync_context.CreateRequest(
+          test_server.GetURL("/set-cookie?" + first_cookie_line + "&" +
+                             second_cookie_line),
+          DEFAULT_PRIORITY, &sync_delegate, TRAFFIC_ANNOTATION_FOR_TESTS);
+
+      request->Start();
+      sync_delegate.RunUntilComplete();
+      EXPECT_THAT(sync_delegate.request_status(), IsOk());
+
+      int expected_set_cookie_count = 0;
+      int expected_blocked_cookie_count = 0;
+
+      if (first_cookie_line != "CookieNotSet=1;Secure")
+        ++expected_set_cookie_count;
+      if (second_cookie_line != "CookieNotSet=1;Secure")
+        ++expected_set_cookie_count;
+
+      if (first_cookie_line == "CookieBlockedOnCanGetCookie=1")
+        ++expected_blocked_cookie_count;
+      if (second_cookie_line == "CookieBlockedOnCanGetCookie=1")
+        ++expected_blocked_cookie_count;
+
+      EXPECT_EQ(expected_set_cookie_count,
+                async_filter_network_delegate.set_cookie_called_count());
+      EXPECT_EQ(expected_blocked_cookie_count,
+                async_filter_network_delegate.blocked_set_cookie_count());
+
+      EXPECT_EQ(expected_set_cookie_count,
+                sync_filter_network_delegate.set_cookie_called_count());
+      EXPECT_EQ(expected_blocked_cookie_count,
+                sync_filter_network_delegate.blocked_set_cookie_count());
+
+      async_filter_network_delegate.ResetSetCookieCalledCount();
+      async_filter_network_delegate.ResetBlockedSetCookieCount();
+
+      sync_filter_network_delegate.ResetSetCookieCalledCount();
+      sync_filter_network_delegate.ResetBlockedSetCookieCount();
+    }
   }
 }
 
@@ -4164,8 +4313,10 @@ TEST_F(URLRequestTestHTTP, ProxyTunnelRedirectTest) {
 
     d.RunUntilComplete();
 
-    // The proxy server is not set before failure.
-    EXPECT_FALSE(r->proxy_server().is_valid());
+    // The proxy server should be set before failure.
+    EXPECT_EQ(ProxyServer(ProxyServer::SCHEME_HTTP,
+                          http_test_server()->host_port_pair()),
+              r->proxy_server());
     EXPECT_EQ(ERR_TUNNEL_CONNECTION_FAILED, d.request_status());
     EXPECT_EQ(1, d.response_started_count());
     // We should not have followed the redirect.
@@ -4192,8 +4343,10 @@ TEST_F(URLRequestTestHTTP, NetworkDelegateTunnelConnectionFailed) {
 
     d.RunUntilComplete();
 
-    // The proxy server is not set before failure.
-    EXPECT_FALSE(r->proxy_server().is_valid());
+    // The proxy server should be set before failure.
+    EXPECT_EQ(ProxyServer(ProxyServer::SCHEME_HTTP,
+                          http_test_server()->host_port_pair()),
+              r->proxy_server());
     EXPECT_EQ(1, d.response_started_count());
     EXPECT_EQ(ERR_TUNNEL_CONNECTION_FAILED, d.request_status());
     // We should not have followed the redirect.
@@ -4392,8 +4545,8 @@ TEST_F(URLRequestTestHTTP, NetworkDelegateRedirectRequest) {
     EXPECT_EQ(307, r->GetResponseCode());
     EXPECT_EQ(307, r->response_headers()->response_code());
     std::string location;
-    ASSERT_TRUE(r->response_headers()->EnumerateHeader(NULL, "Location",
-                                                       &location));
+    ASSERT_TRUE(
+        r->response_headers()->EnumerateHeader(nullptr, "Location", &location));
     EXPECT_EQ(redirect_url, GURL(location));
 
     // Let the request finish.
@@ -4447,8 +4600,8 @@ TEST_F(URLRequestTestHTTP, NetworkDelegateRedirectRequestSynchronously) {
     EXPECT_EQ(307, r->GetResponseCode());
     EXPECT_EQ(307, r->response_headers()->response_code());
     std::string location;
-    ASSERT_TRUE(r->response_headers()->EnumerateHeader(NULL, "Location",
-                                                       &location));
+    ASSERT_TRUE(
+        r->response_headers()->EnumerateHeader(nullptr, "Location", &location));
     EXPECT_EQ(redirect_url, GURL(location));
 
     // Let the request finish.
@@ -4511,8 +4664,8 @@ TEST_F(URLRequestTestHTTP, NetworkDelegateRedirectRequestPost) {
     EXPECT_EQ(307, r->GetResponseCode());
     EXPECT_EQ(307, r->response_headers()->response_code());
     std::string location;
-    ASSERT_TRUE(r->response_headers()->EnumerateHeader(NULL, "Location",
-                                                       &location));
+    ASSERT_TRUE(
+        r->response_headers()->EnumerateHeader(nullptr, "Location", &location));
     EXPECT_EQ(redirect_url, GURL(location));
 
     // Let the request finish.
@@ -5082,8 +5235,10 @@ TEST_F(URLRequestTestHTTP, UnexpectedServerAuthTest) {
 
     d.RunUntilComplete();
 
-    // The proxy server is not set before failure.
-    EXPECT_FALSE(r->proxy_server().is_valid());
+    // The proxy server should be set before failure.
+    EXPECT_EQ(ProxyServer(ProxyServer::SCHEME_HTTP,
+                          http_test_server()->host_port_pair()),
+              r->proxy_server());
     EXPECT_EQ(ERR_TUNNEL_CONNECTION_FAILED, d.request_status());
   }
 }
@@ -5370,6 +5525,37 @@ TEST_F(URLRequestTestHTTP, MultipleRedirectTest) {
   EXPECT_EQ(original_url, req->url_chain()[0]);
   EXPECT_EQ(middle_redirect_url, req->url_chain()[1]);
   EXPECT_EQ(destination_url, req->url_chain()[2]);
+}
+
+// This is a regression test for https://crbug.com/942073.
+TEST_F(URLRequestTestHTTP, RedirectEscaping) {
+  ASSERT_TRUE(http_test_server()->Start());
+
+  // Assemble the destination URL as a string so it is not escaped by GURL.
+  GURL destination_base = http_test_server()->GetURL("/defaultresponse");
+  // Add a URL fragment of U+2603 unescaped, U+2603 escaped, and then a UTF-8
+  // encoding error.
+  std::string destination_url =
+      destination_base.spec() + "#\xE2\x98\x83_%E2%98%83_\xE0\xE0";
+  // Redirect resolution should percent-escape bytes and preserve the UTF-8
+  // error at the end.
+  std::string destination_escaped =
+      destination_base.spec() + "#%E2%98%83_%E2%98%83_%E0%E0";
+  GURL original_url = http_test_server()->GetURL(
+      "/server-redirect?" + EscapeQueryParamValue(destination_url, false));
+  TestDelegate d;
+  std::unique_ptr<URLRequest> req(default_context().CreateRequest(
+      original_url, DEFAULT_PRIORITY, &d, TRAFFIC_ANNOTATION_FOR_TESTS));
+  req->Start();
+  d.RunUntilComplete();
+
+  EXPECT_EQ(1, d.response_started_count());
+  EXPECT_EQ(1, d.received_redirect_count());
+  EXPECT_EQ(destination_escaped, req->url().spec());
+  EXPECT_EQ(original_url, req->original_url());
+  ASSERT_EQ(2U, req->url_chain().size());
+  EXPECT_EQ(original_url, req->url_chain()[0]);
+  EXPECT_EQ(destination_escaped, req->url_chain()[1].spec());
 }
 
 // First and second pieces of information logged by delegates to URLRequests.
@@ -5663,7 +5849,7 @@ TEST_F(URLRequestTestHTTP, DelegateInfoBeforeStart) {
 
   TestDelegate request_delegate;
   TestURLRequestContext context(true);
-  context.set_network_delegate(NULL);
+  context.set_network_delegate(nullptr);
   context.set_net_log(&net_log_);
   context.Init();
 
@@ -5899,7 +6085,7 @@ TEST_F(URLRequestTestHTTP, URLRequestDelegateInfo) {
   AsyncLoggingUrlRequestDelegate request_delegate(
       AsyncLoggingUrlRequestDelegate::NO_CANCEL);
   TestURLRequestContext context(true);
-  context.set_network_delegate(NULL);
+  context.set_network_delegate(nullptr);
   context.set_net_log(&net_log_);
   context.Init();
 
@@ -5958,7 +6144,7 @@ TEST_F(URLRequestTestHTTP, URLRequestDelegateInfoOnRedirect) {
   AsyncLoggingUrlRequestDelegate request_delegate(
       AsyncLoggingUrlRequestDelegate::NO_CANCEL);
   TestURLRequestContext context(true);
-  context.set_network_delegate(NULL);
+  context.set_network_delegate(nullptr);
   context.set_net_log(&net_log_);
   context.Init();
 
@@ -6016,7 +6202,7 @@ TEST_F(URLRequestTestHTTP, URLRequestDelegateOnRedirectCancelled) {
     AsyncLoggingUrlRequestDelegate request_delegate(cancel_stage);
     TestNetLog net_log;
     TestURLRequestContext context(true);
-    context.set_network_delegate(NULL);
+    context.set_network_delegate(nullptr);
     context.set_net_log(&net_log);
     context.Init();
 
@@ -7053,6 +7239,42 @@ TEST_F(URLRequestTestHTTP, MultipleExpectCTHeaders) {
 
 #if BUILDFLAG(ENABLE_REPORTING)
 
+TEST_F(URLRequestTestHTTP, NetworkErrorLogging_DontReportIfNetworkNotAccessed) {
+  EmbeddedTestServer https_test_server(net::EmbeddedTestServer::TYPE_HTTPS);
+  https_test_server.AddDefaultHandlers(base::FilePath(kTestFilePath));
+  ASSERT_TRUE(https_test_server.Start());
+  GURL request_url = https_test_server.GetURL("/cachetime");
+
+  TestNetworkErrorLoggingService nel_service;
+  TestURLRequestContext context(true);
+  context.set_network_error_logging_service(&nel_service);
+  context.Init();
+
+  // Populate the cache.
+  TestDelegate d;
+  std::unique_ptr<URLRequest> request(context.CreateRequest(
+      request_url, DEFAULT_PRIORITY, &d, TRAFFIC_ANNOTATION_FOR_TESTS));
+  request->Start();
+  d.RunUntilComplete();
+
+  ASSERT_EQ(1u, nel_service.errors().size());
+  const TestNetworkErrorLoggingService::RequestDetails& error =
+      nel_service.errors()[0];
+  EXPECT_EQ(request_url, error.uri);
+  EXPECT_EQ(200, error.status_code);
+  EXPECT_EQ(OK, error.type);
+
+  request = context.CreateRequest(request_url, DEFAULT_PRIORITY, &d,
+                                  TRAFFIC_ANNOTATION_FOR_TESTS);
+  request->Start();
+  d.RunUntilComplete();
+
+  EXPECT_FALSE(request->response_info().network_accessed);
+  EXPECT_TRUE(request->response_info().was_cached);
+  // No additional NEL report was generated.
+  EXPECT_EQ(1u, nel_service.errors().size());
+}
+
 TEST_F(URLRequestTestHTTP, NetworkErrorLogging_BasicSuccess) {
   EmbeddedTestServer https_test_server(net::EmbeddedTestServer::TYPE_HTTPS);
   https_test_server.ServeFilesFromSourceDirectory(
@@ -7136,6 +7358,33 @@ TEST_F(URLRequestTestHTTP, NetworkErrorLogging_Redirect) {
   EXPECT_EQ(OK, error2.type);
 }
 
+TEST_F(URLRequestTestHTTP, NetworkErrorLogging_RedirectWithoutLocationHeader) {
+  EmbeddedTestServer https_test_server(net::EmbeddedTestServer::TYPE_HTTPS);
+  https_test_server.ServeFilesFromSourceDirectory(
+      base::FilePath(kTestFilePath));
+  ASSERT_TRUE(https_test_server.Start());
+  GURL request_url = https_test_server.GetURL("/308-without-location-header");
+
+  TestNetworkErrorLoggingService nel_service;
+  TestURLRequestContext context(true);
+  context.set_network_error_logging_service(&nel_service);
+  context.Init();
+
+  TestDelegate d;
+  std::unique_ptr<URLRequest> request(context.CreateRequest(
+      request_url, DEFAULT_PRIORITY, &d, TRAFFIC_ANNOTATION_FOR_TESTS));
+  request->Start();
+  d.RunUntilComplete();
+
+  ASSERT_EQ(1u, nel_service.errors().size());
+  const TestNetworkErrorLoggingService::RequestDetails& error =
+      nel_service.errors()[0];
+  EXPECT_EQ(request_url, error.uri);
+  EXPECT_EQ(308, error.status_code);
+  // The body of the response was successfully read.
+  EXPECT_EQ(OK, error.type);
+}
+
 TEST_F(URLRequestTestHTTP, NetworkErrorLogging_Auth) {
   EmbeddedTestServer https_test_server(net::EmbeddedTestServer::TYPE_HTTPS);
   https_test_server.AddDefaultHandlers(base::FilePath(kTestFilePath));
@@ -7167,7 +7416,62 @@ TEST_F(URLRequestTestHTTP, NetworkErrorLogging_Auth) {
   EXPECT_EQ(OK, error2.type);
 }
 
-TEST_F(URLRequestTestHTTP, NetworkErrorLogging_Cancel) {
+TEST_F(URLRequestTestHTTP, NetworkErrorLogging_304Response) {
+  EmbeddedTestServer https_test_server(net::EmbeddedTestServer::TYPE_HTTPS);
+  https_test_server.AddDefaultHandlers(base::FilePath(kTestFilePath));
+  ASSERT_TRUE(https_test_server.Start());
+  GURL request_url = https_test_server.GetURL("/auth-basic");
+
+  TestNetworkErrorLoggingService nel_service;
+  TestURLRequestContext context(true);
+  context.set_network_error_logging_service(&nel_service);
+  context.Init();
+
+  // populate the cache
+  {
+    TestDelegate d;
+    d.set_credentials(AuthCredentials(kUser, kSecret));
+    std::unique_ptr<URLRequest> r(context.CreateRequest(
+        request_url, DEFAULT_PRIORITY, &d, TRAFFIC_ANNOTATION_FOR_TESTS));
+    r->Start();
+    d.RunUntilComplete();
+  }
+  ASSERT_EQ(2u, nel_service.errors().size());
+  const TestNetworkErrorLoggingService::RequestDetails& error1 =
+      nel_service.errors()[0];
+  EXPECT_EQ(request_url, error1.uri);
+  EXPECT_EQ(401, error1.status_code);
+  EXPECT_EQ(OK, error1.type);
+  const TestNetworkErrorLoggingService::RequestDetails& error2 =
+      nel_service.errors()[1];
+  EXPECT_EQ(request_url, error2.uri);
+  EXPECT_EQ(200, error2.status_code);
+  EXPECT_EQ(OK, error2.type);
+
+  // repeat request with end-to-end validation.  since auth-basic results in a
+  // cachable page, we expect this test to result in a 304.  in which case, the
+  // response should be fetched from the cache.
+  {
+    TestDelegate d;
+    d.set_credentials(AuthCredentials(kUser, kSecret));
+    std::unique_ptr<URLRequest> r(context.CreateRequest(
+        request_url, DEFAULT_PRIORITY, &d, TRAFFIC_ANNOTATION_FOR_TESTS));
+    r->SetLoadFlags(LOAD_VALIDATE_CACHE);
+    r->Start();
+    d.RunUntilComplete();
+
+    // Should be the same cached document.
+    EXPECT_TRUE(r->was_cached());
+  }
+  ASSERT_EQ(3u, nel_service.errors().size());
+  const TestNetworkErrorLoggingService::RequestDetails& error3 =
+      nel_service.errors()[2];
+  EXPECT_EQ(request_url, error3.uri);
+  EXPECT_EQ(304, error3.status_code);
+  EXPECT_EQ(OK, error3.type);
+}
+
+TEST_F(URLRequestTestHTTP, NetworkErrorLogging_CancelInResponseStarted) {
   EmbeddedTestServer https_test_server(net::EmbeddedTestServer::TYPE_HTTPS);
   https_test_server.ServeFilesFromSourceDirectory(
       base::FilePath(kTestFilePath));
@@ -7191,6 +7495,63 @@ TEST_F(URLRequestTestHTTP, NetworkErrorLogging_Cancel) {
       nel_service.errors()[0];
   EXPECT_EQ(request_url, error.uri);
   EXPECT_EQ(200, error.status_code);
+  // Headers were received and the body should have been read but was not.
+  EXPECT_EQ(ERR_ABORTED, error.type);
+}
+
+TEST_F(URLRequestTestHTTP, NetworkErrorLogging_CancelOnDataReceived) {
+  EmbeddedTestServer https_test_server(net::EmbeddedTestServer::TYPE_HTTPS);
+  https_test_server.ServeFilesFromSourceDirectory(
+      base::FilePath(kTestFilePath));
+  ASSERT_TRUE(https_test_server.Start());
+  GURL request_url = https_test_server.GetURL("/simple.html");
+
+  TestNetworkErrorLoggingService nel_service;
+  TestURLRequestContext context(true);
+  context.set_network_error_logging_service(&nel_service);
+  context.Init();
+
+  TestDelegate d;
+  d.set_cancel_in_received_data(true);
+  std::unique_ptr<URLRequest> request(context.CreateRequest(
+      request_url, DEFAULT_PRIORITY, &d, TRAFFIC_ANNOTATION_FOR_TESTS));
+  request->Start();
+  d.RunUntilComplete();
+
+  ASSERT_EQ(1u, nel_service.errors().size());
+  const TestNetworkErrorLoggingService::RequestDetails& error =
+      nel_service.errors()[0];
+  EXPECT_EQ(request_url, error.uri);
+  EXPECT_EQ(200, error.status_code);
+  // Data was received but the body was not completely read.
+  EXPECT_EQ(ERR_ABORTED, error.type);
+}
+
+TEST_F(URLRequestTestHTTP, NetworkErrorLogging_CancelRedirect) {
+  EmbeddedTestServer https_test_server(net::EmbeddedTestServer::TYPE_HTTPS);
+  https_test_server.ServeFilesFromSourceDirectory(
+      base::FilePath(kTestFilePath));
+  ASSERT_TRUE(https_test_server.Start());
+  GURL request_url = https_test_server.GetURL("/redirect-test.html");
+
+  TestNetworkErrorLoggingService nel_service;
+  TestURLRequestContext context(true);
+  context.set_network_error_logging_service(&nel_service);
+  context.Init();
+
+  TestDelegate d;
+  d.set_cancel_in_received_redirect(true);
+  std::unique_ptr<URLRequest> request(context.CreateRequest(
+      request_url, DEFAULT_PRIORITY, &d, TRAFFIC_ANNOTATION_FOR_TESTS));
+  request->Start();
+  d.RunUntilComplete();
+
+  ASSERT_EQ(1u, nel_service.errors().size());
+  const TestNetworkErrorLoggingService::RequestDetails& error =
+      nel_service.errors()[0];
+  EXPECT_EQ(request_url, error.uri);
+  EXPECT_EQ(302, error.status_code);
+  // A valid HTTP response was received, even though the request was cancelled.
   EXPECT_EQ(OK, error.type);
 }
 
@@ -7962,6 +8323,39 @@ TEST_F(URLRequestTestHTTP, BasicAuthWithCookies) {
   }
 }
 
+TEST_F(URLRequestTestHTTP, AuthChallengeWithFilteredCookie) {
+  ASSERT_TRUE(http_test_server()->Start());
+
+  GURL url_requiring_auth = http_test_server()->GetURL(
+      "/auth-basic?set-cookie-if-not-challenged&set-cookie-if-challenged");
+
+  FilteringTestLayeredNetworkDelegate filtering_network_delegate(
+      std::make_unique<TestNetworkDelegate>());  // Must outlive URLRequest.
+  filtering_network_delegate.SetCookieFilter(
+      "got_challenged");  // Filter the cookie auth-basic sets
+  TestURLRequestContext context(true);
+  context.set_network_delegate(&filtering_network_delegate);
+  context.Init();
+
+  TestDelegate delegate;
+
+  delegate.set_credentials(AuthCredentials(kUser, kSecret));
+
+  std::unique_ptr<URLRequest> request(
+      context.CreateRequest(url_requiring_auth, DEFAULT_PRIORITY, &delegate,
+                            TRAFFIC_ANNOTATION_FOR_TESTS));
+  request->Start();
+
+  delegate.RunUntilComplete();
+  EXPECT_THAT(delegate.request_status(), IsOk());
+
+  // Make sure the cookie was actually filtered.
+  EXPECT_EQ(std::string::npos,
+            delegate.data_received().find("Cookie: got_challenged=true"));
+  // Make sure it was blocked twice.
+  EXPECT_EQ(2, filtering_network_delegate.blocked_set_cookie_count());
+}
+
 // Tests that load timing works as expected with auth and the cache.
 TEST_F(URLRequestTestHTTP, BasicAuthLoadTiming) {
   ASSERT_TRUE(http_test_server()->Start());
@@ -8587,7 +8981,7 @@ TEST_F(URLRequestTestHTTP, EmptyHttpUserAgentSettings) {
   context.Init();
   // We override the HttpUserAgentSettings after initialization because empty
   // entries get overridden by Init().
-  context.set_http_user_agent_settings(NULL);
+  context.set_http_user_agent_settings(nullptr);
 
   struct {
     const char* request;
@@ -8850,8 +9244,8 @@ class URLRequestInterceptorTestHTTP : public URLRequestTestHTTP {
   // TODO(bengr): Merge this with the URLRequestInterceptorHTTPTest fixture,
   // ideally remove the dependency on URLRequestTestJob, and maybe move these
   // tests into the factory tests.
-  URLRequestInterceptorTestHTTP() : URLRequestTestHTTP(), interceptor_(NULL) {
-  }
+  URLRequestInterceptorTestHTTP()
+      : URLRequestTestHTTP(), interceptor_(nullptr) {}
 
   void SetUpFactory() override {
     interceptor_ = new MockURLRequestInterceptor();
@@ -9631,11 +10025,12 @@ TEST_F(HTTPSRequestTest, HSTSCrossOriginAddHeaders) {
 
   const HttpResponseHeaders* headers = req->response_headers();
   std::string redirect_location;
-  EXPECT_TRUE(headers->EnumerateHeader(NULL, "Location", &redirect_location));
+  EXPECT_TRUE(
+      headers->EnumerateHeader(nullptr, "Location", &redirect_location));
   EXPECT_EQ(hsts_https_url.spec(), redirect_location);
 
   std::string received_cors_header;
-  EXPECT_TRUE(headers->EnumerateHeader(NULL, "Access-Control-Allow-Origin",
+  EXPECT_TRUE(headers->EnumerateHeader(nullptr, "Access-Control-Allow-Origin",
                                        &received_cors_header));
   EXPECT_EQ(kOriginHeaderValue, received_cors_header);
 }
@@ -10388,7 +10783,7 @@ class HTTPSOCSPTest : public HTTPSRequestTest {
 
     scoped_refptr<X509Certificate> root_cert =
         ImportCertFromFile(GetTestCertsDirectory(), "ocsp-test-root.pem");
-    CHECK_NE(static_cast<X509Certificate*>(NULL), root_cert.get());
+    CHECK_NE(static_cast<X509Certificate*>(nullptr), root_cert.get());
     test_root_.reset(new ScopedTestRoot(root_cert.get()));
 
 #if defined(OS_ANDROID) || defined(USE_BUILTIN_CERT_VERIFIER)
@@ -11021,7 +11416,13 @@ class HTTPSOCSPVerifyTest
     : public HTTPSOCSPTest,
       public testing::WithParamInterface<OCSPVerifyTestData> {};
 
-TEST_P(HTTPSOCSPVerifyTest, VerifyResult) {
+// TODO(crbug.com/949958): The test is flaky on Mac
+#if defined(OS_MACOSX)
+#define MAYBE_VerifyResult DISABLED_VerifyResult
+#else
+#define MAYBE_VerifyResult VerifyResult
+#endif
+TEST_P(HTTPSOCSPVerifyTest, MAYBE_VerifyResult) {
   SpawnedTestServer::SSLOptions ssl_options(
       SpawnedTestServer::SSLOptions::CERT_AUTO);
   OCSPVerifyTestData test = GetParam();
@@ -12182,5 +12583,401 @@ TEST_F(URLRequestTestHTTP, TestTagging) {
   EXPECT_GT(GetTaggedBytes(tag_val1), old_traffic);
 }
 #endif
+
+// Provides a response to the 0RTT request indicating whether it was received
+// as early data, sending HTTP_TOO_EARLY if enabled.
+class ZeroRTTResponse : public test_server::BasicHttpResponse {
+ public:
+  ZeroRTTResponse(bool zero_rtt, bool send_too_early)
+      : zero_rtt_(zero_rtt), send_too_early_(send_too_early) {}
+  ~ZeroRTTResponse() override {}
+
+  void SendResponse(const test_server::SendBytesCallback& send,
+                    const test_server::SendCompleteCallback& done) override {
+    AddCustomHeader("Vary", "Early-Data");
+    set_content_type("text/plain");
+    AddCustomHeader("Cache-Control", "no-cache");
+    if (zero_rtt_) {
+      if (send_too_early_)
+        set_code(HTTP_TOO_EARLY);
+      set_content("1");
+    } else {
+      set_content("0");
+    }
+
+    // Since the EmbeddedTestServer doesn't keep the socket open by default,
+    // it is explicitly kept alive to allow the remaining leg of the 0RTT
+    // handshake to be received after the early data.
+    send.Run(ToResponseString(), base::DoNothing());
+  }
+
+ private:
+  bool zero_rtt_;
+  bool send_too_early_;
+
+  DISALLOW_COPY_AND_ASSIGN(ZeroRTTResponse);
+};
+
+std::unique_ptr<test_server::HttpResponse> HandleZeroRTTRequest(
+    const test_server::HttpRequest& request) {
+  if (request.GetURL().path() != "/zerortt")
+    return nullptr;
+  auto iter = request.headers.find("Early-Data");
+  bool zero_rtt = iter != request.headers.end() && iter->second == "1";
+  return std::make_unique<ZeroRTTResponse>(zero_rtt, false);
+}
+
+class HTTPSEarlyDataTest : public TestWithScopedTaskEnvironment {
+ public:
+  HTTPSEarlyDataTest()
+      : context_(true), test_server_(net::EmbeddedTestServer::TYPE_HTTPS) {
+    auto params = std::make_unique<HttpNetworkSession::Params>();
+    params->enable_early_data = true;
+    context_.set_http_network_session_params(std::move(params));
+
+    context_.set_network_delegate(&network_delegate_);
+    cert_verifier_.set_default_result(OK);
+    context_.set_cert_verifier(&cert_verifier_);
+
+    ssl_config_service_ = std::make_unique<TestSSLConfigService>();
+    ssl_config_service_->set_max_version(SSL_PROTOCOL_VERSION_TLS1_3);
+    context_.set_ssl_config_service(ssl_config_service_.get());
+
+    context_.Init();
+
+    ssl_config_.version_max = SSL_PROTOCOL_VERSION_TLS1_3;
+    ssl_config_.early_data_enabled = true;
+    test_server_.SetSSLConfig(net::EmbeddedTestServer::CERT_OK, ssl_config_);
+    test_server_.AddDefaultHandlers(
+        base::FilePath(FILE_PATH_LITERAL("net/data/ssl")));
+    test_server_.RegisterRequestHandler(
+        base::BindRepeating(&HandleZeroRTTRequest));
+  }
+
+  ~HTTPSEarlyDataTest() override = default;
+
+  void ResetSSLConfig(net::EmbeddedTestServer::ServerCertificate cert,
+                      uint16_t version) {
+    ssl_config_.version_max = version;
+    test_server_.ResetSSLConfig(cert, ssl_config_);
+  }
+
+ protected:
+  MockCertVerifier cert_verifier_;
+  TestNetworkDelegate network_delegate_;  // Must outlive URLRequest.
+  std::unique_ptr<TestSSLConfigService> ssl_config_service_;
+  TestURLRequestContext context_;
+
+  SSLServerConfig ssl_config_;
+  EmbeddedTestServer test_server_;
+};
+
+// TLSEarlyDataTest tests that we handle early data correctly.
+TEST_F(HTTPSEarlyDataTest, TLSEarlyDataTest) {
+  ASSERT_TRUE(test_server_.Start());
+  context_.http_transaction_factory()->GetSession()->ClearSSLSessionCache();
+
+  {
+    TestDelegate d;
+    std::unique_ptr<URLRequest> r(context_.CreateRequest(
+        test_server_.GetURL("/zerortt"), DEFAULT_PRIORITY, &d,
+        TRAFFIC_ANNOTATION_FOR_TESTS));
+    r->Start();
+    EXPECT_TRUE(r->is_pending());
+
+    base::RunLoop().Run();
+
+    EXPECT_EQ(1, d.response_started_count());
+
+    EXPECT_EQ(SSL_CONNECTION_VERSION_TLS1_3,
+              SSLConnectionStatusToVersion(r->ssl_info().connection_status));
+    EXPECT_TRUE(r->ssl_info().unverified_cert.get());
+    EXPECT_TRUE(test_server_.GetCertificate()->EqualsIncludingChain(
+        r->ssl_info().cert.get()));
+
+    // The Early-Data header should be omitted in the initial request, and the
+    // handler should return "0".
+    EXPECT_EQ("0", d.data_received());
+  }
+
+  context_.http_transaction_factory()->GetSession()->CloseAllConnections();
+
+  {
+    TestDelegate d;
+    std::unique_ptr<URLRequest> r(context_.CreateRequest(
+        test_server_.GetURL("/zerortt"), DEFAULT_PRIORITY, &d,
+        TRAFFIC_ANNOTATION_FOR_TESTS));
+
+    r->Start();
+    EXPECT_TRUE(r->is_pending());
+
+    base::RunLoop().Run();
+
+    EXPECT_EQ(1, d.response_started_count());
+
+    EXPECT_EQ(SSL_CONNECTION_VERSION_TLS1_3,
+              SSLConnectionStatusToVersion(r->ssl_info().connection_status));
+    EXPECT_TRUE(r->ssl_info().unverified_cert.get());
+    EXPECT_TRUE(test_server_.GetCertificate()->EqualsIncludingChain(
+        r->ssl_info().cert.get()));
+
+    // The Early-Data header should be a single '1' in the resumed request, and
+    // the handler should return "1".
+    EXPECT_EQ("1", d.data_received());
+  }
+}
+
+// TLSEarlyDataTest tests that we handle early data correctly for POST.
+TEST_F(HTTPSEarlyDataTest, TLSEarlyDataPOSTTest) {
+  ASSERT_TRUE(test_server_.Start());
+  context_.http_transaction_factory()->GetSession()->ClearSSLSessionCache();
+
+  {
+    TestDelegate d;
+    std::unique_ptr<URLRequest> r(context_.CreateRequest(
+        test_server_.GetURL("/zerortt"), DEFAULT_PRIORITY, &d,
+        TRAFFIC_ANNOTATION_FOR_TESTS));
+    r->Start();
+    EXPECT_TRUE(r->is_pending());
+
+    base::RunLoop().Run();
+
+    EXPECT_EQ(1, d.response_started_count());
+
+    EXPECT_EQ(SSL_CONNECTION_VERSION_TLS1_3,
+              SSLConnectionStatusToVersion(r->ssl_info().connection_status));
+    EXPECT_TRUE(r->ssl_info().unverified_cert.get());
+    EXPECT_TRUE(test_server_.GetCertificate()->EqualsIncludingChain(
+        r->ssl_info().cert.get()));
+
+    // The Early-Data header should be omitted in the initial request, and the
+    // handler should return "0".
+    EXPECT_EQ("0", d.data_received());
+  }
+
+  context_.http_transaction_factory()->GetSession()->CloseAllConnections();
+
+  {
+    TestDelegate d;
+    std::unique_ptr<URLRequest> r(context_.CreateRequest(
+        test_server_.GetURL("/zerortt"), DEFAULT_PRIORITY, &d,
+        TRAFFIC_ANNOTATION_FOR_TESTS));
+    r->set_method("POST");
+    r->Start();
+    EXPECT_TRUE(r->is_pending());
+
+    base::RunLoop().Run();
+
+    EXPECT_EQ(1, d.response_started_count());
+
+    EXPECT_EQ(SSL_CONNECTION_VERSION_TLS1_3,
+              SSLConnectionStatusToVersion(r->ssl_info().connection_status));
+    EXPECT_TRUE(r->ssl_info().unverified_cert.get());
+    EXPECT_TRUE(test_server_.GetCertificate()->EqualsIncludingChain(
+        r->ssl_info().cert.get()));
+
+    // The Early-Data header should be omitted in the request, since we don't
+    // send POSTs over early data, and the handler should return "0".
+    EXPECT_EQ("0", d.data_received());
+  }
+}
+
+std::unique_ptr<test_server::HttpResponse> HandleTooEarly(
+    bool* sent_425,
+    const test_server::HttpRequest& request) {
+  if (request.GetURL().path() != "/tooearly")
+    return nullptr;
+  auto iter = request.headers.find("Early-Data");
+  bool zero_rtt = iter != request.headers.end() && iter->second == "1";
+  if (zero_rtt)
+    *sent_425 = true;
+  return std::make_unique<ZeroRTTResponse>(zero_rtt, true);
+}
+
+// Test that we handle 425 (Too Early) correctly.
+TEST_F(HTTPSEarlyDataTest, TLSEarlyDataTooEarlyTest) {
+  bool sent_425 = false;
+  test_server_.RegisterRequestHandler(
+      base::BindRepeating(&HandleTooEarly, base::Unretained(&sent_425)));
+  ASSERT_TRUE(test_server_.Start());
+  context_.http_transaction_factory()->GetSession()->ClearSSLSessionCache();
+
+  {
+    TestDelegate d;
+    std::unique_ptr<URLRequest> r(context_.CreateRequest(
+        test_server_.GetURL("/tooearly"), DEFAULT_PRIORITY, &d,
+        TRAFFIC_ANNOTATION_FOR_TESTS));
+    r->Start();
+    EXPECT_TRUE(r->is_pending());
+
+    d.RunUntilComplete();
+
+    EXPECT_EQ(1, d.response_started_count());
+
+    EXPECT_EQ(SSL_CONNECTION_VERSION_TLS1_3,
+              SSLConnectionStatusToVersion(r->ssl_info().connection_status));
+    EXPECT_TRUE(r->ssl_info().unverified_cert.get());
+    EXPECT_TRUE(test_server_.GetCertificate()->EqualsIncludingChain(
+        r->ssl_info().cert.get()));
+
+    // The Early-Data header should be omitted in the initial request, and the
+    // handler should return "0".
+    EXPECT_EQ("0", d.data_received());
+    EXPECT_FALSE(sent_425);
+  }
+
+  context_.http_transaction_factory()->GetSession()->CloseAllConnections();
+
+  {
+    TestDelegate d;
+    std::unique_ptr<URLRequest> r(context_.CreateRequest(
+        test_server_.GetURL("/tooearly"), DEFAULT_PRIORITY, &d,
+        TRAFFIC_ANNOTATION_FOR_TESTS));
+
+    r->Start();
+    EXPECT_TRUE(r->is_pending());
+
+    d.RunUntilComplete();
+
+    EXPECT_EQ(1, d.response_started_count());
+
+    EXPECT_EQ(SSL_CONNECTION_VERSION_TLS1_3,
+              SSLConnectionStatusToVersion(r->ssl_info().connection_status));
+    EXPECT_TRUE(r->ssl_info().unverified_cert.get());
+    EXPECT_TRUE(test_server_.GetCertificate()->EqualsIncludingChain(
+        r->ssl_info().cert.get()));
+
+    // The resumption request will encounter a 425 error and retry without early
+    // data, and the handler should return "0".
+    EXPECT_EQ("0", d.data_received());
+    EXPECT_TRUE(sent_425);
+  }
+}
+
+// TLSEarlyDataRejectTest tests that we gracefully handle an early data reject
+// and retry without early data.
+TEST_F(HTTPSEarlyDataTest, TLSEarlyDataRejectTest) {
+  ASSERT_TRUE(test_server_.Start());
+  context_.http_transaction_factory()->GetSession()->ClearSSLSessionCache();
+
+  {
+    TestDelegate d;
+    std::unique_ptr<URLRequest> r(context_.CreateRequest(
+        test_server_.GetURL("/zerortt"), DEFAULT_PRIORITY, &d,
+        TRAFFIC_ANNOTATION_FOR_TESTS));
+
+    r->Start();
+    EXPECT_TRUE(r->is_pending());
+
+    d.RunUntilComplete();
+
+    EXPECT_EQ(SSL_CONNECTION_VERSION_TLS1_3,
+              SSLConnectionStatusToVersion(r->ssl_info().connection_status));
+    EXPECT_TRUE(r->ssl_info().unverified_cert.get());
+    EXPECT_TRUE(test_server_.GetCertificate()->EqualsIncludingChain(
+        r->ssl_info().cert.get()));
+
+    // The Early-Data header should be omitted in the initial request, and the
+    // handler should return "0".
+    EXPECT_EQ("0", d.data_received());
+  }
+
+  context_.http_transaction_factory()->GetSession()->CloseAllConnections();
+
+  // The certificate in the resumption is changed to confirm that the
+  // certificate change is observed.
+  scoped_refptr<X509Certificate> old_cert = test_server_.GetCertificate();
+  ResetSSLConfig(net::EmbeddedTestServer::CERT_EXPIRED,
+                 SSL_PROTOCOL_VERSION_TLS1_3);
+
+  {
+    TestDelegate d;
+    std::unique_ptr<URLRequest> r(context_.CreateRequest(
+        test_server_.GetURL("/zerortt"), DEFAULT_PRIORITY, &d,
+        TRAFFIC_ANNOTATION_FOR_TESTS));
+
+    r->Start();
+    EXPECT_TRUE(r->is_pending());
+
+    d.RunUntilComplete();
+
+    EXPECT_EQ(1, d.response_started_count());
+
+    EXPECT_EQ(SSL_CONNECTION_VERSION_TLS1_3,
+              SSLConnectionStatusToVersion(r->ssl_info().connection_status));
+    EXPECT_TRUE(r->ssl_info().unverified_cert.get());
+    EXPECT_TRUE(test_server_.GetCertificate()->EqualsIncludingChain(
+        r->ssl_info().cert.get()));
+    EXPECT_FALSE(old_cert->EqualsIncludingChain(r->ssl_info().cert.get()));
+
+    // The Early-Data header should be omitted in the rejected request, and the
+    // handler should return "0".
+    EXPECT_EQ("0", d.data_received());
+  }
+}
+
+// TLSEarlyDataTLS12RejectTest tests that we gracefully handle an early data
+// reject from a TLS 1.2 server and retry without early data.
+TEST_F(HTTPSEarlyDataTest, TLSEarlyDataTLS12RejectTest) {
+  ASSERT_TRUE(test_server_.Start());
+  context_.http_transaction_factory()->GetSession()->ClearSSLSessionCache();
+
+  {
+    TestDelegate d;
+    std::unique_ptr<URLRequest> r(context_.CreateRequest(
+        test_server_.GetURL("/zerortt"), DEFAULT_PRIORITY, &d,
+        TRAFFIC_ANNOTATION_FOR_TESTS));
+
+    r->Start();
+    EXPECT_TRUE(r->is_pending());
+
+    d.RunUntilComplete();
+
+    EXPECT_EQ(1, d.response_started_count());
+
+    EXPECT_EQ(SSL_CONNECTION_VERSION_TLS1_3,
+              SSLConnectionStatusToVersion(r->ssl_info().connection_status));
+    EXPECT_TRUE(r->ssl_info().unverified_cert.get());
+    EXPECT_TRUE(test_server_.GetCertificate()->EqualsIncludingChain(
+        r->ssl_info().cert.get()));
+
+    // The Early-Data header should be omitted in the initial request, and the
+    // handler should return "0".
+    EXPECT_EQ("0", d.data_received());
+  }
+
+  context_.http_transaction_factory()->GetSession()->CloseAllConnections();
+
+  // The certificate in the resumption is changed to confirm that the
+  // certificate change is observed.
+  scoped_refptr<X509Certificate> old_cert = test_server_.GetCertificate();
+  ResetSSLConfig(net::EmbeddedTestServer::CERT_EXPIRED,
+                 SSL_PROTOCOL_VERSION_TLS1_2);
+
+  {
+    TestDelegate d;
+    std::unique_ptr<URLRequest> r(context_.CreateRequest(
+        test_server_.GetURL("/zerortt"), DEFAULT_PRIORITY, &d,
+        TRAFFIC_ANNOTATION_FOR_TESTS));
+
+    r->Start();
+    EXPECT_TRUE(r->is_pending());
+
+    d.RunUntilComplete();
+
+    EXPECT_EQ(1, d.response_started_count());
+
+    EXPECT_EQ(SSL_CONNECTION_VERSION_TLS1_2,
+              SSLConnectionStatusToVersion(r->ssl_info().connection_status));
+    EXPECT_TRUE(r->ssl_info().unverified_cert.get());
+    EXPECT_TRUE(test_server_.GetCertificate()->EqualsIncludingChain(
+        r->ssl_info().cert.get()));
+    EXPECT_FALSE(old_cert->EqualsIncludingChain(r->ssl_info().cert.get()));
+
+    // The Early-Data header should be omitted in the rejected request, and the
+    // handler should return "0".
+    EXPECT_EQ("0", d.data_received());
+  }
+}
 
 }  // namespace net

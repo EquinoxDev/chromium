@@ -43,6 +43,7 @@
 #include "ios/chrome/browser/browser_state/chrome_browser_state.h"
 #include "ios/chrome/browser/favicon/ios_chrome_large_icon_service_factory.h"
 #include "ios/chrome/browser/history/history_service_factory.h"
+#include "ios/chrome/browser/leveldb_proto/proto_database_provider_factory.h"
 #include "ios/chrome/browser/pref_names.h"
 #include "ios/chrome/browser/signin/identity_manager_factory.h"
 #include "ios/chrome/browser/ui/util/ui_util.h"
@@ -132,8 +133,7 @@ std::unique_ptr<KeyedService> CreateChromeContentSuggestionsService(
           chrome_browser_state);
   std::unique_ptr<ntp_snippets::CategoryRanker> category_ranker =
       ntp_snippets::BuildSelectedCategoryRanker(
-          prefs, base::DefaultClock::GetInstance(),
-          /*is_chrome_home_enabled=*/false);
+          prefs, base::DefaultClock::GetInstance());
   return std::make_unique<ContentSuggestionsService>(
       State::ENABLED, identity_manager, history_service, large_icon_service,
       prefs, std::move(category_ranker), std::move(user_classifier),
@@ -168,6 +168,10 @@ void RegisterRemoteSuggestionsProvider(ContentSuggestionsService* service,
       base::BindRepeating(&ParseJson), GetFetchEndpoint(), api_key,
       service->user_classifier());
 
+  leveldb_proto::ProtoDatabaseProvider* db_provider =
+      leveldb_proto::ProtoDatabaseProviderFactory::GetForBrowserState(
+          chrome_browser_state);
+
   // This pref is also used for logging. If it is changed, change it in the
   // other places.
   std::string pref_name = prefs::kArticlesForYouEnabled;
@@ -177,7 +181,7 @@ void RegisterRemoteSuggestionsProvider(ContentSuggestionsService* service,
       std::move(suggestions_fetcher),
       std::make_unique<ImageFetcherImpl>(
           CreateIOSImageDecoder(), browser_state->GetSharedURLLoaderFactory()),
-      std::make_unique<RemoteSuggestionsDatabase>(database_dir),
+      std::make_unique<RemoteSuggestionsDatabase>(db_provider, database_dir),
       std::make_unique<RemoteSuggestionsStatusServiceImpl>(
           identity_manager->HasPrimaryAccount(), prefs, pref_name),
       /*prefetched_pages_tracker=*/nullptr,

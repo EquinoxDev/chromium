@@ -4,6 +4,8 @@
 
 #include "chrome/browser/ui/views/profiles/avatar_toolbar_button.h"
 
+#include <vector>
+
 #include "build/build_config.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/app/vector_icons/vector_icons.h"
@@ -23,7 +25,6 @@
 #include "chrome/browser/ui/layout_constants.h"
 #include "chrome/browser/ui/view_ids.h"
 #include "chrome/browser/ui/views/chrome_layout_provider.h"
-#include "chrome/browser/ui/views/profiles/incognito_window_count_view.h"
 #include "chrome/browser/ui/views/toolbar/toolbar_ink_drop_util.h"
 #include "chrome/common/chrome_features.h"
 #include "chrome/grit/generated_resources.h"
@@ -61,14 +62,13 @@ AvatarToolbarButton::AvatarToolbarButton(Browser* browser)
       browser_list_observer_(this),
       profile_observer_(this),
       identity_manager_observer_(this) {
-
   if (IsIncognitoCounterActive())
     browser_list_observer_.Add(BrowserList::GetInstance());
 
   profile_observer_.Add(
       &g_browser_process->profile_manager()->GetProfileAttributesStorage());
 
-  if (!IsIncognito() && !profile_->IsGuestSession()) {
+  if (profile_->IsRegularProfile()) {
     identity_manager_observer_.Add(
         IdentityManagerFactory::GetForProfile(profile_));
   }
@@ -91,7 +91,7 @@ AvatarToolbarButton::AvatarToolbarButton(Browser* browser)
   // and Guest sessions. It should not be instantiated for regular profiles and
   // it should not be enabled as there's no profile switcher to trigger / show,
   // unless incognito window counter is available.
-  DCHECK(IsIncognito() || profile_->IsGuestSession());
+  DCHECK(!profile_->IsRegularProfile());
   SetEnabled(IsIncognitoCounterActive());
 #else
   // The profile switcher is only available outside incognito or if incognito
@@ -138,14 +138,14 @@ void AvatarToolbarButton::UpdateText() {
     text = l10n_util::GetPluralStringFUTF16(IDS_AVATAR_BUTTON_INCOGNITO,
                                             incognito_window_count);
   } else if (sync_state == SyncState::kError) {
-    color =
-        AdjustHighlightColorForContrast(gfx::kGoogleRed300, gfx::kGoogleRed600,
-                                        gfx::kGoogleRed050, gfx::kGoogleRed900);
+    color = AdjustHighlightColorForContrast(
+        GetThemeProvider(), gfx::kGoogleRed300, gfx::kGoogleRed600,
+        gfx::kGoogleRed050, gfx::kGoogleRed900);
     text = l10n_util::GetStringUTF16(IDS_AVATAR_BUTTON_SYNC_ERROR);
   } else if (sync_state == SyncState::kPaused) {
     color = AdjustHighlightColorForContrast(
-        gfx::kGoogleBlue300, gfx::kGoogleBlue600, gfx::kGoogleBlue050,
-        gfx::kGoogleBlue900);
+        GetThemeProvider(), gfx::kGoogleBlue300, gfx::kGoogleBlue600,
+        gfx::kGoogleBlue050, gfx::kGoogleBlue900);
 
     text = l10n_util::GetStringUTF16(IDS_AVATAR_BUTTON_SYNC_PAUSED);
   }
@@ -161,21 +161,13 @@ void AvatarToolbarButton::NotifyClick(const ui::Event& event) {
   // TODO(bsep): Other toolbar buttons have ToolbarView as a listener and let it
   // call ExecuteCommandWithDisposition on their behalf. Unfortunately, it's not
   // possible to plumb IsKeyEvent through, so this has to be a special case.
-  if (IsIncognitoCounterActive()) {
-    if (!IncognitoWindowCountView::IsShowing()) {
-      IncognitoWindowCountView::ShowBubble(
-          this, browser_,
-          BrowserList::GetIncognitoSessionsActiveForProfile(profile_));
-    }
-  } else {
-    // TODO(https://crbug.com/896235): Call IncognitoWindowCountView::ShowBubble
-    // from this ShowAvatarBubbleFromAvatarButton.
-    browser_->window()->ShowAvatarBubbleFromAvatarButton(
-        BrowserWindow::AVATAR_BUBBLE_MODE_DEFAULT,
-        signin::ManageAccountsParams(),
-        signin_metrics::AccessPoint::ACCESS_POINT_AVATAR_BUBBLE_SIGN_IN,
-        event.IsKeyEvent());
-  }
+  if (IsIncognito() && !IsIncognitoCounterActive())
+    return;
+
+  browser_->window()->ShowAvatarBubbleFromAvatarButton(
+      BrowserWindow::AVATAR_BUBBLE_MODE_DEFAULT, signin::ManageAccountsParams(),
+      signin_metrics::AccessPoint::ACCESS_POINT_AVATAR_BUBBLE_SIGN_IN,
+      event.IsKeyEvent());
 }
 
 void AvatarToolbarButton::OnThemeChanged() {
@@ -254,7 +246,7 @@ void AvatarToolbarButton::OnTouchUiChanged() {
 }
 
 bool AvatarToolbarButton::IsIncognito() const {
-  return profile_->IsOffTheRecord() && !profile_->IsGuestSession();
+  return profile_->IsIncognito();
 }
 
 bool AvatarToolbarButton::IsIncognitoCounterActive() const {
@@ -265,8 +257,7 @@ bool AvatarToolbarButton::IsIncognitoCounterActive() const {
 bool AvatarToolbarButton::ShouldShowGenericIcon() const {
   // This function should only be used for regular profiles. Guest and Incognito
   // sessions should be handled separately and never call this function.
-  DCHECK(!profile_->IsGuestSession());
-  DCHECK(!profile_->IsOffTheRecord());
+  DCHECK(profile_->IsRegularProfile());
 #if !defined(OS_CHROMEOS)
   if (!signin_ui_util::GetAccountsForDicePromos(profile_).empty())
     return false;
@@ -277,7 +268,7 @@ bool AvatarToolbarButton::ShouldShowGenericIcon() const {
     // This can happen if the user deletes the current profile.
     return true;
   }
-  return entry->IsUsingDefaultAvatar() &&
+  return entry->GetAvatarIconIndex() == 0 &&
          g_browser_process->profile_manager()
                  ->GetProfileAttributesStorage()
                  .GetNumberOfProfiles() == 1 &&
@@ -312,7 +303,10 @@ base::string16 AvatarToolbarButton::GetAvatarTooltipText() const {
 }
 
 gfx::ImageSkia AvatarToolbarButton::GetAvatarIcon() const {
-  const int icon_size = ui::MaterialDesignController::touch_ui() ? 24 : 20;
+  // Note that the non-touchable icon size is larger than the default to
+  // make the avatar icon easier to read.
+  const int icon_size =
+      ui::MaterialDesignController::touch_ui() ? kDefaultTouchableIconSize : 20;
 
   SkColor icon_color =
       GetThemeProvider()->GetColor(ThemeProperties::COLOR_TOOLBAR_BUTTON_ICON);
@@ -399,34 +393,4 @@ void AvatarToolbarButton::SetInsets() {
   gfx::Insets layout_insets(ui::MaterialDesignController::touch_ui() ? 0 : -2);
 
   SetLayoutInsetDelta(layout_insets);
-}
-
-SkColor AvatarToolbarButton::AdjustHighlightColorForContrast(
-    SkColor desired_dark_color,
-    SkColor desired_light_color,
-    SkColor dark_extreme,
-    SkColor light_extreme) const {
-  const ui::ThemeProvider* theme_provider = GetThemeProvider();
-  if (!theme_provider)
-    return desired_light_color;
-  SkColor toolbar_color =
-      GetThemeProvider()->GetColor(ThemeProperties::COLOR_TOOLBAR);
-  SkColor contrasting_color = color_utils::PickContrastingColor(
-      desired_dark_color, desired_light_color, toolbar_color);
-  SkColor limit =
-      contrasting_color == desired_dark_color ? dark_extreme : light_extreme;
-  // Setting highlight color will set the text to the highlight color, and the
-  // background to the same color with a low alpha. This means that our target
-  // contrast is between the text (the highlight color) and a blend of the
-  // highlight color and the toolbar color.
-  SkColor base_color = color_utils::AlphaBlend(contrasting_color, toolbar_color,
-                                               kToolbarButtonBackgroundAlpha);
-
-  // Add a fudge factor to the minimum contrast ratio since we'll actually be
-  // blending with the adjusted color.
-  SkAlpha blend_alpha = color_utils::GetBlendValueWithMinimumContrast(
-      contrasting_color, limit, base_color,
-      color_utils::kMinimumReadableContrastRatio * 1.05);
-
-  return color_utils::AlphaBlend(limit, contrasting_color, blend_alpha);
 }

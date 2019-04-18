@@ -17,7 +17,6 @@
 #include "build/build_config.h"
 #include "components/omnibox/browser/omnibox_view.h"
 #include "components/search_engines/template_url_service_observer.h"
-#include "components/security_state/core/security_state.h"
 #include "ui/base/window_open_disposition.h"
 #include "ui/compositor/compositor.h"
 #include "ui/compositor/compositor_observer.h"
@@ -175,10 +174,10 @@ class OmniboxViewViews : public OmniboxView,
   // Handle keyword hint tab-to-search and tabbing through dropdown results.
   bool HandleEarlyTabActions(const ui::KeyEvent& event);
 
-  // Updates |security_level_| based on the location bar model's current value.
-  void UpdateSecurityLevel();
-
   void ClearAccessibilityLabel();
+
+  void SetAccessibilityLabel(const base::string16& display_text,
+                             const AutocompleteMatch& match);
 
   // Selects the whole omnibox contents as a result of the user gesture. This
   // may also unapply steady state elisions depending on user preferences.
@@ -192,10 +191,11 @@ class OmniboxViewViews : public OmniboxView,
   // flip.)
   bool TextAndUIDirectionMatch() const;
 
-  // Returns true if the caret is completely at the end of the input, and if
-  // there's a tab match present. Helper function for MaybeFocusTabButton()
-  // and MaybeUnfocusTabButton().
-  bool AtEndWithTabMatch() const;
+  // Helper function for MaybeFocusTabButton() and MaybeUnfocusTabButton().
+  bool SelectedSuggestionHasTabMatch() const;
+
+  // Like SelectionAtEnd(), but accounts for RTL.
+  bool DirectionAwareSelectionAtEnd() const;
 
   // Attempts to either focus or unfocus the tab switch button (tests if all
   // conditions are met and makes necessary subroutine call) and returns
@@ -214,7 +214,8 @@ class OmniboxViewViews : public OmniboxView,
   bool OnInlineAutocompleteTextMaybeChanged(const base::string16& display_text,
                                             size_t user_text_length) override;
   void OnInlineAutocompleteTextCleared() override;
-  void OnRevertTemporaryText() override;
+  void OnRevertTemporaryText(const base::string16& display_text,
+                             const AutocompleteMatch& match) override;
   void OnBeforePossibleChange() override;
   bool OnAfterPossibleChange(bool allow_keyword_ui_change) override;
   gfx::NativeView GetNativeView() const override;
@@ -291,8 +292,6 @@ class OmniboxViewViews : public OmniboxView,
 
   // Animation used to fade out the path under some elision settings.
   std::unique_ptr<PathFadeAnimation> path_fade_animation_;
-
-  security_state::SecurityLevel security_level_;
 
   // Selection persisted across temporary text changes, like popup suggestions.
   gfx::Range saved_temporary_selection_;

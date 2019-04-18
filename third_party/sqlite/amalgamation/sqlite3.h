@@ -123,9 +123,9 @@ extern "C" {
 ** [sqlite3_libversion_number()], [sqlite3_sourceid()],
 ** [sqlite_version()] and [sqlite_source_id()].
 */
-#define SQLITE_VERSION        "3.27.1"
-#define SQLITE_VERSION_NUMBER 3027001
-#define SQLITE_SOURCE_ID      "2019-02-08 13:17:39 0eca3dd3d38b31c92b49ca2d311128b74584714d9e7de895b1a6286ef959alt1"
+#define SQLITE_VERSION        "3.27.2"
+#define SQLITE_VERSION_NUMBER 3027002
+#define SQLITE_SOURCE_ID      "2019-02-25 16:06:06 bd49a8271d650fa89e446b42e513b595a717b9212c91dd384aab871fc1d0alt1"
 
 /*
 ** CAPI3REF: Run-Time Library Version Numbers
@@ -2369,7 +2369,7 @@ SQLITE_API int sqlite3_changes(sqlite3*);
 ** not. ^Changes to a view that are intercepted by INSTEAD OF triggers
 ** are not counted.
 **
-** This the [sqlite3_total_changes(D)] interface only reports the number
+** The [sqlite3_total_changes(D)] interface only reports the number
 ** of rows that changed due to SQL statement run against database
 ** connection D.  Any changes by other database connections are ignored.
 ** To detect changes against a database file from other database
@@ -8406,29 +8406,6 @@ SQLITE_API int sqlite3_strnicmp(const char *, const char *, int);
 ** See also: [sqlite3_strlike()].
 */
 SQLITE_API int sqlite3_strglob(const char *zGlob, const char *zStr);
-
-/* Begin WebDatabase patch for Chromium */
-/* Expose some SQLite internals for the WebDatabase vfs.
-** DO NOT EXTEND THE USE OF THIS.
-*/
-#ifndef CHROMIUM_SQLITE_API
-#define CHROMIUM_SQLITE_API SQLITE_API
-#endif
-#if defined(CHROMIUM_SQLITE_INTERNALS)
-#ifdef _WIN32
-CHROMIUM_SQLITE_API
-void chromium_sqlite3_initialize_win_sqlite3_file(sqlite3_file* file, HANDLE handle);
-#else  /* _WIN32 */
-CHROMIUM_SQLITE_API
-int chromium_sqlite3_fill_in_unix_sqlite3_file(sqlite3_vfs* pVfs,
-                                               int fd,
-                                               sqlite3_file* pFile,
-                                               const char* zPath,
-                                               int noLock,
-                                               int flags);
-#endif  /* _WIN32 */
-#endif  /* CHROMIUM_SQLITE_INTERNALS */
-/* End WebDatabase patch for Chromium */
 
 /*
 ** CAPI3REF: String LIKE Matching

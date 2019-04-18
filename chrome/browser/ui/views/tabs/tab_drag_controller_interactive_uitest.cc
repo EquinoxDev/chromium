@@ -73,16 +73,21 @@
 #include "ash/public/cpp/immersive/immersive_fullscreen_controller_test_api.h"
 #include "ash/public/cpp/window_properties.h"
 #include "ash/public/interfaces/constants.mojom.h"
+#include "ash/public/interfaces/shell_test_api.test-mojom-test-utils.h"
 #include "ash/public/interfaces/shell_test_api.test-mojom.h"
+#include "ash/shell.h"
+#include "ash/wm/splitview/split_view_controller.h"
 #include "ash/wm/window_state.h"
 #include "base/test/simple_test_tick_clock.h"
 #include "chrome/browser/ui/ash/tablet_mode_client_test_util.h"
 #include "chrome/browser/ui/views/frame/immersive_mode_controller.h"
 #include "chrome/browser/ui/views/frame/immersive_mode_controller_ash.h"
 #include "content/public/common/service_manager_connection.h"
+#include "content/public/common/service_names.mojom.h"
 #include "services/service_manager/public/cpp/connector.h"
 #include "ui/aura/client/cursor_client.h"
 #include "ui/aura/client/screen_position_client.h"
+#include "ui/aura/mus/window_mus.h"
 #include "ui/aura/test/mus/change_completion_waiter.h"
 #include "ui/aura/window_event_dispatcher.h"
 #include "ui/base/ui_base_features.h"
@@ -1483,10 +1488,11 @@ IN_PROC_BROWSER_TEST_P(DetachToBrowserTabDragControllerTest,
   // tabstrip.
   const BrowserView* const browser_view2 =
       BrowserView::GetBrowserViewForBrowser(browser2);
-  const gfx::Rect tabstrip2_bounds =
-      browser_view2->frame()->GetBoundsForTabStrip(browser_view2->tabstrip());
+  const gfx::Rect tabstrip_region2_bounds =
+      browser_view2->frame()->GetBoundsForTabStripRegion(
+          browser_view2->tabstrip());
   gfx::Rect bounds = initial_bounds;
-  bounds.Offset(0, tabstrip2_bounds.bottom());
+  bounds.Offset(0, tabstrip_region2_bounds.bottom());
   browser()->window()->SetBounds(bounds);
 
   // Ensure the first browser is on top so clicks go to it.
@@ -1611,6 +1617,80 @@ IN_PROC_BROWSER_TEST_P(DetachToBrowserTabDragControllerTest,
   }
 }
 
+namespace {
+
+TabStrip* GetAttachedTabstrip() {
+  for (Browser* browser : *BrowserList::GetInstance()) {
+    BrowserView* browser_view = BrowserView::GetBrowserViewForBrowser(browser);
+    if (TabDragController::IsAttachedTo(browser_view->tabstrip()))
+      return browser_view->tabstrip();
+  }
+  return nullptr;
+}
+
+void DragWindowAndVerifyOffset(DetachToBrowserTabDragControllerTest* test,
+                               TabStrip* tab_strip,
+                               int tab_index) {
+  // Move to the tab and drag it enough so that it detaches.
+  const gfx::Point tab_center =
+      GetCenterInScreenCoordinates(tab_strip->tab_at(tab_index));
+  // The expected offset; the horizontal position should be relative to the
+  // pressed tab. The vertical position should be relative to the window itself
+  // since the top margin can be different between the existing browser and
+  // the dragged one.
+  const gfx::Vector2d press_offset(
+      tab_center.x() - tab_strip->tab_at(tab_index)->GetBoundsInScreen().x(),
+      tab_center.y() - tab_strip->GetWidget()->GetWindowBoundsInScreen().y());
+  const gfx::Point initial_move =
+      tab_center + gfx::Vector2d(0, GetDetachY(tab_strip));
+  const gfx::Point second_move = initial_move + gfx::Vector2d(20, 20);
+  ASSERT_TRUE(test->PressInput(tab_center));
+  ASSERT_TRUE(test->DragInputToNotifyWhenDone(
+      initial_move, base::BindLambdaForTesting([&]() {
+        // Moves slightly to cause the actual dragging effect on the system and
+        // makes sure the window is positioned correctly.
+        ASSERT_TRUE(test->DragInputToNotifyWhenDone(
+            second_move, base::BindLambdaForTesting([&]() {
+              TabStrip* attached = GetAttachedTabstrip();
+              // Same computation for drag offset. This operation drags a single
+              // tab, so the target tab index should be always 0.
+              gfx::Vector2d drag_offset(
+                  second_move.x() -
+                      attached->tab_at(0)->GetBoundsInScreen().x(),
+                  second_move.y() -
+                      attached->GetWidget()->GetWindowBoundsInScreen().y());
+              EXPECT_EQ(press_offset, drag_offset);
+              ASSERT_TRUE(test->ReleaseInput());
+            })));
+      })));
+  test::QuitDraggingObserver().Wait();
+}
+
+}  // namespace
+
+#if defined(OS_WIN)
+// TODO(mukai): enable those tests on Windows.
+#define MAYBE_OffsetForDraggingTab DISABLED_OffsetForDraggingTab
+#define MAYBE_OffsetForDraggingDetachedTab DISABLED_OffsetForDraggingDetachedTab
+#else
+#define MAYBE_OffsetForDraggingTab OffsetForDraggingTab
+#define MAYBE_OffsetForDraggingDetachedTab OffsetForDraggingDetachedTab
+#endif
+
+IN_PROC_BROWSER_TEST_P(DetachToBrowserTabDragControllerTest,
+                       MAYBE_OffsetForDraggingTab) {
+  DragWindowAndVerifyOffset(this, GetTabStripForBrowser(browser()), 0);
+  ASSERT_FALSE(TabDragController::IsActive());
+}
+
+IN_PROC_BROWSER_TEST_P(DetachToBrowserTabDragControllerTest,
+                       MAYBE_OffsetForDraggingDetachedTab) {
+  AddTabAndResetBrowser(browser());
+
+  DragWindowAndVerifyOffset(this, GetTabStripForBrowser(browser()), 1);
+  ASSERT_FALSE(TabDragController::IsActive());
+}
+
 #if defined(OS_CHROMEOS)
 namespace {
 
@@ -1668,6 +1748,59 @@ IN_PROC_BROWSER_TEST_P(DetachToBrowserTabDragControllerTest,
   EXPECT_TRUE(browser()->window()->IsMaximized());
   // The new window should be maximized.
   EXPECT_TRUE(new_browser->window()->IsMaximized());
+}
+
+IN_PROC_BROWSER_TEST_P(DetachToBrowserTabDragControllerTest,
+                       OffsetForDraggingInMaximizedWindow) {
+  AddTabAndResetBrowser(browser());
+  // Moves the browser window slightly to ensure that the browser's restored
+  // bounds are different from the maximized bound's origin.
+  browser()->window()->SetBounds(browser()->window()->GetBounds() +
+                                 gfx::Vector2d(100, 50));
+  browser()->window()->Maximize();
+  aura::test::WaitForAllChangesToComplete();
+
+  DragWindowAndVerifyOffset(this, GetTabStripForBrowser(browser()), 0);
+  ASSERT_FALSE(TabDragController::IsActive());
+}
+
+IN_PROC_BROWSER_TEST_P(DetachToBrowserTabDragControllerTest,
+                       OffsetForDraggingInTabletMode) {
+  AddTabAndResetBrowser(browser());
+  // Moves the browser window slightly to ensure that the browser's restored
+  // bounds are different from the maximized bound's origin.
+  browser()->window()->SetBounds(browser()->window()->GetBounds() +
+                                 gfx::Vector2d(100, 50));
+  test::SetAndWaitForTabletMode(true);
+
+  DragWindowAndVerifyOffset(this, GetTabStripForBrowser(browser()), 1);
+  ASSERT_FALSE(TabDragController::IsActive());
+}
+
+IN_PROC_BROWSER_TEST_P(DetachToBrowserTabDragControllerTest,
+                       OffsetForDraggingRightSnappedWindowInTabletMode) {
+  test::SetAndWaitForTabletMode(true);
+
+  // Right snap the browser window.
+  aura::Window* window = browser()->window()->GetNativeWindow();
+  if (features::IsUsingWindowService()) {
+    ash::mojom::ShellTestApiPtr shell_test_api;
+    content::ServiceManagerConnection::GetForProcess()
+        ->GetConnector()
+        ->BindInterface(ash::mojom::kServiceName, &shell_test_api);
+    ash::mojom::ShellTestApiAsyncWaiter shell_waiter(shell_test_api.get());
+    shell_waiter.SnapWindowInSplitView(
+        content::mojom::kBrowserServiceName,
+        aura::WindowMus::Get(window->GetRootWindow())->server_id(), false);
+  } else {
+    ash::Shell* shell = ash::Shell::Get();
+    shell->split_view_controller()->SnapWindow(window,
+                                               ash::SplitViewController::RIGHT);
+  }
+  EXPECT_NE(gfx::Point(), window->GetBoundsInScreen().origin());
+
+  DragWindowAndVerifyOffset(this, GetTabStripForBrowser(browser()), 0);
+  ASSERT_FALSE(TabDragController::IsActive());
 }
 
 namespace {
@@ -2497,7 +2630,6 @@ IN_PROC_BROWSER_TEST_P(DetachToBrowserInSeparateDisplayTabDragControllerTest,
   BrowserView* browser_view2 = BrowserView::GetBrowserViewForBrowser(browser2);
   ImmersiveModeController* immersive_controller2 =
       browser_view2->immersive_mode_controller();
-  ASSERT_EQ(ImmersiveModeController::Type::ASH, immersive_controller2->type());
   ash::ImmersiveFullscreenControllerTestApi(
       static_cast<ImmersiveModeControllerAsh*>(immersive_controller2)
           ->controller())
@@ -2977,6 +3109,36 @@ IN_PROC_BROWSER_TEST_P(DetachToBrowserTabDragControllerTestTouch,
   ASSERT_FALSE(TabDragController::IsActive());
   EXPECT_TRUE(browser()->window()->IsMinimized());
   EXPECT_FALSE(browser()->window()->IsVisible());
+  ui::SetEventTickClockForTesting(nullptr);
+}
+
+IN_PROC_BROWSER_TEST_P(DetachToBrowserTabDragControllerTestTouch,
+                       FlingOnStartingDrag) {
+  SetMinFlingVelocity(1);
+  AddTabAndResetBrowser(browser());
+  TabStrip* tab_strip = GetTabStripForBrowser(browser());
+  const gfx::Point tab_0_center =
+      GetCenterInScreenCoordinates(tab_strip->tab_at(0));
+  const gfx::Vector2d detach(0, GetDetachY(tab_strip));
+
+  // Sends events to the server without waiting for its reply, which will cause
+  // extra touch events before PerformWindowMove starts handling events.
+  test::QuitDraggingObserver observer;
+  base::SimpleTestTickClock clock;
+  clock.SetNowTicks(base::TimeTicks::Now());
+  ui::SetEventTickClockForTesting(&clock);
+  ASSERT_TRUE(PressInput(tab_0_center));
+  clock.Advance(base::TimeDelta::FromMilliseconds(5));
+  ASSERT_TRUE(DragInputToAsync(tab_0_center + detach));
+  clock.Advance(base::TimeDelta::FromMilliseconds(5));
+  ASSERT_TRUE(DragInputToAsync(tab_0_center + detach + detach));
+  clock.Advance(base::TimeDelta::FromMilliseconds(2));
+  ASSERT_TRUE(ReleaseInput());
+  observer.Wait();
+
+  ASSERT_FALSE(tab_strip->IsDragSessionActive());
+  ASSERT_FALSE(TabDragController::IsActive());
+  EXPECT_EQ(2u, browser_list->size());
   ui::SetEventTickClockForTesting(nullptr);
 }
 

@@ -14,14 +14,16 @@
 <translation id="1368832886055348810">左から右</translation>
 <translation id="1383876407941801731">検索</translation>
 <translation id="1398853756734560583">最大化</translation>
+<translation id="1409544243779336081">おすすめのアプリ</translation>
 <translation id="1413622004203049571"><ph name="NOTIFIER_NAME" /> からの通知を無効にする</translation>
 <translation id="1591184457164800433">{MINUTES,plural, =1{1 分 }other{# 分 }}</translation>
 <translation id="1643823602425662293">通知</translation>
 <translation id="169515659049020177">Shift</translation>
 <translation id="1710340000377843106">現在</translation>
 <translation id="1752946267035950200">{MINUTES,plural, =1{1 分}other{# 分}}</translation>
+<translation id="1756116796893109054">タブを送信しています...</translation>
 <translation id="1761785978543082658"><ph name="QUANTITY" /> B</translation>
-<translation id="1801827354178857021">期間</translation>
+<translation id="1801827354178857021">ピリオド</translation>
 <translation id="1803208670097017349">{MONTHS,plural, =1{1 か月}other{# か月}}</translation>
 <translation id="1809410197924942083"><ph name="QUANTITY" /> MB/秒</translation>
 <translation id="1812519734428420144">評価 <ph name="RATING_SCORE" /></translation>
@@ -33,6 +35,7 @@
 <translation id="1884435127456172652"><ph name="NUMBER" />%</translation>
 <translation id="1901303067676059328">すべて選択(&amp;A)</translation>
 <translation id="1938451708255335766">ウィンドウの表示間隔を調整するには、アプリを再起動してください。</translation>
+<translation id="208586643495776849">もう一度お試しください</translation>
 <translation id="2141853158323869627">{DAYS,plural, =1{1日}other{#日}}</translation>
 <translation id="2148716181193084225">今日</translation>
 <translation id="2168039046890040389">前のページへ</translation>
@@ -50,11 +53,14 @@
 <translation id="2515586267016047495">Alt</translation>
 <translation id="2522350507219695259">キャリブレーションが完了しました</translation>
 <translation id="252373100621549798">不明なディスプレイ</translation>
+<translation id="2573731672208488250">{HOURS,plural, =1{1時間}other{#時間}}</translation>
 <translation id="2583543531130364912">タッチスクリーンのキャリブレーション</translation>
 <translation id="2666092431469916601">一番上</translation>
+<translation id="2701330563083355633"><ph name="DEVICE_NAME" /> から共有しました</translation>
 <translation id="2743387203779672305">クリップボードにコピー</translation>
 <translation id="2803313416453193357">フォルダを開く</translation>
 <translation id="2824719307700604149">{YEARS,plural, =1{1 年前}other{# 年前}}</translation>
+<translation id="2907671656515444832">{DAYS,plural, =1{1日}other{#日}}</translation>
 <translation id="2931838996092594335">クリック</translation>
 <translation id="3036649622769666520">ファイルを開く</translation>
 <translation id="3049748772180311791"><ph name="QUANTITY" /> MB</translation>
@@ -69,19 +75,21 @@
 <translation id="3479552764303398839">後で</translation>
 <translation id="348799646910989694">シェルフは自動的に非表示になります</translation>
 <translation id="3600566671520689681">{DAYS,plural, =1{残り 1 日}other{残り # 日}}</translation>
+<translation id="3600969208114796418"><ph name="SAVEAS_EXTENSION_TYPE" /> ファイル</translation>
 <translation id="3608915363409716668"><ph name="MAXIMUM_VALUE" />～</translation>
 <translation id="3618849550573277856">「<ph name="LOOKUP_STRING" />」を検索</translation>
 <translation id="364720409959344976">アップロードするフォルダを選択</translation>
 <translation id="3660179305079774227">上矢印キー</translation>
 <translation id="3740362395218339114"><ph name="QUANTITY" /> GB/秒</translation>
 <translation id="3757388668994797779"><ph name="QUANTITY" /> GB</translation>
-<translation id="3842239759367498783">モバイル端末で読む: <ph name="TITLE" /></translation>
+<translation id="3842239759367498783">モバイル デバイスで読む: <ph name="TITLE" /></translation>
 <translation id="385051799172605136">戻る</translation>
 <translation id="3889424535448813030">右矢印キー</translation>
 <translation id="3892641579809465218">内蔵ディスプレイ</translation>
 <translation id="3897092660631435901">メニュー</translation>
 <translation id="3909791450649380159">切り取り(&amp;T)</translation>
 <translation id="3990502903496589789">右端</translation>
+<translation id="40579289237549812">{UNREAD_NOTIFICATIONS,plural, =1{未読のお知らせ 1 件}other{未読のお知らせ # 件}}</translation>
 <translation id="4202807286478387388">ジャンプ</translation>
 <translation id="4250229828105606438">スクリーンショット</translation>
 <translation id="4266252015790371705">{MONTHS,plural, =1{1 か月前}other{# か月前}}</translation>
@@ -111,6 +119,7 @@
 <translation id="5613020302032141669">左矢印キー</translation>
 <translation id="5754277640426581776">{MINUTES,plural, =1{1 分}other{# 分}}</translation>
 <translation id="5768079895599174203">{DAYS,plural, =1{1 日と }other{# 日と }}</translation>
+<translation id="5866104238061687188">{YEARS,plural, =1{1年}other{#年}}</translation>
 <translation id="5895138241574237353">再起動</translation>
 <translation id="5906667377645263094">{SECONDS,plural, =1{残り 1 秒}other{残り # 秒}}</translation>
 <translation id="5941711191222866238">最小化</translation>
@@ -165,6 +174,8 @@
 <translation id="7879499977785298635">ブロックしない</translation>
 <translation id="7907591526440419938">ファイルを開く</translation>
 <translation id="7969046989155602842">コマンド</translation>
+<translation id="8074552109918343525">{MAX_UNREAD_NOTIFICATIONS,plural, =1{1 件以上の未読の通知}other{# 件以上の未読の通知}}</translation>
+<translation id="8086866675552927481">{MINUTES,plural, =1{1分}other{#分}}</translation>
 <translation id="8087772101393322318"><ph name="KEY_MODIFIER_NAME" />+<ph name="KEY_COMBO_NAME" /></translation>
 <translation id="8106081041558092062">{HOURS,plural, =1{1 時間前}other{# 時間前}}</translation>
 <translation id="8131263257437993507">{SECONDS,plural, =1{残り 1 秒}other{残り # 秒}}</translation>
@@ -193,6 +204,7 @@
 <translation id="8806053966018712535">フォルダ <ph name="FOLDER_NAME" /></translation>
 <translation id="883911313571074303">画像に注釈を付ける</translation>
 <translation id="8841375032071747811">戻るボタン</translation>
+<translation id="8876215549894133151">形式:</translation>
 <translation id="8901569739625249689"><ph name="QUANTITY" /> KB</translation>
 <translation id="8926951137623668982">シェルフは常に非表示です</translation>
 <translation id="9002566407876343676">開く</translation>
@@ -203,4 +215,5 @@
 <translation id="9161053988251441839">おすすめのアプリ</translation>
 <translation id="9170848237812810038">取消(&amp;U)</translation>
 <translation id="932327136139879170">ホーム</translation>
+<translation id="944069440740578670">未読のお知らせ</translation>
 </translationbundle>

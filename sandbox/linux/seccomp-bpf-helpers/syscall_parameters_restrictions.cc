@@ -21,6 +21,7 @@
 
 #include "base/logging.h"
 #include "base/macros.h"
+#include "base/synchronization/synchronization_buildflags.h"
 #include "build/build_config.h"
 #include "sandbox/linux/bpf_dsl/bpf_dsl.h"
 #include "sandbox/linux/bpf_dsl/seccomp_macros.h"
@@ -34,7 +35,15 @@
 #if !defined(OS_NACL_NONSFI)
 #include <sys/ioctl.h>
 #include <sys/ptrace.h>
+#if defined(OS_LINUX) && !defined(OS_CHROMEOS) && !defined(__arm__) && \
+    !defined(__aarch64__) && !defined(PTRACE_GET_THREAD_AREA)
+// Also include asm/ptrace-abi.h since ptrace.h in older libc (for instance
+// the one in Ubuntu 16.04 LTS) is missing PTRACE_GET_THREAD_AREA.
+// asm/ptrace-abi.h doesn't exist on arm32 and PTRACE_GET_THREAD_AREA isn't
+// defined on aarch64, so don't try to include this on those platforms.
+#include <asm/ptrace-abi.h>
 #endif
+#endif  // !OS_NACL_NONSFI
 
 #if defined(OS_ANDROID)
 
@@ -292,6 +301,11 @@ ResultExpr RestrictFutex() {
   const Arg<int> op(1);
   return Switch(op & ~kAllowedFutexFlags)
       .CASES((FUTEX_WAIT, FUTEX_WAKE, FUTEX_REQUEUE, FUTEX_CMP_REQUEUE,
+#if BUILDFLAG(ENABLE_MUTEX_PRIORITY_INHERITANCE)
+              // Enable priority-inheritance operations.
+              FUTEX_LOCK_PI, FUTEX_UNLOCK_PI, FUTEX_TRYLOCK_PI,
+              FUTEX_WAIT_REQUEUE_PI, FUTEX_CMP_REQUEUE_PI,
+#endif  // BUILDFLAG(ENABLE_MUTEX_PRIORITY_INHERITANCE)
               FUTEX_WAKE_OP, FUTEX_WAIT_BITSET, FUTEX_WAKE_BITSET),
              Allow())
       .Default(IsBuggyGlibcSemPost() ? Error(EINVAL) : CrashSIGSYSFutex());

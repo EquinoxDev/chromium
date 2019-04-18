@@ -19,13 +19,15 @@ class ASH_EXPORT ShelfButton : public views::Button {
   ~ShelfButton() override;
 
   // views::View
+  const char* GetClassName() const override;
   bool OnMousePressed(const ui::MouseEvent& event) override;
   void OnMouseReleased(const ui::MouseEvent& event) override;
   void OnMouseCaptureLost() override;
   bool OnMouseDragged(const ui::MouseEvent& event) override;
+  void AboutToRequestFocusFromTabTraversal(bool reverse) override;
   void GetAccessibleNodeData(ui::AXNodeData* node_data) override;
-  bool GetTooltipText(const gfx::Point& p,
-                      base::string16* tooltip) const override;
+  void OnFocus() override;
+  void OnBlur() override;
 
  protected:
   ShelfView* shelf_view() { return shelf_view_; }
@@ -35,9 +37,12 @@ class ASH_EXPORT ShelfButton : public views::Button {
   bool ShouldEnterPushedState(const ui::Event& event) override;
   std::unique_ptr<views::InkDrop> CreateInkDrop() override;
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
   const char* GetClassName() const override;
 >>>>>>> 1edcc2f128d290860af09401391ae79df290b5f3
+=======
+>>>>>>> 2d57e5b8afc6d01b344a8d95d3470d46b35845c5
 
  private:
   // The shelf view hosting this button.

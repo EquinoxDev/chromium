@@ -7,10 +7,11 @@
 #include "ash/public/cpp/app_list/app_list_config.h"
 #include "ash/public/cpp/app_list/app_list_types.h"
 #include "base/bind.h"
-#include "chrome/browser/apps/app_service/app_service_proxy.h"
+#include "chrome/browser/apps/app_service/app_service_proxy_factory.h"
 #include "chrome/browser/ui/app_list/app_list_client_impl.h"
 #include "chrome/browser/ui/app_list/app_service_app_item.h"
 #include "chrome/browser/ui/app_list/search/internal_app_result.h"
+#include "chrome/services/app_service/public/cpp/app_service_proxy.h"
 #include "extensions/common/extension.h"
 
 namespace app_list {
@@ -18,22 +19,26 @@ namespace app_list {
 AppServiceAppResult::AppServiceAppResult(Profile* profile,
                                          const std::string& app_id,
                                          AppListControllerDelegate* controller,
-                                         bool is_recommendation)
+                                         bool is_recommendation,
+                                         apps::IconLoader* icon_loader)
     : AppResult(profile, app_id, controller, is_recommendation),
+      icon_loader_(icon_loader),
       app_type_(apps::mojom::AppType::kUnknown),
       is_platform_app_(false),
       show_in_launcher_(false),
       weak_ptr_factory_(this) {
-  apps::AppServiceProxy* proxy = apps::AppServiceProxy::Get(profile);
+  apps::AppServiceProxy* proxy =
+      apps::AppServiceProxyFactory::GetForProfile(profile);
 
   if (proxy) {
-    proxy->Cache().ForOneApp(app_id, [this](const apps::AppUpdate& update) {
-      app_type_ = update.AppType();
-      is_platform_app_ =
-          update.IsPlatformApp() == apps::mojom::OptionalBool::kTrue;
-      show_in_launcher_ =
-          update.ShowInLauncher() == apps::mojom::OptionalBool::kTrue;
-    });
+    proxy->AppRegistryCache().ForOneApp(
+        app_id, [this](const apps::AppUpdate& update) {
+          app_type_ = update.AppType();
+          is_platform_app_ =
+              update.IsPlatformApp() == apps::mojom::OptionalBool::kTrue;
+          show_in_launcher_ =
+              update.ShowInLauncher() == apps::mojom::OptionalBool::kTrue;
+        });
 
     constexpr bool allow_placeholder_icon = true;
     CallLoadIcon(false, allow_placeholder_icon);
@@ -87,6 +92,23 @@ void AppServiceAppResult::GetContextMenuModel(GetMenuModelCallback callback) {
   context_menu_->GetMenuModel(std::move(callback));
 }
 
+SearchResultType AppServiceAppResult::GetSearchResultType() const {
+  switch (app_type_) {
+    case apps::mojom::AppType::kArc:
+      return PLAY_STORE_APP;
+    case apps::mojom::AppType::kBuiltIn:
+      return INTERNAL_APP;
+    case apps::mojom::AppType::kCrostini:
+      return CROSTINI_APP;
+    case apps::mojom::AppType::kExtension:
+    case apps::mojom::AppType::kWeb:
+      return EXTENSION_APP;
+    default:
+      NOTREACHED();
+      return SEARCH_RESULT_TYPE_BOUNDARY;
+  }
+}
+
 AppContextMenu* AppServiceAppResult::GetAppContextMenu() {
   return context_menu_.get();
 }
@@ -97,7 +119,8 @@ void AppServiceAppResult::ExecuteLaunchCommand(int event_flags) {
 
 void AppServiceAppResult::Launch(int event_flags,
                                  apps::mojom::LaunchSource launch_source) {
-  apps::AppServiceProxy* proxy = apps::AppServiceProxy::Get(profile());
+  apps::AppServiceProxy* proxy =
+      apps::AppServiceProxyFactory::GetForProfile(profile());
   if (proxy) {
     proxy->Launch(app_id(), event_flags, launch_source,
                   controller()->GetAppListDisplayId());
@@ -105,10 +128,12 @@ void AppServiceAppResult::Launch(int event_flags,
 }
 
 void AppServiceAppResult::CallLoadIcon(bool chip, bool allow_placeholder_icon) {
-  apps::AppServiceProxy* proxy = apps::AppServiceProxy::Get(profile());
-  if (proxy) {
-    proxy->LoadIcon(
-        app_id(), apps::mojom::IconCompression::kUncompressed,
+  if (icon_loader_) {
+    // If |icon_loader_releaser_| is non-null, assigning to it will signal to
+    // |icon_loader_| that the previous icon is no longer being used, as a hint
+    // that it could be flushed from any caches.
+    icon_loader_releaser_ = icon_loader_->LoadIcon(
+        app_type_, app_id(), apps::mojom::IconCompression::kUncompressed,
         chip ? AppListConfig::instance().suggestion_chip_icon_dimension()
              : AppListConfig::instance().GetPreferredIconDimension(
                    display_type()),

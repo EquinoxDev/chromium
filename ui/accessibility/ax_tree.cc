@@ -12,6 +12,7 @@
 #include "base/logging.h"
 #include "base/strings/stringprintf.h"
 #include "ui/accessibility/accessibility_switches.h"
+#include "ui/accessibility/ax_language_info.h"
 #include "ui/accessibility/ax_node.h"
 #include "ui/accessibility/ax_role_properties.h"
 #include "ui/accessibility/ax_table_info.h"
@@ -449,6 +450,9 @@ bool AXTree::Unserialize(const AXTreeUpdate& update) {
     }
   }
 
+  // Clear list_info_map_
+  ordered_set_info_map_.clear();
+
   std::set<const AXNode*>& new_nodes = update_state.new_nodes;
   std::vector<AXTreeObserver::Change> changes;
   changes.reserve(update.nodes.size());
@@ -490,9 +494,6 @@ bool AXTree::Unserialize(const AXTreeUpdate& update) {
   for (AXTreeObserver& observer : observers_) {
     observer.OnAtomicUpdateFinished(this, root_->id() != old_root_id, changes);
   }
-
-  // Clear list_info_map_
-  ordered_set_info_map_.clear();
 
   return true;
 }
@@ -945,20 +946,23 @@ void AXTree::PopulateOrderedSetItems(const AXNode* ordered_set,
   int original_level = original_node.GetIntAttribute(
       ax::mojom::IntAttribute::kHierarchicalLevel);
   // If original node is ordered set, then set its hierarchical level equal to
-  // its first child to ensure the items vector gets populated.
-  // This is due to ordered sets having a hierarchical level of 0, while their
-  // nodes have non-zero hierarchical values.
-  if ((ordered_set == &original_node) &&
-      ordered_set->GetUnignoredChildAtIndex(0)) {
-    original_level = ordered_set->GetUnignoredChildAtIndex(0)->GetIntAttribute(
-        ax::mojom::IntAttribute::kHierarchicalLevel);
+  // its first child that sets a hierarchical level, if any.
+  if (ordered_set == &original_node) {
+    for (int32_t i = 0; i < original_node.GetUnignoredChildCount(); ++i) {
+      int32_t level =
+          original_node.GetUnignoredChildAtIndex(i)->GetIntAttribute(
+              ax::mojom::IntAttribute::kHierarchicalLevel);
+      if (level)
+        original_level =
+            original_level ? std::min(level, original_level) : level;
+    }
   }
   int original_node_index = original_node.GetUnignoredIndexInParent();
   bool node_is_radio_button =
       (original_node.data().role == ax::mojom::Role::kRadioButton);
 
   for (int i = 0; i < local_parent->child_count(); ++i) {
-    const AXNode* child = local_parent->GetUnignoredChildAtIndex(i);
+    const AXNode* child = local_parent->ChildAtIndex(i);
 
     // Invisible children should not be counted.
     // However, in the collapsed container case (e.g. a combobox), items can
@@ -979,6 +983,7 @@ void AXTree::PopulateOrderedSetItems(const AXNode* ordered_set,
       // examined, stop adding to this set.
       if (original_node_index < i)
         break;
+
       // If a decrease in level has been detected before the original node
       // has been examined, then everything previously added to items actually
       // belongs to a different set. Clear items vector.
@@ -1077,11 +1082,20 @@ void AXTree::ComputeSetSizePosInSetAndCache(const AXNode& node,
   // 1. Node role matches ordered set role.
   // 2. The node that calculations were called on is the ordered_set.
   if (node.SetRoleMatchesItemRole(ordered_set) || ordered_set == &node) {
+    auto ordered_set_info_result =
+        ordered_set_info_map_.find(ordered_set->id());
     // If ordered_set is not in the cache, assign it a new set_size.
-    if (ordered_set_info_map_.find(ordered_set->id()) ==
-        ordered_set_info_map_.end()) {
+    if (ordered_set_info_result == ordered_set_info_map_.end()) {
       ordered_set_info_map_[ordered_set->id()] = OrderedSetInfo();
       ordered_set_info_map_[ordered_set->id()].set_size = set_size_value;
+      ordered_set_info_map_[ordered_set->id()].lowest_hierarchical_level =
+          hierarchical_level;
+    } else {
+      OrderedSetInfo ordered_set_info = ordered_set_info_result->second;
+      if (ordered_set_info.lowest_hierarchical_level > hierarchical_level) {
+        ordered_set_info.set_size = set_size_value;
+        ordered_set_info.lowest_hierarchical_level = hierarchical_level;
+      }
     }
   }
 

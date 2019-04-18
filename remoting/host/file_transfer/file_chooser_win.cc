@@ -81,13 +81,16 @@ FileTransferResult<std::pair<ScopedHandle, ScopedHandle>> MakePipe(
 }
 
 FileTransferResult<base::FilePath> GetExePath(base::Location from_here) {
+  // The remoting_desktop.exe binary (where this code runs) has extra manifest
+  // flags (uiAccess and requireAdministrator) that are undesirable for the
+  // file-chooser child process, so remoting_host.exe is used instead.
   base::FilePath path;
-  if (!base::PathService::Get(base::FILE_EXE, &path)) {
+  if (!base::PathService::Get(base::DIR_EXE, &path)) {
     LOG(ERROR) << "Failed to get executable path.";
     return MakeFileTransferError(
         from_here, protocol::FileTransfer_Error_Type_UNEXPECTED_ERROR);
   }
-  return std::move(path);
+  return path.AppendASCII("remoting_host.exe");
 }
 
 class FileChooserWindows : public FileChooser,
@@ -137,16 +140,16 @@ void FileChooserWindows::OnObjectSignaled(HANDLE object) {
     // Currently, WaitForExit returns immediately if GetExitCodeProcess fails,
     // so GetLastError should still be relevant.
     PLOG(ERROR) << "Failed to check exit status";
+    process_.Close();
     std::move(callback_).Run(MakeFileTransferError(
         FROM_HERE, protocol::FileTransfer_Error_Type_UNEXPECTED_ERROR));
-    process_.Close();
     return;
   }
   if (exit_code != ERROR_SUCCESS) {
     LOG(ERROR) << "Error running dialog process:" << exit_code;
+    process_.Close();
     std::move(callback_).Run(MakeFileTransferError(
         FROM_HERE, protocol::FileTransfer_Error_Type_UNEXPECTED_ERROR));
-    process_.Close();
     return;
   }
   process_.Close();
@@ -226,7 +229,7 @@ FileChooserWindows::~FileChooserWindows() {
   if (process_.IsValid()) {
     process_.Terminate(0, false);
   }
-};
+}
 
 }  // namespace
 

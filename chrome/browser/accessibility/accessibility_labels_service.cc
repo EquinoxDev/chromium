@@ -4,33 +4,48 @@
 
 #include "chrome/browser/accessibility/accessibility_labels_service.h"
 
-#include "base/command_line.h"
 #include "base/metrics/histogram_functions.h"
 #include "build/build_config.h"
+#include "chrome/browser/accessibility/accessibility_state_utils.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
+#include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/browser/ui/tab_contents/tab_contents_iterator.h"
 #include "chrome/common/pref_names.h"
 #include "components/pref_registry/pref_registry_syncable.h"
 #include "components/prefs/pref_service.h"
+#include "components/sync_preferences/pref_service_syncable.h"
 #include "content/public/browser/browser_accessibility_state.h"
-#include "ui/accessibility/accessibility_switches.h"
+#include "content/public/common/content_features.h"
+#include "ui/accessibility/ax_action_data.h"
 
 AccessibilityLabelsService::~AccessibilityLabelsService() {}
 
 // static
 void AccessibilityLabelsService::RegisterProfilePrefs(
     user_prefs::PrefRegistrySyncable* registry) {
-  registry->RegisterBooleanPref(prefs::kAccessibilityImageLabelsEnabled, false);
-  registry->RegisterBooleanPref(prefs::kAccessibilityImageLabelsOptInAccepted,
-                                false);
+  registry->RegisterBooleanPref(
+      prefs::kAccessibilityImageLabelsEnabled, false,
+      user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
+  registry->RegisterBooleanPref(
+      prefs::kAccessibilityImageLabelsOptInAccepted, false,
+      user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
+}
+
+// static
+void AccessibilityLabelsService::InitOffTheRecordPrefs(
+    Profile* off_the_record_profile) {
+  DCHECK(off_the_record_profile->IsOffTheRecord());
+  off_the_record_profile->GetPrefs()->SetBoolean(
+      prefs::kAccessibilityImageLabelsEnabled, false);
+  off_the_record_profile->GetPrefs()->SetBoolean(
+      prefs::kAccessibilityImageLabelsOptInAccepted, false);
 }
 
 void AccessibilityLabelsService::Init() {
   // Hidden behind a feature flag.
-  base::CommandLine& cmd = *base::CommandLine::ForCurrentProcess();
-  if (!cmd.HasSwitch(::switches::kEnableExperimentalAccessibilityLabels))
+  if (!base::FeatureList::IsEnabled(features::kExperimentalAccessibilityLabels))
     return;
 
   pref_change_registrar_.Init(profile_->GetPrefs());
@@ -41,10 +56,13 @@ void AccessibilityLabelsService::Init() {
           weak_factory_.GetWeakPtr()));
 
   // Log whether the feature is enabled after startup.
+  // TODO(dmazzoni) re-enable. http://crbug.com/940805
+#if 0
   content::BrowserAccessibilityState::GetInstance()->AddHistogramCallback(
       base::BindRepeating(
           &AccessibilityLabelsService::UpdateAccessibilityLabelsHistograms,
           weak_factory_.GetWeakPtr()));
+#endif
 }
 
 AccessibilityLabelsService::AccessibilityLabelsService(Profile* profile)
@@ -55,8 +73,8 @@ ui::AXMode AccessibilityLabelsService::GetAXMode() {
       content::BrowserAccessibilityState::GetInstance()->GetAccessibilityMode();
 
   // Hidden behind a feature flag.
-  base::CommandLine& cmd = *base::CommandLine::ForCurrentProcess();
-  if (cmd.HasSwitch(::switches::kEnableExperimentalAccessibilityLabels)) {
+  if (base::FeatureList::IsEnabled(
+          features::kExperimentalAccessibilityLabels)) {
     bool enabled = profile_->GetPrefs()->GetBoolean(
         prefs::kAccessibilityImageLabelsEnabled);
     ax_mode.set_mode(ui::AXMode::kLabelImages, enabled);
@@ -66,18 +84,36 @@ ui::AXMode AccessibilityLabelsService::GetAXMode() {
 }
 
 void AccessibilityLabelsService::EnableLabelsServiceOnce() {
-  // TODO(katie): Fire an AXAction on the active tab to enable this feature
-  // once only.
-  // TODO(katie): Ensure this can't be subject to a race condition where the
-  // context menu was on a different tab than the active tab.
+  if (!accessibility_state_utils::IsScreenReaderEnabled()) {
+    return;
+  }
+
+  // TODO(crbug.com/905419): Implement for Android, which does not support
+  // BrowserList::GetInstance.
+#if !defined(OS_ANDROID)
+  Browser* browser = chrome::FindLastActiveWithProfile(profile_);
+  if (!browser)
+    return;
+  auto* web_contents = browser->tab_strip_model()->GetActiveWebContents();
+  if (!web_contents)
+    return;
+  // Fire an AXAction on the active tab to enable this feature once only.
+  ui::AXActionData action_data;
+  action_data.action = ax::mojom::Action::kAnnotatePageImages;
+  for (content::RenderFrameHost* frame : web_contents->GetAllFrames()) {
+    if (frame->IsRenderFrameLive())
+      frame->AccessibilityPerformAction(action_data);
+  }
+#endif
 }
 
 void AccessibilityLabelsService::OnImageLabelsEnabledChanged() {
   // TODO(dmazzoni) Implement for Android, which doesn't support
   // AllTabContentses(). crbug.com/905419
 #if !defined(OS_ANDROID)
-  bool enabled =
-      profile_->GetPrefs()->GetBoolean(prefs::kAccessibilityImageLabelsEnabled);
+  bool enabled = profile_->GetPrefs()->GetBoolean(
+                     prefs::kAccessibilityImageLabelsEnabled) &&
+                 accessibility_state_utils::IsScreenReaderEnabled();
 
   for (auto* web_contents : AllTabContentses()) {
     if (web_contents->GetBrowserContext() != profile_)
@@ -91,6 +127,9 @@ void AccessibilityLabelsService::OnImageLabelsEnabledChanged() {
 }
 
 void AccessibilityLabelsService::UpdateAccessibilityLabelsHistograms() {
+  if (!profile_ || !profile_->GetPrefs())
+    return;
+
   base::UmaHistogramBoolean("Accessibility.ImageLabels",
                             profile_->GetPrefs()->GetBoolean(
                                 prefs::kAccessibilityImageLabelsEnabled));

@@ -5,9 +5,9 @@
 #ifndef CHROMEOS_SERVICES_DEVICE_SYNC_CRYPTAUTH_KEY_REGISTRY_IMPL_H_
 #define CHROMEOS_SERVICES_DEVICE_SYNC_CRYPTAUTH_KEY_REGISTRY_IMPL_H_
 
-#include "chromeos/services/device_sync/cryptauth_key_registry.h"
-
 #include "base/macros.h"
+#include "base/values.h"
+#include "chromeos/services/device_sync/cryptauth_key_registry.h"
 
 class PrefRegistrySimple;
 class PrefService;
@@ -26,6 +26,7 @@ class CryptAuthKeyRegistryImpl : public CryptAuthKeyRegistry {
    public:
     static Factory* Get();
     static void SetFactoryForTesting(Factory* test_factory);
+    virtual ~Factory();
     virtual std::unique_ptr<CryptAuthKeyRegistry> BuildInstance(
         PrefService* pref_service);
 
@@ -41,7 +42,7 @@ class CryptAuthKeyRegistryImpl : public CryptAuthKeyRegistry {
  private:
   // Populates the in-memory key bundle map with the enrolled key bundles
   // persisted in a pref.
-  CryptAuthKeyRegistryImpl(PrefService* pref_service);
+  explicit CryptAuthKeyRegistryImpl(PrefService* pref_service);
 
   // CryptAuthKeyRegistry:
   void OnKeyRegistryUpdated() override;

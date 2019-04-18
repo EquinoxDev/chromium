@@ -69,7 +69,6 @@ class HttpAuthHandlerNegotiateTest : public PlatformTest,
 #if defined(OS_WIN) || (defined(OS_POSIX) && !defined(OS_ANDROID))
     factory_->set_library(base::WrapUnique(auth_library_));
 #endif
-    factory_->set_host_resolver(resolver_.get());
   }
 
 #if defined(OS_ANDROID)
@@ -226,7 +225,7 @@ class HttpAuthHandlerNegotiateTest : public PlatformTest,
     SSLInfo null_ssl_info;
     int rv = factory_->CreateAuthHandlerFromString(
         "Negotiate", HttpAuth::AUTH_SERVER, null_ssl_info, gurl,
-        NetLogWithSource(), &generic_handler);
+        NetLogWithSource(), resolver_.get(), &generic_handler);
     if (rv != OK)
       return rv;
     HttpAuthHandlerNegotiate* negotiate_handler =
@@ -260,12 +259,12 @@ TEST_F(HttpAuthHandlerNegotiateTest, DisableCname) {
   EXPECT_EQ(OK, CreateHandler(
       true, false, true, "http://alias:500", &auth_handler));
 
-  ASSERT_TRUE(auth_handler.get() != NULL);
+  ASSERT_TRUE(auth_handler.get() != nullptr);
   TestCompletionCallback callback;
   HttpRequestInfo request_info;
   std::string token;
   EXPECT_EQ(OK, callback.GetResult(auth_handler->GenerateAuthToken(
-                    NULL, &request_info, callback.callback(), &token)));
+                    nullptr, &request_info, callback.callback(), &token)));
 #if defined(OS_WIN)
   EXPECT_EQ("HTTP/alias", auth_handler->spn_for_testing());
 #elif defined(OS_POSIX)
@@ -278,12 +277,12 @@ TEST_F(HttpAuthHandlerNegotiateTest, DisableCnameStandardPort) {
   std::unique_ptr<HttpAuthHandlerNegotiate> auth_handler;
   EXPECT_EQ(OK, CreateHandler(
       true, true, true, "http://alias:80", &auth_handler));
-  ASSERT_TRUE(auth_handler.get() != NULL);
+  ASSERT_TRUE(auth_handler.get() != nullptr);
   TestCompletionCallback callback;
   HttpRequestInfo request_info;
   std::string token;
   EXPECT_EQ(OK, callback.GetResult(auth_handler->GenerateAuthToken(
-                    NULL, &request_info, callback.callback(), &token)));
+                    nullptr, &request_info, callback.callback(), &token)));
 #if defined(OS_WIN)
   EXPECT_EQ("HTTP/alias", auth_handler->spn_for_testing());
 #elif defined(OS_POSIX)
@@ -296,12 +295,12 @@ TEST_F(HttpAuthHandlerNegotiateTest, DisableCnameNonstandardPort) {
   std::unique_ptr<HttpAuthHandlerNegotiate> auth_handler;
   EXPECT_EQ(OK, CreateHandler(
       true, true, true, "http://alias:500", &auth_handler));
-  ASSERT_TRUE(auth_handler.get() != NULL);
+  ASSERT_TRUE(auth_handler.get() != nullptr);
   TestCompletionCallback callback;
   HttpRequestInfo request_info;
   std::string token;
   EXPECT_EQ(OK, callback.GetResult(auth_handler->GenerateAuthToken(
-                    NULL, &request_info, callback.callback(), &token)));
+                    nullptr, &request_info, callback.callback(), &token)));
 #if defined(OS_WIN)
   EXPECT_EQ("HTTP/alias:500", auth_handler->spn_for_testing());
 #elif defined(OS_POSIX)
@@ -314,12 +313,12 @@ TEST_F(HttpAuthHandlerNegotiateTest, CnameSync) {
   std::unique_ptr<HttpAuthHandlerNegotiate> auth_handler;
   EXPECT_EQ(OK, CreateHandler(
       false, false, true, "http://alias:500", &auth_handler));
-  ASSERT_TRUE(auth_handler.get() != NULL);
+  ASSERT_TRUE(auth_handler.get() != nullptr);
   TestCompletionCallback callback;
   HttpRequestInfo request_info;
   std::string token;
   EXPECT_EQ(OK, callback.GetResult(auth_handler->GenerateAuthToken(
-                    NULL, &request_info, callback.callback(), &token)));
+                    nullptr, &request_info, callback.callback(), &token)));
 #if defined(OS_WIN)
   EXPECT_EQ("HTTP/canonical.example.com", auth_handler->spn_for_testing());
 #elif defined(OS_POSIX)
@@ -332,12 +331,13 @@ TEST_F(HttpAuthHandlerNegotiateTest, CnameAsync) {
   std::unique_ptr<HttpAuthHandlerNegotiate> auth_handler;
   EXPECT_EQ(OK, CreateHandler(
       false, false, false, "http://alias:500", &auth_handler));
-  ASSERT_TRUE(auth_handler.get() != NULL);
+  ASSERT_TRUE(auth_handler.get() != nullptr);
   TestCompletionCallback callback;
   HttpRequestInfo request_info;
   std::string token;
-  EXPECT_EQ(ERR_IO_PENDING, auth_handler->GenerateAuthToken(
-      NULL, &request_info, callback.callback(), &token));
+  EXPECT_EQ(ERR_IO_PENDING,
+            auth_handler->GenerateAuthToken(nullptr, &request_info,
+                                            callback.callback(), &token));
   EXPECT_THAT(callback.WaitForResult(), IsOk());
 #if defined(OS_WIN)
   EXPECT_EQ("HTTP/canonical.example.com", auth_handler->spn_for_testing());
@@ -428,7 +428,7 @@ class TestAuthSystem : public HttpNegotiateAuthSystem {
     return net::OK;
   }
 
-  void Delegate() override {}
+  void SetDelegation(HttpAuth::DelegationType delegation_type) override {}
 };
 
 TEST_F(HttpAuthHandlerNegotiateTest, OverrideAuthSystem) {
@@ -437,7 +437,6 @@ TEST_F(HttpAuthHandlerNegotiateTest, OverrideAuthSystem) {
                               -> std::unique_ptr<HttpNegotiateAuthSystem> {
         return std::make_unique<TestAuthSystem>();
       }));
-  negotiate_factory->set_host_resolver(resolver());
   negotiate_factory->set_http_auth_preferences(http_auth_preferences());
 #if !defined(OS_ANDROID)
   auto auth_library = std::make_unique<MockAuthLibrary>();
@@ -449,7 +448,7 @@ TEST_F(HttpAuthHandlerNegotiateTest, OverrideAuthSystem) {
   std::unique_ptr<HttpAuthHandler> handler;
   EXPECT_EQ(OK, negotiate_factory->CreateAuthHandlerFromString(
                     "Negotiate", HttpAuth::AUTH_SERVER, SSLInfo(), gurl,
-                    NetLogWithSource(), &handler));
+                    NetLogWithSource(), resolver(), &handler));
   EXPECT_TRUE(handler);
 
   TestCompletionCallback callback;

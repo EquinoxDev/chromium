@@ -12,7 +12,7 @@
 #include "net/base/io_buffer.h"
 #include "net/base/net_errors.h"
 #include "net/socket/udp_server_socket.h"
-#include "net/third_party/quic/core/quic_dispatcher.h"
+#include "net/third_party/quiche/src/quic/core/quic_dispatcher.h"
 
 namespace net {
 
@@ -25,23 +25,6 @@ QuicSimpleServerPacketWriter::QuicSimpleServerPacketWriter(
       weak_factory_(this) {}
 
 QuicSimpleServerPacketWriter::~QuicSimpleServerPacketWriter() = default;
-
-quic::WriteResult QuicSimpleServerPacketWriter::WritePacketWithCallback(
-    const char* buffer,
-    size_t buf_len,
-    const quic::QuicIpAddress& self_address,
-    const quic::QuicSocketAddress& peer_address,
-    quic::PerPacketOptions* options,
-    WriteCallback callback) {
-  DCHECK(callback_.is_null());
-  callback_ = callback;
-  quic::WriteResult result =
-      WritePacket(buffer, buf_len, self_address, peer_address, options);
-  if (!quic::IsWriteBlockedStatus(result.status)) {
-    callback_.Reset();
-  }
-  return result;
-}
 
 void QuicSimpleServerPacketWriter::OnWriteComplete(int rv) {
   DCHECK_NE(rv, ERR_IO_PENDING);
@@ -96,7 +79,7 @@ quic::WriteResult QuicSimpleServerPacketWriter::WritePacket(
 
 quic::QuicByteCount QuicSimpleServerPacketWriter::GetMaxPacketSize(
     const quic::QuicSocketAddress& peer_address) const {
-  return quic::kMaxPacketSize;
+  return quic::kMaxOutgoingPacketSize;
 }
 
 bool QuicSimpleServerPacketWriter::SupportsReleaseTime() const {

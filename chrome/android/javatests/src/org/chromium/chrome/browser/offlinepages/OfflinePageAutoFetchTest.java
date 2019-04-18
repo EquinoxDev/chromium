@@ -18,7 +18,6 @@ import org.junit.runner.RunWith;
 
 import org.chromium.base.ContextUtils;
 import org.chromium.base.Log;
-import org.chromium.base.ThreadUtils;
 import org.chromium.base.metrics.RecordHistogram;
 import org.chromium.base.test.util.CallbackHelper;
 import org.chromium.base.test.util.CommandLineFlags;
@@ -26,6 +25,7 @@ import org.chromium.base.test.util.DisabledTest;
 import org.chromium.base.test.util.Feature;
 import org.chromium.chrome.browser.ChromeActivity;
 import org.chromium.chrome.browser.ChromeSwitches;
+import org.chromium.chrome.browser.DeviceConditions;
 import org.chromium.chrome.browser.UrlConstants;
 import org.chromium.chrome.browser.offlinepages.AutoFetchNotifier.NotificationAction;
 import org.chromium.chrome.browser.profiles.Profile;
@@ -38,6 +38,7 @@ import org.chromium.chrome.test.ChromeJUnit4ClassRunner;
 import org.chromium.chrome.test.util.ChromeTabUtils;
 import org.chromium.content_public.browser.LoadUrlParams;
 import org.chromium.content_public.browser.test.util.CriteriaHelper;
+import org.chromium.content_public.browser.test.util.TestThreadUtils;
 import org.chromium.net.NetworkChangeNotifier;
 import org.chromium.net.test.util.WebServer;
 import org.chromium.net.test.util.WebServer.HTTPRequest;
@@ -126,7 +127,7 @@ public class OfflinePageAutoFetchTest {
 
         AutoFetchNotifier.mTestHooks = new NotifierHooks();
 
-        ThreadUtils.runOnUiThreadBlocking(() -> {
+        TestThreadUtils.runOnUiThreadBlocking(() -> {
             mInitialHistograms = histogramSnapshot();
             mProfile = activityTab().getProfile();
             mOfflinePageBridge = OfflinePageBridge.getForProfile(mProfile);
@@ -134,7 +135,6 @@ public class OfflinePageAutoFetchTest {
             if (!NetworkChangeNotifier.isInitialized()) {
                 NetworkChangeNotifier.init();
             }
-            forceConnectivityState(false);
 
             OfflinePageBridge.getForProfile(mProfile).addObserver(
                     new OfflinePageBridge.OfflinePageModelObserver() {
@@ -145,6 +145,7 @@ public class OfflinePageAutoFetchTest {
                         }
                     });
         });
+        forceConnectivityState(false);
     }
 
     @After
@@ -153,6 +154,23 @@ public class OfflinePageAutoFetchTest {
         if (mWebServer != null) {
             mWebServer.shutdown();
         }
+    }
+
+    @Test
+    @MediumTest
+    @Feature({"OfflineAutoFetch"})
+    public void testAutoFetchTriggersOnDNSErrorWhenOffline() throws Exception {
+        attemptLoadPage("http://does.not.resolve.com");
+        waitForRequestCount(1);
+    }
+
+    @Test
+    @MediumTest
+    @Feature({"OfflineAutoFetch"})
+    public void testAutoFetchDoesNotTriggerOnDNSErrorWhenOnline() throws Exception {
+        forceConnectivityState(true);
+        attemptLoadPage("http://does.not.resolve.com");
+        waitForRequestCount(0);
     }
 
     @Test
@@ -357,7 +375,7 @@ public class OfflinePageAutoFetchTest {
     // successfully.
     private void attemptLoadPage(String url) {
         Tab tab = activityTab();
-        ThreadUtils.runOnUiThreadBlocking(() -> {
+        TestThreadUtils.runOnUiThreadBlocking(() -> {
             tab.loadUrl(
                     new LoadUrlParams(url, PageTransition.TYPED | PageTransition.FROM_ADDRESS_BAR));
         });
@@ -366,7 +384,7 @@ public class OfflinePageAutoFetchTest {
     // Attempts to create a new tab and load |url| in it.
     private Tab attemptLoadPageInNewTab(String url) throws Exception {
         ChromeActivity activity = mActivityTestRule.getActivity();
-        Tab tab = ThreadUtils.runOnUiThreadBlocking(
+        Tab tab = TestThreadUtils.runOnUiThreadBlocking(
                 () -> activity.getTabCreator(false).launchUrl(url, TabLaunchType.FROM_LINK));
         ChromeTabUtils.waitForInteractable(tab);
         return tab;
@@ -374,7 +392,7 @@ public class OfflinePageAutoFetchTest {
 
     private boolean isErrorPage(final Tab tab) {
         final AtomicReference<Boolean> result = new AtomicReference<Boolean>(false);
-        ThreadUtils.runOnUiThreadBlocking(() -> result.set(tab.isShowingErrorPage()));
+        TestThreadUtils.runOnUiThreadBlocking(() -> result.set(tab.isShowingErrorPage()));
         return result.get();
     }
 
@@ -383,15 +401,16 @@ public class OfflinePageAutoFetchTest {
                 mActivityTestRule.getActivity().getTabModelSelector().getCurrentModel();
 
         // Attempt to close the tab, which will delay closing until the undo timeout goes away.
-        ThreadUtils.runOnUiThreadBlocking(
+        TestThreadUtils.runOnUiThreadBlocking(
                 () -> { TabModelUtils.closeTabById(model, tab.getId(), true); });
     }
 
     private void forceConnectivityState(boolean connected) {
-        ThreadUtils.runOnUiThreadBlocking(() -> {
+        TestThreadUtils.runOnUiThreadBlocking(() -> {
             NetworkChangeNotifier.forceConnectivityState(connected);
-            DeviceConditions.mForceNoConnectionForTesting = !connected;
+            DeviceConditions.sForceNoConnectionForTesting = !connected;
         });
+        OfflineTestUtil.waitForConnectivityState(connected);
     }
 
     private void waitForHistogram(String histogramAndEnum, int delta) {
@@ -420,7 +439,7 @@ public class OfflinePageAutoFetchTest {
 
     private static Map<String, Integer> histogramSnapshot() {
         final Map<String, Integer> histograms = new HashMap<String, Integer>();
-        ThreadUtils.runOnUiThreadBlocking(() -> {
+        TestThreadUtils.runOnUiThreadBlocking(() -> {
             Integer actions[] = new Integer[] {
                     NotificationAction.SHOWN,
                     NotificationAction.COMPLETE,
@@ -449,7 +468,7 @@ public class OfflinePageAutoFetchTest {
     }
 
     private void sendBroadcast(Intent intent) {
-        ThreadUtils.runOnUiThreadBlocking(
+        TestThreadUtils.runOnUiThreadBlocking(
                 () -> { ContextUtils.getApplicationContext().sendBroadcast(intent); });
     }
     private TabModel getCurrentTabModel() {

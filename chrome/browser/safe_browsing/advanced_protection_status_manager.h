@@ -35,6 +35,10 @@ class AdvancedProtectionStatusManager
   // If the primary account of |profile| is under advanced protection.
   static bool IsUnderAdvancedProtection(Profile* profile);
 
+  // If the primary account of |profile| is requesting advanced protection
+  // verdicts.
+  static bool RequestsAdvancedProtectionVerdicts(Profile* profile);
+
   bool is_under_advanced_protection() const {
     return is_under_advanced_protection_;
   }
@@ -68,6 +72,10 @@ class AdvancedProtectionStatusManager
                            AlreadySignedInAndUnderAPIncognito);
   FRIEND_TEST_ALL_PREFIXES(AdvancedProtectionStatusManagerTest,
                            AlreadySignedInAndNotUnderAPIncognito);
+  FRIEND_TEST_ALL_PREFIXES(AdvancedProtectionStatusManagerTest,
+                           AdvancedProtectionDisabledAfterSignin);
+  FRIEND_TEST_ALL_PREFIXES(AdvancedProtectionStatusManagerTest,
+                           StartupAfterLongWaitRefreshesImmediately);
 
   void Initialize();
 

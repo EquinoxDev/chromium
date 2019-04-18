@@ -18,9 +18,9 @@ import android.widget.ImageView;
 import android.widget.RelativeLayout;
 import android.widget.TextView;
 
-import org.chromium.base.ApiCompatibilityUtils;
 import org.chromium.chrome.R;
 import org.chromium.chrome.browser.omnibox.suggestions.basic.SuggestionViewDelegate;
+import org.chromium.chrome.browser.util.ColorUtils;
 
 /**
  * Container view for omnibox answer suggestions.
@@ -32,6 +32,21 @@ public class AnswerSuggestionView extends RelativeLayout {
     private TextView mTextView2;
     private ImageView mAnswerIconView;
     private ImageView mRefineView;
+
+    /**
+     * Container view for omnibox suggestions allowing soft focus from keyboard.
+     */
+    public static class FocusableView extends RelativeLayout {
+        /** Creates new instance of FocusableView. */
+        public FocusableView(Context context, AttributeSet attributes) {
+            super(context, attributes);
+        }
+
+        @Override
+        public boolean isFocused() {
+            return super.isFocused() || (isSelected() && !isInTouchMode());
+        }
+    }
 
     /** Creates new instance of AnswerSuggestionView. */
     public AnswerSuggestionView(Context context, AttributeSet attributes) {
@@ -51,6 +66,7 @@ public class AnswerSuggestionView extends RelativeLayout {
     @Override
     public void setSelected(boolean selected) {
         super.setSelected(selected);
+        mAnswerView.setSelected(selected);
         if (selected && !isInTouchMode()) {
             postDelegateAction(() -> mSuggestionDelegate.onSetUrlToSuggestion());
         }
@@ -90,9 +106,24 @@ public class AnswerSuggestionView extends RelativeLayout {
      */
     void setUseDarkColors(boolean useDarkColors) {
         Drawable drawable = mRefineView.getDrawable();
-        DrawableCompat.setTint(drawable,
-                ApiCompatibilityUtils.getColor(getContext().getResources(),
-                        useDarkColors ? R.color.dark_mode_tint : R.color.light_mode_tint));
+        DrawableCompat.setTint(
+                drawable, ColorUtils.getIconTint(getContext(), !useDarkColors).getDefaultColor());
+    }
+
+    /**
+     * Specifies text accessibility description of the first text line.
+     * @param text Text to be announced.
+     */
+    void setLine1AccessibilityDescription(String text) {
+        mTextView1.setContentDescription(text);
+    }
+
+    /**
+     * Specifies text accessibility description of the second text line.
+     * @param text Text to be announced.
+     */
+    void setLine2AccessibilityDescription(String text) {
+        mTextView2.setContentDescription(text);
     }
 
     /**

@@ -12,7 +12,9 @@
 
 namespace image_annotation {
 
-constexpr base::Feature ImageAnnotationService::kExperiment;
+// static
+const base::Feature ImageAnnotationService::kExperiment{
+    "ImageAnnotationServiceExperimental", base::FEATURE_DISABLED_BY_DEFAULT};
 constexpr base::FeatureParam<std::string> ImageAnnotationService::kServerUrl;
 constexpr base::FeatureParam<std::string> ImageAnnotationService::kApiKey;
 constexpr base::FeatureParam<int> ImageAnnotationService::kThrottleMs;
@@ -29,7 +31,8 @@ ImageAnnotationService::ImageAnnotationService(
                  base::TimeDelta::FromMilliseconds(kThrottleMs.Get()),
                  kBatchSize.Get(),
                  kMinOcrConfidence.Get(),
-                 shared_url_loader_factory) {}
+                 shared_url_loader_factory,
+                 service_binding_.GetConnector()) {}
 
 ImageAnnotationService::~ImageAnnotationService() = default;
 

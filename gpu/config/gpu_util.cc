@@ -51,9 +51,7 @@ GpuFeatureStatus GetAndroidSurfaceControlFeatureStatus(
   if (!gpu_preferences.enable_android_surface_control)
     return kGpuFeatureStatusDisabled;
 
-  if (!gl::SurfaceControl::IsSupported())
-    return kGpuFeatureStatusDisabled;
-
+  DCHECK(gl::SurfaceControl::IsSupported());
   return kGpuFeatureStatusEnabled;
 #endif
 }
@@ -92,10 +90,6 @@ GpuFeatureStatus GetOopRasterizationFeatureStatus(
   // If we can't create a GrContext for whatever reason, don't enable oop
   // rasterization.
   if (!gpu_info.oop_rasterization_supported)
-    return kGpuFeatureStatusDisabled;
-
-  if (gpu_preferences.use_passthrough_cmd_decoder &&
-      !gpu_preferences.enable_passthrough_raster_decoder)
     return kGpuFeatureStatusDisabled;
 
   if (gpu_preferences.disable_oop_rasterization)
@@ -236,9 +230,14 @@ void AppendWorkaroundsToCommandLine(const GpuFeatureInfo& gpu_feature_info,
           DISABLE_ES3_GL_CONTEXT_FOR_TESTING)) {
     command_line->AppendSwitch(switches::kDisableES3GLContextForTesting);
   }
+#if defined(OS_WIN)
   if (gpu_feature_info.IsWorkaroundEnabled(DISABLE_DIRECT_COMPOSITION)) {
     command_line->AppendSwitch(switches::kDisableDirectComposition);
   }
+  if (gpu_feature_info.IsWorkaroundEnabled(DISABLE_DIRECT_COMPOSITION_LAYERS)) {
+    command_line->AppendSwitch(switches::kDisableDirectCompositionLayers);
+  }
+#endif
 }
 
 // Adjust gpu feature status based on enabled gpu driver bug workarounds.

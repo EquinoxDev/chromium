@@ -11,7 +11,6 @@
 #include "base/logging.h"
 #include "base/run_loop.h"
 #include "base/time/time.h"
-#include "content/browser/service_worker/embedded_worker_registry.h"
 #include "content/browser/service_worker/embedded_worker_test_helper.h"
 #include "content/browser/service_worker/fake_embedded_worker_instance_client.h"
 #include "content/browser/service_worker/service_worker_context_core.h"
@@ -27,6 +26,7 @@
 #include "content/public/test/test_browser_thread_bundle.h"
 #include "content/public/test/test_utils.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "third_party/blink/public/common/service_worker/service_worker_types.h"
 #include "third_party/blink/public/mojom/service_worker/service_worker_event_status.mojom.h"
 #include "third_party/blink/public/mojom/service_worker/service_worker_registration.mojom.h"
 
@@ -49,6 +49,13 @@ ServiceWorkerContextCore::RegistrationCallback MakeRegisteredCallback(
     bool* called,
     int64_t* store_registration_id) {
   return base::BindOnce(&SaveResponseCallback, called, store_registration_id);
+}
+
+void RegisteredCallback(base::OnceClosure quit_closure,
+                        blink::ServiceWorkerStatusCode status,
+                        const std::string& status_message,
+                        int64_t registration_id) {
+  std::move(quit_closure).Run();
 }
 
 void CallCompletedCallback(bool* called, blink::ServiceWorkerStatusCode) {
@@ -239,12 +246,16 @@ class TestServiceWorkerContextObserver : public ServiceWorkerContextObserver {
     RegistrationCompleted,
     VersionActivated,
     VersionRedundant,
-    NoControllees
+    NoControllees,
+    VersionRunningStatusChanged,
+    Destruct
   };
   struct EventLog {
     EventType type;
     base::Optional<GURL> url;
     base::Optional<int64_t> version_id;
+    base::Optional<bool> is_running;
+    base::Optional<ServiceWorkerContext*> context;
   };
 
   explicit TestServiceWorkerContextObserver(ServiceWorkerContext* context)
@@ -253,7 +264,8 @@ class TestServiceWorkerContextObserver : public ServiceWorkerContextObserver {
   }
 
   ~TestServiceWorkerContextObserver() override {
-    context_->RemoveObserver(this);
+    if (context_)
+      context_->RemoveObserver(this);
   }
 
   void OnRegistrationCompleted(const GURL& scope) override {
@@ -287,6 +299,24 @@ class TestServiceWorkerContextObserver : public ServiceWorkerContextObserver {
     events_.push_back(log);
   }
 
+  void OnVersionRunningStatusChanged(content::ServiceWorkerContext* context,
+                                     int64_t version_id,
+                                     bool is_running) override {
+    EventLog log;
+    log.type = EventType::VersionRunningStatusChanged;
+    log.version_id = version_id;
+    log.is_running = is_running;
+    events_.push_back(log);
+  }
+
+  void OnDestruct(content::ServiceWorkerContext* context) override {
+    EventLog log;
+    log.type = EventType::Destruct;
+    log.context = context;
+    events_.push_back(log);
+    context_ = nullptr;
+  }
+
   const std::vector<EventLog>& events() { return events_; }
 
  private:
@@ -312,13 +342,24 @@ TEST_F(ServiceWorkerContextTest, RegistrationCompletedObserver) {
 
   ASSERT_TRUE(called);
   EXPECT_NE(blink::mojom::kInvalidServiceWorkerRegistrationId, registration_id);
-  ASSERT_EQ(2u, observer.events().size());
+
+  std::vector<TestServiceWorkerContextObserver::EventLog> events;
+
+  // Filter the events to be verified.
+  for (auto event : observer.events()) {
+    if (event.type == TestServiceWorkerContextObserver::EventType::
+                          RegistrationCompleted ||
+        event.type ==
+            TestServiceWorkerContextObserver::EventType::VersionActivated)
+      events.push_back(event);
+  }
+  ASSERT_EQ(2u, events.size());
   EXPECT_EQ(TestServiceWorkerContextObserver::EventType::RegistrationCompleted,
-            observer.events()[0].type);
-  EXPECT_EQ(scope, observer.events()[0].url);
+            events[0].type);
+  EXPECT_EQ(scope, events[0].url);
   EXPECT_EQ(TestServiceWorkerContextObserver::EventType::VersionActivated,
-            observer.events()[1].type);
-  EXPECT_EQ(scope, observer.events()[1].url);
+            events[1].type);
+  EXPECT_EQ(scope, events[1].url);
 }
 
 // Make sure OnNoControllees is called on observer.
@@ -336,8 +377,8 @@ TEST_F(ServiceWorkerContextTest, NoControlleesObserver) {
       2l /* dummy version id */, context()->AsWeakPtr());
 
   ServiceWorkerRemoteProviderEndpoint endpoint;
-  std::unique_ptr<ServiceWorkerProviderHost> host =
-      CreateProviderHostForWindow(helper_->mock_render_process_id(), 1, true,
+  base::WeakPtr<ServiceWorkerProviderHost> host =
+      CreateProviderHostForWindow(helper_->mock_render_process_id(), true,
                                   context()->AsWeakPtr(), &endpoint);
 
   version->AddControllee(host.get());
@@ -407,6 +448,51 @@ TEST_F(ServiceWorkerContextTest, VersionRedundantObserver) {
   EXPECT_EQ(TestServiceWorkerContextObserver::EventType::VersionRedundant,
             observer.events()[0].type);
   EXPECT_EQ(2l, observer.events()[0].version_id);
+}
+
+// Make sure OnVersionRunningStatusChanged is called on observer.
+TEST_F(ServiceWorkerContextTest, OnVersionRunningStatusChangedObserver) {
+  GURL scope("https://www.example.com/");
+  GURL script_url("https://www.example.com/service_worker.js");
+  blink::mojom::ServiceWorkerRegistrationOptions options;
+  options.scope = scope;
+
+  TestServiceWorkerContextObserver observer(context_wrapper());
+  base::RunLoop run_loop;
+  context()->RegisterServiceWorker(
+      script_url, options,
+      base::BindOnce(&RegisteredCallback, run_loop.QuitClosure()));
+  run_loop.Run();
+
+  context_wrapper()->StopAllServiceWorkersForOrigin(scope);
+  base::RunLoop().RunUntilIdle();
+
+  std::vector<TestServiceWorkerContextObserver::EventLog> events;
+
+  // Filter the events to be verified.
+  for (auto event : observer.events()) {
+    if (event.type == TestServiceWorkerContextObserver::EventType::
+                          VersionRunningStatusChanged)
+      events.push_back(event);
+  }
+
+  ASSERT_EQ(2u, events.size());
+  EXPECT_EQ(true, events[0].is_running);
+  EXPECT_EQ(false, events[1].is_running);
+  EXPECT_EQ(events[0].version_id, events[1].version_id);
+}
+
+// Make sure OnDestruct is called on observer.
+TEST_F(ServiceWorkerContextTest, OnDestructObserver) {
+  ServiceWorkerContextWrapper* context = context_wrapper();
+  TestServiceWorkerContextObserver observer(context);
+  helper_->ShutdownContext();
+  base::RunLoop().RunUntilIdle();
+
+  ASSERT_EQ(1u, observer.events().size());
+  EXPECT_EQ(TestServiceWorkerContextObserver::EventType::Destruct,
+            observer.events()[0].type);
+  EXPECT_EQ(context, observer.events()[0].context);
 }
 
 // Make sure basic registration is working.
@@ -831,37 +917,30 @@ TEST_F(ServiceWorkerContextTest, ProviderHostIterator) {
   const int kRenderProcessId2 = 2;
   const GURL kOrigin1 = GURL("https://www.example.com/");
   const GURL kOrigin2 = GURL("https://another-origin.example.net/");
-  int provider_id = 1;
   std::vector<ServiceWorkerRemoteProviderEndpoint> remote_endpoints;
 
-  // Host1 (provider_id=1): process_id=1, origin1.
+  // Host1 : process_id=1, origin1.
   remote_endpoints.emplace_back();
-  std::unique_ptr<ServiceWorkerProviderHost> host1 =
-      CreateProviderHostForWindow(
-          kRenderProcessId1, provider_id++, true /* is_parent_frame_secure */,
-          context()->AsWeakPtr(), &remote_endpoints.back());
+  base::WeakPtr<ServiceWorkerProviderHost> host1 = CreateProviderHostForWindow(
+      kRenderProcessId1, true /* is_parent_frame_secure */,
+      context()->AsWeakPtr(), &remote_endpoints.back());
   host1->UpdateUrls(kOrigin1, kOrigin1);
 
-  // Host2 (provider_id=2): process_id=2, origin2.
+  // Host2 : process_id=2, origin2.
   remote_endpoints.emplace_back();
-  std::unique_ptr<ServiceWorkerProviderHost> host2 =
-      CreateProviderHostForWindow(
-          kRenderProcessId2, provider_id++, true /* is_parent_frame_secure */,
-          context()->AsWeakPtr(), &remote_endpoints.back());
+  base::WeakPtr<ServiceWorkerProviderHost> host2 = CreateProviderHostForWindow(
+      kRenderProcessId2, true /* is_parent_frame_secure */,
+      context()->AsWeakPtr(), &remote_endpoints.back());
   host2->UpdateUrls(kOrigin2, kOrigin2);
 
-  // Host3 (provider_id=3): process_id=2, origin1.
+  // Host3 : process_id=2, origin1.
   remote_endpoints.emplace_back();
-  std::unique_ptr<ServiceWorkerProviderHost> host3 =
-      CreateProviderHostForWindow(
-          kRenderProcessId2, provider_id++, true /* is_parent_frame_secure */,
-          context()->AsWeakPtr(), &remote_endpoints.back());
+  base::WeakPtr<ServiceWorkerProviderHost> host3 = CreateProviderHostForWindow(
+      kRenderProcessId2, true /* is_parent_frame_secure */,
+      context()->AsWeakPtr(), &remote_endpoints.back());
   host3->UpdateUrls(kOrigin1, kOrigin1);
 
-  // Host4 (provider_id < -1): process_id=2, origin2, for ServiceWorker.
-  // Since the provider host is created via
-  // CreateProviderHostForServiceWorkerContext, the provider_id is not a fixed
-  // number.
+  // Host4 : process_id=2, origin2, for ServiceWorker.
   blink::mojom::ServiceWorkerRegistrationOptions registration_opt;
   registration_opt.scope = GURL("https://another-origin.example.net/test/");
   scoped_refptr<ServiceWorkerRegistration> registration =
@@ -880,17 +959,15 @@ TEST_F(ServiceWorkerContextTest, ProviderHostIterator) {
           kRenderProcessId2, true /* is_parent_frame_secure */, version.get(),
           context()->AsWeakPtr(), &remote_endpoints.back());
   const int host4_provider_id = host4->provider_id();
-  EXPECT_LT(host4_provider_id, kInvalidServiceWorkerProviderId);
+  EXPECT_NE(host4_provider_id, blink::kInvalidServiceWorkerProviderId);
 
   ServiceWorkerProviderHost* host1_raw = host1.get();
   ServiceWorkerProviderHost* host2_raw = host2.get();
   ServiceWorkerProviderHost* host3_raw = host3.get();
-  context()->AddProviderHost(std::move(host1));
-  context()->AddProviderHost(std::move(host2));
-  context()->AddProviderHost(std::move(host3));
-  // host4 is already included because CreateProviderHostForServiceWorkerContext
-  // adds it.
-  DCHECK(context()->GetProviderHost(host4->process_id(), host4->provider_id()));
+  ASSERT_TRUE(context()->GetProviderHost(host1->provider_id()));
+  ASSERT_TRUE(context()->GetProviderHost(host2->provider_id()));
+  ASSERT_TRUE(context()->GetProviderHost(host3->provider_id()));
+  ASSERT_TRUE(context()->GetProviderHost(host4->provider_id()));
 
   // Iterate over the client provider hosts that belong to kOrigin1.
   std::set<ServiceWorkerProviderHost*> results;
@@ -914,10 +991,10 @@ TEST_F(ServiceWorkerContextTest, ProviderHostIterator) {
   EXPECT_EQ(1u, results.size());
   EXPECT_TRUE(ContainsKey(results, host2_raw));
 
-  context()->RemoveProviderHost(kRenderProcessId1, 1);
-  context()->RemoveProviderHost(kRenderProcessId2, 2);
-  context()->RemoveProviderHost(kRenderProcessId2, 3);
-  context()->RemoveProviderHost(kRenderProcessId2, host4_provider_id);
+  context()->RemoveProviderHost(host1->provider_id());
+  context()->RemoveProviderHost(host2->provider_id());
+  context()->RemoveProviderHost(host3->provider_id());
+  context()->RemoveProviderHost(host4_provider_id);
 }
 
 class ServiceWorkerContextRecoveryTest

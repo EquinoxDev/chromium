@@ -5,16 +5,17 @@
 #ifndef UI_BASE_IME_INPUT_METHOD_BASE_H_
 #define UI_BASE_IME_INPUT_METHOD_BASE_H_
 
+#include <memory>
 #include <vector>
 
 #include "base/compiler_specific.h"
+#include "base/component_export.h"
 #include "base/macros.h"
 #include "base/memory/weak_ptr.h"
 #include "base/observer_list.h"
 #include "build/build_config.h"
 #include "ui/base/ime/ime_input_context_handler_interface.h"
 #include "ui/base/ime/input_method.h"
-#include "ui/base/ime/ui_base_ime_export.h"
 #include "ui/events/event_dispatcher.h"
 
 namespace gfx {
@@ -30,7 +31,7 @@ class TextInputClient;
 
 // A helper class providing functionalities shared among ui::InputMethod
 // implementations.
-class UI_BASE_IME_EXPORT InputMethodBase
+class COMPONENT_EXPORT(UI_BASE_IME) InputMethodBase
     : public InputMethod,
       public base::SupportsWeakPtr<InputMethodBase>,
       public IMEInputContextHandlerInterface {
@@ -51,6 +52,7 @@ class UI_BASE_IME_EXPORT InputMethodBase
   void DetachTextInputClient(TextInputClient* client) override;
   TextInputClient* GetTextInputClient() const override;
   void SetOnScreenKeyboardBounds(const gfx::Rect& new_bounds) override;
+  AsyncKeyDispatcher* GetAsyncKeyDispatcher() override;
 
   // If a derived class overrides this method, it should call parent's
   // implementation.
@@ -74,9 +76,10 @@ class UI_BASE_IME_EXPORT InputMethodBase
   // See InputMethodDelegate for details on this.
   using ResultCallback = base::OnceCallback<void(bool, bool)>;
 
-  explicit InputMethodBase(internal::InputMethodDelegate* delegate = nullptr);
+  explicit InputMethodBase(internal::InputMethodDelegate* delegate);
   InputMethodBase(internal::InputMethodDelegate* delegate,
                   std::unique_ptr<InputMethodKeyboardController> controller);
+
   virtual void OnWillChangeFocusedClient(TextInputClient* focused_before,
                                          TextInputClient* focused) {}
   virtual void OnDidChangeFocusedClient(TextInputClient* focused_before,
@@ -133,7 +136,7 @@ class UI_BASE_IME_EXPORT InputMethodBase
  private:
   // Indicates whether the IME extension is currently sending a fake key event.
   // This is used in SendKeyEvent.
-  bool sending_key_event_;
+  bool sending_key_event_ = false;
 
   internal::InputMethodDelegate* delegate_;
 
@@ -143,7 +146,7 @@ class UI_BASE_IME_EXPORT InputMethodBase
 
   void SetFocusedTextInputClientInternal(TextInputClient* client);
 
-  TextInputClient* text_input_client_;
+  TextInputClient* text_input_client_ = nullptr;
 
   base::ObserverList<InputMethodObserver>::Unchecked observer_list_;
 
@@ -152,7 +155,7 @@ class UI_BASE_IME_EXPORT InputMethodBase
   // Screen bounds of a on-screen keyboard.
   gfx::Rect keyboard_bounds_;
 
-  std::unique_ptr<InputMethodKeyboardController> keyboard_controller_;
+  std::unique_ptr<InputMethodKeyboardController> const keyboard_controller_;
 
   DISALLOW_COPY_AND_ASSIGN(InputMethodBase);
 };

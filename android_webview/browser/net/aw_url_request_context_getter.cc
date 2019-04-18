@@ -5,6 +5,7 @@
 #include "android_webview/browser/net/aw_url_request_context_getter.h"
 
 #include <memory>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -16,7 +17,7 @@
 #include "android_webview/browser/net/aw_request_interceptor.h"
 #include "android_webview/browser/net/aw_url_request_job_factory.h"
 #include "android_webview/browser/net/init_native_callback.h"
-#include "android_webview/browser/net_helpers.h"
+#include "android_webview/browser/network_service/net_helpers.h"
 #include "android_webview/common/aw_content_client.h"
 #include "base/base_paths_android.h"
 #include "base/bind.h"
@@ -42,7 +43,6 @@
 #include "net/base/cache_type.h"
 #include "net/cert/cert_verifier.h"
 #include "net/cookies/cookie_store.h"
-#include "net/dns/mapped_host_resolver.h"
 #include "net/http/http_auth_filter.h"
 #include "net/http/http_auth_handler_factory.h"
 #include "net/http/http_auth_preferences.h"
@@ -85,17 +85,11 @@ bool g_check_cleartext_permitted = false;
 const char kProxyServerSwitch[] = "proxy-server";
 const char kProxyBypassListSwitch[] = "proxy-bypass-list";
 
-void ApplyCmdlineOverridesToHostResolver(
-    net::MappedHostResolver* host_resolver) {
+std::string GetCmdlineOverridesForHostResolver() {
   const base::CommandLine& command_line =
       *base::CommandLine::ForCurrentProcess();
-  if (command_line.HasSwitch(network::switches::kHostResolverRules)) {
-    // If hostname remappings were specified on the command-line, layer these
-    // rules on top of the real host resolver. This allows forwarding all
-    // requests through a designated test server.
-    host_resolver->SetRulesFromString(command_line.GetSwitchValueASCII(
-        network::switches::kHostResolverRules));
-  }
+  return command_line.GetSwitchValueASCII(
+      network::switches::kHostResolverRules);
 }
 
 void ApplyCmdlineOverridesToNetworkSessionParams(
@@ -261,6 +255,7 @@ AwURLRequestContextGetter::~AwURLRequestContextGetter() {
 void AwURLRequestContextGetter::InitializeURLRequestContext() {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
   DCHECK(!url_request_context_);
+  DCHECK(!base::FeatureList::IsEnabled(network::features::kNetworkService));
 
   net::URLRequestContextBuilder builder;
 
@@ -298,13 +293,8 @@ void AwURLRequestContextGetter::InitializeURLRequestContext() {
   builder.SetCookieStore(std::make_unique<AwCookieStoreWrapper>());
 
   net::URLRequestContextBuilder::HttpCacheParams cache_params;
-  // Note: we create this as IN_MEMORY when the network service is enabled
-  // only as a temporary measure, to avoid accessing the same HTTP cache from
-  // two spots in the code.
   cache_params.type =
-      base::FeatureList::IsEnabled(network::features::kNetworkService)
-          ? net::URLRequestContextBuilder::HttpCacheParams::IN_MEMORY
-          : net::URLRequestContextBuilder::HttpCacheParams::DISK_SIMPLE;
+      net::URLRequestContextBuilder::HttpCacheParams::DISK_SIMPLE;
   cache_params.max_size = GetHttpCacheSize();
   cache_params.path = cache_path_;
   builder.EnableHttpCache(cache_params);
@@ -316,13 +306,11 @@ void AwURLRequestContextGetter::InitializeURLRequestContext() {
   // Quic is not currently supported in WebView (http://crbug.com/763187).
   builder.SetSpdyAndQuicEnabled(true, false);
 
-  std::unique_ptr<net::MappedHostResolver> host_resolver(
-      new net::MappedHostResolver(
-          net::HostResolver::CreateDefaultResolver(nullptr)));
-  ApplyCmdlineOverridesToHostResolver(host_resolver.get());
-  builder.SetHttpAuthHandlerFactory(
-      CreateAuthHandlerFactory(host_resolver.get()));
-  builder.set_host_resolver(std::move(host_resolver));
+  builder.SetHttpAuthHandlerFactory(CreateAuthHandlerFactory());
+  builder.set_host_mapping_rules(GetCmdlineOverridesForHostResolver());
+
+  // Context copy allowed because NetworkService is confirmed disabled.
+  builder.set_allow_copy();
 
   url_request_context_ = builder.Build();
 
@@ -347,13 +335,6 @@ void AwURLRequestContextGetter::InitializeURLRequestContext() {
   url_request_context_->set_job_factory(job_factory_.get());
   url_request_context_->set_http_user_agent_settings(
       http_user_agent_settings_.get());
-}
-
-// static
-void AwURLRequestContextGetter::RegisterPrefs(PrefRegistrySimple* registry) {
-  registry->RegisterStringPref(prefs::kAuthServerWhitelist, std::string());
-  registry->RegisterStringPref(prefs::kAuthAndroidNegotiateAccountType,
-                               std::string());
 }
 
 // static
@@ -385,21 +366,13 @@ void AwURLRequestContextGetter::SetHandlersAndInterceptors(
 }
 
 std::unique_ptr<net::HttpAuthHandlerFactory>
-AwURLRequestContextGetter::CreateAuthHandlerFactory(
-    net::HostResolver* resolver) {
-  DCHECK(resolver);
-
-  // In Chrome this is configurable via the AuthSchemes policy. For WebView
-  // there is no interest to have it available so far.
-  std::vector<std::string> supported_schemes = {"basic", "digest", "ntlm",
-                                                "negotiate"};
-
+AwURLRequestContextGetter::CreateAuthHandlerFactory() {
   http_auth_preferences_.reset(new net::HttpAuthPreferences());
   UpdateServerWhitelist();
   UpdateAndroidAuthNegotiateAccountType();
 
   return net::HttpAuthHandlerRegistryFactory::Create(
-      resolver, http_auth_preferences_.get(), supported_schemes);
+      http_auth_preferences_.get(), AwBrowserContext::GetAuthSchemes());
 }
 
 void AwURLRequestContextGetter::UpdateServerWhitelist() {

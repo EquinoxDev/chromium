@@ -9,9 +9,9 @@
 #include "base/base_switches.h"
 #include "base/command_line.h"
 #include "base/json/json_writer.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/test/multiprocess_test.h"
-#include "chrome/credential_provider/common/gcp_strings.h"
 #include "chrome/credential_provider/gaiacp/gaia_credential_provider_i.h"
 #include "chrome/credential_provider/gaiacp/scoped_lsa_policy.h"
 #include "chrome/credential_provider/test/gcp_fakes.h"
@@ -23,6 +23,7 @@ namespace credential_provider {
 
 namespace switches {
 
+constexpr char kDefaultExitCode[] = "default-exit-code";
 constexpr char kGlsUserEmail[] = "gls-user-email";
 constexpr char kStartGlsEventName[] = "start-gls-event-name";
 constexpr char kOverrideGaiaId[] = "override-gaia-id";
@@ -59,9 +60,12 @@ MULTIPROCESS_TEST_MAIN(gls_main) {
     }
   }
 
+  int default_exit_code = kUiecSuccess;
+  EXPECT_TRUE(base::StringToInt(
+      command_line->GetSwitchValueASCII(switches::kDefaultExitCode),
+      &default_exit_code));
   std::string gls_email =
       command_line->GetSwitchValueASCII(switches::kGlsUserEmail);
-
   std::string gaia_id_override =
       command_line->GetSwitchValueASCII(switches::kOverrideGaiaId);
   std::string expected_gaia_id =
@@ -75,17 +79,18 @@ MULTIPROCESS_TEST_MAIN(gls_main) {
   }
   if (expected_gaia_id.empty())
     expected_gaia_id = kDefaultGaiaId;
-  base::DictionaryValue dict;
+  base::Value dict(base::Value::Type::DICTIONARY);
   if (!gaia_id_override.empty() && gaia_id_override != expected_gaia_id) {
-    dict.SetInteger(kKeyExitCode, kUiecEMailMissmatch);
+    dict.SetIntKey(kKeyExitCode, kUiecEMailMissmatch);
   } else {
-    dict.SetString(kKeyEmail, expected_email);
-    dict.SetString(kKeyFullname, "Full Name");
-    dict.SetString(kKeyId, expected_gaia_id);
-    dict.SetString(kKeyMdmIdToken, "idt-123456");
-    dict.SetString(kKeyPassword, "password");
-    dict.SetString(kKeyRefreshToken, "rt-123456");
-    dict.SetString(kKeyTokenHandle, "th-123456");
+    dict.SetIntKey(kKeyExitCode, static_cast<UiExitCodes>(default_exit_code));
+    dict.SetStringKey(kKeyEmail, expected_email);
+    dict.SetStringKey(kKeyFullname, "Full Name");
+    dict.SetStringKey(kKeyId, expected_gaia_id);
+    dict.SetStringKey(kKeyMdmIdToken, "idt-123456");
+    dict.SetStringKey(kKeyPassword, "password");
+    dict.SetStringKey(kKeyRefreshToken, "rt-123456");
+    dict.SetStringKey(kKeyTokenHandle, "th-123456");
   }
 
   std::string json;
@@ -163,6 +168,7 @@ HRESULT FakeGlsRunHelper::StartLogonProcessAndWait(
 
 // static
 HRESULT FakeGlsRunHelper::GetFakeGlsCommandline(
+    UiExitCodes default_exit_code,
     const std::string& gls_email,
     const std::string& gaia_id_override,
     const base::string16& start_gls_event_name,
@@ -170,6 +176,8 @@ HRESULT FakeGlsRunHelper::GetFakeGlsCommandline(
   *command_line = base::GetMultiProcessTestChildBaseCommandLine();
   command_line->AppendSwitchASCII(::switches::kTestChildProcess, "gls_main");
   command_line->AppendSwitchASCII(switches::kGlsUserEmail, gls_email);
+  command_line->AppendSwitchNative(switches::kDefaultExitCode,
+                                   base::NumberToString16(default_exit_code));
 
   if (!gaia_id_override.empty()) {
     command_line->AppendSwitchASCII(switches::kOverrideGaiaId,

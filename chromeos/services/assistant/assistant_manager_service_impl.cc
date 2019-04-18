@@ -34,6 +34,8 @@
 #include "libassistant/shared/internal_api/assistant_manager_delegate.h"
 #include "libassistant/shared/internal_api/assistant_manager_internal.h"
 #include "libassistant/shared/public/media_manager.h"
+#include "services/media_session/public/mojom/constants.mojom.h"
+#include "services/media_session/public/mojom/media_session.mojom.h"
 #include "services/network/public/cpp/shared_url_loader_factory.h"
 #include "services/service_manager/public/cpp/connector.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -50,6 +52,7 @@
 
 using ActionModule = assistant_client::ActionModule;
 using Resolution = assistant_client::ConversationStateListener::Resolution;
+using MediaStatus = assistant_client::MediaStatus;
 
 namespace api = ::assistant::api;
 
@@ -63,12 +66,24 @@ constexpr char kVolumeLevelDeviceSettingId[] = "VOLUME_LEVEL";
 constexpr char kScreenBrightnessDeviceSettingId[] = "BRIGHTNESS_LEVEL";
 constexpr char kDoNotDisturbDeviceSettingId[] = "DO_NOT_DISTURB";
 constexpr char kNightLightDeviceSettingId[] = "NIGHT_LIGHT_SWITCH";
+constexpr char kIntentActionView[] = "android.intent.action.VIEW";
 
 constexpr base::Feature kChromeOSAssistantDogfood{
     "ChromeOSAssistantDogfood", base::FEATURE_DISABLED_BY_DEFAULT};
 
 constexpr char kServersideDogfoodExperimentId[] = "20347368";
 constexpr char kServersideOpenAppExperimentId[] = "39651593";
+
+constexpr char kNextTrackClientOp[] = "media.NEXT";
+constexpr char kPauseTrackClientOp[] = "media.PAUSE";
+constexpr char kPlayMediaClientOp[] = "media.PLAY_MEDIA";
+constexpr char kPrevTrackClientOp[] = "media.PREVIOUS";
+constexpr char kResumeTrackClientOp[] = "media.RESUME";
+constexpr char kStopTrackClientOp[] = "media.STOP";
+
+// The screen context query is locale independent. That is the same query
+// applies to all locales.
+constexpr char kScreenContextQuery[] = "screen context";
 
 constexpr float kDefaultSliderStep = 0.1f;
 
@@ -116,20 +131,31 @@ AssistantManagerServiceImpl::AssistantManagerServiceImpl(
           std::make_unique<AssistantSettingsManagerImpl>(service, this)),
       service_(service),
       background_thread_("background thread"),
+      media_controller_observer_binding_(this),
       weak_factory_(this) {
   background_thread_.Start();
   platform_api_ = std::make_unique<PlatformApiImpl>(
       connector, media_session_.get(), std::move(battery_monitor),
-      background_thread_.task_runner(), network_connection_tracker);
+      service_->main_task_runner(), background_thread_.task_runner(),
+      network_connection_tracker);
   connector->BindInterface(ash::mojom::kServiceName,
                            &ash_message_center_controller_);
+
+  media_session::mojom::MediaControllerManagerPtr controller_manager_ptr;
+  connector->BindInterface(media_session::mojom::kServiceName,
+                           mojo::MakeRequest(&controller_manager_ptr));
+  controller_manager_ptr->CreateActiveMediaController(
+      mojo::MakeRequest(&media_controller_));
 }
 
-AssistantManagerServiceImpl::~AssistantManagerServiceImpl() {}
+AssistantManagerServiceImpl::~AssistantManagerServiceImpl() {
+  background_thread_.Stop();
+}
 
-void AssistantManagerServiceImpl::Start(const std::string& access_token,
-                                        bool enable_hotword,
-                                        base::OnceClosure post_init_callback) {
+void AssistantManagerServiceImpl::Start(
+    const base::Optional<std::string>& access_token,
+    bool enable_hotword,
+    base::OnceClosure post_init_callback) {
   DCHECK(!assistant_manager_);
   DCHECK_EQ(state_, State::STOPPED);
 
@@ -140,28 +166,15 @@ void AssistantManagerServiceImpl::Start(const std::string& access_token,
 
   EnableHotword(enable_hotword);
 
-  using AssistantManagerPtr =
-      std::unique_ptr<assistant_client::AssistantManager>;
-  // This is a tempory holder of the |assistant_client::AssistantManager| that
-  // is going to be created on the background thread. It is owned by the
-  // background task callback closure.
-  auto* new_assistant_manager = new AssistantManagerPtr();
-
   // LibAssistant creation will make file IO and sync wait. Post the creation to
   // background thread to avoid DCHECK.
   background_thread_.task_runner()->PostTaskAndReply(
       FROM_HERE,
-      base::BindOnce(
-          [](AssistantManagerPtr* result,
-             base::OnceCallback<AssistantManagerPtr()> task) {
-            *result = std::move(task).Run();
-          },
-          new_assistant_manager,
-          base::BindOnce(&AssistantManagerServiceImpl::StartAssistantInternal,
-                         base::Unretained(this), access_token)),
+      base::BindOnce(&AssistantManagerServiceImpl::StartAssistantInternal,
+                     base::Unretained(this), access_token),
       base::BindOnce(&AssistantManagerServiceImpl::PostInitAssistant,
-                     base::Unretained(this), std::move(post_init_callback),
-                     base::Owned(new_assistant_manager)));
+                     weak_factory_.GetWeakPtr(),
+                     std::move(post_init_callback)));
 }
 
 void AssistantManagerServiceImpl::Stop() {
@@ -169,6 +182,14 @@ void AssistantManagerServiceImpl::Stop() {
   DCHECK_NE(state_, State::STARTED);
 
   state_ = State::STOPPED;
+
+  // When user disables the feature, we also deletes all data.
+  if (!service_->assistant_state()->settings_enabled().value() &&
+      assistant_manager_) {
+    assistant_manager_->ResetAllDataAndShutdown();
+  }
+
+  media_controller_observer_binding_.Close();
 
   assistant_manager_internal_ = nullptr;
   assistant_manager_.reset(nullptr);
@@ -182,6 +203,8 @@ void AssistantManagerServiceImpl::SetAccessToken(
     const std::string& access_token) {
   if (!assistant_manager_)
     return;
+
+  DCHECK(!access_token.empty());
 
   VLOG(1) << "Set access token.";
   // Push the |access_token| we got as an argument into AssistantManager before
@@ -202,21 +225,37 @@ void AssistantManagerServiceImpl::RegisterFallbackMediaHandler() {
 
   // Register handler for media actions.
   assistant_manager_internal_->RegisterFallbackMediaHandler(
-      [this](std::string play_media_args_proto) {
-        std::string url = GetWebUrlFromMediaArgs(play_media_args_proto);
-        if (!url.empty()) {
-          OnOpenUrl(url);
+      [this](std::string action_name, std::string media_action_args_proto) {
+        if (action_name == kPlayMediaClientOp) {
+          OnPlayMedia(media_action_args_proto);
+        } else {
+          OnMediaControlAction(action_name, media_action_args_proto);
         }
       });
 }
 
+void AssistantManagerServiceImpl::AddMediaControllerObserver() {
+  if (features::IsMediaSessionIntegrationEnabled()) {
+    media_session::mojom::MediaControllerObserverPtr observer;
+    media_controller_observer_binding_.Bind(mojo::MakeRequest(&observer));
+    media_controller_->AddObserver(std::move(observer));
+  }
+}
+
 void AssistantManagerServiceImpl::EnableListening(bool enable) {
   assistant_manager_->EnableListening(enable);
-  EnableHotword(enable);
+  EnableHotword(enable &&
+                service_->assistant_state()->hotword_enabled().value_or(false));
 }
 
 void AssistantManagerServiceImpl::EnableHotword(bool enable) {
   platform_api_->OnHotwordEnabled(enable);
+}
+
+void AssistantManagerServiceImpl::SetArcPlayStoreEnabled(bool enable) {
+  // Both LibAssistant and Chrome threads may access |display_connection_|.
+  // |display_connection_| is thread safe.
+  display_connection_->SetArcPlayStoreEnabled(enable);
 }
 
 AssistantSettingsManager*
@@ -276,6 +315,16 @@ void AssistantManagerServiceImpl::StartCachedScreenContextInteraction() {
                            assistant_screenshot_);
 }
 
+void AssistantManagerServiceImpl::StartEditReminderInteraction(
+    const std::string& client_id) {
+  const std::string interaction = CreateEditReminderInteraction(client_id);
+  assistant_client::VoicelessOptions voiceless_options;
+
+  voiceless_options.is_user_initiated = true;
+  assistant_manager_internal_->SendVoicelessInteraction(
+      interaction, std::string(), voiceless_options, [](auto) {});
+}
+
 void AssistantManagerServiceImpl::StartMetalayerInteraction(
     const gfx::Rect& region) {
   if (!IsScreenContextAllowed(service_->assistant_state()))
@@ -301,6 +350,8 @@ void AssistantManagerServiceImpl::StartTextInteraction(const std::string& query,
   if (base::FeatureList::IsEnabled(
           assistant::features::kEnableTextQueriesWithClientDiscourseContext) &&
       assistant_extra_ && assistant_tree_) {
+    // We don't send the screenshot, because the backend only needs the
+    // view hierarchy to resolve contextual queries such as "Who is he?".
     assistant_manager_internal_->SendTextQueryWithClientDiscourseContext(
         query,
         CreateContextProto(
@@ -371,6 +422,28 @@ void AssistantManagerServiceImpl::OnConversationTurnFinished(
       base::BindOnce(
           &AssistantManagerServiceImpl::OnConversationTurnFinishedOnMainThread,
           weak_factory_.GetWeakPtr(), resolution));
+}
+
+void AssistantManagerServiceImpl::OnScheduleWait(int id, int time_ms) {
+  ENSURE_MAIN_THREAD(&AssistantManagerServiceImpl::OnScheduleWait, id, time_ms);
+
+  // Schedule a wait for |time_ms|, notifying the CrosActionModule when the wait
+  // has finished so that it can inform LibAssistant to resume execution.
+  service_->main_task_runner()->PostDelayedTask(
+      FROM_HERE,
+      base::BindOnce(
+          [](const base::WeakPtr<AssistantManagerServiceImpl>& weak_ptr,
+             int id) {
+            if (weak_ptr) {
+              weak_ptr->action_module_->OnScheduledWaitDone(
+                  id, /*cancelled=*/false);
+            }
+          },
+          weak_factory_.GetWeakPtr(), id),
+      base::TimeDelta::FromMilliseconds(time_ms));
+
+  // Notify subscribers that a wait has been started.
+  interaction_subscribers_.ForAllPtrs([](auto* ptr) { ptr->OnWaitStarted(); });
 }
 
 // TODO(b/113541754): Deprecate this API when the server provides a fallback.
@@ -506,7 +579,7 @@ void AssistantManagerServiceImpl::OnVerifyAndroidApp(
     const std::vector<action::AndroidAppInfo>& apps_info,
     const action::InteractionInfo& interaction) {
   std::vector<mojom::AndroidAppInfoPtr> apps_info_list;
-  for (auto app_info : apps_info) {
+  for (auto& app_info : apps_info) {
     mojom::AndroidAppInfoPtr app_info_ptr = mojom::AndroidAppInfo::New();
     app_info_ptr->package_name = app_info.package_name;
     apps_info_list.push_back(std::move(app_info_ptr));
@@ -516,6 +589,79 @@ void AssistantManagerServiceImpl::OnVerifyAndroidApp(
       base::BindOnce(
           &AssistantManagerServiceImpl::HandleVerifyAndroidAppResponse,
           weak_factory_.GetWeakPtr(), interaction));
+}
+
+void AssistantManagerServiceImpl::OnOpenMediaAndroidIntentOnMainThread(
+    const std::string play_media_args_proto,
+    action::AndroidAppInfo* android_app_info) {
+  // Handle android media playback intent.
+  mojom::AndroidAppInfoPtr app_info_ptr = mojom::AndroidAppInfo::New();
+  app_info_ptr->package_name = android_app_info->package_name;
+  app_info_ptr->action = kIntentActionView;
+  if (!android_app_info->intent.empty()) {
+    app_info_ptr->intent = android_app_info->intent;
+  } else {
+    std::string url = GetAndroidIntentUrlFromMediaArgs(play_media_args_proto);
+    if (!url.empty()) {
+      app_info_ptr->intent = url;
+    }
+  }
+  service_->device_actions()->OpenAndroidApp(
+      std::move(app_info_ptr),
+      base::BindOnce(
+          &AssistantManagerServiceImpl::HandleLaunchMediaIntentResponse,
+          weak_factory_.GetWeakPtr()));
+}
+
+void AssistantManagerServiceImpl::OnPlayMedia(
+    const std::string play_media_args_proto) {
+  ENSURE_MAIN_THREAD(&AssistantManagerServiceImpl::OnPlayMedia,
+                     play_media_args_proto);
+
+  std::unique_ptr<action::AndroidAppInfo> android_app_info =
+      GetAndroidAppInfoFromMediaArgs(play_media_args_proto);
+  if (android_app_info) {
+    OnOpenMediaAndroidIntentOnMainThread(play_media_args_proto,
+                                         android_app_info.get());
+  } else {
+    std::string url = GetWebUrlFromMediaArgs(play_media_args_proto);
+    // Fallack to web URL.
+    if (!url.empty())
+      OnOpenUrlOnMainThread(url);
+  }
+}
+
+void AssistantManagerServiceImpl::OnMediaControlAction(
+    const std::string& action_name,
+    const std::string& media_action_args_proto) {
+  ENSURE_MAIN_THREAD(&AssistantManagerServiceImpl::OnMediaControlAction,
+                     action_name, media_action_args_proto);
+
+  if (action_name == kPauseTrackClientOp) {
+    media_controller_->Suspend();
+    return;
+  }
+
+  if (action_name == kResumeTrackClientOp) {
+    media_controller_->Resume();
+    return;
+  }
+
+  if (action_name == kNextTrackClientOp) {
+    media_controller_->NextTrack();
+    return;
+  }
+
+  if (action_name == kPrevTrackClientOp) {
+    media_controller_->PreviousTrack();
+    return;
+  }
+
+  if (action_name == kStopTrackClientOp) {
+    media_controller_->Stop();
+    return;
+  }
+  // TODO(llin): Handle media.SEEK_RELATIVE.
 }
 
 void AssistantManagerServiceImpl::OnRecognitionStateChanged(
@@ -750,16 +896,15 @@ void AssistantManagerServiceImpl::OnCommunicationError(int error_code) {
           weak_factory_.GetWeakPtr(), error_code));
 }
 
-std::unique_ptr<assistant_client::AssistantManager>
-AssistantManagerServiceImpl::StartAssistantInternal(
-    const std::string& access_token) {
+void AssistantManagerServiceImpl::StartAssistantInternal(
+    const base::Optional<std::string>& access_token) {
   DCHECK(background_thread_.task_runner()->BelongsToCurrentThread());
 
-  std::unique_ptr<assistant_client::AssistantManager> assistant_manager;
-  assistant_manager.reset(assistant_client::AssistantManager::Create(
+  base::AutoLock lock(new_assistant_manager_lock_);
+  new_assistant_manager_.reset(assistant_client::AssistantManager::Create(
       platform_api_.get(), CreateLibAssistantConfig()));
   auto* assistant_manager_internal =
-      UnwrapAssistantManagerInternal(assistant_manager.get());
+      UnwrapAssistantManagerInternal(new_assistant_manager_.get());
 
   UpdateInternalOptions(assistant_manager_internal);
 
@@ -768,8 +913,8 @@ AssistantManagerServiceImpl::StartAssistantInternal(
   assistant_manager_internal->SetAssistantManagerDelegate(this);
   assistant_manager_internal->GetFuchsiaApiHelperOrDie()->SetFuchsiaApiDelegate(
       &chromium_api_delegate_);
-  assistant_manager->AddConversationStateListener(this);
-  assistant_manager->AddDeviceStateListener(this);
+  new_assistant_manager_->AddConversationStateListener(this);
+  new_assistant_manager_->AddDeviceStateListener(this);
 
   std::vector<std::string> server_experiment_ids;
   FillServerExperimentIds(&server_experiment_ids);
@@ -777,20 +922,34 @@ AssistantManagerServiceImpl::StartAssistantInternal(
   if (server_experiment_ids.size() > 0)
     assistant_manager_internal->AddExtraExperimentIds(server_experiment_ids);
 
-  assistant_manager->SetAuthTokens(
-      {std::pair<std::string, std::string>(kUserID, access_token)});
-  assistant_manager->Start();
-
-  return assistant_manager;
+  if (!service_->is_signed_out_mode()) {
+    new_assistant_manager_->SetAuthTokens(
+        {std::pair<std::string, std::string>(kUserID, access_token.value())});
+  }
+  new_assistant_manager_->Start();
 }
 
 void AssistantManagerServiceImpl::PostInitAssistant(
-    base::OnceClosure post_init_callback,
-    std::unique_ptr<assistant_client::AssistantManager>* assistant_manager) {
+    base::OnceClosure post_init_callback) {
   DCHECK(service_->main_task_runner()->RunsTasksInCurrentSequence());
   DCHECK_EQ(state_, State::STARTED);
 
-  assistant_manager_ = std::move(*assistant_manager);
+  {
+    base::AutoLock lock(new_assistant_manager_lock_);
+
+    // It is possible that multiple |StartAssistantInternal| finished on
+    // background thread, before any of the matching |PostInitAssistant| had
+    // run. Because we only hold the last created instance in
+    // |new_assistant_manager_|, it is possible that |new_assistant_manager_| be
+    // null if we moved it in previous |PostInitAssistant| runs.
+    if (!new_assistant_manager_) {
+      std::move(post_init_callback).Run();
+      return;
+    }
+
+    assistant_manager_ = std::move(new_assistant_manager_);
+  }
+
   assistant_manager_internal_ =
       UnwrapAssistantManagerInternal(assistant_manager_.get());
   state_ = State::RUNNING;
@@ -802,8 +961,16 @@ void AssistantManagerServiceImpl::PostInitAssistant(
   std::move(post_init_callback).Run();
   assistant_settings_manager_->UpdateServerDeviceSettings();
 
-  if (base::FeatureList::IsEnabled(assistant::features::kAssistantVoiceMatch))
+  if (base::FeatureList::IsEnabled(assistant::features::kAssistantVoiceMatch) &&
+      service_->assistant_state()->hotword_enabled().value()) {
     assistant_settings_manager_->SyncSpeakerIdEnrollmentStatus();
+  }
+}
+
+void AssistantManagerServiceImpl::HandleLaunchMediaIntentResponse(
+    bool app_opened) {
+  // TODO(llin): Handle the response.
+  NOTIMPLEMENTED();
 }
 
 void AssistantManagerServiceImpl::HandleOpenAndroidAppResponse(
@@ -844,10 +1011,15 @@ void AssistantManagerServiceImpl::HandleVerifyAndroidAppResponse(
 // assistant_client::DeviceStateListener overrides
 // Run on LibAssistant threads
 void AssistantManagerServiceImpl::OnStartFinished() {
-  service_->main_task_runner()->PostTask(
-      FROM_HERE,
-      base::BindOnce(&AssistantManagerServiceImpl::RegisterFallbackMediaHandler,
-                     weak_factory_.GetWeakPtr()));
+  ENSURE_MAIN_THREAD(&AssistantManagerServiceImpl::OnStartFinished);
+
+  RegisterFallbackMediaHandler();
+  AddMediaControllerObserver();
+
+  if (service_->assistant_state()->arc_play_store_enabled().has_value()) {
+    SetArcPlayStoreEnabled(
+        service_->assistant_state()->arc_play_store_enabled().value());
+  }
 }
 
 void AssistantManagerServiceImpl::OnTimerSoundingStarted() {
@@ -888,6 +1060,11 @@ void AssistantManagerServiceImpl::UpdateInternalOptions(
   internal_options->SetClientControlEnabled(
       assistant::features::IsRoutinesEnabled());
 
+  if (service_->is_signed_out_mode()) {
+    internal_options->SetUserCredentialMode(
+        assistant_client::InternalOptions::UserCredentialMode::SIGNED_OUT);
+  }
+
   if (base::FeatureList::IsEnabled(assistant::features::kAssistantVoiceMatch) &&
       assistant_settings_manager_->speaker_id_enrollment_done()) {
     internal_options->EnableRequireVoiceMatchVerification();
@@ -896,6 +1073,18 @@ void AssistantManagerServiceImpl::UpdateInternalOptions(
   assistant_manager_internal->SetOptions(*internal_options, [](bool success) {
     DVLOG(2) << "set options: " << success;
   });
+}
+
+void AssistantManagerServiceImpl::MediaSessionInfoChanged(
+    media_session::mojom::MediaSessionInfoPtr info) {
+  media_session_info_ptr_ = std::move(info);
+  UpdateMediaState();
+}
+
+void AssistantManagerServiceImpl::MediaSessionMetadataChanged(
+    const base::Optional<media_session::MediaMetadata>& metadata) {
+  media_metadata_ = std::move(metadata);
+  UpdateMediaState();
 }
 
 void AssistantManagerServiceImpl::OnConversationTurnStartedOnMainThread(
@@ -1138,6 +1327,19 @@ void AssistantManagerServiceImpl::SendScreenContextRequest(
     ax::mojom::AssistantExtra* assistant_extra,
     ui::AssistantTree* assistant_tree,
     const std::vector<uint8_t>& assistant_screenshot) {
+  if (assistant::features::IsScreenContextQueryEnabled()) {
+    assistant_client::VoicelessOptions options;
+    options.is_user_initiated = true;
+
+    assistant_manager_internal_->SendTextQueryWithClientDiscourseContext(
+        kScreenContextQuery,
+        CreateContextProto(
+            AssistantBundle{assistant_extra_.get(), assistant_tree_.get()},
+            assistant_screenshot),
+        options);
+    return;
+  }
+
   std::vector<std::string> context_protos;
 
   // Screen context can have the assistant_extra and assistant_tree set to
@@ -1211,6 +1413,50 @@ void AssistantManagerServiceImpl::SendAssistantFeedback(
   assistant_manager_internal_->SendVoicelessInteraction(
       interaction, "send feedback with details", voiceless_options,
       [](auto) {});
+}
+
+void AssistantManagerServiceImpl::UpdateMediaState() {
+  if (media_session_info_ptr_ &&
+      media_session_info_ptr_->state ==
+          media_session::mojom::MediaSessionInfo::SessionState::kSuspended &&
+      media_session_info_ptr_->playback_state ==
+          media_session::mojom::MediaPlaybackState::kPlaying) {
+    // It is a intermediate state caused by some providers override the playback
+    // state. We considered it as invalid and skip reporting the state.
+    return;
+  }
+
+  // TODO(llin): MediaSession Integrated providers (include the libassistant
+  // internal media provider) will trigger media state change event. Only
+  // update the external media status if the state changes is triggered by
+  // external providers, after the media session API for identifying the source
+  // is available.
+  MediaStatus media_status;
+
+  // Set media metadata.
+  if (media_metadata_.has_value()) {
+    media_status.metadata.title =
+        base::UTF16ToUTF8(media_metadata_.value().title);
+  }
+
+  // Set playback state.
+  media_status.playback_state = MediaStatus::IDLE;
+  if (media_session_info_ptr_ &&
+      media_session_info_ptr_->state !=
+          media_session::mojom::MediaSessionInfo::SessionState::kInactive) {
+    switch (media_session_info_ptr_->playback_state) {
+      case media_session::mojom::MediaPlaybackState::kPlaying:
+        media_status.playback_state = MediaStatus::PLAYING;
+        break;
+      case media_session::mojom::MediaPlaybackState::kPaused:
+        media_status.playback_state = MediaStatus::PAUSED;
+        break;
+    }
+  }
+
+  auto* media_manager = assistant_manager_->GetMediaManager();
+  if (media_manager)
+    media_manager->SetExternalPlaybackState(media_status);
 }
 
 }  // namespace assistant

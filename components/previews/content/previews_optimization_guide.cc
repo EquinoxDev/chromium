@@ -14,12 +14,15 @@
 #include "components/optimization_guide/hints_component_info.h"
 #include "components/optimization_guide/optimization_guide_service.h"
 #include "components/optimization_guide/proto/hints.pb.h"
-#include "components/previews/content/hint_cache_leveldb_store.h"
+#include "components/previews/content/hint_cache_store.h"
+#include "components/previews/content/hints_fetcher.h"
 #include "components/previews/content/previews_hints.h"
 #include "components/previews/content/previews_hints_util.h"
+#include "components/previews/content/previews_top_host_provider.h"
 #include "components/previews/content/previews_user_data.h"
 #include "components/previews/core/previews_constants.h"
 #include "components/previews/core/previews_switches.h"
+#include "services/network/public/cpp/shared_url_loader_factory.h"
 #include "url/gurl.h"
 
 namespace previews {
@@ -81,14 +84,18 @@ ParseHintsProtoFromCommandLine() {
 PreviewsOptimizationGuide::PreviewsOptimizationGuide(
     optimization_guide::OptimizationGuideService* optimization_guide_service,
     const scoped_refptr<base::SingleThreadTaskRunner>& ui_task_runner,
-    const base::FilePath& profile_path)
+    const base::FilePath& profile_path,
+    PreviewsTopHostProvider* previews_top_host_provider,
+    scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory)
     : optimization_guide_service_(optimization_guide_service),
       ui_task_runner_(ui_task_runner),
       background_task_runner_(base::CreateSequencedTaskRunnerWithTraits(
           {base::MayBlock(), base::TaskPriority::BEST_EFFORT})),
       hint_cache_(std::make_unique<HintCache>(
-          std::make_unique<HintCacheLevelDBStore>(profile_path,
-                                                  background_task_runner_))),
+          std::make_unique<HintCacheStore>(profile_path,
+                                           background_task_runner_))),
+      previews_top_host_provider_(previews_top_host_provider),
+      url_loader_factory_(url_loader_factory),
       ui_weak_ptr_factory_(this) {
   DCHECK(optimization_guide_service_);
   hint_cache_->Initialize(
@@ -129,11 +136,22 @@ bool PreviewsOptimizationGuide::IsWhitelisted(
 bool PreviewsOptimizationGuide::IsBlacklisted(const GURL& url,
                                               PreviewsType type) const {
   DCHECK(ui_task_runner_->BelongsToCurrentThread());
-  if (!hints_) {
-    return false;
+
+  if (type == PreviewsType::LITE_PAGE_REDIRECT) {
+    if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+            switches::kIgnoreLitePageRedirectOptimizationBlacklist)) {
+      return false;
+    }
+
+    if (!hints_)
+      return true;
+
+    return hints_->IsBlacklisted(url, PreviewsType::LITE_PAGE_REDIRECT);
   }
 
-  return hints_->IsBlacklisted(url, type);
+  // This function is only used by lite page redirect.
+  NOTREACHED();
+  return false;
 }
 
 void PreviewsOptimizationGuide::OnLoadedHint(
@@ -199,11 +217,15 @@ void PreviewsOptimizationGuide::OnHintCacheInitialized() {
   if (manual_config) {
     // Allow |UpdateHints| to block startup so that the first navigation gets
     // the hints when a command line hint proto is provided.
-    UpdateHints(PreviewsHints::CreateFromHintsConfiguration(
-        std::move(manual_config),
-        hint_cache_->MaybeCreateComponentUpdateData(
-            base::Version(kManualConfigComponentVersion))));
+    UpdateHints(base::OnceClosure(),
+                PreviewsHints::CreateFromHintsConfiguration(
+                    std::move(manual_config),
+                    hint_cache_->MaybeCreateComponentUpdateData(
+                        base::Version(kManualConfigComponentVersion))));
   }
+
+
+
   // Register as an observer regardless of hint proto override usage. This is
   // needed as a signal during testing.
   optimization_guide_service_->AddObserver(this);
@@ -232,10 +254,39 @@ void PreviewsOptimizationGuide::OnHintsComponentAvailable(
       base::BindOnce(&PreviewsHints::CreateFromHintsComponent, info,
                      hint_cache_->MaybeCreateComponentUpdateData(info.version)),
       base::BindOnce(&PreviewsOptimizationGuide::UpdateHints,
-                     ui_weak_ptr_factory_.GetWeakPtr()));
+                     ui_weak_ptr_factory_.GetWeakPtr(),
+                     std::move(next_update_closure_)));
+}
+
+void PreviewsOptimizationGuide::FetchHints() {
+  std::vector<std::string> top_hosts = previews_top_host_provider_->GetTopHosts(
+      previews::params::MaxHostsForOptimizationGuideServiceHintsFetch());
+  DCHECK_GE(previews::params::MaxHostsForOptimizationGuideServiceHintsFetch(),
+            top_hosts.size());
+  if (!hints_fetcher_) {
+    hints_fetcher_ = std::make_unique<HintsFetcher>(
+        url_loader_factory_, params::GetOptimizationGuideServiceURL());
+  }
+
+  hints_fetcher_->FetchOptimizationGuideServiceHints(
+      top_hosts, base::BindOnce(&PreviewsOptimizationGuide::OnHintsFetched,
+                                ui_weak_ptr_factory_.GetWeakPtr()));
+}
+
+void PreviewsOptimizationGuide::OnHintsFetched(
+    std::unique_ptr<optimization_guide::proto::GetHintsResponse>
+        get_hints_response) {
+  DCHECK(get_hints_response);
+
+  // TODO(mcrouse): this will be dropped into a backgroundtask as it will likely
+  // be intensive/slow storing hints.
+  // The callback will be UpdateHints().
+
+  hint_cache_->StoreFetchedHints(std::move(get_hints_response));
 }
 
 void PreviewsOptimizationGuide::UpdateHints(
+    base::OnceClosure update_closure,
     std::unique_ptr<PreviewsHints> hints) {
   DCHECK(ui_task_runner_->BelongsToCurrentThread());
   hints_ = std::move(hints);
@@ -243,19 +294,45 @@ void PreviewsOptimizationGuide::UpdateHints(
     hints_->Initialize(
         hint_cache_.get(),
         base::BindOnce(&PreviewsOptimizationGuide::OnHintsUpdated,
-                       ui_weak_ptr_factory_.GetWeakPtr()));
+                       ui_weak_ptr_factory_.GetWeakPtr(),
+                       std::move(update_closure)));
   } else {
-    OnHintsUpdated();
+    OnHintsUpdated(std::move(update_closure));
   }
 }
 
-void PreviewsOptimizationGuide::OnHintsUpdated() {
+void PreviewsOptimizationGuide::OnHintsUpdated(
+    base::OnceClosure update_closure) {
   DCHECK(ui_task_runner_->BelongsToCurrentThread());
+  if (!update_closure.is_null())
+    std::move(update_closure).Run();
+
   // Record the result of updating the hints. This is used as a signal for the
   // hints being fully processed in testing.
   LOCAL_HISTOGRAM_BOOLEAN(
       kPreviewsOptimizationGuideUpdateHintsResultHistogramString,
       hints_ != NULL);
+
+  // If the client is eligible to fetch hints, currently controlled by a feature
+  // flag |kOptimizationHintsFetching|, fetch hints from the remote Optimization
+  // Guide Service.
+  //
+  // TODO(mcrouse): Add a check for user specific state in addition to the
+  // feature state: (1) Data saver should be enabled (2) Check if Infobar
+  // notification needs to be shown to the user.
+
+  if (previews::params::IsHintsFetchingEnabled()) {
+    // TODO(mcrouse): On initialize, we should check if hints have been fetched
+    // recently. We will also schedule this to be called on a timer.
+    FetchHints();
+  }
+}
+
+void PreviewsOptimizationGuide::ListenForNextUpdateForTesting(
+    base::OnceClosure next_update_closure) {
+  DCHECK(next_update_closure_.is_null())
+      << "Only one update closure is supported at a time";
+  next_update_closure_ = std::move(next_update_closure);
 }
 
 }  // namespace previews

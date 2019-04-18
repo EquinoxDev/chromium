@@ -27,6 +27,7 @@ TestWindowServiceDelegate::TakeDragLoopCallback() {
 }
 
 std::unique_ptr<aura::Window> TestWindowServiceDelegate::NewTopLevel(
+    TopLevelProxyWindow* top_level_proxy_window,
     aura::PropertyConverter* property_converter,
     const base::flat_map<std::string, std::vector<uint8_t>>& properties) {
   std::unique_ptr<aura::Window> window =
@@ -91,6 +92,12 @@ aura::Window* TestWindowServiceDelegate::GetTopmostWindowAtPoint(
   if (real_topmost)
     *real_topmost = real_topmost_;
   return topmost_;
+}
+
+void TestWindowServiceDelegate::ConnectToImeEngine(
+    ime::mojom::ImeEngineRequest engine_request,
+    ime::mojom::ImeEngineClientPtr client) {
+  ime_engine_connected_ = true;
 }
 
 }  // namespace ws

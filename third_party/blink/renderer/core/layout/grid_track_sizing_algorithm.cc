@@ -294,8 +294,7 @@ LayoutUnit GridTrackSizingAlgorithmStrategy::LogicalHeightForChild(
           *GetLayoutGrid(), child, child_block_direction)) {
     SetOverrideContainingBlockContentSizeForChild(child, child_block_direction,
                                                   LayoutUnit(-1));
-    child.SetNeedsLayout(layout_invalidation_reason::kGridChanged,
-                         kMarkOnlyThis);
+    child.SetSelfNeedsLayoutForAvailableSpace(true);
   }
 
   child.LayoutIfNeeded();
@@ -325,8 +324,7 @@ LayoutUnit GridTrackSizingAlgorithmStrategy::MinContentForChild(
 
   if (UpdateOverrideContainingBlockContentSizeForChild(
           child, child_inline_direction)) {
-    child.SetNeedsLayout(layout_invalidation_reason::kGridChanged,
-                         kMarkOnlyThis);
+    child.SetSelfNeedsLayoutForAvailableSpace(true);
   }
   return LogicalHeightForChild(child);
 }
@@ -350,8 +348,7 @@ LayoutUnit GridTrackSizingAlgorithmStrategy::MaxContentForChild(
 
   if (UpdateOverrideContainingBlockContentSizeForChild(
           child, child_inline_direction)) {
-    child.SetNeedsLayout(layout_invalidation_reason::kGridChanged,
-                         kMarkOnlyThis);
+    child.SetSelfNeedsLayoutForAvailableSpace(true);
   }
   return LogicalHeightForChild(child);
 }
@@ -364,6 +361,9 @@ LayoutUnit GridTrackSizingAlgorithmStrategy::MinSizeForChild(
   bool is_row_axis = Direction() == child_inline_direction;
   const Length& child_size = is_row_axis ? child.StyleRef().LogicalWidth()
                                          : child.StyleRef().LogicalHeight();
+  if (!child_size.IsAuto() && !child_size.IsPercentOrCalc())
+    return MinContentForChild(child);
+
   const Length& child_min_size = is_row_axis
                                      ? child.StyleRef().LogicalMinWidth()
                                      : child.StyleRef().LogicalMinHeight();
@@ -371,7 +371,10 @@ LayoutUnit GridTrackSizingAlgorithmStrategy::MinSizeForChild(
       is_row_axis
           ? child.StyleRef().OverflowInlineDirection() == EOverflow::kVisible
           : child.StyleRef().OverflowBlockDirection() == EOverflow::kVisible;
-  if (child_size.IsAuto() && child_min_size.IsAuto() && overflow_is_visible) {
+  LayoutUnit baseline_shim = algorithm_.BaselineOffsetForChild(
+      child, GridAxisForDirection(Direction()));
+
+  if (child_min_size.IsAuto() && overflow_is_visible) {
     LayoutUnit min_size = MinContentForChild(child);
     const GridSpan& span =
         algorithm_.GetGrid().GridItemSpan(child, Direction());
@@ -391,16 +394,12 @@ LayoutUnit GridTrackSizingAlgorithmStrategy::MinSizeForChild(
                       : GridLayoutUtils::MarginLogicalHeightForChild(
                             *GetLayoutGrid(), child) +
                             child.BorderAndPaddingLogicalHeight();
-      min_size = std::max(max_breadth, margin_and_border_and_padding);
+      min_size =
+          std::max(max_breadth, margin_and_border_and_padding + baseline_shim);
     }
     return min_size;
   }
 
-  if (!child_size.IsAuto())
-    return MinContentForChild(child);
-
-  LayoutUnit baseline_shim = algorithm_.BaselineOffsetForChild(
-      child, GridAxisForDirection(Direction()));
   LayoutUnit grid_area_size =
       algorithm_.GridAreaBreadthForChild(child, child_inline_direction);
 
@@ -538,8 +537,7 @@ void DefiniteSizeStrategy::LayoutGridItemForMinSizeComputation(
     LayoutBox& child,
     bool override_size_has_changed) const {
   if (override_size_has_changed) {
-    child.SetNeedsLayout(layout_invalidation_reason::kGridChanged,
-                         kMarkOnlyThis);
+    child.SetSelfNeedsLayoutForAvailableSpace(true);
     child.LayoutIfNeeded();
   }
 }
@@ -581,8 +579,7 @@ void IndefiniteSizeStrategy::LayoutGridItemForMinSizeComputation(
     LayoutBox& child,
     bool override_size_has_changed) const {
   if (override_size_has_changed && Direction() != kForColumns) {
-    child.SetNeedsLayout(layout_invalidation_reason::kGridChanged,
-                         kMarkOnlyThis);
+    child.SetSelfNeedsLayoutForAvailableSpace(true);
     child.LayoutIfNeeded();
   }
 }

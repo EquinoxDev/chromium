@@ -20,6 +20,7 @@
 #include "ui/aura/window_delegate.h"
 #include "ui/aura/window_observer.h"
 #include "ui/base/hit_test.h"
+#include "ui/base/ui_base_features.h"
 #include "ui/events/event.h"
 #include "ui/events/gestures/gesture_recognizer.h"
 #include "ui/views/widget/widget.h"
@@ -49,9 +50,31 @@ aura::Window* GetTargetForClientAreaGesture(ui::GestureEvent* event,
     return nullptr;
 
   aura::Window* toplevel = widget->GetNativeWindow();
-  if (!toplevel->GetProperty(
-          aura::client::kGestureDragFromClientAreaTopMovesWindow)) {
-    return nullptr;
+  if (features::IsUsingWindowService()) {
+    if (!toplevel->GetProperty(
+            aura::client::kGestureDragFromClientAreaTopMovesWindow)) {
+      return nullptr;
+    }
+  } else {
+    // Classic Ash: duplicate the logic from
+    // MakeGestureDraggableInImmersiveMode since there's no clear place during
+    // Widget init to hook that in.
+    if (!Shell::Get()
+             ->tablet_mode_controller()
+             ->IsTabletModeWindowManagerEnabled()) {
+      return nullptr;
+    }
+    wm::WindowState* window_state = wm::GetWindowState(toplevel);
+    if (!window_state ||
+        (!window_state->IsMaximized() && !window_state->IsFullscreen() &&
+         !window_state->IsSnapped())) {
+      return nullptr;
+    }
+
+    if (toplevel->GetProperty(aura::client::kAppType) ==
+        static_cast<int>(AppType::BROWSER)) {
+      return nullptr;
+    }
   }
 
   if (event->details().scroll_y_hint() < 0)
@@ -148,6 +171,9 @@ class WmToplevelWindowEventHandler::ScopedWindowResizer
   // Returns true if the drag moves the window and does not resize.
   bool IsMove() const;
 
+  // Returns true if the window may be resized.
+  bool IsResize() const;
+
   WindowResizer* resizer() { return resizer_.get(); }
 
   // WindowObserver overrides:
@@ -164,6 +190,9 @@ class WmToplevelWindowEventHandler::ScopedWindowResizer
   // Whether ScopedWindowResizer grabbed capture.
   bool grabbed_capture_;
 
+  // Set to true if OnWindowDestroying() is received.
+  bool window_destroying_ = false;
+
   DISALLOW_COPY_AND_ASSIGN(ScopedWindowResizer);
 };
 
@@ -174,6 +203,9 @@ WmToplevelWindowEventHandler::ScopedWindowResizer::ScopedWindowResizer(
   aura::Window* target = resizer_->GetTarget();
   target->AddObserver(this);
   GetWindowState(target)->AddObserver(this);
+
+  if (IsResize())
+    target->NotifyResizeLoopStarted();
 
   if (!target->HasCapture()) {
     grabbed_capture_ = true;
@@ -187,11 +219,18 @@ WmToplevelWindowEventHandler::ScopedWindowResizer::~ScopedWindowResizer() {
   GetWindowState(target)->RemoveObserver(this);
   if (grabbed_capture_)
     target->ReleaseCapture();
+  if (!window_destroying_ && IsResize())
+    target->NotifyResizeLoopEnded();
 }
 
 bool WmToplevelWindowEventHandler::ScopedWindowResizer::IsMove() const {
   return resizer_->details().bounds_change ==
          WindowResizer::kBoundsChange_Repositions;
+}
+
+bool WmToplevelWindowEventHandler::ScopedWindowResizer::IsResize() const {
+  return (resizer_->details().bounds_change &
+          WindowResizer::kBoundsChange_Resizes) != 0;
 }
 
 void WmToplevelWindowEventHandler::ScopedWindowResizer::
@@ -203,6 +242,7 @@ void WmToplevelWindowEventHandler::ScopedWindowResizer::
 void WmToplevelWindowEventHandler::ScopedWindowResizer::OnWindowDestroying(
     aura::Window* window) {
   DCHECK_EQ(resizer_->GetTarget(), window);
+  window_destroying_ = true;
   handler_->ResizerWindowDestroyed();
 }
 
@@ -340,9 +380,19 @@ void WmToplevelWindowEventHandler::OnGestureEvent(ui::GestureEvent* event,
   switch (event->type()) {
     case ui::ET_GESTURE_TAP_DOWN: {
       if (!(WindowResizer::GetBoundsChangeForWindowComponent(component) &
-            WindowResizer::kBoundsChange_Resizes))
+            WindowResizer::kBoundsChange_Resizes) ||
+          (!client_area_drag && !CanStartOneFingerDrag(component)))
         return;
+
       ShowResizeShadow(target, component);
+
+      gfx::Point location_in_parent = event_location;
+      aura::Window::ConvertPointToTarget(target, target->parent(),
+                                         &location_in_parent);
+      AttemptToStartDrag(target, location_in_parent, component,
+                         ::wm::WINDOW_MOVE_SOURCE_TOUCH, EndClosure(),
+                         /*update_gesture_target=*/false);
+      event->StopPropagation();
       return;
     }
     case ui::ET_GESTURE_END: {
@@ -376,7 +426,8 @@ void WmToplevelWindowEventHandler::OnGestureEvent(ui::GestureEvent* event,
         if (CanStartTwoFingerMove(target, first_finger_hittest_,
                                   second_finger_hittest)) {
           AttemptToStartDrag(target, first_finger_touch_point_, HTCAPTION,
-                             ::wm::WINDOW_MOVE_SOURCE_TOUCH, EndClosure());
+                             ::wm::WINDOW_MOVE_SOURCE_TOUCH, EndClosure(),
+                             /*update_gesture_target=*/false);
           event->StopPropagation();
         }
       }
@@ -398,7 +449,8 @@ void WmToplevelWindowEventHandler::OnGestureEvent(ui::GestureEvent* event,
       aura::Window::ConvertPointToTarget(target, target->parent(),
                                          &location_in_parent);
       AttemptToStartDrag(target, location_in_parent, component,
-                         ::wm::WINDOW_MOVE_SOURCE_TOUCH, EndClosure());
+                         ::wm::WINDOW_MOVE_SOURCE_TOUCH, EndClosure(),
+                         /*update_gesture_target=*/false);
       event->StopPropagation();
       return;
     }
@@ -461,7 +513,15 @@ bool WmToplevelWindowEventHandler::AttemptToStartDrag(
     const gfx::Point& point_in_parent,
     int window_component,
     ::wm::WindowMoveSource source,
-    EndClosure end_closure) {
+    EndClosure end_closure,
+    bool update_gesture_target) {
+  if (gesture_target_ != nullptr && update_gesture_target) {
+    DCHECK_EQ(source, ::wm::WINDOW_MOVE_SOURCE_TOUCH);
+    // Transfer events for gesture if switching to new target.
+    window->env()->gesture_recognizer()->TransferEventsTo(
+        gesture_target_, window, ui::TransferTouchesBehavior::kDontCancel);
+  }
+
   if (!PrepareForDrag(window, point_in_parent, window_component, source)) {
     // Treat failure to start as a revert.
     if (end_closure)
@@ -473,8 +533,9 @@ bool WmToplevelWindowEventHandler::AttemptToStartDrag(
   in_gesture_drag_ = (source == ::wm::WINDOW_MOVE_SOURCE_TOUCH);
   // |gesture_target_| needs to be updated if the drag originated from a
   // client (i.e. |this| never handled ET_GESTURE_EVENT_BEGIN).
-  if (in_gesture_drag_ && !gesture_target_)
+  if (in_gesture_drag_ && (!gesture_target_ || update_gesture_target)) {
     UpdateGestureTarget(window);
+  }
 
   return true;
 }
@@ -543,7 +604,8 @@ void WmToplevelWindowEventHandler::HandleMousePressed(aura::Window* target,
     aura::Window::ConvertPointToTarget(target, target->parent(),
                                        &location_in_parent);
     AttemptToStartDrag(target, location_in_parent, component,
-                       ::wm::WINDOW_MOVE_SOURCE_MOUSE, EndClosure());
+                       ::wm::WINDOW_MOVE_SOURCE_MOUSE, EndClosure(),
+                       /*update_gesture_target=*/false);
     // Set as handled so that other event handlers do no act upon the event
     // but still receive it so that they receive both parts of each pressed/
     // released pair.

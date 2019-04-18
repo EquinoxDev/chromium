@@ -19,7 +19,7 @@
 #include "ui/views/controls/styled_label.h"
 #include "ui/views/focus/focus_manager.h"
 #include "ui/views/layout/grid_layout.h"
-#include "ui/views/view_properties.h"
+#include "ui/views/view_class_properties.h"
 
 namespace {
 
@@ -338,9 +338,8 @@ views::View* HoverButton::GetTooltipHandlerForPoint(const gfx::Point& point) {
   if (secondary_view_) {
     gfx::Point point_in_secondary_view(point);
     ConvertPointToTarget(this, secondary_view_, &point_in_secondary_view);
-    base::string16 tooltip;
     if (secondary_view_->HitTestPoint(point_in_secondary_view) &&
-        secondary_view_->GetTooltipText(point_in_secondary_view, &tooltip)) {
+        !secondary_view_->GetTooltipText(point_in_secondary_view).empty()) {
       return secondary_view_;
     }
   }
@@ -397,7 +396,7 @@ void HoverButton::SetSubtitleColor(SkColor color) {
     subtitle_->SetEnabledColor(color);
 }
 
-void HoverButton::OnMenuButtonClicked(MenuButton* source,
+void HoverButton::OnMenuButtonClicked(Button* source,
                                       const gfx::Point& point,
                                       const ui::Event* event) {
   if (listener_)

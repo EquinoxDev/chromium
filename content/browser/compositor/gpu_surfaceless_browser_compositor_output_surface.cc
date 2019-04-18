@@ -25,8 +25,6 @@ GpuSurfacelessBrowserCompositorOutputSurface::
         const UpdateVSyncParametersCallback& update_vsync_parameters_callback,
         std::unique_ptr<viz::CompositorOverlayCandidateValidator>
             overlay_candidate_validator,
-        unsigned int target,
-        unsigned int internalformat,
         gfx::BufferFormat format,
         gpu::GpuMemoryBufferManager* gpu_memory_buffer_manager)
     : GpuBrowserCompositorOutputSurface(std::move(context),
@@ -50,8 +48,8 @@ GpuSurfacelessBrowserCompositorOutputSurface::
   capabilities_.max_frames_pending = 2;
 
   buffer_queue_.reset(new viz::BufferQueue(
-      context_provider_->ContextGL(), target, internalformat, format,
-      gpu_memory_buffer_manager_, surface_handle));
+      context_provider_->ContextGL(), format, gpu_memory_buffer_manager_,
+      surface_handle, context_provider_->ContextCapabilities()));
   buffer_queue_->Initialize();
 }
 
@@ -145,6 +143,12 @@ unsigned GpuSurfacelessBrowserCompositorOutputSurface::UpdateGpuFence() {
   gpu_fence_id_ = context_provider_->ContextGL()->CreateGpuFenceCHROMIUM();
 
   return gpu_fence_id_;
+}
+
+void GpuSurfacelessBrowserCompositorOutputSurface::SetDrawRectangle(
+    const gfx::Rect& damage) {
+  GpuBrowserCompositorOutputSurface::SetDrawRectangle(damage);
+  buffer_queue_->CopyDamageForCurrentSurface(damage);
 }
 
 }  // namespace content

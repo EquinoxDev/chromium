@@ -69,8 +69,8 @@ class MHTMLLoadingTest : public testing::Test {
     auto params = std::make_unique<WebNavigationParams>();
     params->url = url;
     params->response = WebURLResponse(url);
-    params->response.SetMIMEType("multipart/related");
-    params->response.SetHTTPStatusCode(200);
+    params->response.SetMimeType("multipart/related");
+    params->response.SetHttpStatusCode(200);
     params->response.SetExpectedContentLength(buffer->size());
     auto body_loader = std::make_unique<StaticDataNavigationBodyLoader>();
     body_loader->Write(*buffer);
@@ -94,7 +94,7 @@ TEST_F(MHTMLLoadingTest, CheckDomain) {
 
   LoadURLInTopFrame(ToKURL(kFileURL), "simple_test.mht");
   ASSERT_TRUE(GetPage());
-  LocalFrame* frame = ToLocalFrame(GetPage()->MainFrame());
+  LocalFrame* frame = To<LocalFrame>(GetPage()->MainFrame());
   ASSERT_TRUE(frame);
   Document* document = frame->GetDocument();
   ASSERT_TRUE(document);
@@ -112,15 +112,16 @@ TEST_F(MHTMLLoadingTest, EnforceSandboxFlags) {
 
   LoadURLInTopFrame(ToKURL(kURL), "page_with_javascript.mht");
   ASSERT_TRUE(GetPage());
-  LocalFrame* frame = ToLocalFrame(GetPage()->MainFrame());
+  LocalFrame* frame = To<LocalFrame>(GetPage()->MainFrame());
   ASSERT_TRUE(frame);
   Document* document = frame->GetDocument();
   ASSERT_TRUE(document);
 
   // Full sandboxing with the exception to new top-level windows should be
   // turned on.
-  EXPECT_EQ(kSandboxAll & ~(kSandboxPopups |
-                            kSandboxPropagatesToAuxiliaryBrowsingContexts),
+  EXPECT_EQ(WebSandboxFlags::kAll &
+                ~(WebSandboxFlags::kPopups |
+                  WebSandboxFlags::kPropagatesToAuxiliaryBrowsingContexts),
             document->GetSandboxFlags());
 
   // MHTML document should be loaded into unique origin.
@@ -133,13 +134,14 @@ TEST_F(MHTMLLoadingTest, EnforceSandboxFlags) {
 
   // Make sure the subframe is also sandboxed.
   LocalFrame* child_frame =
-      ToLocalFrame(GetPage()->MainFrame()->Tree().FirstChild());
+      To<LocalFrame>(GetPage()->MainFrame()->Tree().FirstChild());
   ASSERT_TRUE(child_frame);
   Document* child_document = child_frame->GetDocument();
   ASSERT_TRUE(child_document);
 
-  EXPECT_EQ(kSandboxAll & ~(kSandboxPopups |
-                            kSandboxPropagatesToAuxiliaryBrowsingContexts),
+  EXPECT_EQ(WebSandboxFlags::kAll &
+                ~(WebSandboxFlags::kPopups |
+                  WebSandboxFlags::kPropagatesToAuxiliaryBrowsingContexts),
             child_document->GetSandboxFlags());
 
   // MHTML document should be loaded into unique origin.
@@ -156,15 +158,16 @@ TEST_F(MHTMLLoadingTest, EnforceSandboxFlagsInXSLT) {
 
   LoadURLInTopFrame(ToKURL(kURL), "xslt.mht");
   ASSERT_TRUE(GetPage());
-  LocalFrame* frame = ToLocalFrame(GetPage()->MainFrame());
+  LocalFrame* frame = To<LocalFrame>(GetPage()->MainFrame());
   ASSERT_TRUE(frame);
   Document* document = frame->GetDocument();
   ASSERT_TRUE(document);
 
   // Full sandboxing with the exception to new top-level windows should be
   // turned on.
-  EXPECT_EQ(kSandboxAll & ~(kSandboxPopups |
-                            kSandboxPropagatesToAuxiliaryBrowsingContexts),
+  EXPECT_EQ(WebSandboxFlags::kAll &
+                ~(WebSandboxFlags::kPopups |
+                  WebSandboxFlags::kPropagatesToAuxiliaryBrowsingContexts),
             document->GetSandboxFlags());
 
   // MHTML document should be loaded into unique origin.
@@ -178,7 +181,7 @@ TEST_F(MHTMLLoadingTest, ShadowDom) {
 
   LoadURLInTopFrame(ToKURL(kURL), "shadow.mht");
   ASSERT_TRUE(GetPage());
-  LocalFrame* frame = ToLocalFrame(GetPage()->MainFrame());
+  LocalFrame* frame = To<LocalFrame>(GetPage()->MainFrame());
   ASSERT_TRUE(frame);
   Document* document = frame->GetDocument();
   ASSERT_TRUE(document);
@@ -204,7 +207,7 @@ TEST_F(MHTMLLoadingTest, FormControlElements) {
 
   LoadURLInTopFrame(ToKURL(kURL), "form.mht");
   ASSERT_TRUE(GetPage());
-  LocalFrame* frame = ToLocalFrame(GetPage()->MainFrame());
+  LocalFrame* frame = To<LocalFrame>(GetPage()->MainFrame());
   ASSERT_TRUE(frame);
   Document* document = frame->GetDocument();
   ASSERT_TRUE(document);
@@ -223,7 +226,7 @@ TEST_F(MHTMLLoadingTest, LoadMHTMLContainingSoftLineBreaks) {
 
   LoadURLInTopFrame(ToKURL(kURL), "soft_line_break.mht");
   ASSERT_TRUE(GetPage());
-  LocalFrame* frame = ToLocalFrame(GetPage()->MainFrame());
+  LocalFrame* frame = To<LocalFrame>(GetPage()->MainFrame());
   ASSERT_TRUE(frame);
   // We should not have problem to concatenate header lines separated by soft
   // line breaks.

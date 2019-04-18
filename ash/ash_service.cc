@@ -17,7 +17,9 @@
 #include "base/threading/thread_task_runner_handle.h"
 #include "chromeos/audio/cras_audio_handler.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
-#include "chromeos/dbus/power_policy_controller.h"
+#include "chromeos/dbus/hammerd/hammerd_client.h"
+#include "chromeos/dbus/power/power_policy_controller.h"
+#include "chromeos/dbus/system_clock/system_clock_client.h"
 #include "chromeos/network/network_connect.h"
 #include "chromeos/network/network_handler.h"
 #include "chromeos/system/fake_statistics_provider.h"
@@ -79,18 +81,20 @@ AshService::~AshService() {
   Shell::DeleteInstance();
 
   statistics_provider_.reset();
-  // NOTE: PowerStatus is shutdown by Shell.
-  chromeos::CrasAudioHandler::Shutdown();
+
   chromeos::NetworkConnect::Shutdown();
   network_connect_delegate_.reset();
-  // We may not have started the NetworkHandler.
-  if (network_handler_initialized_)
-    chromeos::NetworkHandler::Shutdown();
+  chromeos::NetworkHandler::Shutdown();
   device::BluetoothAdapterFactory::Shutdown();
   bluez::BluezDBusManager::Shutdown();
   chromeos::PowerPolicyController::Shutdown();
-  if (dbus_thread_manager_initialized_)
-    chromeos::DBusThreadManager::Shutdown();
+
+  chromeos::SystemClockClient::Shutdown();
+  chromeos::PowerManagerClient::Shutdown();
+  chromeos::HammerdClient::Shutdown();
+  chromeos::CrasAudioHandler::Shutdown();
+
+  chromeos::DBusThreadManager::Shutdown();
 
   // |gpu_host_| must be completely destroyed before Env as GpuHost depends on
   // Ozone, which Env owns.
@@ -125,25 +129,7 @@ void AshService::InitForMash() {
 
   // Must occur after mojo::ApplicationRunner has initialized AtExitManager, but
   // before WindowManager::Init(). Tests might initialize their own instance.
-  if (!chromeos::DBusThreadManager::IsInitialized()) {
-    chromeos::DBusThreadManager::Initialize(
-        chromeos::DBusThreadManager::kShared);
-    dbus_thread_manager_initialized_ = true;
-  }
-  chromeos::PowerPolicyController::Initialize(
-      chromeos::DBusThreadManager::Get()->GetPowerManagerClient());
-
-  // The initialization matches that in ChromeBrowserMainPartsChromeos.
-
-  bluez::BluezDBusManager::Initialize();
-  if (!chromeos::NetworkHandler::IsInitialized()) {
-    chromeos::NetworkHandler::Initialize();
-    network_handler_initialized_ = true;
-  }
-  network_connect_delegate_ = std::make_unique<NetworkConnectDelegateMus>();
-  chromeos::NetworkConnect::Initialize(network_connect_delegate_.get());
-  // TODO(jamescook): Initialize real audio handler.
-  chromeos::CrasAudioHandler::InitializeForTesting();
+  InitializeDBusClients();
 
   // TODO(jamescook): Refactor StatisticsProvider so we can get just the data
   // we need in ash. Right now StatisticsProviderImpl launches the crossystem
@@ -166,11 +152,48 @@ void AshService::InitForMash() {
   Shell::GetPrimaryRootWindow()->GetHost()->Show();
 }
 
+void AshService::InitializeDBusClients() {
+  CHECK(!chromeos::DBusThreadManager::IsInitialized());
+
+  // TODO(stevenjb): Eliminate use of DBusThreadManager and initialize
+  // dbus::Thread, dbus::Bus and required clients directly.
+  chromeos::DBusThreadManager::Initialize(chromeos::DBusThreadManager::kShared);
+  dbus::Bus* bus = chromeos::DBusThreadManager::Get()->GetSystemBus();
+
+  if (bus)
+    chromeos::CrasAudioClient::Initialize(bus);
+  else
+    chromeos::CrasAudioClient::InitializeFake();
+
+  // TODO(jamescook): Initialize real audio handler.
+  chromeos::CrasAudioHandler::InitializeForTesting();
+
+  if (bus) {
+    chromeos::HammerdClient::Initialize(bus);
+    chromeos::PowerManagerClient::Initialize(bus);
+    chromeos::SystemClockClient::Initialize(bus);
+  } else {
+    chromeos::HammerdClient::InitializeFake();
+    chromeos::PowerManagerClient::InitializeFake();
+    chromeos::SystemClockClient::InitializeFake();
+  }
+
+  chromeos::PowerPolicyController::Initialize(
+      chromeos::PowerManagerClient::Get());
+
+  // TODO(ortuno): Eliminate BluezDBusManager code from Ash, crbug.com/830893.
+  bluez::BluezDBusManager::Initialize();
+
+  // TODO(stevenjb): Eliminate NetworkHandler code from Ash, crbug.com/644355.
+  CHECK(!chromeos::NetworkHandler::IsInitialized());
+  chromeos::NetworkHandler::Initialize();
+  network_connect_delegate_ = std::make_unique<NetworkConnectDelegateMus>();
+  chromeos::NetworkConnect::Initialize(network_connect_delegate_.get());
+}
+
 void AshService::OnStart() {
   mojo_interface_factory::RegisterInterfaces(
       &registry_, base::ThreadTaskRunnerHandle::Get());
-  registry_.AddInterface(base::BindRepeating(&AshService::BindServiceFactory,
-                                             base::Unretained(this)));
 
   if (::features::IsMultiProcessMash())
     InitForMash();
@@ -183,24 +206,19 @@ void AshService::OnBindInterface(
   registry_.BindInterface(interface_name, std::move(handle));
 }
 
-void AshService::CreateService(
-    service_manager::mojom::ServiceRequest service,
-    const std::string& name,
-    service_manager::mojom::PIDReceiverPtr pid_receiver) {
-  DCHECK_EQ(name, ws::mojom::kServiceName);
-  Shell::Get()->window_service_owner()->BindWindowService(std::move(service));
+void AshService::CreatePackagedServiceInstance(
+    const std::string& service_name,
+    mojo::PendingReceiver<service_manager::mojom::Service> receiver,
+    CreatePackagedServiceInstanceCallback callback) {
+  DCHECK_EQ(service_name, ws::mojom::kServiceName);
+  Shell::Get()->window_service_owner()->BindWindowService(std::move(receiver));
   if (::features::IsMultiProcessMash()) {
     ws::WindowService* window_service =
         Shell::Get()->window_service_owner()->window_service();
     input_device_controller_ = std::make_unique<ws::InputDeviceController>();
     input_device_controller_->AddInterface(window_service->registry());
   }
-  pid_receiver->SetPID(base::GetCurrentProcId());
-}
-
-void AshService::BindServiceFactory(
-    service_manager::mojom::ServiceFactoryRequest request) {
-  service_factory_bindings_.AddBinding(this, std::move(request));
+  std::move(callback).Run(base::GetCurrentProcId());
 }
 
 void AshService::CreateFrameSinkManager() {

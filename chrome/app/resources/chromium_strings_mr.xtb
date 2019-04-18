@@ -184,14 +184,13 @@
 <translation id="6810143991807788455">वर्तमान सेटिंग्जचा अहवाल देऊन Chromium उत्कृष्ट बनविण्यास मदत करा</translation>
 <translation id="6857782730669500492">Chromium - <ph name="PAGE_TITLE" /></translation>
 <translation id="6863361426438995919">Google Pay (Chromium वर कॉपी केले)</translation>
-<translation id="6877899728743402439">तुमच्या सिस्टम अ‍ॅडमिनिस्ट्रेटरने Chromium पर्यायी ब्राउझर उघडण्यासाठी कॉन्फिगर केले आहे.</translation>
 <translation id="6893813176749746474">Chromium अपडेट केले गेले, परंतु तुम्ही ते किमान 30 दिवसांपासून वापरलेले नाही.</translation>
 <translation id="6964305034639999644">लिंक Chromium गु&amp;प्त विंडो मध्ये उघडा</translation>
 <translation id="6970811910055250180">तुमचे डिव्हाइस अपडेट करीत आहे...</translation>
 <translation id="6990124437352146030">या साइटसाठी Chromium ला तुमचा मायक्रोफोन अॅक्सेस करण्याची परवानगी हवी आहे</translation>
 <translation id="705851970750939768">Chromium अपडेट करा</translation>
 <translation id="7066436765290594559">Chromium OS तुमचा डेटा सिंक करू शकले नाही. कृपया तुमचा सिंक सांकेतिक पासफ्रेझ अपडेट करा.</translation>
-<translation id="7162152143154757523">तुम्ही ब्राउझरमध्‍ये जे टाइप करता ते Google सर्व्हरला पाठवून, तुम्हाला Google शोध द्वारे वापरलेल्या शब्दलेखन-तंत्रज्ञानासारखेच तंत्रज्ञान वापरण्याची अनुमती देऊन Chromium चाणाक्ष शब्दलेखन-तपासणी प्रदान करु शकते.</translation>
+<translation id="7067091210845072982">इमेजचे उपयोगी वर्णन नसल्यास, Chromium तुमच्यासाठी ते देण्याचा प्रयत्न करेल. वर्णने तयार करण्यासाठी, इमेज Google ला पाठवल्या जातात.</translation>
 <translation id="7196312274710523067">Chromium लाँच करता आले नाही. पुन्हा प्रयत्न करा.</translation>
 <translation id="7205698830395646142">Chromium मेनूमध्‍ये लपवा</translation>
 <translation id="7223968959479464213">कार्य व्यवस्थापक- Chromium </translation>
@@ -209,6 +208,7 @@ Chromium तुमची सेटिंग्ज रिकव्हर कर�
 <ph name="NEW_PROFILE_NAME" /> ला आपल्या खात्यात प्रवेश करण्‍यापासून प्रतिबंधित करण्यासाठी, तुम्ही Chromium वापरत नसता तेव्हा तुम्ही तुमचे प्रोफाइल लॉक करता याची खात्री करा. हे करण्‍यासाठी, ब्राउझरच्या वरील उजव्या कोपर्‍यातील तुमचे प्रोफाइल नाव क्लिक करा आणि "बाहेर पडा आणि मुलांचा लॉक" निवडा. <ph name="BEGIN_LINK_2" />अधिक जाणून घ्या<ph name="END_LINK_2" />
 
 कृपया पुढील सूचनांसाठी तुमचे ईमेल <ph name="ACCOUNT_EMAIL" /> वर तपासा.</translation>
+<translation id="7349591376906416160">तुमच्या सिस्टम अ‍ॅडमिनिस्ट्रेटरने <ph name="TARGET_URL_HOSTNAME" /> अ‍ॅक्सेस करण्यासाठी <ph name="ALTERNATIVE_BROWSER_NAME" /> उघडण्याकरिता Chromium कॉन्फिगर केले आहे.</translation>
 <translation id="7448255348454382571">Chromium OS रीस्टार्ट करा</translation>
 <translation id="7449453770951226939"><ph name="PAGE_TITLE" /> - Chromium डेव्हलपर</translation>
 <translation id="7451052299415159299">या साइटसाठी Chromium ला तुमचा कॅमेरा अॅक्सेस करण्याची परवानगी हवी आहे</translation>
@@ -235,6 +235,7 @@ Chromium तुमची सेटिंग्ज रिकव्हर कर�
 <translation id="8030318113982266900"><ph name="CHANNEL_NAME" /> चॅनेलवर तुमचे डिव्हाइस अपडेट करत आहे...</translation>
 <translation id="81770708095080097">ही फाईल धोकादायक आहे, त्यामुळे Chromium ने अवरोधित केली आहे.</translation>
 <translation id="8222496066431494154">तुमच्या फोनवर Chromium इंस्टॉल करा. आम्ही तुमच्या या खाते रिकव्हरी फोन नंबरवर एक SMS पाठवू: <ph name="PHONE_NUMBER" /></translation>
+<translation id="8248265253516264921">इमेजचे उपयोगी वर्णन नसल्यास, Chromium तुमच्यासाठी ते देण्याचा प्रयत्न करेल. वर्णने तयार करण्यासाठी, इमेज Google ला पाठवल्या जातात. तुम्ही हे सेटिंग्जमध्ये कधीही बंद करू शकता.</translation>
 <translation id="8269379391216269538">Chromium उत्कृष्ट करण्यात मदत करा</translation>
 <translation id="8290862415967981663">ही फाईल कदाचित धोकादायक असू शकते, त्यामुळे Chromium ने ती अवरोधित केली आहे.</translation>
 <translation id="8330519371938183845">तुमच्या डिव्हाइसवर Chromium सिंक आणि पर्सनलाइझ करण्यासाठी साइन इन करा</translation>
@@ -269,6 +270,7 @@ Chromium तुमची सेटिंग्ज रिकव्हर कर�
 <translation id="9089354809943900324">Chromium कालबाह्य आहे</translation>
 <translation id="91086099826398415">लिंक नवीन Chromium &amp;टॅबमध्ये उघडा</translation>
 <translation id="911206726377975832">तुमचा ब्राउझिंग डेटा देखील हटवायचा?</translation>
+<translation id="9158494823179993217">तुमच्या सिस्टम अ‍ॅडमिनिस्ट्रेटरने <ph name="TARGET_URL_HOSTNAME" />अॅक्सेस करण्याकरिता पर्यायी ब्राउझर उघडण्यासाठी Chromium कॉन्फिगर केले आहे.</translation>
 <translation id="918373042641772655"><ph name="USERNAME" /> डिस्कनेक्ट केल्याने, या डिव्हाइसवर संचयित केलेला तुमचा इतिहास, बुकमार्क, सेटिंग्ज आणि अन्य Chromium डेटा साफ होईल. आपल्या Google खात्यामध्ये संचयित केलेला डेटा साफ केला जाणार नाही आणि हा <ph name="GOOGLE_DASHBOARD_LINK" />Google डॅशबोर्ड<ph name="END_GOOGLE_DASHBOARD_LINK" /> वर व्यवस्थापित केला जाऊ शकतो.</translation>
 <translation id="9190841055450128916">Chromium (mDNS-मध्ये)</translation>
 <translation id="9197815481970649201">तुम्ही आता Chromium वर साइन इन केले आहे</translation>

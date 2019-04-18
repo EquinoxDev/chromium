@@ -5,6 +5,9 @@
 package org.chromium.chrome.browser.ntp;
 
 import org.chromium.base.metrics.RecordHistogram;
+import org.chromium.chrome.browser.image_fetcher.ImageFetcher;
+import org.chromium.chrome.browser.image_fetcher.ImageFetcherConfig;
+import org.chromium.chrome.browser.image_fetcher.ImageFetcherFactory;
 import org.chromium.chrome.browser.ntp.LogoBridge.Logo;
 import org.chromium.chrome.browser.ntp.LogoBridge.LogoObserver;
 import org.chromium.chrome.browser.profiles.Profile;
@@ -38,11 +41,12 @@ public class LogoDelegateImpl implements LogoView.Delegate {
     private LogoView mLogoView;
 
     private LogoBridge mLogoBridge;
+    private ImageFetcher mImageFetcher;
+
     private String mOnLogoClickUrl;
     private String mAnimatedLogoUrl;
 
     private boolean mShouldRecordLoadTime = true;
-
     private boolean mIsDestroyed;
 
     /**
@@ -56,10 +60,13 @@ public class LogoDelegateImpl implements LogoView.Delegate {
         mNavigationDelegate = navigationDelegate;
         mLogoView = logoView;
         mLogoBridge = new LogoBridge(profile);
+        mImageFetcher = ImageFetcherFactory.createImageFetcher(ImageFetcherConfig.DISK_CACHE_ONLY);
     }
 
     public void destroy() {
         mIsDestroyed = true;
+        mImageFetcher.destroy();
+        mImageFetcher = null;
     }
 
     @Override
@@ -69,13 +76,11 @@ public class LogoDelegateImpl implements LogoView.Delegate {
         if (!isAnimatedLogoShowing && mAnimatedLogoUrl != null) {
             RecordHistogram.recordSparseHistogram(LOGO_CLICK_UMA_NAME, CTA_IMAGE_CLICKED);
             mLogoView.showLoadingView();
-            mLogoBridge.getAnimatedLogo(new LogoBridge.AnimatedLogoCallback() {
-                @Override
-                public void onAnimatedLogoAvailable(BaseGifImage animatedLogoImage) {
-                    if (mIsDestroyed) return;
-                    mLogoView.playAnimatedLogo(animatedLogoImage);
-                }
-            }, mAnimatedLogoUrl);
+            mImageFetcher.fetchGif(mAnimatedLogoUrl, ImageFetcher.NTP_ANIMATED_LOGO_UMA_CLIENT_NAME,
+                    (BaseGifImage animatedLogoImage) -> {
+                        if (mIsDestroyed || animatedLogoImage == null) return;
+                        mLogoView.playAnimatedLogo(animatedLogoImage);
+                    });
         } else if (mOnLogoClickUrl != null) {
             RecordHistogram.recordSparseHistogram(LOGO_CLICK_UMA_NAME,
                     isAnimatedLogoShowing ? ANIMATED_LOGO_CLICKED : STATIC_LOGO_CLICKED);

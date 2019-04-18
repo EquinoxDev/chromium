@@ -49,8 +49,6 @@
 #include "third_party/blink/public/web/web_range.h"
 #include "third_party/blink/public/web/web_text_direction.h"
 
-class SkBitmap;
-
 namespace cc {
 struct ApplyViewportChangesArgs;
 class AnimationHost;
@@ -101,6 +99,9 @@ class WebWidget {
   virtual void BeginFrame(base::TimeTicks last_frame_time,
                           bool record_main_frame_metrics) {}
 
+  // Called after UpdateAllLifecyclePhases has run in response to a BeginFrame.
+  virtual void DidBeginFrame() {}
+
   // Called when main frame metrics are desired. The local frame's UKM
   // aggregator must be informed that collection is starting for the
   // frame.
@@ -118,6 +119,20 @@ class WebWidget {
   // update.
   virtual void BeginRafAlignedInput() {}
   virtual void EndRafAlignedInput() {}
+
+  // Methods called to mark the beginning and end of the
+  // LayerTreeHost::UpdateLayers method. Only called when gathering main frame
+  // UMA and UKM. That is, when RecordStartOfFrameMetrics has been called, and
+  // before RecordEndOfFrameMetrics has been called.
+  virtual void BeginUpdateLayers() {}
+  virtual void EndUpdateLayers() {}
+
+  // Methods called to mark the beginning and end of a commit to the impl
+  // thread for a frame. Only called when gathering main frame
+  // UMA and UKM. That is, when RecordStartOfFrameMetrics has been called, and
+  // before RecordEndOfFrameMetrics has been called.
+  virtual void BeginCommitCompositorFrame() {}
+  virtual void EndCommitCompositorFrame() {}
 
   // Called to run through the entire set of document lifecycle phases needed
   // to render a frame of the web widget. This MUST be called before Paint,
@@ -140,11 +155,6 @@ class WebWidget {
   virtual void UpdateLifecycle(LifecycleUpdate requested_update,
                                LifecycleUpdateReason reason) {}
 
-  // Synchronously performs the complete set of document lifecycle phases,
-  // including updates to the compositor state, optionally including
-  // rasterization.
-  virtual void UpdateAllLifecyclePhasesAndCompositeForTesting(bool do_raster) {}
-
   // Called to paint the rectangular region within the WebWidget
   // onto the specified canvas at (view_port.x, view_port.y).
   //
@@ -157,16 +167,6 @@ class WebWidget {
   // the main LayoutView's property tree state, thus ignoring any transient
   // transormations (e.g. pinch-zoom, dev tools emulation, etc.).
   virtual void PaintContent(cc::PaintCanvas*, const WebRect& view_port) {}
-
-  // This should only be called when isAcceleratedCompositingActive() is true.
-  virtual void CompositeAndReadbackAsync(
-      base::OnceCallback<void(const SkBitmap&)> callback) {}
-
-  // Runs |callback| after a new frame has been submitted to the display
-  // compositor, and the display-compositor has displayed it on screen. Forces a
-  // redraw so that a new frame is submitted.
-  virtual void RequestPresentationCallbackForTesting(
-      base::OnceClosure callback) {}
 
   // Called to inform the WebWidget of a change in theme.
   // Implementors that cache rendered copies of widgets need to re-render
@@ -190,6 +190,9 @@ class WebWidget {
 
   // Called to inform the WebWidget of the mouse cursor's visibility.
   virtual void SetCursorVisibilityState(bool is_visible) {}
+
+  // Inform WebWidget fallback cursor mode toggled.
+  virtual void OnFallbackCursorModeToggled(bool is_on) {}
 
   // Applies viewport related properties during a commit from the compositor
   // thread.

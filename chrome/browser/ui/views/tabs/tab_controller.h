@@ -34,19 +34,14 @@ class TabController {
   // Returns true if multiple selection is supported.
   virtual bool SupportsMultipleSelection() = 0;
 
-  // Returns where the new tab button should be placed. This is needed to
-  // determine which tab separators need to be faded in/out while animating into
-  // position.
-  virtual NewTabButtonPosition GetNewTabButtonPosition() const = 0;
-
   // Returns true if the close button for the given tab is forced to be hidden.
   virtual bool ShouldHideCloseButtonForTab(Tab* tab) const = 0;
 
   // Returns true if ShouldPaintTab() could return a non-empty clip path.
   virtual bool MaySetClip() = 0;
 
-  // Selects the tab.
-  virtual void SelectTab(Tab* tab) = 0;
+  // Selects the tab. |event| is the event that causes |tab| to be selected.
+  virtual void SelectTab(Tab* tab, const ui::Event& event) = 0;
 
   // Extends the selection from the anchor to |tab|.
   virtual void ExtendSelectionTo(Tab* tab) = 0;

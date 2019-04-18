@@ -75,8 +75,8 @@ class CORE_EXPORT PointerEventManager
 
   void ElementRemoved(Element*);
 
-  void SetPointerCapture(PointerId, Element*);
-  void ReleasePointerCapture(PointerId, Element*);
+  bool SetPointerCapture(PointerId, Element*);
+  bool ReleasePointerCapture(PointerId, Element*);
   void ReleaseMousePointerCapture();
 
   // See Element::hasPointerCapture(PointerId).
@@ -99,6 +99,8 @@ class CORE_EXPORT PointerEventManager
   void ProcessPendingPointerCaptureForPointerLock(const WebMouseEvent&);
 
   void RemoveLastMousePosition();
+
+  Element* GetMouseCaptureTarget();
 
   // Sends any outstanding events. For example it notifies TouchEventManager
   // to group any changes to touch since last FlushEvents and send the touch

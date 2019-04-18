@@ -12,7 +12,6 @@
 #include "services/service_manager/public/cpp/service.h"
 #include "services/service_manager/public/cpp/service_binding.h"
 #include "services/service_manager/public/mojom/service.mojom.h"
-#include "services/service_manager/public/mojom/service_factory.mojom.h"
 #include "services/ws/gpu_host/gpu_host_delegate.h"
 #include "services/ws/public/mojom/gpu.mojom.h"
 
@@ -63,7 +62,6 @@ class NetworkConnectDelegateMus;
 // Ash's manifest.json. Also responsible for creating the
 // UI-Service/WindowService when ash runs out of process.
 class ASH_EXPORT AshService : public service_manager::Service,
-                              public service_manager::mojom::ServiceFactory,
                               public ws::gpu_host::GpuHostDelegate {
  public:
   explicit AshService(service_manager::mojom::ServiceRequest request);
@@ -74,20 +72,17 @@ class ASH_EXPORT AshService : public service_manager::Service,
   void OnBindInterface(const service_manager::BindSourceInfo& remote_info,
                        const std::string& interface_name,
                        mojo::ScopedMessagePipeHandle handle) override;
-
-  // service_manager::mojom::ServiceFactory:
-  void CreateService(
-      service_manager::mojom::ServiceRequest service,
-      const std::string& name,
-      service_manager::mojom::PIDReceiverPtr pid_receiver) override;
+  void CreatePackagedServiceInstance(
+      const std::string& service_name,
+      mojo::PendingReceiver<service_manager::mojom::Service> receiver,
+      CreatePackagedServiceInstanceCallback callback) override;
 
  private:
   // Does initialization necessary when ash runs out of process. This is called
   // once the service starts (from OnStart()).
   void InitForMash();
 
-  void BindServiceFactory(
-      service_manager::mojom::ServiceFactoryRequest request);
+  void InitializeDBusClients();
 
   void CreateFrameSinkManager();
 
@@ -96,8 +91,6 @@ class ASH_EXPORT AshService : public service_manager::Service,
 
   service_manager::ServiceBinding service_binding_;
   service_manager::BinderRegistry registry_;
-  mojo::BindingSet<service_manager::mojom::ServiceFactory>
-      service_factory_bindings_;
 
   std::unique_ptr<::wm::WMState> wm_state_;
 
@@ -122,12 +115,6 @@ class ASH_EXPORT AshService : public service_manager::Service,
       statistics_provider_;
 
   std::unique_ptr<ws::InputDeviceController> input_device_controller_;
-
-  // Whether this class initialized NetworkHandler and needs to clean it up.
-  bool network_handler_initialized_ = false;
-
-  // Whether this class initialized DBusThreadManager and needs to clean it up.
-  bool dbus_thread_manager_initialized_ = false;
 
   DISALLOW_COPY_AND_ASSIGN(AshService);
 };

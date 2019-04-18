@@ -28,10 +28,6 @@ class PLATFORM_EXPORT ResourceLoadSchedulerClient
   // Called when the request is granted to run.
   virtual void Run() = 0;
 
-  // Called to obtain a ConsoleLogger instance.
-  // TODO(yhirano): Remove this once https://crbug.com/855189 is fixed.
-  virtual ConsoleLogger* GetConsoleLogger() = 0;
-
   void Trace(blink::Visitor* visitor) override {}
 };
 
@@ -152,7 +148,8 @@ class PLATFORM_EXPORT ResourceLoadScheduler final
 
   ResourceLoadScheduler(ThrottlingPolicy initial_throttling_poilcy,
                         const ResourceFetcherProperties&,
-                        FrameScheduler*);
+                        FrameScheduler*,
+                        ConsoleLogger& console_logger);
   ~ResourceLoadScheduler() override;
 
   void Trace(blink::Visitor*);
@@ -249,6 +246,11 @@ class PLATFORM_EXPORT ResourceLoadScheduler final
     int intra_priority;
   };
 
+  // Checks if |pending_requests_| for the specified option is effectively
+  // empty, that means it does not contain any request that is still alive in
+  // |pending_request_map_|.
+  bool IsPendingRequestEffectivelyEmpty(ThrottleOption option);
+
   // Gets the highest priority pending request that is allowed to be run.
   bool GetNextPendingRequest(ClientId* id);
 
@@ -313,19 +315,22 @@ class PLATFORM_EXPORT ResourceLoadScheduler final
     kStopped,
   };
   ThrottlingHistory throttling_history_ = ThrottlingHistory::kInitial;
+
   scheduler::SchedulingLifecycleState frame_scheduler_lifecycle_state_ =
       scheduler::SchedulingLifecycleState::kNotThrottled;
 
   // Holds clients that haven't been granted, and are waiting for a grant.
   HeapHashMap<ClientId, Member<ClientInfo>> pending_request_map_;
+
   // We use std::set here because WTF doesn't have its counterpart.
   // This tracks two sets of requests, throttleable and stoppable.
   std::map<ThrottleOption,
            std::set<ClientIdWithPriority, ClientIdWithPriority::Compare>>
       pending_requests_;
 
-  // Remembers times when the top request in each queue is processed.
-  std::map<ThrottleOption, base::TimeTicks> pending_queue_update_times_;
+  // Remembers elapsed times in seconds when the top request in each queue is
+  // processed.
+  std::map<ThrottleOption, double> pending_queue_update_times_;
 
   // Holds an internal class instance to monitor and report traffic.
   std::unique_ptr<TrafficMonitor> traffic_monitor_;
@@ -333,6 +338,8 @@ class PLATFORM_EXPORT ResourceLoadScheduler final
   // Handle to throttling observer.
   std::unique_ptr<FrameScheduler::LifecycleObserverHandle>
       scheduler_observer_handle_;
+
+  const Member<ConsoleLogger> console_logger_;
 
   DISALLOW_COPY_AND_ASSIGN(ResourceLoadScheduler);
 };

@@ -48,6 +48,7 @@
 #include "chrome/browser/chromeos/login/session/user_session_manager.h"
 #include "chrome/browser/chromeos/login/session/user_session_manager_test_api.h"
 #include "chrome/browser/chromeos/login/signin_specifics.h"
+#include "chrome/browser/chromeos/login/test/local_policy_test_server_mixin.h"
 #include "chrome/browser/chromeos/login/ui/login_display_host.h"
 #include "chrome/browser/chromeos/login/ui/webui_login_view.h"
 #include "chrome/browser/chromeos/login/users/avatar/user_image_manager.h"
@@ -71,7 +72,6 @@
 #include "chrome/browser/lifetime/application_lifetime.h"
 #include "chrome/browser/policy/profile_policy_connector.h"
 #include "chrome/browser/policy/profile_policy_connector_factory.h"
-#include "chrome/browser/policy/test/local_policy_test_server.h"
 #include "chrome/browser/prefs/session_startup_pref.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
@@ -93,7 +93,7 @@
 #include "chrome/grit/generated_resources.h"
 #include "chromeos/constants/chromeos_paths.h"
 #include "chromeos/constants/chromeos_switches.h"
-#include "chromeos/dbus/fake_session_manager_client.h"
+#include "chromeos/dbus/session_manager/fake_session_manager_client.h"
 #include "chromeos/login/auth/mock_auth_status_consumer.h"
 #include "chromeos/login/auth/user_context.h"
 #include "chromeos/network/policy_certificate_provider.h"
@@ -456,16 +456,6 @@ class DeviceLocalAccountTest : public DevicePolicyCrosBrowserTest,
   ~DeviceLocalAccountTest() override {}
 
   void SetUp() override {
-    // Configure and start the test server.
-    std::unique_ptr<crypto::RSAPrivateKey> signing_key(
-        PolicyBuilder::CreateTestSigningKey());
-    ASSERT_TRUE(test_server_.SetSigningKeyAndSignature(
-        signing_key.get(), PolicyBuilder::GetTestSigningKeySignature()));
-    signing_key.reset();
-    test_server_.RegisterClient(PolicyBuilder::kFakeToken,
-                                PolicyBuilder::kFakeDeviceId);
-    ASSERT_TRUE(test_server_.Start());
-
     BrowserList::AddObserver(this);
 
     DevicePolicyCrosBrowserTest::SetUp();
@@ -476,8 +466,6 @@ class DeviceLocalAccountTest : public DevicePolicyCrosBrowserTest,
     command_line->AppendSwitch(chromeos::switches::kLoginManager);
     command_line->AppendSwitch(chromeos::switches::kForceLoginManagerInTests);
     command_line->AppendSwitchASCII(chromeos::switches::kLoginProfile, "user");
-    command_line->AppendSwitchASCII(policy::switches::kDeviceManagementUrl,
-                                    test_server_.GetServiceURL().spec());
   }
 
   void SetUpInProcessBrowserTestFixture() override {
@@ -538,6 +526,7 @@ class DeviceLocalAccountTest : public DevicePolicyCrosBrowserTest,
     base::ThreadTaskRunnerHandle::Get()->PostTask(
         FROM_HERE, base::BindOnce(&chrome::AttemptExit));
     base::RunLoop().RunUntilIdle();
+    DevicePolicyCrosBrowserTest::TearDownOnMainThread();
   }
 
   void LocalStateChanged(user_manager::UserManager* user_manager) override {
@@ -585,7 +574,7 @@ class DeviceLocalAccountTest : public DevicePolicyCrosBrowserTest,
 
   void UploadDeviceLocalAccountPolicy() {
     BuildDeviceLocalAccountPolicy();
-    ASSERT_TRUE(test_server_.UpdatePolicy(
+    ASSERT_TRUE(local_policy_mixin_.server()->UpdatePolicy(
         dm_protocol::kChromePublicAccountPolicyType, kAccountId1,
         device_local_account_policy_.payload().SerializeAsString()));
   }
@@ -617,9 +606,7 @@ class DeviceLocalAccountTest : public DevicePolicyCrosBrowserTest,
     account->set_type(
         em::DeviceLocalAccountInfoProto::ACCOUNT_TYPE_PUBLIC_SESSION);
     RefreshDevicePolicy();
-    ASSERT_TRUE(test_server_.UpdatePolicy(dm_protocol::kChromeDevicePolicyType,
-                                          std::string(),
-                                          proto.SerializeAsString()));
+    ASSERT_TRUE(local_policy_mixin_.UpdateDevicePolicy(proto));
   }
 
   void SetManagedSessionsEnabled(bool managed_sessions_enabled) {
@@ -636,9 +623,7 @@ class DeviceLocalAccountTest : public DevicePolicyCrosBrowserTest,
     device_local_accounts->set_auto_login_id(kAccountId1);
     device_local_accounts->set_auto_login_delay(0);
     RefreshDevicePolicy();
-    ASSERT_TRUE(test_server_.UpdatePolicy(dm_protocol::kChromeDevicePolicyType,
-                                          std::string(),
-                                          proto.SerializeAsString()));
+    ASSERT_TRUE(local_policy_mixin_.UpdateDevicePolicy(proto));
   }
 
   void CheckPublicSessionPresent(const AccountId& account_id) {
@@ -800,7 +785,7 @@ class DeviceLocalAccountTest : public DevicePolicyCrosBrowserTest,
   std::unique_ptr<base::RunLoop> run_loop_;
 
   UserPolicyBuilder device_local_account_policy_;
-  LocalPolicyTestServer test_server_;
+  chromeos::LocalPolicyTestServerMixin local_policy_mixin_{&mixin_host_};
 
   content::WebContents* contents_;
 
@@ -1022,8 +1007,7 @@ IN_PROC_BROWSER_TEST_F(DeviceLocalAccountTest, AccountListChange) {
   account1->set_type(
       em::DeviceLocalAccountInfoProto::ACCOUNT_TYPE_PUBLIC_SESSION);
 
-  test_server_.UpdatePolicy(dm_protocol::kChromeDevicePolicyType, std::string(),
-                            policy.SerializeAsString());
+  local_policy_mixin_.UpdateDevicePolicy(policy);
   g_browser_process->policy_service()->RefreshPolicies(base::Closure());
 
   // Make sure the second device-local account disappears.
@@ -1710,7 +1694,7 @@ IN_PROC_BROWSER_TEST_F(DeviceLocalAccountTest, LastWindowClosedLogoutReminder) {
   ASSERT_NO_FATAL_FAILURE(CloseLogoutConfirmationDialog());
 
   app_window_registry->RemoveObserver(this);
-};
+}
 
 IN_PROC_BROWSER_TEST_F(DeviceLocalAccountTest, NoRecommendedLocaleNoSwitch) {
   UploadAndInstallDeviceLocalAccountPolicy();
@@ -2294,7 +2278,7 @@ IN_PROC_BROWSER_TEST_F(DeviceLocalAccountTest, PolicyForExtensions) {
   // Note that the policy for the device-local account will be fetched before
   // the session is started, so the policy for the app must be installed before
   // the first device policy fetch.
-  ASSERT_TRUE(test_server_.UpdatePolicyData(
+  ASSERT_TRUE(local_policy_mixin_.server()->UpdatePolicyData(
       dm_protocol::kChromeExtensionPolicyType, kShowManagedStorageID,
       "{"
       "  \"string\": {"
@@ -2342,7 +2326,7 @@ IN_PROC_BROWSER_TEST_F(DeviceLocalAccountTest, PolicyForExtensions) {
             *policy_service->GetPolicies(ns).GetValue("string"));
 
   // Now update the policy at the server.
-  ASSERT_TRUE(test_server_.UpdatePolicyData(
+  ASSERT_TRUE(local_policy_mixin_.server()->UpdatePolicyData(
       dm_protocol::kChromeExtensionPolicyType, kShowManagedStorageID,
       "{"
       "  \"string\": {"
@@ -2612,39 +2596,6 @@ IN_PROC_BROWSER_TEST_F(ManagedSessionsTest, AllowCrossOriginAuthPrompt) {
 
   // Check that setting a value to 'AllowCrossOriginAuthPrompt' activates
   // managed sessions mode.
-  ASSERT_TRUE(
-      chromeos::ChromeUserManager::Get()->IsFullManagementDisclosureNeeded(
-          broker));
-}
-
-IN_PROC_BROWSER_TEST_F(ManagedSessionsTest, PacHttpsUrlStrippingEnabled) {
-  SetManagedSessionsEnabled(/* managed_sessions_enabled */ true);
-
-  device_local_account_policy_.payload()
-      .mutable_pachttpsurlstrippingenabled()
-      ->set_value(false);
-
-  // Install and refresh the device policy now. This will also fetch the initial
-  // user policy for the device-local account now.
-  UploadAndInstallDeviceLocalAccountPolicy();
-  AddPublicSessionToDevicePolicy(kAccountId1);
-  AddNetworkCertificateToDevicePolicy();
-  WaitForPolicy();
-
-  const user_manager::User* user =
-      user_manager::UserManager::Get()->FindUser(account_id_1_);
-  ASSERT_TRUE(user);
-  auto* broker = GetDeviceLocalAccountPolicyBroker();
-  ASSERT_TRUE(broker);
-
-  // Check that 'DeviceLocalAccountManagedSessionEnabled' policy was applied
-  // correctly.
-  ASSERT_TRUE(
-      chromeos::ChromeUserManager::Get()->IsManagedSessionEnabledForUser(
-          *user));
-
-  // Check that disabling 'PacHttpsUrlStrippingEnabled' activates managed
-  // sessions mode.
   ASSERT_TRUE(
       chromeos::ChromeUserManager::Get()->IsFullManagementDisclosureNeeded(
           broker));

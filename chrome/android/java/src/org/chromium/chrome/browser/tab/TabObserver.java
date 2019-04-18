@@ -21,6 +21,14 @@ import org.chromium.content_public.common.BrowserControlsState;
  */
 public interface TabObserver {
     /**
+     * Called when a {@link Tab} finished initialization. The {@link TabState} contains,
+     * if not {@code null}, various states that a Tab should restore itself from.
+     * @param tab The notifying {@link Tab}.
+     * @param tabState {@link TabState} to restore tab's state from if not {@code null}.
+     */
+    void onInitialized(Tab tab, TabState tabState);
+
+    /**
      * Called when a {@link Tab} is shown.
      * @param tab The notifying {@link Tab}.
      * @param type Specifies how the tab was selected.
@@ -160,6 +168,12 @@ public interface TabObserver {
     void onContextualActionBarVisibilityChanged(Tab tab, boolean visible);
 
     // WebContentsDelegateAndroid methods ---------------------------------------------------------
+
+    /**
+     * Called when the WebContents is closed.
+     * @param tab The notifying {@link Tab}.
+     */
+    void onCloseContents(Tab tab);
 
     /**
      * Called when the WebContents starts loading. Different from

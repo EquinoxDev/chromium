@@ -18,6 +18,7 @@
 #include "ash/host/root_window_transformer.h"
 #include "ash/magnifier/magnification_controller.h"
 #include "ash/magnifier/partial_magnification_controller.h"
+#include "ash/public/cpp/ash_features.h"
 #include "ash/root_window_controller.h"
 #include "ash/root_window_settings.h"
 #include "ash/shell.h"
@@ -38,7 +39,7 @@
 #include "ui/aura/window_tracker.h"
 #include "ui/aura/window_tree_host.h"
 #include "ui/base/class_property.h"
-#include "ui/base/ime/input_method_factory.h"
+#include "ui/base/ime/init/input_method_factory.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/ui_base_features.h"
 #include "ui/base/ui_base_switches_util.h"
@@ -92,6 +93,18 @@ aura::Window* GetWindow(AshWindowTreeHost* ash_host) {
 }
 
 const char* GetUICompositorMemoryLimitMB() {
+  bool uses_shader_rounded_corner = features::ShouldUseShaderRoundedCorner();
+  // TODO(oshima): Cleanup once new rounded corners and SPM are launched.
+
+  // The upper limit of the gpu memory each compositor in mus can use on
+  // chromeos.  Please see crbug.com/930163 for more info.
+  if (::features::IsUsingWindowService() && uses_shader_rounded_corner)
+    return "144";
+
+  // Uses 512mb which is default.
+  if (uses_shader_rounded_corner)
+    return "512";
+
   display::DisplayManager* display_manager =
       ash::Shell::Get()->display_manager();
   int width;
@@ -110,6 +123,14 @@ const char* GetUICompositorMemoryLimitMB() {
   }
 
   return width >= 3000 ? "1024" : "512";
+}
+
+// Returns the Shell's WindowService instance or nullptr if Shell's
+// |window_service_owner_| is not yet created.
+ws::WindowService* GetWindowService() {
+  return Shell::Get()->window_service_owner()
+             ? Shell::Get()->window_service_owner()->window_service()
+             : nullptr;
 }
 
 }  // namespace
@@ -514,6 +535,8 @@ void WindowTreeHostManager::OnDisplayAdded(const display::Display& display) {
     GetRootWindowSettings(GetWindow(ash_host))->display_id = display.id();
     for (auto& observer : observers_)
       observer.OnWindowTreeHostReusedForDisplay(ash_host, display);
+    if (auto* window_service = GetWindowService())
+      window_service->OnWindowTreeHostsDisplayIdChanged({GetWindow(ash_host)});
     const display::ManagedDisplayInfo& display_info =
         GetDisplayManager()->GetDisplayInfo(display.id());
     ash_host->AsWindowTreeHost()->SetBoundsInPixels(
@@ -540,6 +563,7 @@ void WindowTreeHostManager::DeleteHost(AshWindowTreeHost* host_to_delete) {
   controller->Shutdown();
   if (primary_tree_host_for_replace_ == host_to_delete)
     primary_tree_host_for_replace_ = nullptr;
+  // NOTE: ShelfWidget is gone, but Shelf still exists until this task runs.
   base::ThreadTaskRunnerHandle::Get()->DeleteSoon(FROM_HERE, controller);
 }
 
@@ -580,6 +604,10 @@ void WindowTreeHostManager::OnDisplayRemoved(const display::Display& display) {
 
     for (auto& observer : observers_)
       observer.OnWindowTreeHostsSwappedDisplays(host_to_delete, primary_host);
+    if (auto* window_service = GetWindowService()) {
+      window_service->OnWindowTreeHostsDisplayIdChanged(
+          {GetWindow(host_to_delete), GetWindow(primary_host)});
+    }
 
     OnDisplayMetricsChanged(
         GetDisplayManager()->GetDisplayForId(primary_display_id),
@@ -600,15 +628,14 @@ void WindowTreeHostManager::OnDisplayMetricsChanged(
   // Shell creates |window_service_owner_| from Shell::Init(), but this
   // function may be called before |window_service_owner_| is created. It's safe
   // to ignore the call in this case as no clients have connected yet.
-  ws::WindowService* window_service =
-      Shell::Get()->window_service_owner()
-          ? Shell::Get()->window_service_owner()->window_service()
-          : nullptr;
-  if (window_service)
+  if (auto* window_service = GetWindowService())
     window_service->OnDisplayMetricsChanged(display, metrics);
+
   if (!(metrics & (DISPLAY_METRIC_BOUNDS | DISPLAY_METRIC_ROTATION |
-                   DISPLAY_METRIC_DEVICE_SCALE_FACTOR)))
+                   DISPLAY_METRIC_DEVICE_SCALE_FACTOR))) {
     return;
+  }
+
   const display::ManagedDisplayInfo& display_info =
       GetDisplayManager()->GetDisplayInfo(display.id());
   DCHECK(!display_info.bounds_in_native().IsEmpty());
@@ -721,6 +748,10 @@ void WindowTreeHostManager::SetPrimaryDisplayId(int64_t id) {
 
   for (auto& observer : observers_)
     observer.OnWindowTreeHostsSwappedDisplays(primary_host, non_primary_host);
+  if (auto* window_service = GetWindowService()) {
+    window_service->OnWindowTreeHostsDisplayIdChanged(
+        {primary_window, non_primary_window});
+  }
 
   const display::DisplayLayout& layout =
       GetDisplayManager()->GetCurrentDisplayLayout();
@@ -770,10 +801,6 @@ void WindowTreeHostManager::PostDisplayConfigurationChange() {
   // Enable cursor compositing, so that cursor could be mirrored to destination
   // displays along with other display content through reflector.
   Shell::Get()->UpdateCursorCompositingEnabled();
-}
-
-display::DisplayConfigurator* WindowTreeHostManager::display_configurator() {
-  return Shell::Get()->display_configurator();
 }
 
 ui::EventDispatchDetails WindowTreeHostManager::DispatchKeyEventPostIME(

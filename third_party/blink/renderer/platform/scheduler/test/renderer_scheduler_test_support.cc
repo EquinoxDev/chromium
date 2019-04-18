@@ -10,6 +10,7 @@
 #include "base/task/sequence_manager/test/sequence_manager_for_test.h"
 #include "base/threading/sequenced_task_runner_handle.h"
 #include "base/threading/thread_task_runner_handle.h"
+#include "third_party/blink/public/platform/scheduler/test/web_mock_thread_scheduler.h"
 #include "third_party/blink/renderer/platform/scheduler/main_thread/main_thread_scheduler_impl.h"
 #include "third_party/blink/renderer/platform/scheduler/public/frame_scheduler.h"
 #include "third_party/blink/renderer/platform/scheduler/public/page_scheduler.h"
@@ -72,14 +73,12 @@ class SimpleFrameScheduler : public FrameScheduler {
     return WebScopedVirtualTimePauser();
   }
   void DidStartProvisionalLoad(bool is_main_frame) override {}
-  void DidCommitProvisionalLoad(bool, bool, bool) override {}
+  void DidCommitProvisionalLoad(bool, FrameScheduler::NavigationType) override {
+  }
   void OnFirstMeaningfulPaint() override {}
   bool IsExemptFromBudgetBasedThrottling() const override { return false; }
   std::unique_ptr<blink::mojom::blink::PauseSubresourceLoadingHandle>
   GetPauseSubresourceLoadingHandle() override {
-    return nullptr;
-  }
-  std::unique_ptr<ActiveConnectionHandle> OnActiveConnectionCreated() override {
     return nullptr;
   }
   std::unique_ptr<WebResourceLoadingTaskRunnerHandle>
@@ -88,6 +87,11 @@ class SimpleFrameScheduler : public FrameScheduler {
         base::ThreadTaskRunnerHandle::Get());
   }
   ukm::SourceId GetUkmSourceId() override { return ukm::kInvalidSourceId; }
+  void OnStartedUsingFeature(SchedulingPolicy::Feature feature,
+                             const SchedulingPolicy& policy) override {}
+  void OnStoppedUsingFeature(SchedulingPolicy::Feature feature,
+                             const SchedulingPolicy& policy) override {}
+  base::WeakPtr<FrameScheduler> GetWeakPtr() override { return nullptr; }
 
  private:
   PageScheduler* page_scheduler_;
@@ -112,6 +116,7 @@ class SimplePageScheduler : public PageScheduler {
   void SetKeepActive(bool) override {}
   bool IsMainFrameLocal() const override { return true; }
   void SetIsMainFrameLocal(bool) override {}
+  void OnLocalMainFrameNetworkAlmostIdle() override {}
   base::TimeTicks EnableVirtualTime() override { return base::TimeTicks(); }
   void DisableVirtualTimeForTesting() override {}
   bool VirtualTimeAllowedToAdvance() const override { return true; }
@@ -123,15 +128,73 @@ class SimplePageScheduler : public PageScheduler {
   void AudioStateChanged(bool is_audio_playing) override {}
   bool IsAudioPlaying() const override { return false; }
   bool IsExemptFromBudgetBasedThrottling() const override { return false; }
-  bool HasActiveConnectionForTest() const override { return false; }
+  bool OptedOutFromAggressiveThrottlingForTest() const override {
+    return false;
+  }
   bool RequestBeginMainFrameNotExpected(bool) override { return false; }
+  WTF::HashSet<SchedulingPolicy::Feature>
+  GetActiveFeaturesOptingOutFromBackForwardCache() const override {
+    return WTF::HashSet<SchedulingPolicy::Feature>();
+  }
 
  private:
   DISALLOW_COPY_AND_ASSIGN(SimplePageScheduler);
 };
 
+class SimpleThreadScheduler : public ThreadScheduler {
+ public:
+  SimpleThreadScheduler() {}
+  ~SimpleThreadScheduler() override {}
+
+  void Shutdown() override {}
+
+  scoped_refptr<base::SingleThreadTaskRunner> V8TaskRunner() override {
+    return base::ThreadTaskRunnerHandle::Get();
+  }
+
+  scoped_refptr<base::SingleThreadTaskRunner> DeprecatedDefaultTaskRunner()
+      override {
+    return base::ThreadTaskRunnerHandle::Get();
+  }
+
+  scoped_refptr<base::SingleThreadTaskRunner> CompositorTaskRunner() override {
+    return base::ThreadTaskRunnerHandle::Get();
+  }
+
+  scoped_refptr<base::SingleThreadTaskRunner> IPCTaskRunner() override {
+    return base::ThreadTaskRunnerHandle::Get();
+  }
+
+  std::unique_ptr<PageScheduler> CreatePageScheduler(
+      PageScheduler::Delegate*) override {
+    return std::make_unique<SimplePageScheduler>();
+  }
+
+  // ThreadScheduler implementation:
+  bool ShouldYieldForHighPriorityWork() override { return false; }
+  bool CanExceedIdleDeadlineIfRequired() const override { return false; }
+  void PostIdleTask(const base::Location&, Thread::IdleTask) override {}
+  void PostNonNestableIdleTask(const base::Location&,
+                               Thread::IdleTask) override {}
+  void AddRAILModeObserver(RAILModeObserver*) override {}
+  void RemoveRAILModeObserver(RAILModeObserver const*) override {}
+  std::unique_ptr<WebThreadScheduler::RendererPauseHandle> PauseScheduler()
+      override {
+    return nullptr;
+  }
+  base::TimeTicks MonotonicallyIncreasingVirtualTime() override {
+    return base::TimeTicks::Now();
+  }
+  void AddTaskObserver(base::MessageLoop::TaskObserver*) override {}
+  void RemoveTaskObserver(base::MessageLoop::TaskObserver*) override {}
+  NonMainThreadSchedulerImpl* AsNonMainThreadScheduler() override {
+    return nullptr;
+  }
+  void SetV8Isolate(v8::Isolate* isolate) override {}
+};
+
 class SimpleMainThreadScheduler : public WebThreadScheduler,
-                                  public ThreadScheduler {
+                                  public SimpleThreadScheduler {
  public:
   SimpleMainThreadScheduler() {}
   ~SimpleMainThreadScheduler() override {}
@@ -183,36 +246,42 @@ class SimpleMainThreadScheduler : public WebThreadScheduler,
       PageScheduler::Delegate*) override {
     return std::make_unique<SimplePageScheduler>();
   }
+};
 
-  // ThreadScheduler implementation:
-  bool ShouldYieldForHighPriorityWork() override { return false; }
-  bool CanExceedIdleDeadlineIfRequired() const override { return false; }
-  void PostIdleTask(const base::Location&, Thread::IdleTask) override {
-    // NOTREACHED();
+class SimpleMockMainThreadScheduler : public WebMockThreadScheduler {
+ public:
+  SimpleMockMainThreadScheduler() {}
+  ~SimpleMockMainThreadScheduler() override {}
+
+  scoped_refptr<base::SingleThreadTaskRunner> DefaultTaskRunner() override {
+    return base::ThreadTaskRunnerHandle::Get();
   }
-  void PostNonNestableIdleTask(const base::Location&,
-                               Thread::IdleTask) override {
-    // NOTREACHED();
+
+  scoped_refptr<base::SingleThreadTaskRunner> InputTaskRunner() override {
+    return base::ThreadTaskRunnerHandle::Get();
   }
-  void AddRAILModeObserver(WebRAILModeObserver*) override {}
-  std::unique_ptr<WebThreadScheduler::RendererPauseHandle> PauseScheduler()
-      override {
-    return nullptr;
+
+  scoped_refptr<base::SingleThreadTaskRunner> CleanupTaskRunner() override {
+    return base::ThreadTaskRunnerHandle::Get();
   }
-  base::TimeTicks MonotonicallyIncreasingVirtualTime() override {
-    return base::TimeTicks::Now();
+
+  std::unique_ptr<Thread> CreateMainThread() override {
+    return std::make_unique<SimpleThread>(&simple_thread_scheduler_);
   }
-  void AddTaskObserver(base::MessageLoop::TaskObserver*) override {}
-  void RemoveTaskObserver(base::MessageLoop::TaskObserver*) override {}
-  NonMainThreadSchedulerImpl* AsNonMainThreadScheduler() override {
-    return nullptr;
-  }
+
+ private:
+  SimpleThreadScheduler simple_thread_scheduler_;
 };
 
 }  // namespace
 
 std::unique_ptr<WebThreadScheduler> CreateWebMainThreadSchedulerForTests() {
   return std::make_unique<SimpleMainThreadScheduler>();
+}
+
+std::unique_ptr<WebMockThreadScheduler>
+CreateMockWebMainThreadSchedulerForTests() {
+  return std::make_unique<SimpleMockMainThreadScheduler>();
 }
 
 void RunIdleTasksForTesting(WebThreadScheduler* scheduler,

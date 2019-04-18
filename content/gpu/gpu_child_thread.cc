@@ -167,10 +167,12 @@ class QueueingConnectionFilter : public ConnectionFilter {
 viz::VizMainImpl::ExternalDependencies CreateVizMainDependencies(
     service_manager::Connector* connector) {
   viz::VizMainImpl::ExternalDependencies deps;
-  deps.create_display_compositor =
-      base::FeatureList::IsEnabled(features::kVizDisplayCompositor);
-  if (GetContentClient()->gpu())
+  deps.create_display_compositor = features::IsVizDisplayCompositorEnabled();
+  if (GetContentClient()->gpu()) {
     deps.sync_point_manager = GetContentClient()->gpu()->GetSyncPointManager();
+    deps.shared_image_manager =
+        GetContentClient()->gpu()->GetSharedImageManager();
+  }
   auto* process = ChildProcess::current();
   deps.shutdown_event = process->GetShutDownEvent();
   deps.io_thread_task_runner = process->io_task_runner();
@@ -237,10 +239,6 @@ void GpuChildThread::Init(const base::Time& process_start_time) {
       &GpuChildThread::CreateVizMainService, base::Unretained(this)));
 
   auto registry = std::make_unique<service_manager::BinderRegistry>();
-  registry->AddInterface(
-      base::BindRepeating(&GpuChildThread::BindServiceFactoryRequest,
-                          weak_factory_.GetWeakPtr()),
-      base::ThreadTaskRunnerHandle::Get());
   if (GetContentClient()->gpu())  // nullptr in tests.
     GetContentClient()->gpu()->InitializeRegistry(registry.get());
 
@@ -279,6 +277,18 @@ bool GpuChildThread::Send(IPC::Message* msg) {
   return ChildThreadImpl::Send(msg);
 }
 
+void GpuChildThread::RunService(
+    const std::string& service_name,
+    mojo::PendingReceiver<service_manager::mojom::Service> receiver) {
+  if (!service_factory_) {
+    pending_service_requests_.emplace_back(service_name, std::move(receiver));
+    return;
+  }
+
+  DVLOG(1) << "GPU: Handling RunService request for " << service_name;
+  service_factory_->RunService(service_name, std::move(receiver));
+}
+
 void GpuChildThread::OnAssociatedInterfaceRequest(
     const std::string& name,
     mojo::ScopedInterfaceEndpointHandle handle) {
@@ -315,6 +325,10 @@ void GpuChildThread::OnGpuServiceConnection(viz::GpuServiceImpl* gpu_service) {
 
   DCHECK(release_pending_requests_closure_);
   std::move(release_pending_requests_closure_).Run();
+
+  for (auto& request : pending_service_requests_)
+    RunService(request.service_name, std::move(request.receiver));
+  pending_service_requests_.clear();
 }
 
 void GpuChildThread::PostCompositorThreadCreated(
@@ -326,14 +340,6 @@ void GpuChildThread::PostCompositorThreadCreated(
 
 void GpuChildThread::QuitMainMessageLoop() {
   quit_closure_.Run();
-}
-
-void GpuChildThread::BindServiceFactoryRequest(
-    service_manager::mojom::ServiceFactoryRequest request) {
-  DVLOG(1) << "GPU: Binding service_manager::mojom::ServiceFactoryRequest";
-  DCHECK(service_factory_);
-  service_factory_bindings_.AddBinding(service_factory_.get(),
-                                       std::move(request));
 }
 
 void GpuChildThread::OnMemoryPressure(
@@ -398,5 +404,15 @@ std::unique_ptr<media::AndroidOverlay> GpuChildThread::CreateAndroidOverlay(
       std::move(overlay_provider), std::move(config), routing_token);
 }
 #endif
+
+GpuChildThread::PendingServiceRequest::PendingServiceRequest(
+    const std::string& service_name,
+    mojo::PendingReceiver<service_manager::mojom::Service> receiver)
+    : service_name(service_name), receiver(std::move(receiver)) {}
+
+GpuChildThread::PendingServiceRequest::PendingServiceRequest(
+    PendingServiceRequest&&) = default;
+
+GpuChildThread::PendingServiceRequest::~PendingServiceRequest() = default;
 
 }  // namespace content

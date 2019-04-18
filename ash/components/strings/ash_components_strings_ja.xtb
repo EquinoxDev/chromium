@@ -89,7 +89,7 @@
 <translation id="4123108089450197101">リンクをブックマークとして保存する</translation>
 <translation id="4141203561740478845">アドレスバーの行をハイライト表示する</translation>
 <translation id="4148761611071495477"><ph name="CTRL" /><ph name="SEPARATOR" /><ph name="G" /> キーまたは <ph name="ENTER" /> キーを押す</translation>
-<translation id="4240486403425279990">概要モード</translation>
+<translation id="4240486403425279990">複数画面モード</translation>
 <translation id="4382340674111381977">前のページに戻る</translation>
 <translation id="4472417192667361414">システムと表示の設定</translation>
 <translation id="4556221320735744018">キーボード ショートカットのヘルプを表示する</translation>
@@ -155,7 +155,7 @@
 <translation id="7076878155205969899">音声をミュートします</translation>
 <translation id="7077383985738259936">ブックマーク バーにフォーカスするかブックマーク バーをハイライト表示します（ブックマーク バーが表示されている場合）</translation>
 <translation id="7237562915163138771">アドレスバーにウェブアドレスを入力して、<ph name="ALT" /><ph name="SEPARATOR" /><ph name="ENTER" /> キーを押します</translation>
-<translation id="7254764037241667478">端末をスリープモード（停止）にします</translation>
+<translation id="7254764037241667478">デバイスをスリープモード（停止）にします</translation>
 <translation id="7379254767514753910"><ph name="ALT" /> キーまたは<ph name="SEARCH" /><ph name="SEPARATOR" /><ph name="UP" />キーを押す</translation>
 <translation id="7422707470576323858">次の入力方法に切り替えます</translation>
 <translation id="743754632698445141">アプリの固定を解除します</translation>
@@ -167,7 +167,7 @@
 <translation id="7787242579016742662">ブラウザ内でファイルを開く</translation>
 <translation id="7917881398263220094">現在のページの読み込みを停止する</translation>
 <translation id="7952165122793773711">1～8 番目のタブに移動します</translation>
-<translation id="8026334261755873520">閲覧履歴データを消去する</translation>
+<translation id="8026334261755873520">閲覧履歴データの削除</translation>
 <translation id="8130528849632411619">ドキュメントの先頭に移動する</translation>
 <translation id="8147954207400281792"><ph name="CTRL" /><ph name="SEPARATOR" /><ph name="K" /> または <ph name="E" /> キーを押す</translation>
 <translation id="8232835244134740473">フォーカスを次の順に切り替えます: アカウント画像が表示されているステータス領域、ランチャー、アドレスバー、ブックマーク バー（表示されている場合）、開いているウェブページ、ダウンロード バー（表示されている場合）</translation>

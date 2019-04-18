@@ -54,8 +54,6 @@ RawResource* RawResource::FetchSynchronously(FetchParameters& params,
 RawResource* RawResource::FetchImport(FetchParameters& params,
                                       ResourceFetcher* fetcher,
                                       RawResourceClient* client) {
-  DCHECK_EQ(params.GetResourceRequest().GetFrameType(),
-            network::mojom::RequestContextFrameType::kNone);
   params.SetRequestContext(mojom::RequestContextType::IMPORT);
   return ToRawResource(fetcher->RequestResource(
       params, RawResourceFactory(ResourceType::kImportResource), client));
@@ -64,8 +62,6 @@ RawResource* RawResource::FetchImport(FetchParameters& params,
 RawResource* RawResource::Fetch(FetchParameters& params,
                                 ResourceFetcher* fetcher,
                                 RawResourceClient* client) {
-  DCHECK_EQ(params.GetResourceRequest().GetFrameType(),
-            network::mojom::RequestContextFrameType::kNone);
   DCHECK_NE(params.GetResourceRequest().GetRequestContext(),
             mojom::RequestContextType::UNSPECIFIED);
   return ToRawResource(fetcher->RequestResource(
@@ -75,8 +71,6 @@ RawResource* RawResource::Fetch(FetchParameters& params,
 RawResource* RawResource::FetchMedia(FetchParameters& params,
                                      ResourceFetcher* fetcher,
                                      RawResourceClient* client) {
-  DCHECK_EQ(params.GetResourceRequest().GetFrameType(),
-            network::mojom::RequestContextFrameType::kNone);
   auto context = params.GetResourceRequest().GetRequestContext();
   DCHECK(context == mojom::RequestContextType::AUDIO ||
          context == mojom::RequestContextType::VIDEO);
@@ -90,8 +84,6 @@ RawResource* RawResource::FetchMedia(FetchParameters& params,
 RawResource* RawResource::FetchTextTrack(FetchParameters& params,
                                          ResourceFetcher* fetcher,
                                          RawResourceClient* client) {
-  DCHECK_EQ(params.GetResourceRequest().GetFrameType(),
-            network::mojom::RequestContextFrameType::kNone);
   params.SetRequestContext(mojom::RequestContextType::TRACK);
   return ToRawResource(fetcher->RequestResource(
       params, RawResourceFactory(ResourceType::kTextTrack), client));
@@ -100,8 +92,6 @@ RawResource* RawResource::FetchTextTrack(FetchParameters& params,
 RawResource* RawResource::FetchManifest(FetchParameters& params,
                                         ResourceFetcher* fetcher,
                                         RawResourceClient* client) {
-  DCHECK_EQ(params.GetResourceRequest().GetFrameType(),
-            network::mojom::RequestContextFrameType::kNone);
   DCHECK_EQ(params.GetResourceRequest().GetRequestContext(),
             mojom::RequestContextType::MANIFEST);
   return ToRawResource(fetcher->RequestResource(
@@ -199,11 +189,11 @@ void RawResource::DidAddClient(ResourceClient* c) {
     if (matched_with_non_streaming_destination_) {
       // In this case, the client needs individual chunks so we need
       // PreloadBytesConsumerClient for the translation.
-      auto* bytes_consumer_client =
+      auto* preload_bytes_consumer_client =
           MakeGarbageCollected<PreloadBytesConsumerClient>(
               *bytes_consumer_for_preload, *this, *client);
-      bytes_consumer_for_preload->SetClient(bytes_consumer_client);
-      bytes_consumer_client->OnStateChange();
+      bytes_consumer_for_preload->SetClient(preload_bytes_consumer_client);
+      preload_bytes_consumer_client->OnStateChange();
     } else {
       // In this case, we can simply pass the BytesConsumer to the client.
       client->ResponseBodyReceived(this, *bytes_consumer_for_preload);
@@ -270,19 +260,16 @@ void RawResource::ResponseReceived(const ResourceResponse& response) {
 }
 
 void RawResource::ResponseBodyReceived(
-    ResponseBodyLoaderDrainableInterface& body_loader) {
+    ResponseBodyLoaderDrainableInterface& body_loader,
+    scoped_refptr<base::SingleThreadTaskRunner> loader_task_runner) {
   DCHECK_LE(Clients().size(), 1u);
   RawResourceClient* client =
       ResourceClientWalker<RawResourceClient>(Clients()).Next();
-  if (IsUnusedPreload()) {
+  if (!client && GetResourceRequest().UseStreamOnResponse()) {
     // For preload, we want to store the body while dispatching
     // onload and onerror events.
     bytes_consumer_for_preload_ = MakeGarbageCollected<BufferingBytesConsumer>(
         &body_loader.DrainAsBytesConsumer());
-    return;
-  }
-
-  if (!client) {
     return;
   }
 
@@ -291,14 +278,12 @@ void RawResource::ResponseBodyReceived(
     // The loading was initiated as a preload (hence UseStreamOnResponse is
     // set), but this resource has been matched with a request without
     // UseStreamOnResponse set.
-    auto* bytes_consumer_for_preload =
-        MakeGarbageCollected<BufferingBytesConsumer>(
-            &body_loader.DrainAsBytesConsumer());
-    auto* bytes_consumer_client =
+    auto& bytes_consumer_for_preload = body_loader.DrainAsBytesConsumer();
+    auto* preload_bytes_consumer_client =
         MakeGarbageCollected<PreloadBytesConsumerClient>(
-            *bytes_consumer_for_preload, *this, *client);
-    bytes_consumer_for_preload->SetClient(bytes_consumer_client);
-    bytes_consumer_client->OnStateChange();
+            bytes_consumer_for_preload, *this, *client);
+    bytes_consumer_for_preload.SetClient(preload_bytes_consumer_client);
+    preload_bytes_consumer_client->OnStateChange();
     return;
   }
 
@@ -337,14 +322,14 @@ void RawResource::SetSerializedCachedMetadata(const uint8_t* data,
     c->SetSerializedCachedMetadata(this, data, size);
 }
 
-void RawResource::DidSendData(unsigned long long bytes_sent,
-                              unsigned long long total_bytes_to_be_sent) {
+void RawResource::DidSendData(uint64_t bytes_sent,
+                              uint64_t total_bytes_to_be_sent) {
   ResourceClientWalker<RawResourceClient> w(Clients());
   while (RawResourceClient* c = w.Next())
     c->DataSent(this, bytes_sent, total_bytes_to_be_sent);
 }
 
-void RawResource::DidDownloadData(unsigned long long data_length) {
+void RawResource::DidDownloadData(uint64_t data_length) {
   ResourceClientWalker<RawResourceClient> w(Clients());
   while (RawResourceClient* c = w.Next())
     c->DataDownloaded(this, data_length);

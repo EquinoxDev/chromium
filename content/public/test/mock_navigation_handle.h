@@ -77,7 +77,7 @@ class MockNavigationHandle : public NavigationHandle {
     return response_headers_.get();
   }
   MOCK_METHOD0(GetConnectionInfo, net::HttpResponseInfo::ConnectionInfo());
-  const net::SSLInfo& GetSSLInfo() override { return ssl_info_; }
+  const base::Optional<net::SSLInfo> GetSSLInfo() override { return ssl_info_; }
   MOCK_METHOD0(GetGlobalRequestID, const GlobalRequestID&());
   MOCK_METHOD0(IsDownload, bool());
   bool IsFormSubmission() override { return is_form_submission_; }
@@ -94,6 +94,8 @@ class MockNavigationHandle : public NavigationHandle {
   NavigationData* GetNavigationData() override { return nullptr; }
   MOCK_METHOD1(RegisterSubresourceOverride,
                void(mojom::TransferrableURLLoaderPtr));
+  MOCK_METHOD0(IsSameProcess, bool());
+  MOCK_METHOD0(GetNavigationEntryOffset, int());
 
   void set_url(const GURL& url) { url_ = url; }
   void set_starting_site_instance(SiteInstance* site_instance) {
@@ -150,7 +152,7 @@ class MockNavigationHandle : public NavigationHandle {
   bool is_error_page_ = false;
   net::HttpRequestHeaders request_headers_;
   scoped_refptr<net::HttpResponseHeaders> response_headers_;
-  net::SSLInfo ssl_info_;
+  base::Optional<net::SSLInfo> ssl_info_;
   bool is_form_submission_ = false;
   bool was_response_cached_ = false;
   net::ProxyServer proxy_server_;

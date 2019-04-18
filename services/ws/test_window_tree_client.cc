@@ -117,13 +117,14 @@ void TestWindowTreeClient::OnTopLevelCreated(
     int64_t display_id,
     bool drawn,
     const viz::LocalSurfaceIdAllocation& local_surface_id_allocation) {
-  tracker_.OnTopLevelCreated(change_id, std::move(data), drawn,
+  tracker_.OnTopLevelCreated(change_id, std::move(data), display_id, drawn,
                              local_surface_id_allocation);
 }
 
 void TestWindowTreeClient::OnWindowBoundsChanged(
     Id window_id,
     const gfx::Rect& new_bounds,
+    ui::WindowShowState state,
     const base::Optional<viz::LocalSurfaceIdAllocation>&
         local_surface_id_allocation) {
   // The bounds of the root may change during startup on Android at random
@@ -131,7 +132,7 @@ void TestWindowTreeClient::OnWindowBoundsChanged(
   // it is ignored.
   if (window_id == root_window_id_ && !track_root_bounds_changes_)
     return;
-  tracker_.OnWindowBoundsChanged(window_id, new_bounds,
+  tracker_.OnWindowBoundsChanged(window_id, new_bounds, state,
                                  local_surface_id_allocation);
 }
 
@@ -172,11 +173,6 @@ void TestWindowTreeClient::OnWindowDeleted(Id window) {
 
 void TestWindowTreeClient::OnWindowVisibilityChanged(Id window, bool visible) {
   tracker_.OnWindowVisibilityChanged(window, visible);
-}
-
-void TestWindowTreeClient::OnWindowOpacityChanged(Id window,
-                                                  float new_opacity) {
-  tracker_.OnWindowOpacityChanged(window, new_opacity);
 }
 
 void TestWindowTreeClient::OnWindowDisplayChanged(Id window_id,

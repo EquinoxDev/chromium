@@ -370,14 +370,14 @@ class DiceBrowserTestBase : public InProcessBrowserTest,
   // Returns the account ID associated with |main_email_| and its associated
   // gaia ID.
   std::string GetMainAccountID() {
-    return GetIdentityManager()->LegacyPickAccountIdForAccount(
+    return GetIdentityManager()->PickAccountIdForAccount(
         identity::GetTestGaiaIdForEmail(main_email_), main_email_);
   }
 
   // Returns the account ID associated with kSecondaryEmail and its associated
   // gaia ID.
   std::string GetSecondaryAccountID() {
-    return GetIdentityManager()->LegacyPickAccountIdForAccount(
+    return GetIdentityManager()->PickAccountIdForAccount(
         identity::GetTestGaiaIdForEmail(kSecondaryEmail), kSecondaryEmail);
   }
 
@@ -456,6 +456,8 @@ class DiceBrowserTestBase : public InProcessBrowserTest,
     // credentials. Abort the reconcilor here to make sure tests start in a
     // stable state.
     reconcilor->AbortReconcile();
+    reconcilor->SetState(
+        signin_metrics::AccountReconcilorState::ACCOUNT_RECONCILOR_OK);
     reconcilor->AddObserver(this);
   }
 
@@ -518,7 +520,12 @@ class DiceBrowserTestBase : public InProcessBrowserTest,
     ++reconcilor_unblocked_count_;
     RunClosureIfValid(std::move(unblock_count_quit_closure_));
   }
-  void OnStartReconcile() override { ++reconcilor_started_count_; }
+  void OnStateChanged(signin_metrics::AccountReconcilorState state) override {
+    if (state ==
+        signin_metrics::AccountReconcilorState::ACCOUNT_RECONCILOR_RUNNING) {
+      ++reconcilor_started_count_;
+    }
+  }
 
   // identity::IdentityManager::Observer
   void OnPrimaryAccountSet(
@@ -780,7 +787,8 @@ IN_PROC_BROWSER_TEST_F(DiceBrowserTest, SignoutAllAccounts) {
 #endif
 IN_PROC_BROWSER_TEST_F(DiceBrowserTest, MAYBE_NoDiceFromWebUI) {
   // Navigate to Gaia and from the native tab, which uses an extension.
-  ui_test_utils::NavigateToURL(browser(), GURL("chrome:chrome-signin"));
+  ui_test_utils::NavigateToURL(browser(),
+                               GURL("chrome:chrome-signin?reason=5"));
 
   // Check that the request had no Dice request header.
   if (dice_request_header_.empty())

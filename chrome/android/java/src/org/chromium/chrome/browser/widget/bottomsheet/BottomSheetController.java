@@ -26,6 +26,7 @@ import org.chromium.chrome.browser.widget.bottomsheet.BottomSheet.BottomSheetCon
 import org.chromium.chrome.browser.widget.bottomsheet.BottomSheet.StateChangeReason;
 
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.PriorityQueue;
 import java.util.Set;
 
@@ -140,7 +141,7 @@ public class BottomSheetController {
                     return;
                 }
 
-                // If refocusing the same tab, simply unsupress the sheet.
+                // If refocusing the same tab, simply unsuppress the sheet.
                 if (mLastActivityTab == tab) {
                     unsuppressSheet();
                     return;
@@ -173,17 +174,32 @@ public class BottomSheetController {
         mBottomSheet.addObserver(new EmptyBottomSheetObserver() {
             @Override
             public void onSheetOpened(@StateChangeReason int reason) {
+                if (mBottomSheet.getCurrentSheetContent() != null
+                        && mBottomSheet.getCurrentSheetContent().hasCustomScrimLifecycle()) {
+                    return;
+                }
+
                 scrim.showScrim(mScrimParams);
                 scrim.setViewAlpha(0);
             }
 
             @Override
             public void onSheetClosed(@StateChangeReason int reason) {
+                if (mBottomSheet.getCurrentSheetContent() != null
+                        && mBottomSheet.getCurrentSheetContent().hasCustomScrimLifecycle()) {
+                    return;
+                }
+
                 scrim.hideScrim(false);
             }
 
             @Override
             public void onTransitionPeekToHalf(float transitionFraction) {
+                if (mBottomSheet.getCurrentSheetContent() != null
+                        && mBottomSheet.getCurrentSheetContent().hasCustomScrimLifecycle()) {
+                    return;
+                }
+
                 // TODO(mdjones): This event should not occur after the bottom sheet is closed.
                 if (scrim.getVisibility() == View.VISIBLE) {
                     scrim.setViewAlpha(transitionFraction);
@@ -226,7 +242,7 @@ public class BottomSheetController {
      * the browser (i.e. the tab switcher may be showing).
      */
     private void unsuppressSheet() {
-        if (!mIsSuppressed || mTabProvider.getActivityTab() == null || !mWasShownForCurrentTab
+        if (!mIsSuppressed || mTabProvider.get() == null || !mWasShownForCurrentTab
                 || isOtherUIObscuring() || VrModuleProvider.getDelegate().isInVr()) {
             return;
         }
@@ -280,7 +296,7 @@ public class BottomSheetController {
      */
     private boolean loadInternal(BottomSheetContent content) {
         if (content == mBottomSheet.getCurrentSheetContent()) return true;
-        if (mTabProvider.getActivityTab() == null) return false;
+        if (mTabProvider.get() == null) return false;
 
         BottomSheetContent shownContent = mBottomSheet.getCurrentSheetContent();
         boolean shouldSuppressExistingContent = shownContent != null
@@ -375,17 +391,34 @@ public class BottomSheetController {
     }
 
     /**
-     * Clear all the content show requests and hide the current content.
+     * For all contents that don't have a custom lifecycle, we remove them from show requests or
+     * hide it if it is currently shown.
      */
     private void clearRequestsAndHide() {
-        mContentQueue.clear();
-        mFullShowRequestedSet.clear();
-        // TODO(mdjones): Replace usages of bottom sheet with a model in line with MVC.
-        // TODO(mdjones): It would probably be useful to expose an observer method that notifies
-        //                objects when all content requests are cleared.
-        hideContent(mBottomSheet.getCurrentSheetContent(), true);
-        mWasShownForCurrentTab = false;
-        mIsSuppressed = false;
+        clearRequests(mContentQueue.iterator());
+        clearRequests(mFullShowRequestedSet.iterator());
+
+        BottomSheetContent currentContent = mBottomSheet.getCurrentSheetContent();
+        if (currentContent != null && !currentContent.hasCustomLifecycle()) {
+            if (mContentQueue.isEmpty() && mFullShowRequestedSet.isEmpty()) {
+                mWasShownForCurrentTab = false;
+                mIsSuppressed = false;
+            }
+
+            hideContent(currentContent, /* animate= */ true);
+        }
+    }
+
+    /**
+     * Remove all contents from {@code iterator} that don't have a custom lifecycle.
+     * @param iterator The iterator whose items must be removed.
+     */
+    private void clearRequests(Iterator<BottomSheetContent> iterator) {
+        while (iterator.hasNext()) {
+            if (!iterator.next().hasCustomLifecycle()) {
+                iterator.remove();
+            }
+        }
     }
 
     /**

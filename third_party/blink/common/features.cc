@@ -10,8 +10,11 @@
 namespace blink {
 namespace features {
 
-const base::Feature kAutofillPreviewStyleExperiment{
-    "AutofillPreviewStyleExperiment", base::FEATURE_DISABLED_BY_DEFAULT};
+// Enable intervention for download that was initiated from or occurred in an ad
+// frame without user activation.
+const base::Feature kBlockingDownloadsInAdFrameWithoutUserActivation{
+    "BlockingDownloadsInAdFrameWithoutUserActivation",
+    base::FEATURE_DISABLED_BY_DEFAULT};
 
 // Enable defer commits a bit to avoid flash.
 const base::Feature kAvoidFlashBetweenNavigation{
@@ -33,22 +36,32 @@ const base::Feature kEnableGpuRasterizationViewportRestriction{
 const base::Feature kScriptStreaming{"ScriptStreaming",
                                      base::FEATURE_ENABLED_BY_DEFAULT};
 
+// Enables user level memory pressure signal generation on Android.
+const base::Feature kUserLevelMemoryPressureSignal{
+    "UserLevelMemoryPressureSignal", base::FEATURE_DISABLED_BY_DEFAULT};
+
 // Enable FCP++ by experiment. See https://crbug.com/869924
 const base::Feature kFirstContentfulPaintPlusPlus{
     "FirstContentfulPaintPlusPlus", base::FEATURE_DISABLED_BY_DEFAULT};
 
-// Tracks "jank" from layout objects changing their visual location between
-// animation frames (see crbug.com/581518).
-const base::Feature kJankTracking{"JankTracking",
-                                  base::FEATURE_ENABLED_BY_DEFAULT};
+// Perform memory purges after freezing only if all pages are frozen.
+const base::Feature kFreezePurgeMemoryAllPagesFrozen{
+    "FreezePurgeMemoryAllPagesFrozen", base::FEATURE_DISABLED_BY_DEFAULT};
 
+// Controls whether or not the font cache is invalidated when a critical memory
+// pressure signal is sent.
+const base::Feature kInvalidateFontCacheOnPurge{
+    "InvalidateFontCacheOnPurge", base::FEATURE_ENABLED_BY_DEFAULT};
+
+// Enables the experimental sweep-line algorithm for tracking "jank" from
+// layout objects changing their visual location between animation frames.
 const base::Feature kJankTrackingSweepLine{"JankTrackingSweepLine",
                                            base::FEATURE_DISABLED_BY_DEFAULT};
 
 // Enable a new compositing mode called BlinkGenPropertyTrees where Blink
 // generates the compositor property trees. See: https://crbug.com/836884.
 const base::Feature kBlinkGenPropertyTrees{"BlinkGenPropertyTrees",
-                                           base::FEATURE_DISABLED_BY_DEFAULT};
+                                           base::FEATURE_ENABLED_BY_DEFAULT};
 
 // Enable LayoutNG.
 const base::Feature kLayoutNG{"LayoutNG", base::FEATURE_DISABLED_BY_DEFAULT};
@@ -76,6 +89,11 @@ const base::Feature kOffMainThreadDedicatedWorkerScriptFetch{
     "OffMainThreadDedicatedWorkerScriptFetch",
     base::FEATURE_DISABLED_BY_DEFAULT};
 
+// Enable off-the-main-thread service worker script fetch.
+// (https://crbug.com/924043)
+const base::Feature kOffMainThreadServiceWorkerScriptFetch{
+    "OffMainThreadServiceWorkerScriptFetch", base::FEATURE_DISABLED_BY_DEFAULT};
+
 // Enable off-the-main-thread shared worker script fetch.
 // (https://crbug.com/924041)
 const base::Feature kOffMainThreadSharedWorkerScriptFetch{
@@ -98,9 +116,20 @@ const base::Feature kPreviewsResourceLoadingHintsSpecificResourceTypes{
     "PreviewsResourceLoadingHintsSpecificResourceTypes",
     base::FEATURE_DISABLED_BY_DEFAULT};
 
-// Purge memory when freezing only if the renderer is backgrounded.
-const base::Feature kPurgeMemoryOnlyForBackgroundedProcesses{
-    "FreezePurgeMemoryBackgroundedOnly", base::FEATURE_DISABLED_BY_DEFAULT};
+// Perform a memory purge after a renderer is backgrounded. Formerly labelled as
+// the "PurgeAndSuspend" experiment.
+//
+// TODO(adityakeerthi): Disabled by default on Mac and Android for historical
+// reasons. Consider enabling by default if experiment results are positive.
+// https://crbug.com/926186
+const base::Feature kPurgeRendererMemoryWhenBackgrounded {
+  "PurgeRendererMemoryWhenBackgrounded",
+#if defined(OS_MACOSX) || defined(OS_ANDROID)
+      base::FEATURE_DISABLED_BY_DEFAULT
+#else
+      base::FEATURE_ENABLED_BY_DEFAULT
+#endif
+};
 
 // Enable Implicit Root Scroller. https://crbug.com/903260.
 const base::Feature kImplicitRootScroller{"ImplicitRootScroller",
@@ -125,12 +154,6 @@ const base::Feature kRTCUnifiedPlanByDefault{"RTCUnifiedPlanByDefault",
 const base::Feature kRTCOfferExtmapAllowMixed{
     "RTCOfferExtmapAllowMixed", base::FEATURE_DISABLED_BY_DEFAULT};
 
-// Enables to load the response body through Mojo data pipe passed by
-// WebURLLoaderClient::DidStartLoadingResponseBody() instead of
-// WebURLLoaderClient::DidReceiveData().
-const base::Feature kResourceLoadViaDataPipe{"ResourceLoadViaDataPipe",
-                                             base::FEATURE_DISABLED_BY_DEFAULT};
-
 const base::Feature kServiceWorkerImportedScriptUpdateCheck{
     "ServiceWorkerImportedScriptUpdateCheck",
     base::FEATURE_DISABLED_BY_DEFAULT};
@@ -142,10 +165,10 @@ const base::Feature kServiceWorkerParallelSideDataReading{
 const base::Feature kServiceWorkerAggressiveCodeCache{
     "ServiceWorkerAggressiveCodeCache", base::FEATURE_DISABLED_BY_DEFAULT};
 
-// Enable new service worker glue for NetworkService. Can be
-// enabled independently of NetworkService.
-const base::Feature kServiceWorkerServicification{
-    "ServiceWorkerServicification", base::FEATURE_ENABLED_BY_DEFAULT};
+// Experiment of the delay from navigation to starting an update of a service
+// worker's script.
+const base::Feature kServiceWorkerUpdateDelay{
+    "ServiceWorkerUpdateDelay", base::FEATURE_DISABLED_BY_DEFAULT};
 
 // Freeze scheduler task queues in background after allowed grace time.
 // "stop" is a legacy name.
@@ -157,6 +180,11 @@ const base::Feature kStopInBackground {
       base::FEATURE_DISABLED_BY_DEFAULT
 #endif
 };
+
+// Freeze scheduler task queues in background on network idle.
+// This feature only works if stop-in-background is enabled.
+const base::Feature kFreezeBackgroundTabOnNetworkIdle{
+    "freeze-background-tab-on-network-idle", base::FEATURE_DISABLED_BY_DEFAULT};
 
 // Freeze non-timer task queues in background, after allowed grace time.
 // "stop" is a legacy name.
@@ -180,16 +208,19 @@ const base::Feature kWasmCodeCache = {"WasmCodeCache",
                                       base::FEATURE_DISABLED_BY_DEFAULT};
 
 // Writable files and native filesystem access. https://crbug.com/853326
-const base::Feature kWritableFilesAPI{"WritableFilesAPI",
-                                      base::FEATURE_DISABLED_BY_DEFAULT};
+const base::Feature kNativeFilesystemAPI{"NativeFilesystemAPI",
+                                         base::FEATURE_DISABLED_BY_DEFAULT};
 
 // Allows for synchronous XHR requests during page dismissal
 const base::Feature kForbidSyncXHRInPageDismissal{
-    "ForbidSyncXHRInPageDismissal", base::FEATURE_DISABLED_BY_DEFAULT};
+    "ForbidSyncXHRInPageDismissal", base::FEATURE_ENABLED_BY_DEFAULT};
 
-const char kAutofillPreviewStyleExperimentBgColorParameterName[] = "bg_color";
-
-const char kAutofillPreviewStyleExperimentColorParameterName[] = "color";
+// Emergency lever that can be used to restore DeviceOrientationEvent and
+// DeviceMotionEvent functionality in non-secure browsing contexts.
+// See: https://crbug.com/932078.
+const base::Feature kRestrictDeviceSensorEventsToSecureContexts{
+    "RestrictDeviceSensorEventsToSecureContexts",
+    base::FEATURE_ENABLED_BY_DEFAULT};
 
 const char kMixedContentAutoupgradeModeParamName[] = "mode";
 const char kMixedContentAutoupgradeModeBlockable[] = "blockable";
@@ -204,6 +235,18 @@ const base::Feature kDecodeLossyWebPImagesToYUV{
 // Use accelerated canvases whenever possible see https://crbug.com/909937
 const base::Feature kAlwaysAccelerateCanvas{"AlwaysAccelerateCanvas",
                                             base::FEATURE_DISABLED_BY_DEFAULT};
+
+// Enables cache-aware WebFonts loading. See https://crbug.com/570205.
+// The feature is disabled on Android for WebView API issue discussed at
+// https://crbug.com/942440.
+const base::Feature kWebFontsCacheAwareTimeoutAdaption {
+  "WebFontsCacheAwareTimeoutAdaption",
+#if defined(OS_ANDROID)
+      base::FEATURE_DISABLED_BY_DEFAULT
+#else
+      base::FEATURE_ENABLED_BY_DEFAULT
+#endif
+};
 
 bool IsOffMainThreadSharedWorkerScriptFetchEnabled() {
   // Off-the-main-thread shared worker script fetch depends on PlzSharedWorker

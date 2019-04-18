@@ -34,10 +34,9 @@
 #include "chromeos/cryptohome/mock_async_method_caller.h"
 #include "chromeos/cryptohome/system_salt_getter.h"
 #include "chromeos/dbus/cros_disks_client.h"
+#include "chromeos/dbus/cryptohome/account_identifier_operators.h"
+#include "chromeos/dbus/cryptohome/fake_cryptohome_client.h"
 #include "chromeos/dbus/cryptohome/rpc.pb.h"
-#include "chromeos/dbus/dbus_thread_manager.h"
-#include "chromeos/dbus/fake_cryptohome_client.h"
-#include "chromeos/dbus/util/account_identifier_operators.h"
 #include "chromeos/login/auth/key.h"
 #include "chromeos/login/auth/mock_auth_status_consumer.h"
 #include "chromeos/login/auth/mock_url_fetchers.h"
@@ -159,6 +158,10 @@ class TestCryptohomeClient : public ::chromeos::FakeCryptohomeClient {
     remove_ex_should_succeed_ = should_succeed;
   }
 
+  void set_unmount_ex_should_succeed(bool should_succeed) {
+    unmount_ex_should_succeed_ = should_succeed;
+  }
+
   void MountEx(const cryptohome::AccountIdentifier& cryptohome_id,
                const cryptohome::AuthorizationRequest& auth,
                const cryptohome::MountRequest& request,
@@ -230,6 +233,16 @@ class TestCryptohomeClient : public ::chromeos::FakeCryptohomeClient {
         FROM_HERE, base::BindOnce(std::move(callback), reply));
   }
 
+  void UnmountEx(const cryptohome::UnmountRequest& account,
+                 DBusMethodCallback<cryptohome::BaseReply> callback) override {
+    cryptohome::BaseReply reply;
+    if (!unmount_ex_should_succeed_)
+      reply.set_error(cryptohome::CRYPTOHOME_ERROR_REMOVE_FAILED);
+
+    base::ThreadTaskRunnerHandle::Get()->PostTask(
+        FROM_HERE, base::BindOnce(std::move(callback), reply));
+  }
+
  private:
   cryptohome::AccountIdentifier expected_id_;
   std::string expected_authorization_secret_;
@@ -237,6 +250,7 @@ class TestCryptohomeClient : public ::chromeos::FakeCryptohomeClient {
   bool migrate_key_should_succeed_ = false;
   bool mount_guest_should_succeed_ = false;
   bool remove_ex_should_succeed_ = false;
+  bool unmount_ex_should_succeed_ = false;
 
   DISALLOW_COPY_AND_ASSIGN(TestCryptohomeClient);
 };
@@ -284,8 +298,6 @@ class CryptohomeAuthenticatorTest : public testing::Test {
     cryptohome::HomedirMethods::Initialize();
 
     fake_cryptohome_client_ = new TestCryptohomeClient;
-    chromeos::DBusThreadManager::GetSetterForTesting()->SetCryptohomeClient(
-        std::unique_ptr<CryptohomeClient>(fake_cryptohome_client_));
 
     SystemSaltGetter::Initialize();
 
@@ -296,7 +308,7 @@ class CryptohomeAuthenticatorTest : public testing::Test {
   // Tears down the test fixture.
   void TearDown() override {
     SystemSaltGetter::Shutdown();
-    DBusThreadManager::Shutdown();
+    CryptohomeClient::Shutdown();
 
     cryptohome::AsyncMethodCaller::Shutdown();
     mock_caller_ = NULL;
@@ -582,7 +594,7 @@ TEST_F(CryptohomeAuthenticatorTest, ResolveOwnerNeededFailedMount) {
   EXPECT_TRUE(LoginState::Get()->IsInSafeMode());
 
   // Unset global objects used by this test.
-  fake_cryptohome_client_->set_unmount_result(true);
+  fake_cryptohome_client_->set_unmount_ex_should_succeed(true);
   LoginState::Shutdown();
 }
 
@@ -631,7 +643,7 @@ TEST_F(CryptohomeAuthenticatorTest, ResolveOwnerNeededSuccess) {
   EXPECT_TRUE(LoginState::Get()->IsInSafeMode());
 
   // Unset global objects used by this test.
-  fake_cryptohome_client_->set_unmount_result(true);
+  fake_cryptohome_client_->set_unmount_ex_should_succeed(true);
   LoginState::Shutdown();
 }
 

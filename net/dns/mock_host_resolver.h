@@ -35,6 +35,7 @@ class HostCache;
 class HostPortPair;
 class IPEndPoint;
 class RuleBasedHostResolverProc;
+class URLRequestContext;
 
 // Fills |*addrlist| with a socket address for |host_list| which should be a
 // comma-separated list of IPv4 or IPv6 literal(s) without enclosing brackets.
@@ -116,27 +117,16 @@ class MockHostResolverBase
       const NetLogWithSource& net_log,
       const base::Optional<ResolveHostParameters>& optional_parameters)
       override;
-  int Resolve(const RequestInfo& info,
-              RequestPriority priority,
-              AddressList* addresses,
-              CompletionOnceCallback callback,
-              std::unique_ptr<Request>* request,
-              const NetLogWithSource& net_log) override;
-  int ResolveFromCache(const RequestInfo& info,
-                       AddressList* addresses,
-                       const NetLogWithSource& net_log) override;
-  int ResolveStaleFromCache(const RequestInfo& info,
-                            AddressList* addresses,
-                            HostCache::EntryStaleness* stale_info,
-                            const NetLogWithSource& source_net_log) override;
   std::unique_ptr<MdnsListener> CreateMdnsListener(
       const HostPortPair& host,
       DnsQueryType query_type) override;
   HostCache* GetHostCache() override;
   bool HasCached(base::StringPiece hostname,
                  HostCache::Entry::Source* source_out,
-                 HostCache::EntryStaleness* stale_out) const override;
+                 HostCache::EntryStaleness* stale_out,
+                 bool* secure_out) const override;
   void SetDnsConfigOverrides(const DnsConfigOverrides& overrides) override {}
+  void SetRequestContext(URLRequestContext* request_context) override {}
 
   // Preloads the cache with what would currently be the result of a request
   // with the given parameters. Returns the net error of the cached result.
@@ -219,6 +209,7 @@ class MockHostResolverBase
  private:
   friend class MockHostResolver;
   friend class MockCachingHostResolver;
+  friend class MockHostResolverFactory;
 
   typedef std::map<size_t, RequestImpl*> RequestMap;
 
@@ -301,6 +292,31 @@ class MockCachingHostResolver : public MockHostResolverBase {
   explicit MockCachingHostResolver(int cache_invalidation_num = 0)
       : MockHostResolverBase(true /*use_caching*/, cache_invalidation_num) {}
   ~MockCachingHostResolver() override {}
+};
+
+// Factory that will always create and return Mock(Caching)HostResolvers.
+class MockHostResolverFactory : public HostResolver::Factory {
+ public:
+  MockHostResolverFactory(
+      scoped_refptr<RuleBasedHostResolverProc> rules = nullptr,
+      bool use_caching = false,
+      int cache_invalidation_num = 0);
+  ~MockHostResolverFactory() override;
+
+  std::unique_ptr<HostResolver> CreateResolver(
+      HostResolverManager* manager,
+      base::StringPiece host_mapping_rules) override;
+  std::unique_ptr<HostResolver> CreateStandaloneResolver(
+      NetLog* net_log,
+      const HostResolver::Options& options,
+      base::StringPiece host_mapping_rules) override;
+
+ private:
+  const scoped_refptr<RuleBasedHostResolverProc> rules_;
+  const bool use_caching_;
+  const int cache_invalidation_num_;
+
+  DISALLOW_COPY_AND_ASSIGN(MockHostResolverFactory);
 };
 
 // RuleBasedHostResolverProc applies a set of rules to map a host string to
@@ -425,22 +441,10 @@ class HangingHostResolver : public HostResolver {
       const NetLogWithSource& net_log,
       const base::Optional<ResolveHostParameters>& optional_parameters)
       override;
-  int Resolve(const RequestInfo& info,
-              RequestPriority priority,
-              AddressList* addresses,
-              CompletionOnceCallback callback,
-              std::unique_ptr<Request>* out_req,
-              const NetLogWithSource& net_log) override;
-  int ResolveFromCache(const RequestInfo& info,
-                       AddressList* addresses,
-                       const NetLogWithSource& net_log) override;
-  int ResolveStaleFromCache(const RequestInfo& info,
-                            AddressList* addresses,
-                            HostCache::EntryStaleness* stale_info,
-                            const NetLogWithSource& source_net_log) override;
   bool HasCached(base::StringPiece hostname,
                  HostCache::Entry::Source* source_out,
-                 HostCache::EntryStaleness* stale_out) const override;
+                 HostCache::EntryStaleness* stale_out,
+                 bool* secure_out) const override;
 
   // Use to detect cancellations since there's otherwise no externally-visible
   // differentiation between a cancelled and a hung task.

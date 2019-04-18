@@ -301,9 +301,9 @@ TEST_F(TabsApiUnitTest, PDFExtensionNavigation) {
   function->set_extension(extension.get());
   function->set_browser_context(profile());
   std::unique_ptr<base::ListValue> args(
-      extension_function_test_utils::ParseList(base::StringPrintf(
-          "[%d, {\"url\":\"http://example.com\"}]", tab_id)));
-  function->SetArgs(args.get());
+      extension_function_test_utils::ParseList(
+          base::StringPrintf(R"([%d, {"url":"http://example.com"}])", tab_id)));
+  function->SetArgs(base::Value::FromUniquePtrValue(std::move(args)));
   api_test_utils::SendResponseHelper response_helper(function.get());
   function->RunWithValidation()->Execute();
 
@@ -482,7 +482,8 @@ TEST_F(TabsApiUnitTest, TabsGoForwardAndBackWithoutTabId) {
   ASSERT_EQ(2, tab_strip_model->count());
 
   // Activate first tab.
-  tab_strip_model->ActivateTabAt(tab1_index, true);
+  tab_strip_model->ActivateTabAt(tab1_index,
+                                 {TabStripModel::GestureType::kOther});
 
   // Go back without tab_id. But first tab should be navigated since it's
   // activated.
@@ -514,7 +515,8 @@ TEST_F(TabsApiUnitTest, TabsGoForwardAndBackWithoutTabId) {
               controller.GetLastCommittedEntry()->GetTransitionType());
 
   // Activate second tab.
-  tab_strip_model->ActivateTabAt(tab2_index, true);
+  tab_strip_model->ActivateTabAt(tab2_index,
+                                 {TabStripModel::GestureType::kOther});
 
   auto goback_function2 = base::MakeRefCounted<TabsGoBackFunction>();
   goback_function2->set_extension(extension_with_tabs_permission.get());

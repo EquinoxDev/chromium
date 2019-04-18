@@ -15,6 +15,7 @@
 #include "base/strings/string_util.h"
 #include "base/task/post_task.h"
 #include "build/build_config.h"
+#include "chrome/browser/accessibility/accessibility_labels_service.h"
 #include "chrome/browser/background/background_contents_service_factory.h"
 #include "chrome/browser/background_fetch/background_fetch_delegate_factory.h"
 #include "chrome/browser/background_fetch/background_fetch_delegate_impl.h"
@@ -39,6 +40,7 @@
 #include "chrome/browser/prefs/in_process_service_factory_factory.h"
 #include "chrome/browser/prefs/incognito_mode_prefs.h"
 #include "chrome/browser/prefs/pref_service_syncable_util.h"
+#include "chrome/browser/profiles/profile_key.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/ssl/chrome_ssl_host_state_delegate.h"
 #include "chrome/browser/ssl/chrome_ssl_host_state_delegate_factory.h"
@@ -51,6 +53,8 @@
 #include "chrome/common/chrome_switches.h"
 #include "components/content_settings/core/browser/host_content_settings_map.h"
 #include "components/keyed_service/content/browser_context_dependency_manager.h"
+#include "components/keyed_service/core/simple_dependency_manager.h"
+#include "components/keyed_service/core/simple_keyed_service_factory.h"
 #include "components/prefs/json_pref_store.h"
 #include "components/sync_preferences/pref_service_syncable.h"
 #include "components/user_prefs/user_prefs.h"
@@ -143,6 +147,10 @@ OffTheRecordProfileImpl::OffTheRecordProfileImpl(Profile* real_profile)
       CreateExtensionPrefStore(profile_, true),
       InProcessPrefServiceFactoryFactory::GetInstanceForContext(this)
           ->CreateDelegate());
+
+  key_ = std::make_unique<ProfileKey>(profile_->GetPath(), prefs_.get(),
+                                      profile_->GetProfileKey());
+
   // Register on BrowserContext.
   user_prefs::UserPrefs::Set(this, prefs_.get());
 }
@@ -198,6 +206,9 @@ void OffTheRecordProfileImpl::Init() {
   // The DomDistillerViewerSource is not a normal WebUI so it must be registered
   // as a URLDataSource early.
   dom_distiller::RegisterViewerSource(this);
+
+  // AccessibilityLabelsService has a default prefs behavior in incognito.
+  AccessibilityLabelsService::InitOffTheRecordPrefs(this);
 }
 
 OffTheRecordProfileImpl::~OffTheRecordProfileImpl() {
@@ -214,8 +225,13 @@ OffTheRecordProfileImpl::~OffTheRecordProfileImpl() {
   GetDefaultStoragePartition(this)->GetNetworkContext()->ClearHostCache(
       nullptr, network::mojom::NetworkContext::ClearHostCacheCallback());
 
-  BrowserContextDependencyManager::GetInstance()->DestroyBrowserContextServices(
-      this);
+  // The SimpleDependencyManager should always be passed after the
+  // BrowserContextDependencyManager. This is because the KeyedService instances
+  // in the BrowserContextDependencyManager's dependency graph can depend on the
+  // ones in the SimpleDependencyManager's graph.
+  DependencyManager::PerformInterlockedTwoPhaseShutdown(
+      BrowserContextDependencyManager::GetInstance(), this,
+      SimpleDependencyManager::GetInstance(), key_.get());
 
 #if BUILDFLAG(ENABLE_EXTENSIONS)
   base::PostTaskWithTraits(
@@ -332,6 +348,10 @@ bool OffTheRecordProfileImpl::IsChild() const {
 
 bool OffTheRecordProfileImpl::IsLegacySupervised() const {
   return profile_->IsLegacySupervised();
+}
+
+bool OffTheRecordProfileImpl::AllowsBrowserWindows() const {
+  return profile_->AllowsBrowserWindows();
 }
 
 PrefService* OffTheRecordProfileImpl::GetPrefs() {
@@ -530,6 +550,11 @@ bool OffTheRecordProfileImpl::IsSameProfile(Profile* profile) {
 
 base::Time OffTheRecordProfileImpl::GetStartTime() const {
   return start_time_;
+}
+
+ProfileKey* OffTheRecordProfileImpl::GetProfileKey() const {
+  DCHECK(key_);
+  return key_.get();
 }
 
 void OffTheRecordProfileImpl::SetExitType(ExitType exit_type) {

@@ -42,13 +42,6 @@ ChooserOnlyTemporalInputTypeView::ChooserOnlyTemporalInputTypeView(
     BaseTemporalInputType& input_type)
     : KeyboardClickableInputTypeView(element), input_type_(input_type) {}
 
-ChooserOnlyTemporalInputTypeView* ChooserOnlyTemporalInputTypeView::Create(
-    HTMLInputElement& element,
-    BaseTemporalInputType& input_type) {
-  return MakeGarbageCollected<ChooserOnlyTemporalInputTypeView>(element,
-                                                                input_type);
-}
-
 ChooserOnlyTemporalInputTypeView::~ChooserOnlyTemporalInputTypeView() {
   DCHECK(!date_time_chooser_);
 }
@@ -131,16 +124,20 @@ Element& ChooserOnlyTemporalInputTypeView::OwnerElement() const {
 }
 
 void ChooserOnlyTemporalInputTypeView::DidChooseValue(const String& value) {
-  GetElement().setValue(value, kDispatchInputAndChangeEvent);
+  GetElement().setValue(value,
+                        TextFieldEventBehavior::kDispatchInputAndChangeEvent);
 }
 
 void ChooserOnlyTemporalInputTypeView::DidChooseValue(double value) {
   DCHECK(std::isfinite(value) || std::isnan(value));
-  if (std::isnan(value))
-    GetElement().setValue(g_empty_string, kDispatchInputAndChangeEvent);
-  else
-    GetElement().setValueAsNumber(value, ASSERT_NO_EXCEPTION,
-                                  kDispatchInputAndChangeEvent);
+  if (std::isnan(value)) {
+    GetElement().setValue(g_empty_string,
+                          TextFieldEventBehavior::kDispatchInputAndChangeEvent);
+  } else {
+    GetElement().setValueAsNumber(
+        value, ASSERT_NO_EXCEPTION,
+        TextFieldEventBehavior::kDispatchInputAndChangeEvent);
+  }
 }
 
 void ChooserOnlyTemporalInputTypeView::DidEndChooser() {

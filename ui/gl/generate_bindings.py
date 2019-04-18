@@ -226,6 +226,23 @@ GL_FUNCTIONS = [
 { 'return_type': 'void',
   'names': ['glClearStencil'],
   'arguments': 'GLint s', },
+{ 'return_type': 'void',
+  'versions': [{ 'name': 'glClearTexImage',
+                 'extensions': ['GL_ARB_clear_texture'] },
+               { 'name': 'glClearTexImageEXT',
+                 'extensions': ['GL_EXT_clear_texture'] }],
+  'arguments':
+      'GLuint texture, GLint level, GLenum format, GLenum type, '
+      'const GLvoid* data', },
+{ 'return_type': 'void',
+  'versions': [{ 'name': 'glClearTexSubImage',
+                 'extensions': ['GL_EXT_clear_texture'] },
+               { 'name': 'glClearTexSubImageEXT',
+                 'extensions': ['GL_EXT_clear_texture'] }],
+  'arguments':
+      'GLuint texture, GLint level, GLint xoffset, GLint yoffset, '
+      'GLint zoffset, GLint width, GLint height, GLint depth, GLenum format, '
+      'GLenum type, const GLvoid* data', },
 { 'return_type': 'GLenum',
   'versions': [{ 'name': 'glClientWaitSync',
                  'extensions': ['GL_ARB_sync'] }],
@@ -602,8 +619,8 @@ GL_FUNCTIONS = [
   'arguments': 'GLenum target, GLenum attachment, GLuint texture, GLint level, '
                'GLint layer', },
 { 'return_type': 'void',
-  'versions': [{'name': 'glFramebufferTextureMultiviewLayeredANGLE',
-                'extensions': ['GL_ANGLE_multiview']}],
+  'versions': [{'name': 'glFramebufferTextureMultiviewOVR',
+                'extensions': ['GL_OVR_multiview2']}],
   'arguments': 'GLenum target, GLenum attachment, GLuint texture, GLint level, '
                'GLint baseViewIndex, GLsizei numViews', },
 { 'return_type': 'void',
@@ -3329,7 +3346,8 @@ void DriverEGL::InitializeExtensionBindings() {
         file.write('  {\n')
         file.write('    GLenum error = %s_api_->glGetErrorFn();\n'
             % set_name.lower())
-        file.write('    DCHECK(error == 0);\n')
+        file.write('    DCHECK(error == 0) << "OpenGL error 0x" << std::hex '
+                   '<< error << std::dec;\n')
         file.write('  }\n')
     else:
       file.write('  GL_SERVICE_LOG("%s" << "(" %s << ")");\n' %
@@ -3344,7 +3362,8 @@ void DriverEGL::InitializeExtensionBindings() {
         file.write('  {\n')
         file.write('    GLenum _error = %s_api_->glGetErrorFn();\n' %
             set_name.lower())
-        file.write('    DCHECK(_error == 0);\n')
+        file.write('    DCHECK(_error == 0) << "OpenGL error " << std::hex '
+                   '<< _error << std::dec;\n')
         file.write('  }\n')
       file.write('  return result;\n')
     file.write('}\n')

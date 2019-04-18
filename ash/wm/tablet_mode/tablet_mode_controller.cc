@@ -4,8 +4,11 @@
 
 #include "ash/wm/tablet_mode/tablet_mode_controller.h"
 
+#include <algorithm>
+#include <string>
 #include <utility>
 
+#include "ash/kiosk_next/kiosk_next_shell_controller.h"
 #include "ash/public/cpp/ash_switches.h"
 #include "ash/public/cpp/tablet_mode.h"
 #include "ash/root_window_controller.h"
@@ -15,6 +18,7 @@
 #include "ash/wm/tablet_mode/internal_input_devices_event_blocker.h"
 #include "ash/wm/tablet_mode/tablet_mode_observer.h"
 #include "ash/wm/tablet_mode/tablet_mode_window_manager.h"
+#include "ash/wm/window_state.h"
 #include "base/bind.h"
 #include "base/command_line.h"
 #include "base/location.h"
@@ -23,7 +27,7 @@
 #include "base/metrics/user_metrics.h"
 #include "base/time/default_tick_clock.h"
 #include "base/time/tick_clock.h"
-#include "chromeos/dbus/dbus_thread_manager.h"
+#include "chromeos/dbus/power/power_manager_client.h"
 #include "ui/base/accelerators/accelerator.h"
 #include "ui/display/display.h"
 #include "ui/display/manager/display_manager.h"
@@ -152,8 +156,11 @@ TabletModeController::TabletModeController()
             &TabletModeController::OnBluetoothAdapterOrDeviceChanged,
             base::Unretained(this)));
   }
+
+  Shell::Get()->kiosk_next_shell_controller()->AddObserver(this);
+
   chromeos::PowerManagerClient* power_manager_client =
-      chromeos::DBusThreadManager::Get()->GetPowerManagerClient();
+      chromeos::PowerManagerClient::Get();
   power_manager_client->AddObserver(this);
   power_manager_client->GetSwitchStates(base::BindOnce(
       &TabletModeController::OnGetSwitchStates, weak_factory_.GetWeakPtr()));
@@ -175,13 +182,14 @@ TabletModeController::~TabletModeController() {
                             tab_drag_in_splitview_count_);
 
   Shell::Get()->RemoveShellObserver(this);
+  Shell::Get()->kiosk_next_shell_controller()->RemoveObserver(this);
+
   if (IsEnabled()) {
     Shell::Get()->window_tree_host_manager()->RemoveObserver(this);
     AccelerometerReader::GetInstance()->RemoveObserver(this);
     ui::InputDeviceManager::GetInstance()->RemoveObserver(this);
   }
-  chromeos::DBusThreadManager::Get()->GetPowerManagerClient()->RemoveObserver(
-      this);
+  chromeos::PowerManagerClient::Get()->RemoveObserver(this);
 
   for (auto& observer : tablet_mode_observers_)
     observer.OnTabletControllerDestroyed();
@@ -419,11 +427,33 @@ void TabletModeController::SuspendImminent(
   // The system is about to suspend, so record TabletMode usage interval metrics
   // based on whether TabletMode mode is currently active.
   RecordTabletModeUsageInterval(CurrentTabletModeIntervalType());
+
+  // Stop listening to any incoming input device changes during suspend as the
+  // input devices may be removed during suspend and cause the device enter/exit
+  // tablet mode unexpectedly.
+  if (IsEnabled()) {
+    ui::InputDeviceManager::GetInstance()->RemoveObserver(this);
+    bluetooth_devices_observer_.reset();
+  }
 }
 
 void TabletModeController::SuspendDone(const base::TimeDelta& sleep_duration) {
   // We do not want TabletMode usage metrics to include time spent in suspend.
   tablet_mode_usage_interval_start_time_ = base::Time::Now();
+
+  // Start listening to the input device changes again.
+  if (IsEnabled()) {
+    bluetooth_devices_observer_ =
+        std::make_unique<BluetoothDevicesObserver>(base::BindRepeating(
+            &TabletModeController::OnBluetoothAdapterOrDeviceChanged,
+            base::Unretained(this)));
+    ui::InputDeviceManager::GetInstance()->AddObserver(this);
+    // Call HandlePointingDeviceAddedOrRemoved() to iterate all available input
+    // devices just in case we have missed all the notifications from
+    // InputDeviceManager and  BluetoothDevicesObserver when SuspendDone() is
+    // called.
+    HandlePointingDeviceAddedOrRemoved();
+  }
 }
 
 void TabletModeController::OnInputDeviceConfigurationChanged(
@@ -600,8 +630,23 @@ void TabletModeController::SetClient(mojom::TabletModeClientPtr client) {
   client_->OnTabletModeToggled(IsTabletModeWindowManagerEnabled());
 }
 
+// Used for testing. Called via Mojo.
+void TabletModeController::SetTabletModeEnabledForTesting(
+    bool enabled,
+    SetTabletModeEnabledForTestingCallback callback) {
+  // Disable Accelerometer and PowerManagerClient observers to prevent possible
+  // tablet mode overrides. It won't be possible to physically switch to/from
+  // tablet mode after calling this function. This is needed for tests that
+  // run on DUTs and require switching to/back tablet mode in runtime, like some
+  // ARC++ Tast tests.
+  AccelerometerReader::GetInstance()->RemoveObserver(this);
+  chromeos::PowerManagerClient::Get()->RemoveObserver(this);
+  EnableTabletModeWindowManager(enabled);
+  std::move(callback).Run(IsTabletModeWindowManagerEnabled());
+}
+
 bool TabletModeController::AllowUiModeChange() const {
-  return force_ui_mode_ == UiMode::kNone;
+  return force_ui_mode_ == UiMode::kNone && !kiosk_next_enabled_;
 }
 
 void TabletModeController::HandlePointingDeviceAddedOrRemoved() {
@@ -713,4 +758,8 @@ void TabletModeController::ResetPauser() {
   occlusion_tracker_pauser_.reset();
 }
 
+void TabletModeController::OnKioskNextEnabled() {
+  kiosk_next_enabled_ = true;
+  AttemptEnterTabletMode();
+}
 }  // namespace ash

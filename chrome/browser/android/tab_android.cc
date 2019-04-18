@@ -18,13 +18,11 @@
 #include "chrome/browser/android/metrics/uma_utils.h"
 #include "chrome/browser/android/tab_printer.h"
 #include "chrome/browser/android/tab_web_contents_delegate_android.h"
-#include "chrome/browser/android/trusted_cdn.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
 #include "chrome/browser/bookmarks/managed_bookmark_service_factory.h"
 #include "chrome/browser/browser_about_handler.h"
 #include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/infobars/infobar_service.h"
-#include "chrome/browser/offline_pages/offline_page_utils.h"
 #include "chrome/browser/prerender/prerender_contents.h"
 #include "chrome/browser/prerender/prerender_manager.h"
 #include "chrome/browser/prerender/prerender_manager_factory.h"
@@ -50,9 +48,6 @@
 #include "components/bookmarks/browser/bookmark_utils.h"
 #include "components/bookmarks/managed/managed_bookmark_service.h"
 #include "components/dom_distiller/core/url_utils.h"
-#include "components/favicon/content/content_favicon_driver.h"
-#include "components/navigation_interception/intercept_navigation_delegate.h"
-#include "components/navigation_interception/navigation_params.h"
 #include "components/sessions/content/content_live_tab.h"
 #include "components/sessions/core/tab_restore_service.h"
 #include "components/url_formatter/url_fixer.h"
@@ -69,31 +64,20 @@
 #include "content/public/browser/web_contents_user_data.h"
 #include "content/public/common/resource_request_body_android.h"
 #include "jni/Tab_jni.h"
-#include "net/base/escape.h"
 #include "services/service_manager/public/cpp/interface_provider.h"
-#include "skia/ext/image_operations.h"
 #include "third_party/blink/public/common/associated_interfaces/associated_interface_provider.h"
 #include "ui/android/view_android.h"
 #include "ui/android/window_android.h"
 #include "ui/base/resource/resource_bundle.h"
-#include "ui/base/window_open_disposition.h"
-#include "ui/display/display.h"
-#include "ui/display/screen.h"
-#include "ui/gfx/android/java_bitmap.h"
-#include "ui/gfx/favicon_size.h"
-#include "ui/gfx/image/image_skia.h"
 
 using base::android::AttachCurrentThread;
 using base::android::ConvertUTF8ToJavaString;
 using base::android::JavaParamRef;
 using base::android::JavaRef;
 using chrome::android::BackgroundTabManager;
-using content::BrowserThread;
 using content::GlobalRequestID;
 using content::NavigationController;
 using content::WebContents;
-using navigation_interception::InterceptNavigationDelegate;
-using navigation_interception::NavigationParams;
 
 namespace {
 
@@ -124,35 +108,6 @@ class TabAndroidHelper : public content::WebContentsUserData<TabAndroidHelper> {
 };
 
 WEB_CONTENTS_USER_DATA_KEY_IMPL(TabAndroidHelper)
-
-GURL GetPublisherURLForTrustedCDN(
-    content::NavigationHandle* navigation_handle) {
-  if (!trusted_cdn::IsTrustedCDN(navigation_handle->GetURL()))
-    return GURL();
-
-  // Offline pages don't have headers when they are loaded.
-  // TODO(bauerb): Consider storing the publisher URL on the offline page item.
-  if (offline_pages::OfflinePageUtils::GetOfflinePageFromWebContents(
-          navigation_handle->GetWebContents())) {
-    return GURL();
-  }
-
-  const net::HttpResponseHeaders* headers =
-      navigation_handle->GetResponseHeaders();
-  if (!headers) {
-    // TODO(https://crbug.com/829323): In some cases other than offline pages
-    // we don't have headers.
-    LOG(WARNING) << "No headers for navigation to "
-                 << navigation_handle->GetURL();
-    return GURL();
-  }
-
-  std::string publisher_url;
-  if (!headers->GetNormalizedHeader("x-amp-cache", &publisher_url))
-    return GURL();
-
-  return GURL(publisher_url);
-}
 
 }  // namespace
 
@@ -204,8 +159,10 @@ int TabAndroid::GetAndroidId() const {
 
 base::string16 TabAndroid::GetTitle() const {
   JNIEnv* env = base::android::AttachCurrentThread();
-  return base::android::ConvertJavaStringToUTF16(
-      Java_Tab_getTitle(env, weak_java_tab_.get(env)));
+  ScopedJavaLocalRef<jstring> java_title =
+      Java_Tab_getTitle(env, weak_java_tab_.get(env));
+  return java_title ? base::android::ConvertJavaStringToUTF16(java_title)
+                    : base::string16();
 }
 
 bool TabAndroid::IsNativePage() const {
@@ -253,45 +210,6 @@ void TabAndroid::SetWindowSessionID(SessionID window_id) {
   session_tab_helper->SetWindowID(session_window_id_);
 }
 
-void TabAndroid::HandlePopupNavigation(NavigateParams* params) {
-  DCHECK_EQ(params->source_contents, web_contents());
-  DCHECK(!params->contents_to_insert);
-  DCHECK(!params->switch_to_singleton_tab);
-
-  WindowOpenDisposition disposition = params->disposition;
-  const GURL& url = params->url;
-
-  bool supported = disposition == WindowOpenDisposition::NEW_POPUP ||
-                   disposition == WindowOpenDisposition::NEW_FOREGROUND_TAB ||
-                   disposition == WindowOpenDisposition::NEW_BACKGROUND_TAB ||
-                   disposition == WindowOpenDisposition::NEW_WINDOW ||
-                   disposition == WindowOpenDisposition::OFF_THE_RECORD;
-  if (!supported) {
-    NOTIMPLEMENTED();
-    return;
-  }
-
-  JNIEnv* env = AttachCurrentThread();
-  ScopedJavaLocalRef<jobject> jobj = weak_java_tab_.get(env);
-  ScopedJavaLocalRef<jstring> jurl(ConvertUTF8ToJavaString(env, url.spec()));
-  ScopedJavaLocalRef<jstring> jheaders(
-      ConvertUTF8ToJavaString(env, params->extra_headers));
-  ScopedJavaLocalRef<jstring> jinitiator_origin;
-  if (params->initiator_origin) {
-    jinitiator_origin =
-        ConvertUTF8ToJavaString(env, params->initiator_origin->Serialize());
-  }
-  ScopedJavaLocalRef<jobject> jpost_data;
-  if (params->uses_post && params->post_data) {
-    jpost_data =
-        content::ConvertResourceRequestBodyToJavaObject(env, params->post_data);
-  }
-  Java_Tab_openNewTab(env, jobj, jurl, jinitiator_origin, jheaders, jpost_data,
-                      static_cast<int>(disposition),
-                      params->created_with_opener,
-                      params->is_renderer_initiated);
-}
-
 bool TabAndroid::HasPrerenderedUrl(GURL gurl) {
   prerender::PrerenderManager* prerender_manager = GetPrerenderManager();
   if (!prerender_manager)
@@ -308,25 +226,6 @@ bool TabAndroid::HasPrerenderedUrl(GURL gurl) {
     }
   }
   return false;
-}
-
-void TabAndroid::OnFaviconUpdated(favicon::FaviconDriver* favicon_driver,
-                                  NotificationIconType notification_icon_type,
-                                  const GURL& icon_url,
-                                  bool icon_url_changed,
-                                  const gfx::Image& image) {
-  if (notification_icon_type != NON_TOUCH_LARGEST &&
-      notification_icon_type != TOUCH_LARGEST) {
-    return;
-  }
-
-  SkBitmap favicon = image.AsImageSkia().GetRepresentation(1.0f).GetBitmap();
-  if (favicon.empty())
-    return;
-
-  JNIEnv* env = base::android::AttachCurrentThread();
-  Java_Tab_onFaviconAvailable(env, weak_java_tab_.get(env),
-                              gfx::ConvertToJavaBitmap(&favicon));
 }
 
 bool TabAndroid::IsCurrentlyACustomTab() {
@@ -350,8 +249,8 @@ void TabAndroid::InitWebContents(
   web_contents_.reset(content::WebContents::FromJavaWebContents(jweb_contents));
   DCHECK(web_contents_.get());
 
+  TabAndroidHelper::SetTabForWebContents(web_contents(), this);
   AttachTabHelpers(web_contents_.get());
-  WebContentsObserver::Observe(web_contents_.get());
 
   SetWindowSessionID(session_window_id_);
 
@@ -359,18 +258,11 @@ void TabAndroid::InitWebContents(
       jcontext_menu_populator);
   ViewAndroidHelper::FromWebContents(web_contents())->
       SetViewAndroid(web_contents()->GetNativeView());
-  TabAndroidHelper::SetTabForWebContents(web_contents(), this);
   web_contents_delegate_ =
       std::make_unique<android::TabWebContentsDelegateAndroid>(
           env, jweb_contents_delegate);
   web_contents_delegate_->LoadProgressChanged(web_contents(), 0);
   web_contents()->SetDelegate(web_contents_delegate_.get());
-
-  favicon::FaviconDriver* favicon_driver =
-      favicon::ContentFaviconDriver::FromWebContents(web_contents_.get());
-
-  if (favicon_driver)
-    favicon_driver->AddObserver(this);
 
   synced_tab_delegate_->SetWebContents(web_contents(), jparent_tab_id);
 
@@ -408,14 +300,6 @@ void TabAndroid::DestroyWebContents(JNIEnv* env,
 
   if (web_contents()->GetNativeView())
     web_contents()->GetNativeView()->GetLayer()->RemoveFromParent();
-
-  WebContentsObserver::Observe(nullptr);
-
-  favicon::FaviconDriver* favicon_driver =
-      favicon::ContentFaviconDriver::FromWebContents(web_contents_.get());
-
-  if (favicon_driver)
-    favicon_driver->RemoveObserver(this);
 
   web_contents()->SetDelegate(nullptr);
 
@@ -583,36 +467,6 @@ void TabAndroid::SetActiveNavigationEntryTitleForUrl(
     entry->SetTitle(title);
 }
 
-ScopedJavaLocalRef<jobject> TabAndroid::GetFavicon(
-    JNIEnv* env,
-    const JavaParamRef<jobject>& obj) {
-  ScopedJavaLocalRef<jobject> bitmap;
-  favicon::FaviconDriver* favicon_driver =
-      favicon::ContentFaviconDriver::FromWebContents(web_contents_.get());
-
-  if (!favicon_driver)
-    return bitmap;
-
-  // Always return the default favicon in Android.
-  SkBitmap favicon = favicon_driver->GetFavicon().AsBitmap();
-  if (!favicon.empty()) {
-    const float device_scale_factor =
-        display::Screen::GetScreen()->GetPrimaryDisplay().device_scale_factor();
-    int target_size_dip = device_scale_factor * gfx::kFaviconSize;
-    if (favicon.width() != target_size_dip ||
-        favicon.height() != target_size_dip) {
-      favicon =
-          skia::ImageOperations::Resize(favicon,
-                                        skia::ImageOperations::RESIZE_BEST,
-                                        target_size_dip,
-                                        target_size_dip);
-    }
-
-    bitmap = gfx::ConvertToJavaBitmap(&favicon);
-  }
-  return bitmap;
-}
-
 prerender::PrerenderManager* TabAndroid::GetPrerenderManager() const {
   Profile* profile = GetProfile();
   if (!profile)
@@ -646,34 +500,6 @@ void TabAndroid::CreateHistoricalTabFromContents(WebContents* web_contents) {
 void TabAndroid::CreateHistoricalTab(JNIEnv* env,
                                      const JavaParamRef<jobject>& obj) {
   TabAndroid::CreateHistoricalTabFromContents(web_contents());
-}
-
-void TabAndroid::UpdateBrowserControlsState(JNIEnv* env,
-                                            const JavaParamRef<jobject>& obj,
-                                            jint constraints,
-                                            jint current,
-                                            jboolean animate) {
-  content::BrowserControlsState constraints_state =
-      static_cast<content::BrowserControlsState>(constraints);
-  content::BrowserControlsState current_state =
-      static_cast<content::BrowserControlsState>(current);
-
-  chrome::mojom::ChromeRenderFrameAssociatedPtr renderer;
-  web_contents()->GetMainFrame()->GetRemoteAssociatedInterfaces()->GetInterface(
-      &renderer);
-  renderer->UpdateBrowserControlsState(constraints_state, current_state,
-                                       animate);
-
-  if (web_contents()->ShowingInterstitialPage()) {
-    chrome::mojom::ChromeRenderFrameAssociatedPtr interstitial_renderer;
-    web_contents()
-        ->GetInterstitialPage()
-        ->GetMainFrame()
-        ->GetRemoteAssociatedInterfaces()
-        ->GetInterface(&interstitial_renderer);
-    interstitial_renderer->UpdateBrowserControlsState(constraints_state,
-                                                      current_state, animate);
-  }
 }
 
 void TabAndroid::LoadOriginalImage(JNIEnv* env,
@@ -735,6 +561,22 @@ bool TabAndroid::ShouldEnableEmbeddedMediaExperience() const {
   return embedded_media_experience_enabled_;
 }
 
+void TabAndroid::SetNightModeEnabled(
+    JNIEnv* env,
+    const base::android::JavaParamRef<jobject>& obj,
+    jboolean enabled) {
+  if (night_mode_enabled_ == enabled)
+    return;
+
+  night_mode_enabled_ = enabled;
+  if (web_contents() && web_contents()->GetRenderViewHost())
+    web_contents()->GetRenderViewHost()->OnWebkitPreferencesChanged();
+}
+
+bool TabAndroid::NightModeEnabled() const {
+  return night_mode_enabled_;
+}
+
 void TabAndroid::SetPictureInPictureEnabled(
     JNIEnv* env,
     const base::android::JavaParamRef<jobject>& obj,
@@ -764,35 +606,6 @@ void TabAndroid::AttachDetachedTab(
   }
 }
 
-namespace {
-
-class ChromeInterceptNavigationDelegate : public InterceptNavigationDelegate {
- public:
-  ChromeInterceptNavigationDelegate(JNIEnv* env, jobject jdelegate)
-      : InterceptNavigationDelegate(env, jdelegate) {}
-
-  bool ShouldIgnoreNavigation(
-      const NavigationParams& navigation_params) override {
-    NavigationParams chrome_navigation_params(navigation_params);
-    chrome_navigation_params.url() =
-        GURL(net::EscapeExternalHandlerValue(navigation_params.url().spec()));
-    return InterceptNavigationDelegate::ShouldIgnoreNavigation(
-        chrome_navigation_params);
-  }
-};
-
-}  // namespace
-
-void TabAndroid::SetInterceptNavigationDelegate(
-    JNIEnv* env,
-    const JavaParamRef<jobject>& obj,
-    const JavaParamRef<jobject>& delegate) {
-  DCHECK_CURRENTLY_ON(BrowserThread::UI);
-  InterceptNavigationDelegate::Associate(
-      web_contents(),
-      std::make_unique<ChromeInterceptNavigationDelegate>(env, delegate));
-}
-
 void TabAndroid::SetWebappManifestScope(JNIEnv* env,
                                         const JavaParamRef<jobject>& obj,
                                         const JavaParamRef<jstring>& scope) {
@@ -802,54 +615,6 @@ void TabAndroid::SetWebappManifestScope(JNIEnv* env,
     return;
 
   web_contents()->GetRenderViewHost()->OnWebkitPreferencesChanged();
-}
-
-void TabAndroid::AttachToTabContentManager(
-    JNIEnv* env,
-    const JavaParamRef<jobject>& obj,
-    const JavaParamRef<jobject>& jtab_content_manager) {
-  android::TabContentManager* tab_content_manager =
-      android::TabContentManager::FromJavaObject(jtab_content_manager);
-  if (tab_content_manager == tab_content_manager_)
-    return;
-
-  if (tab_content_manager_)
-    tab_content_manager_->DetachLiveLayer(GetAndroidId(), GetContentLayer());
-  tab_content_manager_ = tab_content_manager;
-  if (tab_content_manager_)
-    tab_content_manager_->AttachLiveLayer(GetAndroidId(), GetContentLayer());
-}
-
-void TabAndroid::ClearThumbnailPlaceholder(JNIEnv* env,
-                                           const JavaParamRef<jobject>& obj) {
-  if (tab_content_manager_)
-    tab_content_manager_->NativeRemoveTabThumbnail(GetAndroidId());
-}
-
-void TabAndroid::NavigationEntryChanged(
-    const content::EntryChangedDetails& change_details) {
-  JNIEnv* env = base::android::AttachCurrentThread();
-  Java_Tab_onNavEntryChanged(env, weak_java_tab_.get(env));
-}
-
-void TabAndroid::DidFinishNavigation(
-    content::NavigationHandle* navigation_handle) {
-  // Skip subframe, same-document, or non-committed navigations (downloads or
-  // 204/205 responses).
-  if (!navigation_handle->IsInMainFrame() ||
-      navigation_handle->IsSameDocument() ||
-      !navigation_handle->HasCommitted()) {
-    return;
-  }
-
-  GURL publisher_url = GetPublisherURLForTrustedCDN(navigation_handle);
-  JNIEnv* env = base::android::AttachCurrentThread();
-  base::android::ScopedJavaLocalRef<jstring> j_publisher_url;
-  if (publisher_url.is_valid())
-    j_publisher_url = ConvertUTF8ToJavaString(env, publisher_url.spec());
-
-  Java_Tab_setTrustedCdnPublisherUrl(env, weak_java_tab_.get(env),
-                                     j_publisher_url);
 }
 
 bool TabAndroid::AreRendererInputEventsIgnored(

@@ -27,7 +27,7 @@
 #include "services/identity/public/cpp/identity_manager.h"
 #include "services/identity/public/cpp/identity_test_utils.h"
 
-using browser_sync::ProfileSyncService;
+using syncer::ProfileSyncService;
 using syncer::SyncCycleSnapshot;
 
 namespace {
@@ -82,7 +82,7 @@ class SyncSetupChecker : public SingleClientStatusChangeChecker {
     if (HasAuthError(service())) {
       return true;
     }
-    if (service()->passphrase_required_reason_for_test() ==
+    if (service()->GetPassphraseRequiredReasonForTest() ==
         syncer::REASON_DECRYPTION) {
       LOG(FATAL)
           << "A passphrase is required for decryption but was not provided. "
@@ -584,7 +584,7 @@ std::string ProfileSyncServiceHarness::GetClientInfoString(
   if (service()) {
     const SyncCycleSnapshot& snap = GetLastCycleSnapshot();
     syncer::SyncStatus status;
-    service()->QueryDetailedSyncStatus(&status);
+    service()->QueryDetailedSyncStatusForDebugging(&status);
     // Capture select info from the sync session snapshot and syncer status.
     os << ", has_unsynced_items: " << snap.has_remaining_local_changes()
        << ", did_commit: "
@@ -598,7 +598,7 @@ std::string ProfileSyncServiceHarness::GetClientInfoString(
        << snap.model_neutral_state().num_updates_downloaded_total
        << ", passphrase_required_reason: "
        << syncer::PassphraseRequiredReasonToString(
-              service()->passphrase_required_reason_for_test())
+              service()->GetPassphraseRequiredReasonForTest())
        << ", notifications_enabled: " << status.notifications_enabled
        << ", service_is_active: " << service()->IsSyncFeatureActive();
   } else {

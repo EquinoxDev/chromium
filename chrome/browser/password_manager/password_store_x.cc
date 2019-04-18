@@ -307,13 +307,6 @@ std::vector<std::unique_ptr<PasswordForm>> PasswordStoreX::FillMatchingLogins(
   return std::vector<std::unique_ptr<PasswordForm>>();
 }
 
-std::vector<std::unique_ptr<PasswordForm>>
-PasswordStoreX::FillLoginsForSameOrganizationName(
-    const std::string& signon_realm) {
-  // Not available on X.
-  return std::vector<std::unique_ptr<PasswordForm>>();
-}
-
 bool PasswordStoreX::FillAutofillableLogins(
     std::vector<std::unique_ptr<PasswordForm>>* forms) {
   CheckMigration();
@@ -555,7 +548,7 @@ void PasswordStoreX::ShutdownOnUIThread() {
   PasswordStoreDefault::ShutdownOnUIThread();
 }
 
-bool PasswordStoreX::ReadAllLogins(
+password_manager::FormRetrievalResult PasswordStoreX::ReadAllLogins(
     password_manager::PrimaryKeyToFormMap* key_to_form_map) {
   // This method is called from the PasswordSyncBridge which supports only
   // PasswordStoreDefault. Therefore, on Linux, it should be called only if the

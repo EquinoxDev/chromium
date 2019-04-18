@@ -13,8 +13,10 @@
 #import "ios/chrome/browser/ui/commands/activity_service_commands.h"
 #import "ios/chrome/browser/ui/commands/application_commands.h"
 #import "ios/chrome/browser/ui/commands/browser_commands.h"
+#import "ios/chrome/browser/ui/commands/infobar_commands.h"
 #import "ios/chrome/browser/ui/commands/load_query_commands.h"
 #import "ios/chrome/browser/ui/fullscreen/fullscreen_animator.h"
+#import "ios/chrome/browser/ui/infobars/infobar_feature.h"
 #include "ios/chrome/browser/ui/location_bar/location_bar_steady_view.h"
 #import "ios/chrome/browser/ui/orchestrator/location_bar_offset_provider.h"
 #include "ios/chrome/browser/ui/ui_feature_flags.h"
@@ -173,6 +175,10 @@ typedef NS_ENUM(int, TrailingButtonState) {
   AddSameConstraints(self.locationBarSteadyView, self.view);
 
   [self switchToEditing:NO];
+
+  if (IsInfobarUIRebootEnabled()) {
+    [self updateInfobarButton];
+  }
 }
 
 - (void)traitCollectionDidChange:(UITraitCollection*)previousTraitCollection {
@@ -186,6 +192,9 @@ typedef NS_ENUM(int, TrailingButtonState) {
   CGFloat alphaValue = fmax((progress - 0.85) / 0.15, 0);
   CGFloat scaleValue = 0.79 + 0.21 * progress;
   self.locationBarSteadyView.trailingButton.alpha = alphaValue;
+  if (IsInfobarUIRebootEnabled()) {
+    self.locationBarSteadyView.leadingButton.alpha = alphaValue;
+  }
   self.locationBarSteadyView.transform =
       CGAffineTransformMakeScale(scaleValue, scaleValue);
 }
@@ -236,6 +245,10 @@ typedef NS_ENUM(int, TrailingButtonState) {
   if (self.trailingButtonState == kShareButton) {
     self.locationBarSteadyView.trailingButton.enabled = enabled;
   }
+}
+
+- (void)displayInfobarButton:(BOOL)display {
+  self.locationBarSteadyView.leadingButton.hidden = !display;
 }
 
 #pragma mark - LocationBarAnimatee
@@ -420,6 +433,37 @@ typedef NS_ENUM(int, TrailingButtonState) {
   base::RecordAction(base::UserMetricsAction("MobileToolbarShareMenu"));
 }
 
+// TODO(crbug.com/935804): Create constants variables for the magic numbers
+// being used here if/when this stops being temporary.
+- (void)updateInfobarButton {
+  DCHECK(IsInfobarUIRebootEnabled());
+  [self.locationBarSteadyView.leadingButton
+      setImage:[[UIImage imageNamed:@"infobar_passwords_icon"]
+                   imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate]
+      forState:UIControlStateNormal];
+  self.locationBarSteadyView.leadingButton.imageView.contentMode =
+      UIViewContentModeScaleToFill;
+  self.locationBarSteadyView.leadingButton.imageEdgeInsets =
+      UIEdgeInsetsMake(6, 6, 6, 6);
+
+  [self.locationBarSteadyView.leadingButton
+             addTarget:self.dispatcher
+                action:@selector(displayModalInfobar)
+      forControlEvents:UIControlEventTouchUpInside];
+  // Set as hidden as it should only be shown by |displayInfobarButton:|
+  self.locationBarSteadyView.leadingButton.hidden = YES;
+}
+
+- (void)setInfobarButtonStyleSelected:(BOOL)selected {
+  self.locationBarSteadyView.leadingButton.backgroundColor =
+      selected ? [UIColor colorWithWhite:0.80 alpha:1.0] : [UIColor clearColor];
+}
+
+- (void)setInfobarButtonStyleActive:(BOOL)active {
+  self.locationBarSteadyView.leadingButton.tintColor =
+      active ? self.locationBarSteadyView.tintColor : [UIColor lightGrayColor];
+}
+
 #pragma mark - UIMenu
 
 - (void)showLongPressMenu:(UILongPressGestureRecognizer*)sender {
@@ -454,6 +498,10 @@ typedef NS_ENUM(int, TrailingButtonState) {
 
       [menu setTargetRect:self.locationBarSteadyView.frame inView:self.view];
       [menu setMenuVisible:YES animated:YES];
+      // When we present the menu manually, it doesn't get focused by Voiceover.
+      // This notification forces voiceover to select the presented menu.
+      UIAccessibilityPostNotification(UIAccessibilityLayoutChangedNotification,
+                                      menu);
     });
   }
 }
@@ -475,7 +523,8 @@ typedef NS_ENUM(int, TrailingButtonState) {
     ClipboardRecentContent* clipboardRecentContent =
         ClipboardRecentContent::GetInstance();
     DCHECK(base::FeatureList::IsEnabled(kCopiedContentBehavior));
-    if (clipboardRecentContent->GetRecentImageFromClipboard().has_value()) {
+    if (self.searchByImageEnabled &&
+        clipboardRecentContent->GetRecentImageFromClipboard().has_value()) {
       return action == @selector(searchCopiedImage:);
     }
     if (clipboardRecentContent->GetRecentURLFromClipboard().has_value()) {

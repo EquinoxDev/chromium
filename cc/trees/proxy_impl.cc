@@ -46,11 +46,13 @@ unsigned int nextBeginFrameId = 0;
 class ScopedCompletionEvent {
  public:
   explicit ScopedCompletionEvent(CompletionEvent* event) : event_(event) {}
+  ScopedCompletionEvent(const ScopedCompletionEvent&) = delete;
   ~ScopedCompletionEvent() { event_->Signal(); }
+
+  ScopedCompletionEvent& operator=(const ScopedCompletionEvent&) = delete;
 
  private:
   CompletionEvent* const event_;
-  DISALLOW_COPY_AND_ASSIGN(ScopedCompletionEvent);
 };
 
 ProxyImpl::ProxyImpl(base::WeakPtr<ProxyMain> proxy_main_weak_ptr,
@@ -60,7 +62,6 @@ ProxyImpl::ProxyImpl(base::WeakPtr<ProxyMain> proxy_main_weak_ptr,
       commit_completion_waits_for_activation_(false),
       next_frame_is_newly_committed_frame_(false),
       inside_draw_(false),
-      input_throttled_until_commit_(false),
       task_runner_provider_(task_runner_provider),
       smoothness_priority_expiration_notifier_(
           task_runner_provider->ImplThreadTaskRunner(),
@@ -165,14 +166,6 @@ void ProxyImpl::InitializeLayerTreeFrameSinkOnImpl(
     scheduler_->DidCreateAndInitializeLayerTreeFrameSink();
 }
 
-void ProxyImpl::SetInputThrottledUntilCommitOnImpl(bool is_throttled) {
-  DCHECK(IsImplThread());
-  if (is_throttled == input_throttled_until_commit_)
-    return;
-  input_throttled_until_commit_ = is_throttled;
-  RenewTreePriority();
-}
-
 void ProxyImpl::SetDeferBeginMainFrameOnImpl(
     bool defer_begin_main_frame) const {
   DCHECK(IsImplThread());
@@ -199,9 +192,6 @@ void ProxyImpl::BeginMainFrameAbortedOnImpl(
   DCHECK(IsImplThread());
   DCHECK(scheduler_->CommitPending());
 
-  if (CommitEarlyOutHandledCommit(reason)) {
-    SetInputThrottledUntilCommitOnImpl(false);
-  }
   host_impl_->BeginMainFrameAborted(reason, std::move(swap_promises));
   scheduler_->NotifyBeginMainFrameStarted(main_thread_start_time);
   scheduler_->BeginMainFrameAborted(reason);
@@ -424,7 +414,7 @@ void ProxyImpl::RenewTreePriority() {
 
   // New content always takes priority when ui resources have been evicted.
   if (host_impl_->active_tree()->GetDeviceViewport().size().IsEmpty() ||
-      host_impl_->EvictedUIResourcesExist() || input_throttled_until_commit_) {
+      host_impl_->EvictedUIResourcesExist()) {
     // Once we enter NEW_CONTENTS_TAKES_PRIORITY mode, visible tiles on active
     // tree might be freed. We need to set RequiresHighResToDraw to ensure that
     // high res tiles will be required to activate pending tree.
@@ -513,6 +503,21 @@ void ProxyImpl::DidGenerateLocalSurfaceIdAllocationOnImplThread(
   MainThreadTaskRunner()->PostTask(
       FROM_HERE, base::BindOnce(&ProxyMain::DidGenerateLocalSurfaceIdAllocation,
                                 proxy_main_weak_ptr_, allocation));
+}
+
+void ProxyImpl::NotifyAnimationWorkletStateChange(
+    AnimationWorkletMutationState state,
+    ElementListType element_list_type) {
+  DCHECK(IsImplThread());
+  Scheduler::AnimationWorkletState animation_worklet_state =
+      (state == AnimationWorkletMutationState::STARTED)
+          ? Scheduler::AnimationWorkletState::PROCESSING
+          : Scheduler::AnimationWorkletState::IDLE;
+  Scheduler::TreeType tree_type = (element_list_type == ElementListType::ACTIVE)
+                                      ? Scheduler::TreeType::ACTIVE
+                                      : Scheduler::TreeType::PENDING;
+  scheduler_->NotifyAnimationWorkletStateChange(animation_worklet_state,
+                                                tree_type);
 }
 
 bool ProxyImpl::WillBeginImplFrame(const viz::BeginFrameArgs& args) {
@@ -614,8 +619,6 @@ void ProxyImpl::ScheduledActionCommit() {
   // Delay this step until afer the main thread has been released as it's
   // often a good bit of work to update the tree and prepare the new frame.
   host_impl_->CommitComplete();
-
-  SetInputThrottledUntilCommitOnImpl(false);
 
   next_frame_is_newly_committed_frame_ = true;
 }

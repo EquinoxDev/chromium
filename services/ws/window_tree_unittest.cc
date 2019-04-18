@@ -34,6 +34,7 @@
 #include "ui/aura/test/aura_test_helper.h"
 #include "ui/aura/test/test_screen.h"
 #include "ui/aura/test/test_window_delegate.h"
+#include "ui/aura/test/test_window_parenting_client.h"
 #include "ui/aura/test/window_occlusion_tracker_test_api.h"
 #include "ui/aura/window.h"
 #include "ui/aura/window_tracker.h"
@@ -383,7 +384,15 @@ TEST(WindowTreeTest, SetTopLevelWindowBoundsNullSurfaceId) {
   // from the client.
   EXPECT_TRUE(
       setup.window_tree_test_helper()->SetWindowBounds(top_level, bounds));
-  EXPECT_TRUE(setup.changes()->empty());
+  // The server always responds with a bounds change when the client changes the
+  // bounds and does not supply a LocalSurfaceId.
+  ASSERT_FALSE(setup.changes()->empty());
+  const auto& change = (*setup.changes())[0];
+  EXPECT_EQ(CHANGE_TYPE_NODE_BOUNDS_CHANGED, change.type);
+  EXPECT_EQ(setup.window_tree_test_helper()->TransportIdForWindow(top_level),
+            change.window_id);
+  EXPECT_TRUE(change.local_surface_id_allocation);
+  EXPECT_EQ(bounds, change.bounds);
 }
 
 TEST(WindowTreeTest, SetChildWindowBounds) {
@@ -2311,7 +2320,7 @@ TEST(WindowTreeTest, OcclusionStateChange) {
   aura::Window* blocking_window =
       setup.window_tree_test_helper()->NewTopLevelWindow();
   ASSERT_TRUE(blocking_window);
-  blocking_window->SetProperty(aura::client::kClientWindowHasContent, true);
+  blocking_window->SetProperty(aura::client::kWindowLayerDrawn, true);
   blocking_window->SetBounds(gfx::Rect(0, 0, 15, 15));
   blocking_window->Show();
 
@@ -2343,7 +2352,7 @@ TEST(WindowTreeTest, OcclusionStateChangeBatchSameTree) {
   aura::Window* blocking_window =
       setup.window_tree_test_helper()->NewTopLevelWindow();
   ASSERT_TRUE(blocking_window);
-  blocking_window->SetProperty(aura::client::kClientWindowHasContent, true);
+  blocking_window->SetProperty(aura::client::kWindowLayerDrawn, true);
   blocking_window->SetBounds(gfx::Rect(0, 0, 20, 15));
   blocking_window->Show();
 
@@ -2382,7 +2391,7 @@ TEST(WindowTreeTest, OcclusionStateChangeBatchDifferentTree) {
   aura::Window* blocking_window =
       setup.window_tree_test_helper()->NewTopLevelWindow();
   ASSERT_TRUE(blocking_window);
-  blocking_window->SetProperty(aura::client::kClientWindowHasContent, true);
+  blocking_window->SetProperty(aura::client::kWindowLayerDrawn, true);
   blocking_window->SetBounds(gfx::Rect(0, 0, 20, 15));
   blocking_window->Show();
 
@@ -2587,6 +2596,32 @@ TEST(WindowTreeTest, SetWindowTransform) {
   EXPECT_TRUE(
       setup.window_tree_test_helper()->SetTransform(child_window, scaled));
   EXPECT_EQ(scaled, child_window->transform());
+}
+
+TEST(WindowTreeTest, AddingTransientGoesThroughParentingClient) {
+  WindowServiceTestSetup setup;
+  aura::test::TestWindowParentingClient test_window_parenting_client(
+      setup.aura_test_helper()->root_window());
+  WindowTreeTestHelper* helper = setup.window_tree_test_helper();
+  aura::Window* top_level = helper->NewTopLevelWindow();
+  ASSERT_TRUE(top_level);
+  aura::Window* transient = helper->NewTopLevelWindow();
+  ASSERT_TRUE(transient);
+
+  // Put |top_level| in |container|.
+  aura::Window container(nullptr);
+  container.Init(ui::LAYER_NOT_DRAWN);
+  top_level->parent()->AddChild(&container);
+  container.AddChild(top_level);
+  test_window_parenting_client.set_default_parent(&container);
+  EXPECT_NE(&container, transient->parent());
+
+  // AddTransientWindow() should trigger calling into the WindowParentingClient,
+  // which will result in adding |transient| as a child of |container|.
+  helper->window_tree()->AddTransientWindow(
+      10, helper->TransportIdForWindow(top_level),
+      helper->TransportIdForWindow(transient));
+  EXPECT_EQ(&container, transient->parent());
 }
 
 }  // namespace

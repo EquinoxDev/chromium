@@ -152,8 +152,8 @@ class CORE_EXPORT Event : public ScriptWrappable {
 
   void SetRelatedTargetIfExists(EventTarget* related_target);
 
-  unsigned short eventPhase() const { return event_phase_; }
-  void SetEventPhase(unsigned short event_phase) { event_phase_ = event_phase; }
+  uint8_t eventPhase() const { return event_phase_; }
+  void SetEventPhase(uint8_t event_phase) { event_phase_ = event_phase; }
 
   void SetFireOnlyCaptureListenersAtTarget(
       bool fire_only_capture_listeners_at_target) {
@@ -239,9 +239,6 @@ class CORE_EXPORT Event : public ScriptWrappable {
 
   bool defaultPrevented() const { return default_prevented_; }
   virtual void preventDefault();
-  void SetDefaultPrevented(bool default_prevented) {
-    default_prevented_ = default_prevented;
-  }
 
   bool DefaultHandled() const { return default_handled_; }
   void SetDefaultHandled() { default_handled_ = true; }
@@ -353,7 +350,7 @@ class CORE_EXPORT Event : public ScriptWrappable {
   unsigned fire_only_non_capture_listeners_at_target_ : 1;
 
   PassiveMode handling_passive_;
-  unsigned short event_phase_;
+  uint8_t event_phase_;
   Member<EventTarget> current_target_;
   Member<EventTarget> target_;
   Member<Event> underlying_event_;

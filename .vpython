@@ -282,12 +282,25 @@ wheel: <
   version: "version:5.2.2"
 >
 
+# Used by:
+#   tools/infra
+wheel: <
+  name: "infra/python/wheels/requests-py2_py3"
+  version: "version:2.13.0"
+>
 wheel: <
   name: "infra/python/wheels/colorama-py2_py3"
   version: "version:0.4.1"
 >
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
+=======
+wheel: <
+  name: "infra/python/wheels/mock-py2_py3"
+  version: "version:2.0.0"
+>
+>>>>>>> 2d57e5b8afc6d01b344a8d95d3470d46b35845c5
 
 wheel: <
   name: "infra/python/wheels/atomicwrites-py2_py3"

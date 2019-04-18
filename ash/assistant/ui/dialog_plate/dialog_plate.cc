@@ -8,6 +8,7 @@
 #include "ash/assistant/ui/assistant_ui_constants.h"
 #include "ash/assistant/ui/assistant_view_delegate.h"
 #include "ash/assistant/ui/base/assistant_button.h"
+#include "ash/assistant/ui/dialog_plate/mic_view.h"
 #include "ash/assistant/util/animation_util.h"
 #include "ash/resources/vector_icons/vector_icons.h"
 #include "ash/strings/grit/ash_strings.h"
@@ -73,14 +74,6 @@ DialogPlate::~DialogPlate() {
   delegate_->RemoveInteractionModelObserver(this);
 }
 
-void DialogPlate::AddObserver(DialogPlateObserver* observer) {
-  observers_.AddObserver(observer);
-}
-
-void DialogPlate::RemoveObserver(DialogPlateObserver* observer) {
-  observers_.RemoveObserver(observer);
-}
-
 const char* DialogPlate::GetClassName() const {
   return "DialogPlate";
 }
@@ -115,9 +108,8 @@ bool DialogPlate::HandleKeyEvent(views::Textfield* textfield,
       // Only non-empty trimmed text is consider a valid contents commit.
       // Anything else will simply result in the DialogPlate being cleared.
       if (!trimmed_text.empty()) {
-        for (DialogPlateObserver& observer : observers_)
-          observer.OnDialogPlateContentsCommitted(
-              base::UTF16ToUTF8(trimmed_text));
+        delegate_->OnDialogPlateContentsCommitted(
+            base::UTF16ToUTF8(trimmed_text));
       }
 
       textfield_->SetText(base::string16());
@@ -373,7 +365,7 @@ void DialogPlate::InitVoiceLayoutContainer() {
 
   // Animated voice input toggle.
   animated_voice_input_toggle_ =
-      new ActionView(this, delegate_, AssistantButtonId::kVoiceInputToggle);
+      new MicView(this, delegate_, AssistantButtonId::kVoiceInputToggle);
   animated_voice_input_toggle_->SetAccessibleName(
       l10n_util::GetStringUTF16(IDS_ASH_ASSISTANT_DIALOG_PLATE_MIC_ACCNAME));
   voice_layout_container_->AddChildView(animated_voice_input_toggle_);
@@ -388,9 +380,7 @@ void DialogPlate::InitVoiceLayoutContainer() {
 }
 
 void DialogPlate::OnButtonPressed(AssistantButtonId id) {
-  for (DialogPlateObserver& observer : observers_)
-    observer.OnDialogPlateButtonPressed(id);
-
+  delegate_->OnDialogPlateButtonPressed(id);
   textfield_->SetText(base::string16());
 }
 

@@ -12,9 +12,9 @@
 
 namespace credential_provider {
 
-CReauthCredential::CReauthCredential() {}
+CReauthCredential::CReauthCredential() = default;
 
-CReauthCredential::~CReauthCredential() {}
+CReauthCredential::~CReauthCredential() = default;
 
 HRESULT CReauthCredential::FinalConstruct() {
   LOGFN(INFO);
@@ -23,19 +23,6 @@ HRESULT CReauthCredential::FinalConstruct() {
 
 void CReauthCredential::FinalRelease() {
   LOGFN(INFO);
-}
-
-// ICredentialProviderCredential2 //////////////////////////////////////////////
-HRESULT CReauthCredential::GetUserSid(wchar_t** sid) {
-  USES_CONVERSION;
-  DCHECK(sid);
-  LOGFN(INFO) << "sid=" << OLE2CW(os_user_sid_);
-
-  HRESULT hr = ::SHStrDupW(OLE2CW(os_user_sid_), sid);
-  if (FAILED(hr))
-    LOGFN(ERROR) << "SHStrDupW hr=" << putHR(hr);
-
-  return hr;
 }
 
 // CGaiaCredentialBase /////////////////////////////////////////////////////////
@@ -52,7 +39,7 @@ HRESULT CReauthCredential::GetUserGlsCommandline(
     command_line->AppendSwitchNative(kGaiaIdSwitch, gaia_id);
     if (email_for_reauth_.Length()) {
       command_line->AppendSwitchNative(kPrefillEmailSwitch,
-                                       (BSTR)email_for_reauth_);
+                                       OLE2CW(email_for_reauth_));
     }
   } else {
     LOGFN(ERROR) << "Reauth credential on user=" << os_username_
@@ -72,19 +59,14 @@ HRESULT CReauthCredential::ValidateExistingUser(const base::string16& username,
   // SID, domain and username found must match what is stored in this
   // credential.
   if ((os_username_ != W2COLE(username.c_str())) ||
-      (os_user_domain_.Length() && os_user_domain_ != W2COLE(domain.c_str()))) {
-    LOGFN(ERROR) << "Username calculated '" << domain << "\\" << username
-                 << "' does not match the "
-                 << "username that is set '" << os_user_domain_ << "\\"
-                 << os_username_ << "'";
+      (os_user_domain_.Length() && os_user_domain_ != W2COLE(domain.c_str())) ||
+      (os_user_sid_.Length() && os_user_sid_ != W2COLE(sid.c_str()))) {
+    LOGFN(ERROR) << "Username '" << domain << "\\" << username << "' or SID '"
+                 << sid << "' does not match the username '"
+                 << OLE2CW(os_user_domain_) << "\\" << OLE2CW(os_username_)
+                 << "' or SID '" << OLE2CW(os_user_sid_)
+                 << "' for this credential";
     *error_text = AllocErrorString(IDS_ACCOUNT_IN_USE_BASE);
-    return E_UNEXPECTED;
-  }
-
-  if (os_user_sid_ != W2COLE(sid.c_str())) {
-    LOGFN(ERROR) << "SID found '" << sid << "' does not match the SID of the"
-                 << "user that is set '" << os_user_sid_ << "'";
-    *error_text = AllocErrorString(IDS_INTERNAL_ERROR_BASE);
     return E_UNEXPECTED;
   }
 
@@ -96,12 +78,29 @@ HRESULT CReauthCredential::GetStringValueImpl(DWORD field_id, wchar_t** value) {
     base::string16 label(
         GetStringResource(IDS_EXISTING_AUTH_FID_PROVIDER_LABEL_BASE));
     return ::SHStrDupW(label.c_str(), value);
+  } else if (field_id == FID_DESCRIPTION) {
+    base::string16 label(GetStringResource(IDS_REAUTH_FID_DESCRIPTION_BASE));
+    return ::SHStrDupW(label.c_str(), value);
   }
 
   return CGaiaCredentialBase::GetStringValueImpl(field_id, value);
 }
 
-// IReauthCredential ///////////////////////////////////////////////////////////
+// ICredentialProviderCredential2 //////////////////////////////////////////////
+
+HRESULT CReauthCredential::GetUserSid(wchar_t** sid) {
+  USES_CONVERSION;
+  DCHECK(sid);
+  LOGFN(INFO) << "sid=" << OLE2CW(get_os_user_sid());
+
+  HRESULT hr = ::SHStrDupW(OLE2CW(get_os_user_sid()), sid);
+  if (FAILED(hr))
+    LOGFN(ERROR) << "SHStrDupW hr=" << putHR(hr);
+
+  return hr;
+}
+
+// IReauthCredential //////////////////////////////////////////////
 
 HRESULT CReauthCredential::SetOSUserInfo(BSTR sid, BSTR domain, BSTR username) {
   DCHECK(sid);
@@ -111,10 +110,17 @@ HRESULT CReauthCredential::SetOSUserInfo(BSTR sid, BSTR domain, BSTR username) {
   os_user_domain_ = domain;
   os_user_sid_ = sid;
   os_username_ = username;
-  return S_OK;
+
+  // Set the default credential provider for this tile.
+  HRESULT hr =
+      SetLogonUiUserTileEntry(OLE2W(sid), CLSID_GaiaCredentialProvider);
+  if (FAILED(hr))
+    LOGFN(ERROR) << "SetLogonUIUserTileEntry hr=" << putHR(hr);
+
+  return hr;
 }
 
-IFACEMETHODIMP CReauthCredential::SetEmailForReauth(BSTR email) {
+HRESULT CReauthCredential::SetEmailForReauth(BSTR email) {
   DCHECK(email);
 
   email_for_reauth_ = email;

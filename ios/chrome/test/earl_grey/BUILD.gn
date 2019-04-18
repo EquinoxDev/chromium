@@ -20,6 +20,7 @@ group("all_tests") {
     ":ios_chrome_settings_egtests",
     ":ios_chrome_smoke_egtests",
     ":ios_chrome_tab_grid_egtests",
+    ":ios_chrome_translate_egtests",
     ":ios_chrome_ui_egtests",
     ":ios_chrome_unified_consent_egtests",
     ":ios_chrome_web_egtests",
@@ -38,6 +39,7 @@ chrome_ios_eg_test("ios_chrome_integration_egtests") {
     "//ios/chrome/browser/ntp_tiles:eg_tests",
     "//ios/chrome/browser/passwords:eg_tests",
     "//ios/chrome/browser/prerender:eg_tests",
+    "//ios/chrome/browser/ui/payments:eg_tests",
   ]
 }
 
@@ -87,10 +89,10 @@ chrome_ios_eg_test("ios_chrome_tab_grid_egtests") {
 
 chrome_ios_eg_test("ios_chrome_ui_egtests") {
   deps = [
-    "//ios/chrome/browser/ui:eg_tests",
     "//ios/chrome/browser/ui/activity_services:eg_tests",
     "//ios/chrome/browser/ui/alert_coordinator:eg_tests",
     "//ios/chrome/browser/ui/autofill:eg_tests",
+    "//ios/chrome/browser/ui/browser_view:eg_tests",
     "//ios/chrome/browser/ui/content_suggestions:eg_tests",
     "//ios/chrome/browser/ui/dialogs:eg_tests",
     "//ios/chrome/browser/ui/download:eg_tests",
@@ -99,11 +101,11 @@ chrome_ios_eg_test("ios_chrome_ui_egtests") {
     "//ios/chrome/browser/ui/fullscreen:eg_tests",
     "//ios/chrome/browser/ui/history:eg_tests",
     "//ios/chrome/browser/ui/infobars:eg_tests",
+    "//ios/chrome/browser/ui/keyboard:eg_tests",
     "//ios/chrome/browser/ui/ntp:eg_tests",
     "//ios/chrome/browser/ui/omnibox/popup:eg_tests",
     "//ios/chrome/browser/ui/omnibox/popup/shortcuts:eg_tests",
     "//ios/chrome/browser/ui/page_info:eg_tests",
-    "//ios/chrome/browser/ui/payments:eg_tests",
     "//ios/chrome/browser/ui/popup_menu:eg_tests",
     "//ios/chrome/browser/ui/print:eg_tests",
     "//ios/chrome/browser/ui/qr_scanner:eg_tests",
@@ -195,6 +197,12 @@ chrome_ios_eg_test("ios_chrome_smoke_egtests") {
   libs = [ "XCTest.framework" ]
 }
 
+chrome_ios_eg_test("ios_chrome_translate_egtests") {
+  deps = [
+    "//ios/chrome/browser/translate:eg_tests",
+  ]
+}
+
 chrome_ios_eg_test("ios_chrome_external_url_egtests") {
   deps = [
     "//ios/chrome/browser/translate:external_url_eg_tests",
@@ -219,6 +227,8 @@ source_set("test_support") {
     "chrome_earl_grey.mm",
     "chrome_earl_grey_ui.h",
     "chrome_earl_grey_ui.mm",
+    "chrome_error_util.h",
+    "chrome_error_util.mm",
     "chrome_matchers.h",
     "chrome_matchers.mm",
     "chrome_matchers_shorthand.h",
@@ -260,6 +270,7 @@ source_set("test_support") {
     "//ios/third_party/material_components_ios",
     "//ios/web",
     "//ios/web:earl_grey_test_support",
+    "//ios/web/public/test:element_selector",
     "//ios/web/public/test/http_server",
     "//ui/base",
     "//ui/base:test_support",

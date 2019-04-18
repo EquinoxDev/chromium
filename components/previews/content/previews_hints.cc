@@ -6,7 +6,6 @@
 
 #include <unordered_set>
 
-#include "base/command_line.h"
 #include "base/files/file.h"
 #include "base/files/file_util.h"
 #include "base/metrics/histogram_functions.h"
@@ -123,6 +122,26 @@ base::Optional<PreviewsType> ConvertProtoOptimizationTypeToPreviewsType(
       return PreviewsType::RESOURCE_LOADING_HINTS;
     case optimization_guide::proto::LITE_PAGE_REDIRECT:
       return PreviewsType::LITE_PAGE_REDIRECT;
+    case optimization_guide::proto::OPTIMIZATION_NONE:
+      return PreviewsType::NONE;
+  }
+}
+
+// Returns whether the optimization type is enabled on this client.
+bool IsEnabledOptimizationType(
+    optimization_guide::proto::OptimizationType optimization_type) {
+  switch (optimization_type) {
+    case optimization_guide::proto::TYPE_UNSPECIFIED:
+      return false;
+    case optimization_guide::proto::NOSCRIPT:
+      return previews::params::IsNoScriptPreviewsEnabled();
+    case optimization_guide::proto::RESOURCE_LOADING:
+      return previews::params::IsResourceLoadingHintsEnabled();
+    case optimization_guide::proto::LITE_PAGE_REDIRECT:
+      return previews::params::IsLitePageServerPreviewsEnabled();
+    case optimization_guide::proto::OPTIMIZATION_NONE:
+      // Always consider enabled to allow as no-op optimization.
+      return true;
   }
 }
 
@@ -150,34 +169,6 @@ net::EffectiveConnectionType ConvertProtoEffectiveConnectionType(
   }
 }
 
-void UpdateTotalsForHintsWithPageHints(
-    const optimization_guide::proto::Hint& hint,
-    size_t* total_page_patterns_with_resource_loading_hints_received,
-    size_t* total_resource_loading_hints_received) {
-  DCHECK(!hint.page_hints().empty());
-  DCHECK(total_page_patterns_with_resource_loading_hints_received);
-  DCHECK(total_resource_loading_hints_received);
-
-  for (const auto& page_hint : hint.page_hints()) {
-    for (const auto& optimization : page_hint.whitelisted_optimizations()) {
-      base::Optional<PreviewsType> previews_type =
-          ConvertProtoOptimizationTypeToPreviewsType(
-              optimization.optimization_type());
-      if (!previews_type) {
-        continue;
-      }
-
-      if (previews_type == PreviewsType::RESOURCE_LOADING_HINTS) {
-        (*total_page_patterns_with_resource_loading_hints_received)++;
-        (*total_resource_loading_hints_received) +=
-            optimization.resource_loading_hints_size();
-      } else {
-        DCHECK_EQ(optimization.resource_loading_hints_size(), 0);
-      }
-    }
-  }
-}
-
 PreviewsProcessHintsResult ProcessConfigurationHints(
     optimization_guide::proto::Configuration* config,
     HintCacheStore::ComponentUpdateData* component_update_data) {
@@ -191,8 +182,6 @@ PreviewsProcessHintsResult ProcessConfigurationHints(
   std::unordered_set<std::string> seen_host_suffixes;
 
   size_t total_processed_hints_with_page_hints = 0;
-  size_t total_page_patterns_with_resource_loading_hints_received = 0;
-  size_t total_resource_loading_hints_received = 0;
 
   // Process each hint in the the hint configuration. The hints are mutable
   // because once processing is completed on each individual hint, it is moved
@@ -223,14 +212,6 @@ PreviewsProcessHintsResult ProcessConfigurationHints(
 
     if (!hint.page_hints().empty()) {
       ++total_processed_hints_with_page_hints;
-      UpdateTotalsForHintsWithPageHints(
-          hint, &total_page_patterns_with_resource_loading_hints_received,
-          &total_resource_loading_hints_received);
-
-      if (previews::params::IsResourceLoadingHintsEnabled()) {
-        UMA_HISTOGRAM_COUNTS("ResourceLoadingHints.PageHints.ProcessedCount",
-                             hint.page_hints().size());
-      }
 
       // Now that processing is finished on |hint|, move it into the component
       // data.
@@ -238,15 +219,6 @@ PreviewsProcessHintsResult ProcessConfigurationHints(
       // longer be valid.
       component_update_data->MoveHintIntoUpdateData(std::move(hint));
     }
-  }
-
-  if (previews::params::IsResourceLoadingHintsEnabled()) {
-    UMA_HISTOGRAM_COUNTS_1000(
-        "ResourceLoadingHints.PageHints.TotalReceived",
-        total_page_patterns_with_resource_loading_hints_received);
-    UMA_HISTOGRAM_COUNTS_100000(
-        "ResourceLoadingHints.ResourceHints.TotalReceived",
-        total_resource_loading_hints_received);
   }
 
   return total_processed_hints_with_page_hints > 0
@@ -315,8 +287,9 @@ std::unique_ptr<PreviewsHints> PreviewsHints::CreateFromHintsConfiguration(
   PreviewsProcessHintsResult process_hints_result =
       ProcessConfigurationHints(config.get(), component_update_data.get());
 
-  // Construct the PrevewsHints object with |component_update_data|, which will
-  // later be used to update the HintCache's component data during Initialize().
+  // Construct the PrevewsHints object with |component_update_data|, which
+  // will later be used to update the HintCache's component data during
+  // Initialize().
   std::unique_ptr<PreviewsHints> hints(
       new PreviewsHints(std::move(component_update_data)));
 
@@ -379,10 +352,11 @@ void PreviewsHints::ParseOptimizationFilters(
       }
       if (static_cast<int>(bloom_filter_proto.num_bits()) >
           previews::params::
-                  LitePageRedirectPreviewMaxServerBlacklistByteSize() /
+                  LitePageRedirectPreviewMaxServerBlacklistByteSize() *
               8) {
         DLOG(ERROR) << "Bloom filter data exceeds maximum size of "
-                    << previews::params::PreviewServerLoadshedMaxSeconds()
+                    << previews::params::
+                           LitePageRedirectPreviewMaxServerBlacklistByteSize()
                     << " bytes";
         RecordOptimizationFilterStatus(
             previews_type.value(),
@@ -435,19 +409,25 @@ bool PreviewsHints::IsWhitelisted(
 
   for (const auto& optimization :
        matched_page_hint->whitelisted_optimizations()) {
-    if (ConvertProtoOptimizationTypeToPreviewsType(
-            optimization.optimization_type()) == type) {
-      if (IsDisabledExperimentalOptimization(optimization)) {
-        continue;
-      }
-      // Found whitelisted optimization.
-      *out_inflation_percent = optimization.inflation_percent();
-      if (matched_page_hint->has_max_ect_trigger()) {
-        *out_ect_threshold = ConvertProtoEffectiveConnectionType(
-            matched_page_hint->max_ect_trigger());
-      }
-      return true;
+    // Skip over any disabled experimental optimizations.
+    if (IsDisabledPerOptimizationHintExperiment(optimization)) {
+      continue;
     }
+    if (!IsEnabledOptimizationType(optimization.optimization_type())) {
+      continue;
+    }
+    // Client should use this first whitelisted optimization it has enabled.
+    if (ConvertProtoOptimizationTypeToPreviewsType(
+            optimization.optimization_type()) != type) {
+      return false;
+    }
+    // |type| is the first whitelisted optimization this client supports.
+    *out_inflation_percent = optimization.inflation_percent();
+    if (matched_page_hint->has_max_ect_trigger()) {
+      *out_ect_threshold = ConvertProtoEffectiveConnectionType(
+          matched_page_hint->max_ect_trigger());
+    }
+    return true;
   }
 
   return false;
@@ -463,14 +443,13 @@ bool PreviewsHints::IsBlacklisted(const GURL& url, PreviewsType type) const {
   // Check large scale blacklists received from the server.
   // (At some point, we may have blacklisting to check in HintCache as well.)
   if (type == PreviewsType::LITE_PAGE_REDIRECT) {
-    if (base::CommandLine::ForCurrentProcess()->HasSwitch(
-            switches::kIgnoreLitePageRedirectOptimizationBlacklist)) {
-      return false;
+    // If no bloom filter blacklist is provided by the component update,
+    // assume a server error and return true.
+    if (!lite_page_redirect_blacklist_) {
+      return true;
     }
 
-    if (lite_page_redirect_blacklist_) {
-      return lite_page_redirect_blacklist_->ContainsHostSuffix(url);
-    }
+    return lite_page_redirect_blacklist_->ContainsHostSuffix(url);
   }
 
   return false;
@@ -512,7 +491,7 @@ bool PreviewsHints::GetResourceLoadingHints(
       continue;
     }
 
-    if (IsDisabledExperimentalOptimization(optimization)) {
+    if (IsDisabledPerOptimizationHintExperiment(optimization)) {
       continue;
     }
 

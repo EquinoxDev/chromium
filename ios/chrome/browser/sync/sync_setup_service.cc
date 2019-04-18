@@ -11,6 +11,7 @@
 #include "components/sync/base/stop_source.h"
 #include "components/sync/driver/sync_service.h"
 #include "components/sync/driver/sync_user_settings.h"
+#include "components/unified_consent/feature.h"
 #include "google_apis/gaia/google_service_auth_error.h"
 
 namespace {
@@ -84,11 +85,11 @@ bool SyncSetupService::UserActionIsRequiredToHaveTabSyncWork() {
     case SyncSetupService::kSyncServiceSignInNeedsUpdate:
     case SyncSetupService::kSyncServiceNeedsPassphrase:
     case SyncSetupService::kSyncServiceUnrecoverableError:
-      return true;
-    default:
-      NOTREACHED() << "Unknown sync service state.";
+    case SyncSetupService::kSyncSettingsNotConfirmed:
       return true;
   }
+  NOTREACHED() << "Unknown sync service state.";
+  return true;
 }
 
 bool SyncSetupService::IsSyncingAllDataTypes() const {
@@ -153,6 +154,8 @@ SyncSetupService::SyncServiceState SyncSetupService::GetSyncServiceState() {
     return kSyncServiceUnrecoverableError;
   if (sync_service_->GetUserSettings()->IsPassphraseRequiredForDecryption())
     return kSyncServiceNeedsPassphrase;
+  if (!IsFirstSetupComplete() && IsSyncEnabled())
+    return kSyncSettingsNotConfirmed;
   return kNoSyncServiceError;
 }
 
@@ -173,7 +176,22 @@ void SyncSetupService::PrepareForFirstSyncSetup() {
     sync_blocker_ = sync_service_->GetSetupInProgressHandle();
 }
 
-void SyncSetupService::CommitChanges() {
+void SyncSetupService::SetFirstSetupComplete() {
+  DCHECK(unified_consent::IsUnifiedConsentFeatureEnabled());
+  DCHECK(sync_blocker_);
+  // Turn on the sync setup completed flag only if the user did not turn sync
+  // off.
+  if (sync_service_->CanSyncFeatureStart()) {
+    sync_service_->GetUserSettings()->SetFirstSetupComplete();
+  }
+}
+
+bool SyncSetupService::IsFirstSetupComplete() const {
+  return sync_service_->GetUserSettings()->IsFirstSetupComplete();
+}
+
+void SyncSetupService::PreUnityCommitChanges() {
+  DCHECK(!unified_consent::IsUnifiedConsentFeatureEnabled());
   if (sync_service_->IsFirstSetupInProgress()) {
     // Turn on the sync setup completed flag only if the user did not turn sync
     // off.
@@ -182,6 +200,11 @@ void SyncSetupService::CommitChanges() {
     }
   }
 
+  sync_blocker_.reset();
+}
+
+void SyncSetupService::CommitSyncChanges() {
+  DCHECK(unified_consent::IsUnifiedConsentFeatureEnabled());
   sync_blocker_.reset();
 }
 

@@ -696,10 +696,6 @@ IN_PROC_BROWSER_TEST_F(DownloadNotificationTest, DownloadRemoved) {
 }
 
 IN_PROC_BROWSER_TEST_F(DownloadNotificationTest, DownloadMultipleFiles) {
-  // TODO(crbug.com/933963): Flaky with network service.
-  if (base::FeatureList::IsEnabled(network::features::kNetworkService))
-    return;
-
   GURL url1(SlowDownloadInterceptor::kUnknownSizeUrl);
   GURL url2(SlowDownloadInterceptor::kKnownSizeUrl);
 
@@ -865,7 +861,9 @@ IN_PROC_BROWSER_TEST_F(DownloadNotificationTest,
   EXPECT_EQ(download::DownloadItem::CANCELLED, downloads[0]->GetState());
 }
 
-IN_PROC_BROWSER_TEST_F(DownloadNotificationTest, IncognitoDownloadFile) {
+// TODO(crbug.com/938672): Reenable this.
+IN_PROC_BROWSER_TEST_F(DownloadNotificationTest,
+                       DISABLED_IncognitoDownloadFile) {
   PrepareIncognitoBrowser();
 
   // Starts an incognito download.
@@ -908,8 +906,9 @@ IN_PROC_BROWSER_TEST_F(DownloadNotificationTest, IncognitoDownloadFile) {
   chrome::CloseWindow(incognito_browser());
 }
 
+// TODO(crbug.com/938672): Reenable this.
 IN_PROC_BROWSER_TEST_F(DownloadNotificationTest,
-                       SimultaneousIncognitoAndNormalDownloads) {
+                       DISABLED_SimultaneousIncognitoAndNormalDownloads) {
   PrepareIncognitoBrowser();
 
   GURL url_incognito(SlowDownloadInterceptor::kUnknownSizeUrl);
@@ -1070,8 +1069,9 @@ IN_PROC_BROWSER_TEST_F(MultiProfileDownloadNotificationTest,
   AddAllUsers();
 }
 
+// TODO(crbug.com/933963): Flaky with network service.
 IN_PROC_BROWSER_TEST_F(MultiProfileDownloadNotificationTest,
-                       DownloadMultipleFiles) {
+                       DISABLED_DownloadMultipleFiles) {
   AddAllUsers();
 
   GURL url(SlowDownloadInterceptor::kUnknownSizeUrl);

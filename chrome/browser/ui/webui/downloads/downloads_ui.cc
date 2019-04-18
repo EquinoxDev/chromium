@@ -15,6 +15,7 @@
 #include "base/values.h"
 #include "chrome/browser/defaults.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/safe_browsing/advanced_protection_status_manager.h"
 #include "chrome/browser/ui/webui/dark_mode_handler.h"
 #include "chrome/browser/ui/webui/downloads/downloads_dom_handler.h"
 #include "chrome/browser/ui/webui/managed_ui_handler.h"
@@ -35,6 +36,8 @@
 #include "content/public/browser/web_ui.h"
 #include "content/public/browser/web_ui_data_source.h"
 #include "content/public/common/content_features.h"
+#include "ui/base/accelerators/accelerator.h"
+#include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 
 using content::BrowserContext;
@@ -73,12 +76,26 @@ content::WebUIDataSource* CreateDownloadsUIHTMLSource(Profile* profile) {
   // Dangerous file.
   source->AddLocalizedString("dangerFileDesc",
                              IDS_BLOCK_REASON_GENERIC_DOWNLOAD);
-  source->AddLocalizedString("dangerDownloadDesc",
-                             IDS_BLOCK_REASON_DANGEROUS_DOWNLOAD);
-  source->AddLocalizedString("dangerUncommonDesc",
-                             IDS_BLOCK_REASON_UNCOMMON_DOWNLOAD);
-  source->AddLocalizedString("dangerSettingsDesc",
-                             IDS_BLOCK_REASON_UNWANTED_DOWNLOAD);
+
+  bool requests_ap_verdicts = safe_browsing::AdvancedProtectionStatusManager::
+      RequestsAdvancedProtectionVerdicts(profile);
+
+  source->AddLocalizedString(
+      "dangerDownloadDesc",
+      requests_ap_verdicts
+          ? IDS_BLOCK_REASON_DANGEROUS_DOWNLOAD_IN_ADVANCED_PROTECTION
+          : IDS_BLOCK_REASON_DANGEROUS_DOWNLOAD);
+  source->AddLocalizedString(
+      "dangerUncommonDesc",
+      requests_ap_verdicts
+          ? IDS_BLOCK_REASON_UNCOMMON_DOWNLOAD_IN_ADVANCED_PROTECTION
+          : IDS_BLOCK_REASON_UNCOMMON_DOWNLOAD);
+  source->AddLocalizedString(
+      "dangerSettingsDesc",
+      requests_ap_verdicts
+          ? IDS_BLOCK_REASON_UNWANTED_DOWNLOAD_IN_ADVANCED_PROTECTION
+          : IDS_BLOCK_REASON_UNWANTED_DOWNLOAD);
+
   source->AddLocalizedString("dangerSave", IDS_CONFIRM_DOWNLOAD);
   source->AddLocalizedString("dangerRestore", IDS_CONFIRM_DOWNLOAD_RESTORE);
   source->AddLocalizedString("dangerDiscard", IDS_DISCARD_DOWNLOAD);
@@ -94,6 +111,19 @@ content::WebUIDataSource* CreateDownloadsUIHTMLSource(Profile* profile) {
                              IDS_DOWNLOAD_LINK_REMOVE_ARIA_LABEL);
   source->AddLocalizedString("controlRetry", IDS_DOWNLOAD_LINK_RETRY);
   source->AddLocalizedString("controlledByUrl", IDS_DOWNLOAD_BY_EXTENSION_URL);
+  source->AddLocalizedString("toastClearedAll", IDS_DOWNLOAD_TOAST_CLEARED_ALL);
+  source->AddLocalizedString("toastRemovedFromList",
+                             IDS_DOWNLOAD_TOAST_REMOVED_FROM_LIST);
+  source->AddLocalizedString("undo", IDS_DOWNLOAD_UNDO);
+
+  // Build an Accelerator to describe undo shortcut
+  // NOTE: the undo shortcut is also defined in downloads/downloads.html
+  // TODO(crbug/893033): de-duplicate shortcut by moving all shortcut
+  // definitions from JS to C++.
+  ui::Accelerator undoAccelerator(ui::VKEY_Z, ui::EF_PLATFORM_ACCELERATOR);
+  source->AddString("undoDescription", l10n_util::GetStringFUTF16(
+                                           IDS_DOWNLOAD_UNDO_DESCRIPTION,
+                                           undoAccelerator.GetShortcutText()));
 
   PrefService* prefs = profile->GetPrefs();
   source->AddBoolean("allowDeletingHistory",
@@ -102,21 +132,17 @@ content::WebUIDataSource* CreateDownloadsUIHTMLSource(Profile* profile) {
 
   source->AddLocalizedString("inIncognito", IDS_DOWNLOAD_IN_INCOGNITO);
 
-  source->AddResourcePath("1x/incognito_marker.png",
-                          IDR_DOWNLOADS_1X_INCOGNITO_MARKER_PNG);
-  source->AddResourcePath("2x/incognito_marker.png",
-                          IDR_DOWNLOADS_2X_INCOGNITO_MARKER_PNG);
-  source->AddResourcePath("1x/no_downloads.png",
-                          IDR_DOWNLOADS_1X_NO_DOWNLOADS_PNG);
-  source->AddResourcePath("2x/no_downloads.png",
-                          IDR_DOWNLOADS_2X_NO_DOWNLOADS_PNG);
+  source->AddResourcePath("images/incognito_marker.svg",
+                          IDR_DOWNLOADS_IMAGES_INCOGNITO_MARKER_SVG);
+  source->AddResourcePath("images/no_downloads.svg",
+                          IDR_DOWNLOADS_IMAGES_NO_DOWNLOADS_SVG);
   source->AddResourcePath("downloads.mojom-lite.js",
                           IDR_DOWNLOADS_MOJO_LITE_JS);
 
 #if BUILDFLAG(OPTIMIZE_WEBUI)
   source->UseGzip(base::BindRepeating([](const std::string& path) {
-    return path != "1x/incognito_marker.png" && path != "1x/no_downloads.png" &&
-           path != "2x/incognito_marker.png" && path != "2x/no_downloads.png" &&
+    return path != "images/incognito_marker.svg" &&
+           path != "images/no_downloads.svg" &&
            path != "downloads.mojom-lite.js";
   }));
 

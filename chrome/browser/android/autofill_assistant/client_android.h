@@ -46,8 +46,16 @@ class ClientAndroid : public Client,
   void Start(JNIEnv* env,
              const base::android::JavaParamRef<jobject>& jcaller,
              const base::android::JavaParamRef<jstring>& jinitial_url,
+             const base::android::JavaParamRef<jstring>& jexperiment_ids,
              const base::android::JavaParamRef<jobjectArray>& parameterNames,
              const base::android::JavaParamRef<jobjectArray>& parameterValues);
+  void DestroyUI(JNIEnv* env,
+                 const base::android::JavaParamRef<jobject>& jcaller);
+  void TransferUITo(
+      JNIEnv* env,
+      const base::android::JavaParamRef<jobject>& jcaller,
+      const base::android::JavaParamRef<jobject>& jother_web_contents);
+
   base::android::ScopedJavaLocalRef<jstring> GetPrimaryAccountName(
       JNIEnv* env,
       const base::android::JavaParamRef<jobject>& jcaller);
@@ -79,6 +87,9 @@ class ClientAndroid : public Client,
 
   explicit ClientAndroid(content::WebContents* web_contents);
   void CreateController();
+  void DestroyController();
+  bool NeedsUI();
+  void SetUI(std::unique_ptr<UiControllerAndroid> ui_controller_android);
 
   WEB_CONTENTS_USER_DATA_KEY_DECL();
 
@@ -89,6 +100,7 @@ class ClientAndroid : public Client,
   std::unique_ptr<UiControllerAndroid> ui_controller_android_;
   base::OnceCallback<void(bool, const std::string&)>
       fetch_access_token_callback_;
+  std::string server_url_;
 
   base::WeakPtrFactory<ClientAndroid> weak_ptr_factory_;
 

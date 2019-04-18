@@ -33,6 +33,8 @@
 #define THIRD_PARTY_BLINK_RENDERER_CORE_PAGE_CHROME_CLIENT_IMPL_H_
 
 #include <memory>
+
+#include "cc/input/overscroll_behavior.h"
 #include "third_party/blink/public/web/web_navigation_policy.h"
 #include "third_party/blink/public/web/web_window_features.h"
 #include "third_party/blink/renderer/core/core_export.h"
@@ -66,7 +68,7 @@ class CORE_EXPORT ChromeClientImpl final : public ChromeClient {
   void TakeFocus(WebFocusType) override;
   void FocusedNodeChanged(Node* from_node, Node* to_node) override;
   void BeginLifecycleUpdates() override;
-  void StartDeferringCommits() override;
+  void StartDeferringCommits(base::TimeDelta timeout) override;
   void StopDeferringCommits() override;
   bool HadFormInteraction() const override;
   void StartDragging(LocalFrame*,
@@ -78,21 +80,21 @@ class CORE_EXPORT ChromeClientImpl final : public ChromeClient {
   Page* CreateWindowDelegate(LocalFrame*,
                              const FrameLoadRequest&,
                              const WebWindowFeatures&,
-                             NavigationPolicy,
-                             SandboxFlags,
+                             WebSandboxFlags,
                              const FeaturePolicy::FeatureState&,
                              const SessionStorageNamespaceId&) override;
   void Show(NavigationPolicy) override;
   void DidOverscroll(const FloatSize& overscroll_delta,
                      const FloatSize& accumulated_overscroll,
                      const FloatPoint& position_in_viewport,
-                     const FloatSize& velocity_in_viewport,
-                     const cc::OverscrollBehavior&) override;
+                     const FloatSize& velocity_in_viewport) override;
+  void SetOverscrollBehavior(LocalFrame& main_frame,
+                             const cc::OverscrollBehavior&) override;
   bool ShouldReportDetailedMessageForSource(LocalFrame&,
                                             const String&) override;
   void AddMessageToConsole(LocalFrame*,
-                           MessageSource,
-                           MessageLevel,
+                           mojom::ConsoleMessageSource,
+                           mojom::ConsoleMessageLevel,
                            const String& message,
                            unsigned line_number,
                            const String& source_id,
@@ -230,7 +232,6 @@ class CORE_EXPORT ChromeClientImpl final : public ChromeClient {
 
   void OnMouseDown(Node&) override;
   void DidUpdateBrowserControls() const override;
-  void SetOverscrollBehavior(const cc::OverscrollBehavior&) override;
 
   FloatSize ElasticOverscroll() const override;
 
@@ -243,6 +244,18 @@ class CORE_EXPORT ChromeClientImpl final : public ChromeClient {
   void RequestDecode(LocalFrame*,
                      const PaintImage&,
                      base::OnceCallback<void(bool)>) override;
+
+  void NotifySwapTime(LocalFrame& frame,
+                      WebWidgetClient::ReportTimeCallback callback) override;
+
+  void FallbackCursorModeLockCursor(LocalFrame* frame,
+                                    bool left,
+                                    bool right,
+                                    bool up,
+                                    bool down) override;
+
+  void FallbackCursorModeSetCursorVisibility(LocalFrame* frame,
+                                             bool visible) override;
 
  private:
   bool IsChromeClientImpl() const override { return true; }

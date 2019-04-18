@@ -101,8 +101,12 @@ void ChildAccountService::Init() {
 
   // If we're already signed in, check the account immediately just to be sure.
   // (We might have missed an update before registering as an observer.)
-  if (identity_manager_->HasPrimaryAccount())
-    OnExtendedAccountInfoUpdated(identity_manager_->GetPrimaryAccountInfo());
+  base::Optional<AccountInfo> primary_account_info =
+      identity_manager_->FindExtendedAccountInfoForAccount(
+          identity_manager_->GetPrimaryAccountInfo());
+
+  if (primary_account_info.has_value())
+    OnExtendedAccountInfoUpdated(primary_account_info.value());
 }
 
 bool ChildAccountService::IsChildAccountStatusKnown() {
@@ -182,8 +186,6 @@ bool ChildAccountService::SetActive(bool active) {
     signin_util::SetUserSignoutAllowedForProfile(profile_, false);
 #endif
 
-    // TODO(treib): Maybe store the last update time in a pref, so we don't
-    // have to re-fetch on every start.
     StartFetchingFamilyInfo();
 
     SupervisedUserService* service =
@@ -217,8 +219,10 @@ bool ChildAccountService::SetActive(bool active) {
 
   // Trigger a sync reconfig to enable/disable the right SU data types.
   // The logic to do this lives in the SupervisedUserSyncDataTypeController.
+  // TODO(crbug.com/946473): Get rid of this hack and instead call
+  // ReadyForStartChanged from the controller.
   syncer::SyncService* sync_service =
-      ProfileSyncServiceFactory::GetSyncServiceForProfile(profile_);
+      ProfileSyncServiceFactory::GetForProfile(profile_);
   if (sync_service->GetUserSettings()->IsFirstSetupComplete()) {
     // Trigger a reconfig by grabbing a SyncSetupInProgressHandle and
     // immediately releasing it again (via the temporary unique_ptr going away).

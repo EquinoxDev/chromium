@@ -4,7 +4,7 @@
 
 #include "chrome/browser/ui/ash/keyboard/chrome_keyboard_controller_client.h"
 
-#include <memory>
+#include <utility>
 
 #include "ash/public/interfaces/constants.mojom.h"
 #include "base/bind.h"
@@ -132,7 +132,7 @@ void ChromeKeyboardControllerClient::Shutdown() {
       keyboard::KeyboardController::HasInstance()) {
     // In classic Ash, keyboard::KeyboardController owns ChromeKeyboardUI which
     // accesses this class, so make sure that the UI has been destroyed.
-    keyboard::KeyboardController::Get()->DisableKeyboard();
+    keyboard::KeyboardController::Get()->Shutdown();
   }
   keyboard_contents_.reset();
 }
@@ -240,18 +240,12 @@ bool ChromeKeyboardControllerClient::IsKeyboardOverscrollEnabled() {
     return cached_keyboard_config_->overscroll_behavior ==
            keyboard::mojom::KeyboardOverscrollBehavior::kEnabled;
   }
-  return !base::CommandLine::ForCurrentProcess()->HasSwitch(
-      keyboard::switches::kDisableVirtualKeyboardOverscroll);
+  return true;
 }
 
 GURL ChromeKeyboardControllerClient::GetVirtualKeyboardUrl() {
   if (!virtual_keyboard_url_for_test_.is_empty())
     return virtual_keyboard_url_for_test_;
-
-  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
-          keyboard::switches::kDisableInputView)) {
-    return GURL(keyboard::kKeyboardURL);
-  }
 
   chromeos::input_method::InputMethodManager* ime_manager =
       chromeos::input_method::InputMethodManager::Get();
@@ -367,10 +361,9 @@ void ChromeKeyboardControllerClient::OnKeyboardOccludedBoundsChanged(
     const gfx::Rect& screen_bounds) {
   if (!GetKeyboardWindow())
     return;
-  gfx::Rect bounds = BoundsFromScreen(screen_bounds);
-  DVLOG(1) << "OnKeyboardOccludedBoundsChanged: " << bounds.ToString();
+  DVLOG(1) << "OnKeyboardOccludedBoundsChanged: " << screen_bounds.ToString();
   for (auto& observer : observers_)
-    observer.OnKeyboardOccludedBoundsChanged(bounds);
+    observer.OnKeyboardOccludedBoundsChanged(screen_bounds);
 }
 
 void ChromeKeyboardControllerClient::OnLoadKeyboardContentsRequested() {
@@ -384,8 +377,13 @@ void ChromeKeyboardControllerClient::OnLoadKeyboardContentsRequested() {
   DVLOG(1) << "OnLoadKeyboardContentsRequested: Create: " << keyboard_url;
   keyboard_contents_ = std::make_unique<ChromeKeyboardWebContents>(
       GetProfile(), keyboard_url,
+      /*load_callback=*/
       base::BindOnce(&ChromeKeyboardControllerClient::OnKeyboardContentsLoaded,
-                     weak_ptr_factory_.GetWeakPtr()));
+                     weak_ptr_factory_.GetWeakPtr()),
+      /*unembed_callback=*/
+      base::BindRepeating(
+          &ChromeKeyboardControllerClient::OnKeyboardUIDestroyed,
+          weak_ptr_factory_.GetWeakPtr()));
 }
 
 void ChromeKeyboardControllerClient::OnKeyboardUIDestroyed() {

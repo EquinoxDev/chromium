@@ -3,13 +3,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-"""Runs the WebDriver Java acceptance tests.
-
-This script is called from chrome/test/chromedriver/run_all_tests.py and reports
-results using the buildbot annotation scheme.
-
-For ChromeDriver documentation, refer to http://code.google.com/p/chromedriver.
-"""
+"""Runs the WebDriver Java acceptance tests."""
 
 import optparse
 import os
@@ -291,8 +285,6 @@ def main():
   if options.android_package:
     if options.android_package not in constants.PACKAGE_INFO:
       parser.error('Invalid --android-package')
-    if options.chrome_version != 'HEAD':
-      parser.error('Android does not support the --chrome-version argument.')
     environment = test_environment.AndroidTestEnvironment(
         options.android_package)
   else:

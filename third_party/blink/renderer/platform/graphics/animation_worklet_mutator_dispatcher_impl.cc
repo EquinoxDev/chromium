@@ -5,6 +5,7 @@
 #include "third_party/blink/renderer/platform/graphics/animation_worklet_mutator_dispatcher_impl.h"
 
 #include "base/barrier_closure.h"
+#include "base/callback_helpers.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/synchronization/waitable_event.h"
 #include "base/timer/elapsed_timer.h"
@@ -44,6 +45,19 @@ class AnimationWorkletMutatorDispatcherImpl::OutputVectorRef
  private:
   OutputVectorRef() = default;
   Vector<std::unique_ptr<AnimationWorkletDispatcherOutput>> vector_;
+};
+
+struct AnimationWorkletMutatorDispatcherImpl::AsyncMutationRequest {
+  std::unique_ptr<AnimationWorkletDispatcherInput> input_state;
+  AsyncMutationCompleteCallback done_callback;
+
+  AsyncMutationRequest(
+      std::unique_ptr<AnimationWorkletDispatcherInput> input_state,
+      AsyncMutationCompleteCallback done_callback)
+      : input_state(std::move(input_state)),
+        done_callback(std::move(done_callback)) {}
+
+  ~AsyncMutationRequest() = default;
 };
 
 AnimationWorkletMutatorDispatcherImpl::AnimationWorkletMutatorDispatcherImpl(
@@ -133,16 +147,28 @@ bool AnimationWorkletMutatorDispatcherImpl::MutateAsynchronously(
 
   if (!mutator_input_map_.IsEmpty()) {
     // Still running mutations from a previous frame.
-    if (queuing_strategy == MutateQueuingStrategy::kDrop) {
-      // Skip this frame to avoid lagging behind.
-      return false;
+    switch (queuing_strategy) {
+      case MutateQueuingStrategy::kDrop:
+        // Skip this frame to avoid lagging behind.
+        return false;
+
+      case MutateQueuingStrategy::kQueueHighPriority:
+        // Can only have one priority request in-flight.
+        DCHECK(!queued_priority_request.get());
+        queued_priority_request = std::make_unique<AsyncMutationRequest>(
+            std::move(mutator_input), std::move(done_callback));
+        return true;
+
+      case MutateQueuingStrategy::kQueueAndReplaceNormalPriority:
+        if (queued_replaceable_request.get()) {
+          // Cancel previously queued request.
+          std::move(queued_replaceable_request->done_callback)
+              .Run(MutateStatus::kCanceled);
+        }
+        queued_replaceable_request = std::make_unique<AsyncMutationRequest>(
+            std::move(mutator_input), std::move(done_callback));
+        return true;
     }
-    DCHECK(queuing_strategy == MutateQueuingStrategy::kQueueAndReplace);
-    DCHECK(!queued_mutator_input_);
-    // Preemptive queue.
-    queued_mutator_input_.reset(mutator_input.release());
-    queued_on_async_mutation_complete_ = std::move(done_callback);
-    return true;
   }
 
   mutator_input_map_ = CreateInputMap(*mutator_input);
@@ -181,18 +207,24 @@ void AnimationWorkletMutatorDispatcherImpl::AsyncMutationsDone(
     int async_mutation_id) {
   DCHECK(client_);
   DCHECK(host_queue_->BelongsToCurrentThread());
-  ApplyMutationsOnHostThread();
+  bool update_applied = ApplyMutationsOnHostThread();
   auto done_callback = std::move(on_async_mutation_complete_);
-  if (queued_mutator_input_.get()) {
-    mutator_input_map_ = CreateInputMap(*queued_mutator_input_);
-    queued_mutator_input_.reset();
-    // Trigger queued mutation request.
-    MutateAsynchronouslyInternal(std::move(queued_on_async_mutation_complete_));
+  std::unique_ptr<AsyncMutationRequest> queued_request;
+  if (queued_priority_request.get()) {
+    queued_request.reset(queued_priority_request.release());
+  } else if (queued_replaceable_request.get()) {
+    queued_request.reset(queued_replaceable_request.release());
+  }
+  if (queued_request.get()) {
+    mutator_input_map_ = CreateInputMap(*queued_request->input_state);
+    MutateAsynchronouslyInternal(std::move(queued_request->done_callback));
   }
   TRACE_EVENT_ASYNC_END0("cc",
                          "AnimationWorkletMutatorDispatcherImpl::MutateAsync",
                          async_mutation_id);
-  std::move(done_callback).Run(MutateStatus::kCompleted);
+  std::move(done_callback)
+      .Run(update_applied ? MutateStatus::kCompletedWithUpdate
+                          : MutateStatus::kCompletedNoUpdate);
   // TODO(kevers): Add UMA metric to track the asynchronous mutate duration.
 }
 
@@ -266,23 +298,30 @@ void AnimationWorkletMutatorDispatcherImpl::RequestMutations(
     scoped_refptr<base::SingleThreadTaskRunner> worklet_queue = pair.value;
     int worklet_id = mutator->GetWorkletId();
     DCHECK(!worklet_queue->BelongsToCurrentThread());
+
+    // Wrap the barrier closure in a ScopedClosureRunner to guarantee it runs
+    // even if the posted task does not run.
+    auto on_done_runner =
+        std::make_unique<base::ScopedClosureRunner>(on_mutator_done);
+
     auto it = mutator_input_map_.find(worklet_id);
     if (it == mutator_input_map_.end()) {
-      // No input to process.
-      on_mutator_done.Run();
+      // Here the on_done_runner goes out of scope which causes the barrier
+      // closure to run.
       continue;
     }
+
     PostCrossThreadTask(
         *worklet_queue, FROM_HERE,
         CrossThreadBind(
             [](AnimationWorkletMutator* mutator,
                std::unique_ptr<AnimationWorkletInput> input,
                scoped_refptr<OutputVectorRef> outputs, int index,
-               WTF::CrossThreadClosure on_mutator_done) {
+               std::unique_ptr<base::ScopedClosureRunner> on_done_runner) {
               std::unique_ptr<AnimationWorkletOutput> output =
                   mutator ? mutator->Mutate(std::move(input)) : nullptr;
               outputs->get()[index] = std::move(output);
-              on_mutator_done.Run();
+              on_done_runner->RunAndReset();
             },
             // The mutator is created and destroyed on the worklet thread.
             WrapCrossThreadWeakPersistent(mutator),
@@ -292,19 +331,23 @@ void AnimationWorkletMutatorDispatcherImpl::RequestMutations(
             // on the host thread. It can outlive the dispatcher during shutdown
             // of a process with a running animation.
             outputs_, next_request_index++,
-            WTF::Passed(WTF::CrossThreadClosure(on_mutator_done))));
+            WTF::Passed(std::move(on_done_runner))));
   }
 }
 
-void AnimationWorkletMutatorDispatcherImpl::ApplyMutationsOnHostThread() {
+bool AnimationWorkletMutatorDispatcherImpl::ApplyMutationsOnHostThread() {
   DCHECK(client_);
   DCHECK(host_queue_->BelongsToCurrentThread());
+  bool update_applied = false;
   for (auto& output : outputs_->get()) {
-    if (output)
+    if (output) {
       client_->SetMutationUpdate(std::move(output));
+      update_applied = true;
+    }
   }
   mutator_input_map_.clear();
   outputs_->get().clear();
+  return update_applied;
 }
 
 }  // namespace blink

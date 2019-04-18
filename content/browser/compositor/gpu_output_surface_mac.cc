@@ -24,8 +24,6 @@ GpuOutputSurfaceMac::GpuOutputSurfaceMac(
           surface_handle,
           update_vsync_parameters_callback,
           std::move(overlay_candidate_validator),
-          GL_TEXTURE_RECTANGLE_ARB,
-          GL_RGBA,
           gfx::BufferFormat::RGBA_8888,
           gpu_memory_buffer_manager) {}
 

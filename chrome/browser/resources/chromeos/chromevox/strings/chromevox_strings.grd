@@ -459,6 +459,9 @@
       <message desc="The title of the extension's options page." name="IDS_CHROMEVOX_OPTIONS_PAGE_TITLE">
         ChromeVox Options
       </message>
+      <message name="IDS_CHROMEVOX_OPTIONS_BRAILLE_SETTINGS">
+        Braille Settings
+      </message>
       <message desc="An options page section header for options about the ChromeVox virtual display. This section lets users change the rows, columns, and display style of the virtual braille display." name="IDS_CHROMEVOX_OPTIONS_VIRTUAL_BRAILLE_DISPLAY">
         Virtual Braille Display
       </message>
@@ -471,6 +474,12 @@
       </message>
       <message desc="The label for a numberic input field where the user can choose the number of cells in each line of a grid." name="IDS_CHROMEVOX_OPTIONS_VIRTUAL_BRAILLE_DISPLAY_COLUMNS">
         Cells in each line:
+      </message>
+      <message desc="A description that tells the user that the current display style of the virtual display interleaves braille and regular text, one on top of the other." name="IDS_CHROMEVOX_OPTIONS_DISPLAY_STYLE_INTERLEAVE">
+        Interleave
+      </message>
+      <message desc="A description that tells the user that the current display style of the virtual display is side by side, where regular text is on the left and braille is on the right." name="IDS_CHROMEVOX_OPTIONS_DISPLAY_STYLE_SIDE_BY_SIDE">
+        Side by side
       </message>
       <message desc="A description that tells the user that the current display style of the virtual display interleaves braille and regular text, one on top of the other." name="IDS_CHROMEVOX_OPTIONS_CURRENT_DISPLAY_STYLE_INTERLEAVE">
         Current display style is interleave.
@@ -582,6 +591,9 @@
       </message>
       <message desc="Enable event stream logging in chromevox for developer options." name="IDS_CHROMEVOX_OPTIONS_EVENT_STREAM_LOGGING">
         Enable event stream logging
+      </message>
+      <message desc="Display" name="IDS_CHROMEVOX_OPTIONS_DISPLAY_STYLE">
+        Display Style
       </message>
       <message desc="Show ChromeVox Event Log." name="IDS_CHROMEVOX_OPTIONS_SHOW_LOG">
         Show Log
@@ -2989,59 +3001,57 @@ If you're done with the tutorial, use ChromeVox to navigate to the Close button 
       <message desc="Spoken when a user navigates to the end of a text match from a find in page." name="IDS_CHROMEVOX_TEXT_MATCH_END">
         Text match end
       </message>
-      <message desc="Spoken when a user navigates to the beginning of subscript text." name="IDS_CHROMEVOX_SUBSCRIPT_START">
-        Subscript start
+
+      <message desc="Spoken to describe text that is superscript." name="IDS_CHROMEVOX_SUPERSCRIPT">
+        Superscript
       </message>
-      <message desc="Spoken when a user navigates to the end of subscript text." name="IDS_CHROMEVOX_SUBSCRIPT_END">
-        Subscript end
+      <message desc="Spoken to describe text that is not superscript." name="IDS_CHROMEVOX_NOT_SUPERSCRIPT">
+        Not superscript
       </message>
-      <message desc="Spoken when a user navigates to the beginning of superscript text." name="IDS_CHROMEVOX_SUPERSCRIPT_START">
-        Superscript start
+      <message desc="Spoken to describe text that is subscript." name="IDS_CHROMEVOX_SUBSCRIPT">
+        Subscript
       </message>
-      <message desc="Spoken when a user navigates to the end of superscript text." name="IDS_CHROMEVOX_SUPERSCRIPT_END">
-        Superscript end
-      </message>
-      <message desc="Spoken when a user navigates to the beginning of bolded text." name="IDS_CHROMEVOX_BOLD_START">
-        Bold start
-      </message>
-      <message desc="Spoken when a user navigates to the end of bolded text." name="IDS_CHROMEVOX_BOLD_END">
-        Bold end
-      </message>
-      <message desc="Spoken when a user navigates to the beginning of italic text." name="IDS_CHROMEVOX_ITALIC_START">
-        Italic start
-      </message>
-      <message desc="Spoken when a user navigates to the end of italic text." name="IDS_CHROMEVOX_ITALIC_END">
-        Italic end
-      </message>
-      <message desc="Spoken when a user navigates to the beginning of underline text." name="IDS_CHROMEVOX_UNDERLINE_START">
-        Underline start
-      </message>
-      <message desc="Spoken when a user navigates to the end of underline text." name="IDS_CHROMEVOX_UNDERLINE_END">
-        Underline end
-      </message>
-      <message desc="Spoken when a user navigates to the beginning of strike through text." name="IDS_CHROMEVOX_LINE_THROUGH_START">
-        Strike through start
-      </message>
-      <message desc="Spoken when a user navigates to the end of strike through text." name="IDS_CHROMEVOX_LINE_THROUGH_END">
-        Strike through end
+      <message desc="Spoken to describe text that is not subscript." name="IDS_CHROMEVOX_NOT_SUBSCRIPT">
+        Not subscript
       </message>
       <message desc="Spoken to describe bolded text." name="IDS_CHROMEVOX_BOLD">
         Bold
       </message>
+      <message desc="Spoken to describe non bolded text." name="IDS_CHROMEVOX_NOT_BOLD">
+        Not bold
+      </message>
       <message desc="Spoken to describe italicized text." name="IDS_CHROMEVOX_ITALIC">
         Italic
+      </message>
+      <message desc="Spoken to describe non italicized text." name="IDS_CHROMEVOX_NOT_ITALIC">
+        Not italic
       </message>
       <message desc="Spoken to describe underlined text." name="IDS_CHROMEVOX_UNDERLINE">
         Underline
       </message>
+      <message desc="Spoken to describe non underlined text." name="IDS_CHROMEVOX_NOT_UNDERLINE">
+        Not underline
+      </message>
       <message desc="Spoken to describe line-through text." name="IDS_CHROMEVOX_LINETHROUGH">
         Line through
       </message>
-      <message desc="Spoken when a user navigates to the beginning of a link's text." name="IDS_CHROMEVOX_LINK_START">
-        Link start
+      <message desc="Spoken to describe non line-through text." name="IDS_CHROMEVOX_NOT_LINETHROUGH">
+        Not line through
       </message>
-      <message desc="Spoken when a user navigates to the end of a link's text." name="IDS_CHROMEVOX_LINK_END">
-        Link end
+      <message desc="Spoken when a user navigates to text and the link state changes" name="IDS_CHROMEVOX_LINK">
+        Link
+      </message>
+      <message desc="Spoken to describe non-linked text." name="IDS_CHROMEVOX_NOT_LINK">
+        Not link
+      </message>
+      <message desc="Spoken when a user navigates to text and the font family changes, e.g. 'Font Arial'" name="IDS_CHROMEVOX_FONT_FAMILY">
+        Font <ph name="font_family">$1<ex>Arial</ex></ph>
+      </message>
+      <message desc="Spoken when a user navigates to text and the font size changes, e.g. 'Size 12'" name="IDS_CHROMEVOX_FONT_SIZE">
+        Size <ph name="font_size">$1<ex>12</ex></ph>
+      </message>
+      <message desc="Spoken when a user navigates to text and the font color changes, e.g. 'Red, 100% opacity'" name="IDS_CHROMEVOX_FONT_COLOR">
+        <ph name="font_color">$1<ex>Red, 100% opacity</ex></ph>
       </message>
       <message desc="Shown to a user when they press a braille keyboard command that requires on screen keyboard to be enabled." name="IDS_CHROMEVOX_ENABLE_VIRTUAL_KEYBOARD">
         Please enable the on screen keyboard under status tray, accessibility to use extended braille commands.
@@ -3225,21 +3235,20 @@ If you're done with the tutorial, use ChromeVox to navigate to the Close button 
         name="IDS_CHROMEVOX_OPTIONS_LANG_SWITCHING_CHECKBOX_LABEL">
         Automatically detect and switch ChromeVox language.
       </message>
-
       <message desc="Spoken to describe all rich text attributes of a node." name="IDS_CHROMEVOX_RICH_TEXT_ATTRIBUTES">
         Text formatting.
-        <ph name="font_size_string">$1</ph>
-        <ph name="color_string">$2</ph>
-        <ph name="bold_string">$3</ph>
-        <ph name="italic_string">$4</ph>
-        <ph name="underline_string">$5</ph>
-        <ph name="line_through_string">$6</ph>
-        <ph name="font_family_string">$7</ph>
+        <ph name="font_size_string">$1<ex>Size 12</ex></ph>
+        <ph name="color_string">$2<ex>Red, 100% opacity.</ex></ph>
+        <ph name="bold_string">$3<ex>Bold</ex></ph>
+        <ph name="italic_string">$4<ex>Italic</ex></ph>
+        <ph name="underline_string">$5<ex>Unerline</ex></ph>
+        <ph name="line_through_string">$6<ex>Line through</ex></ph>
+        <ph name="font_family_string">$7<ex>Arial</ex></ph>
       </message>
 
       <!-- Colors -->
       <message desc="Spoken to describe color and opacity of text" name="IDS_CHROMEVOX_COLOR_DESCRIPTION">
-        <ph name="color">$1</ph>, <ph name="opacity_percentage">$2</ph>% opacity.
+        <ph name="color">$1<ex>Red</ex></ph>, <ph name="opacity_percentage">$2<ex>50</ex></ph>% opacity.
       </message>
       <message desc="Spoken to describe color of text" name="IDS_CHROMEVOX_COLOR_BLACK">
         Black
@@ -3657,6 +3666,61 @@ If you're done with the tutorial, use ChromeVox to navigate to the Close button 
       </message>
       <message desc="Spoken to describe color of text" name="IDS_CHROMEVOX_COLOR_DODGER_BLUE">
         Dodger Blue
+      </message>
+      <message desc="An options page section header for options about ChromeVox rich text behavior. This section lets users set preferences on how rich text attributes should be indicated." name="IDS_CHROMEVOX_OPTIONS_RICH_TEXT_HEADER">
+        Rich Text Attributes
+      </message>
+      <message desc="The text label for ChromeVox automatic rich text indication checkbox." name="IDS_CHROMEVOX_OPTIONS_RICH_TEXT_CHECKBOX_LABEL">
+        Customize rich text indication
+      </message>
+      <message desc="Labels the misspell list box." name="IDS_CHROMEVOX_OPTIONS_MISSPELL_DESCRIPTION">
+        Indicate misspell:
+      </message>
+      <message desc="Labels the bold list box." name="IDS_CHROMEVOX_OPTIONS_BOLD_DESCRIPTION">
+        Indicate bold:
+      </message>
+      <message desc="Labels the italic list box." name="IDS_CHROMEVOX_OPTIONS_ITALIC_DESCRIPTION">
+        Indicate italic:
+      </message>
+      <message desc="Labels the underline list box." name="IDS_CHROMEVOX_OPTIONS_UNDERLINE_DESCRIPTION">
+        Indicate underline:
+      </message>
+      <message desc="A menulist option in ChromeVox rich text settings to do nothing to indicate rich text" name="IDS_CHROMEVOX_RICH_TEXT_DO_NOTHING">
+        Do nothing
+      </message>
+      <message desc="A menulist option in ChromeVox rich text settings to announce rich text" name="IDS_CHROMEVOX_RICH_TEXT_ANNOUNCE">
+        Announce
+      </message>
+
+      <message desc="An option to announce download notifications." name="IDS_CHROMEVOX_OPTIONS_ANNOUNCE_DOWNLOAD">
+        Announce download notifications
+      </message>
+      <message desc="Spoken when a download is started" name="IDS_CHROMEVOX_DOWNLOAD_STARTED">
+        Download started <ph name="file_name">$1<ex>test.pdf</ex></ph>
+      </message>
+      <message desc="Spoken when a download is completed" name="IDS_CHROMEVOX_DOWNLOAD_COMPLETED">
+        Download completed <ph name="file_name">$1<ex>test.pdf</ex></ph>
+      </message>
+      <message desc="Spoken when a download is stopped" name="IDS_CHROMEVOX_DOWNLOAD_STOPPED">
+        Download stopped <ph name="file_name">$1<ex>test.pdf</ex></ph>
+      </message>
+      <message desc="Spoken when a download is paused" name="IDS_CHROMEVOX_DOWNLOAD_PAUSED">
+        Download paused <ph name="file_name">$1<ex>test.pdf</ex></ph>
+      </message>
+      <message desc="Spoken when a download is resumed" name="IDS_CHROMEVOX_DOWNLOAD_RESUMED">
+        Download resumed <ph name="file_name">$1<ex>test.pdf</ex></ph>
+      </message>
+      <message desc="Spoken to give progress on a current download, specifying percent complete and time remaining." name="IDS_CHROMEVOX_DOWNLOAD_PROGRESS">
+        Download <ph name="progress">$1<ex>50</ex></ph>% complete <ph name="file_name">$2<ex>test.pdf</ex></ph>. About <ph name="time">$3<ex>30</ex></ph> <ph name="units">$4<ex>minutes</ex></ph> remaining.
+      </message>
+      <message desc="A string to specify time units in seconds." name="IDS_CHROMEVOX_SECONDS">
+        {COUNT, plural, =1 {second}other {seconds}}
+      </message>
+      <message desc="A string to specify time units in minutes." name="IDS_CHROMEVOX_MINUTES">
+        {COUNT, plural, =1 {minute}other {minutes}}
+      </message>
+      <message desc="A string to specify time units in hours." name="IDS_CHROMEVOX_HOURS">
+        {COUNT, plural, =1 {hour}other {hours}}
       </message>
     </messages>
   </release>

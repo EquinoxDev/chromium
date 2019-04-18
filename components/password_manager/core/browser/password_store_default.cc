@@ -173,16 +173,6 @@ PasswordStoreDefault::FillMatchingLogins(const FormDigest& form) {
   return matched_forms;
 }
 
-std::vector<std::unique_ptr<PasswordForm>>
-PasswordStoreDefault::FillLoginsForSameOrganizationName(
-    const std::string& signon_realm) {
-  std::vector<std::unique_ptr<PasswordForm>> forms;
-  if (login_db_ &&
-      !login_db_->GetLoginsForSameOrganizationName(signon_realm, &forms))
-    return std::vector<std::unique_ptr<PasswordForm>>();
-  return forms;
-}
-
 bool PasswordStoreDefault::FillAutofillableLogins(
     std::vector<std::unique_ptr<PasswordForm>>* forms) {
   DCHECK(background_task_runner()->RunsTasksInCurrentSequence());
@@ -233,15 +223,23 @@ bool PasswordStoreDefault::BeginTransaction() {
   return false;
 }
 
+void PasswordStoreDefault::RollbackTransaction() {
+  if (login_db_)
+    login_db_->RollbackTransaction();
+}
+
 bool PasswordStoreDefault::CommitTransaction() {
   if (login_db_)
     return login_db_->CommitTransaction();
   return false;
 }
 
-bool PasswordStoreDefault::ReadAllLogins(PrimaryKeyToFormMap* key_to_form_map) {
+FormRetrievalResult PasswordStoreDefault::ReadAllLogins(
+    PrimaryKeyToFormMap* key_to_form_map) {
   DCHECK(background_task_runner()->RunsTasksInCurrentSequence());
-  return login_db_ && login_db_->GetAllLogins(key_to_form_map);
+  if (!login_db_)
+    return FormRetrievalResult::kDbError;
+  return login_db_->GetAllLogins(key_to_form_map);
 }
 
 PasswordStoreChangeList PasswordStoreDefault::RemoveLoginByPrimaryKeySync(

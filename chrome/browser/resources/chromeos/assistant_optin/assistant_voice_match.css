@@ -11,6 +11,10 @@
   padding-bottom: 36px;
 }
 
+#no-dsp-message {
+  padding-top: 16px;
+}
+
 #footer-text {
   color: #757575;
 }
@@ -18,6 +22,20 @@
 #voice-match-video {
   padding-top: 100px;
   text-align: center;
+}
+
+#already-setup-video-container {
+  text-align: center;
+}
+
+#already-setup-video {
+  height: 450px;
+}
+
+#already-setup-img {
+  display: block;
+  margin: auto;
+  padding-top: 80px;
 }
 
 #intro-container,

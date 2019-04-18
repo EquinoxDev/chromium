@@ -32,16 +32,19 @@ run_jsbundler("switch_access_copied_files") {
     "../select_to_speak/closure_shim.js",
     "//third_party/chromevox/third_party/closure-library/closure/goog/base.js",
     "auto_scan_manager.js",
+    "back_button_manager.js",
     "background.js",
     "commands.js",
+    "icons/back.svg",
     "icons/decrement.svg",
     "icons/dictation.svg",
     "icons/increment.svg",
+    "icons/keyboard.svg",
     "icons/options.svg",
-    "icons/scrollDown.svg",
+    "icons/scrollDownOrForward.svg",
     "icons/scrollLeft.svg",
     "icons/scrollRight.svg",
-    "icons/scrollUp.svg",
+    "icons/scrollUpOrBackward.svg",
     "icons/select.svg",
     "icons/showContextMenu.svg",
     "keyboard_handler.js",
@@ -54,8 +57,9 @@ run_jsbundler("switch_access_copied_files") {
     "options.css",
     "options.html",
     "options.js",
-    "prefs.js",
+    "preferences.js",
     "switch_access.js",
+    "switch_access_constants.js",
     "switch_access_predicate.js",
     "text_input_manager.js",
   ]
@@ -153,6 +157,7 @@ manifest("switch_access_guest_manifest") {
 js_type_check("closure_compile") {
   deps = [
     ":auto_scan_manager",
+    ":back_button_manager",
     ":background",
     ":commands",
     ":keyboard_handler",
@@ -160,8 +165,9 @@ js_type_check("closure_compile") {
     ":menu_panel_interface",
     ":navigation_manager",
     ":options",
-    ":prefs",
+    ":preferences",
     ":switch_access",
+    ":switch_access_constants",
     ":switch_access_interface",
     ":switch_access_predicate",
     ":text_input_manager",
@@ -179,8 +185,10 @@ js_library("auto_scan_manager") {
 
 js_library("navigation_manager") {
   deps = [
+    ":back_button_manager",
     ":menu_manager",
     ":menu_panel_interface",
+    ":switch_access_constants",
     ":switch_access_predicate",
     ":text_input_manager",
     "../chromevox:constants",
@@ -197,6 +205,16 @@ js_library("background") {
     ":switch_access",
   ]
   externs_list = [ "$externs_path/chrome_extensions.js" ]
+}
+
+js_library("back_button_manager") {
+  deps = [
+    ":menu_panel_interface",
+  ]
+  externs_list = [
+    "$externs_path/accessibility_private.js",
+    "$externs_path/automation.js",
+  ]
 }
 
 js_library("commands") {
@@ -230,7 +248,7 @@ js_library("options") {
   externs_list = [ "$externs_path/chrome_extensions.js" ]
 }
 
-js_library("prefs") {
+js_library("preferences") {
   deps = [
     ":switch_access_interface",
   ]
@@ -244,12 +262,15 @@ js_library("switch_access") {
     ":keyboard_handler",
     ":menu_panel_interface",
     ":navigation_manager",
-    ":prefs",
+    ":preferences",
   ]
   externs_list = [
     "$externs_path/automation.js",
     "$externs_path/chrome_extensions.js",
   ]
+}
+
+js_library("switch_access_constants") {
 }
 
 js_library("switch_access_interface") {

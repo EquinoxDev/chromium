@@ -22,6 +22,8 @@ enum class DeepLinkType {
   kUnsupported,
   kChromeSettings,
   kFeedback,
+  kLists,
+  kNotes,
   kOnboarding,
   kQuery,
   kReminders,
@@ -33,10 +35,18 @@ enum class DeepLinkType {
 
 // Enumeration of deep link parameters.
 enum class DeepLinkParam {
+  kAction,
+  kClientId,
   kId,
   kPage,
   kQuery,
   kRelaunch,
+};
+
+// Enumeration of deep link parameter reminder action.
+enum class ReminderAction {
+  kCreate,
+  kEdit,
 };
 
 // Returns a deep link to send an Assistant query.
@@ -69,6 +79,13 @@ base::Optional<bool> GetDeepLinkParamAsBool(
     const std::map<std::string, std::string>& params,
     DeepLinkParam param);
 
+// Returns a specific ReminderAction |param| from the given parameters. If the
+// desired parameter is not found, an empty value is returned.
+COMPONENT_EXPORT(ASSISTANT_UTIL)
+base::Optional<ReminderAction> GetDeepLinkParamAsRemindersAction(
+    const std::map<std::string, std::string> params,
+    DeepLinkParam param);
+
 // Returns the deep link type of the specified |url|. If the specified url is
 // not a supported deep link, DeepLinkType::kUnsupported is returned.
 COMPONENT_EXPORT(ASSISTANT_UTIL) DeepLinkType GetDeepLinkType(const GURL& url);
@@ -80,10 +97,14 @@ bool IsDeepLinkType(const GURL& url, DeepLinkType type);
 // Returns true if the specified |url| is a deep link, false otherwise.
 COMPONENT_EXPORT(ASSISTANT_UTIL) bool IsDeepLinkUrl(const GURL& url);
 
-// Returns the URL for the specified Assistant reminder |id|. If id is absent,
-// the returned URL will be for top-level Assistant Reminders.
+// Returns the Assistant URL for the deep link of the specified |type|. A return
+// value will only be present if the deep link type is one of {kLists, kNotes,
+// or kReminders}. If |id| is absent, the returned URL will be for the top-level
+// Assistant URL. Otherwise, the URL will correspond to the resource identified
+// by |id|.
 COMPONENT_EXPORT(ASSISTANT_UTIL)
-GURL GetAssistantRemindersUrl(const base::Optional<std::string>& id);
+base::Optional<GURL> GetAssistantUrl(DeepLinkType type,
+                                     const base::Optional<std::string>& id);
 
 // Returns the URL for the specified Chrome Settings |page|. If page is absent
 // or not allowed, the URL will be for top-level Chrome Settings.
@@ -108,7 +129,9 @@ base::Optional<GURL> GetWebUrl(
 COMPONENT_EXPORT(ASSISTANT_UTIL) bool IsWebDeepLink(const GURL& deep_link);
 
 // Returns true if the specified deep link |type| is a web deep link.
-COMPONENT_EXPORT(ASSISTANT_UTIL) bool IsWebDeepLinkType(DeepLinkType type);
+COMPONENT_EXPORT(ASSISTANT_UTIL)
+bool IsWebDeepLinkType(DeepLinkType type,
+                       const std::map<std::string, std::string>& params);
 
 }  // namespace util
 }  // namespace assistant

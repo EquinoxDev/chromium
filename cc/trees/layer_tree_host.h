@@ -19,7 +19,6 @@
 #include "base/cancelable_callback.h"
 #include "base/containers/flat_map.h"
 #include "base/containers/flat_set.h"
-#include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
 #include "base/optional.h"
@@ -45,6 +44,7 @@
 #include "cc/trees/swap_promise.h"
 #include "cc/trees/swap_promise_manager.h"
 #include "cc/trees/target_property.h"
+#include "cc/trees/viewport_layers.h"
 #include "components/viz/common/resources/resource_format.h"
 #include "components/viz/common/surfaces/local_surface_id_allocation.h"
 #include "services/metrics/public/cpp/ukm_source_id.h"
@@ -127,7 +127,10 @@ class CC_EXPORT LayerTreeHost : public MutatorHostClient {
       LayerTreeHostSingleThreadClient* single_thread_client,
       InitParams params);
 
+  LayerTreeHost(const LayerTreeHost&) = delete;
   virtual ~LayerTreeHost();
+
+  LayerTreeHost& operator=(const LayerTreeHost&) = delete;
 
   // Returns the process global unique identifier for this LayerTreeHost.
   int GetId() const;
@@ -237,8 +240,13 @@ class CC_EXPORT LayerTreeHost : public MutatorHostClient {
   std::unique_ptr<ScopedDeferMainFrameUpdate> DeferMainFrameUpdate();
 
   // Prevents the proxy from committing the layer tree to the compositor,
-  // while still allowing main frame lifecycle updates.
-  void StartDeferringCommits();
+  // while still allowing main frame lifecycle updates. |timeout|
+  // is the interval after which commits will restart if nothing stops
+  // deferring sooner. If multiple calls are made to StartDeferringCommits
+  // while deferal is active, the first timeout continues to apply.
+  void StartDeferringCommits(base::TimeDelta timeout);
+
+  // Stop deferring commits immediately.
   void StopDeferringCommits();
 
   // Returns whether there are any outstanding ScopedDeferMainFrameUpdate,
@@ -266,11 +274,6 @@ class CC_EXPORT LayerTreeHost : public MutatorHostClient {
   void SetNeedsCommitWithForcedRedraw();
 
   // Input Handling ---------------------------------------------
-
-  // Notifies the compositor that input from the browser is being throttled till
-  // the next commit. The compositor will prioritize activation of the pending
-  // tree so a commit can be performed.
-  void NotifyInputThrottledUntilCommit();
 
   // Sets the state of the browser controls. (Used for URL bar animations on
   // android).
@@ -324,19 +327,6 @@ class CC_EXPORT LayerTreeHost : public MutatorHostClient {
   // caller inform blink about the layer and remove the function.
   void SetNonBlinkManagedRootLayer(scoped_refptr<Layer> root_layer);
 
-  // Viewport Layers are used to identify key layers to the compositor thread,
-  // so that it can perform viewport-based scrolling independently, such as
-  // for pinch-zoom or overscroll elasticity.
-  struct CC_EXPORT ViewportLayers {
-    ViewportLayers();
-    ~ViewportLayers();
-    ElementId overscroll_elasticity_element_id;
-    scoped_refptr<Layer> page_scale;
-    scoped_refptr<Layer> inner_viewport_container;
-    scoped_refptr<Layer> outer_viewport_container;
-    scoped_refptr<Layer> inner_viewport_scroll;
-    scoped_refptr<Layer> outer_viewport_scroll;
-  };
   // Sets or gets the collection of viewport Layers, defined to allow pinch-zoom
   // transformations on the compositor thread.
   void RegisterViewportLayers(const ViewportLayers& viewport_layers);
@@ -412,7 +402,11 @@ class CC_EXPORT LayerTreeHost : public MutatorHostClient {
                                 float bottom_height,
                                 bool shrink);
   void SetBrowserControlsShownRatio(float ratio);
+
   void SetOverscrollBehavior(const OverscrollBehavior& overscroll_behavior);
+  const OverscrollBehavior& overscroll_behavior() const {
+    return overscroll_behavior_;
+  }
 
   void SetPageScaleFactorAndLimits(float page_scale_factor,
                                    float min_page_scale_factor,
@@ -481,7 +475,11 @@ class CC_EXPORT LayerTreeHost : public MutatorHostClient {
   // 'external_page_scale_factor', a value that affects raster scale in the
   // same way that page_scale_factor does, but doesn't affect any geometry
   // calculations.
-  void SetExternalPageScaleFactor(float page_scale_factor);
+  void SetExternalPageScaleFactor(float page_scale_factor,
+                                  bool is_external_pinch_gesture_active);
+  bool is_external_pinch_gesture_active_for_testing() {
+    return is_external_pinch_gesture_active_;
+  }
 
   // Requests that we force send RenderFrameMetadata with the next frame.
   void RequestForceSendMetadata() { force_send_metadata_request_ = true; }
@@ -495,6 +493,8 @@ class CC_EXPORT LayerTreeHost : public MutatorHostClient {
   // v2 is enabled.
   PropertyTrees* property_trees() { return &property_trees_; }
   const PropertyTrees* property_trees() const { return &property_trees_; }
+
+  void SetPropertyTreesForTesting(const PropertyTrees* property_trees);
 
   void SetNeedsDisplayOnAllLayers();
 
@@ -664,10 +664,17 @@ class CC_EXPORT LayerTreeHost : public MutatorHostClient {
                                  ElementListType list_type,
                                  const PropertyAnimationState& mask,
                                  const PropertyAnimationState& state) override;
+  void AnimationScalesChanged(ElementId element_id,
+                              ElementListType list_type,
+                              float maximum_scale,
+                              float starting_scale) override;
 
   void ScrollOffsetAnimationFinished() override {}
   gfx::ScrollOffset GetScrollOffsetForAnimation(
       ElementId element_id) const override;
+
+  void NotifyAnimationWorkletStateChange(AnimationWorkletMutationState state,
+                                         ElementListType tree_type) override {}
 
   void QueueImageDecode(const PaintImage& image,
                         base::OnceCallback<void(bool)> callback);
@@ -806,6 +813,9 @@ class CC_EXPORT LayerTreeHost : public MutatorHostClient {
   float min_page_scale_factor_ = 1.f;
   float max_page_scale_factor_ = 1.f;
   float external_page_scale_factor_ = 1.f;
+  bool is_external_pinch_gesture_active_ = false;
+  // Used to track the out-bound state for ApplyViewportChanges.
+  bool is_pinch_gesture_active_from_impl_ = false;
 
   int raster_color_space_id_ = -1;
   gfx::ColorSpace raster_color_space_;
@@ -895,8 +905,6 @@ class CC_EXPORT LayerTreeHost : public MutatorHostClient {
   // Used to vend weak pointers to LayerTreeHost to ScopedDeferMainFrameUpdate
   // objects.
   base::WeakPtrFactory<LayerTreeHost> defer_main_frame_update_weak_ptr_factory_;
-
-  DISALLOW_COPY_AND_ASSIGN(LayerTreeHost);
 };
 
 }  // namespace cc

@@ -73,7 +73,9 @@ void PrefetchNetworkRequestFactoryImpl::MakeGeneratePageBundleRequest(
   generate_page_bundle_requests_[request_id] =
       std::make_unique<GeneratePageBundleRequest>(
           user_agent_, gcm_registration_id, max_bundle_size, url_strings,
-          channel_, url_loader_factory_,
+          channel_,
+
+          prefetch_prefs::GetPrefetchTestingHeader(prefs_), url_loader_factory_,
           base::BindOnce(
               &PrefetchNetworkRequestFactoryImpl::GeneratePageBundleRequestDone,
               weak_factory_.GetWeakPtr(), std::move(callback), request_id));
@@ -108,6 +110,10 @@ void PrefetchNetworkRequestFactoryImpl::GeneratePageBundleRequestDone(
     PrefetchRequestStatus status,
     const std::string& operation_name,
     const std::vector<RenderPageInfo>& pages) {
+  if (status == PrefetchRequestStatus::kShouldSuspendForbiddenByOPS ||
+      status == PrefetchRequestStatus::kShouldSuspendNewlyForbiddenByOPS) {
+    prefetch_prefs::SetEnabledByServer(prefs_, false);
+  }
   std::move(callback).Run(status, operation_name, pages);
   generate_page_bundle_requests_.erase(request_id);
   ReleaseConcurrentRequest();

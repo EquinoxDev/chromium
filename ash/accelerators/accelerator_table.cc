@@ -372,9 +372,12 @@ const AcceleratorAction kActionsKeepingMenuOpen[] = {
 const size_t kActionsKeepingMenuOpenLength =
     base::size(kActionsKeepingMenuOpen);
 
-const AcceleratorAction kActionsAllowedForContainedShell[] = {
+const AcceleratorAction kActionsAllowedForKioskNextShell[] = {
     BRIGHTNESS_DOWN,
     BRIGHTNESS_UP,
+    DEBUG_TOGGLE_SHOW_DEBUG_BORDERS,
+    DEBUG_TOGGLE_SHOW_FPS_COUNTER,
+    DEBUG_TOGGLE_SHOW_PAINT_RECTS,
     KEYBOARD_BRIGHTNESS_DOWN,
     KEYBOARD_BRIGHTNESS_UP,
     MEDIA_NEXT_TRACK,
@@ -382,6 +385,9 @@ const AcceleratorAction kActionsAllowedForContainedShell[] = {
     MEDIA_PREV_TRACK,
     POWER_PRESSED,
     POWER_RELEASED,
+    TAKE_PARTIAL_SCREENSHOT,
+    TAKE_SCREENSHOT,
+    TAKE_WINDOW_SCREENSHOT,
     TOGGLE_CAPS_LOCK,
     TOGGLE_DICTATION,
     TOGGLE_DOCKED_MAGNIFIER,
@@ -393,7 +399,7 @@ const AcceleratorAction kActionsAllowedForContainedShell[] = {
     VOLUME_UP,
 };
 
-const size_t kActionsAllowedForContainedShellLength =
-    base::size(kActionsAllowedForContainedShell);
+const size_t kActionsAllowedForKioskNextShellLength =
+    base::size(kActionsAllowedForKioskNextShell);
 
 }  // namespace ash

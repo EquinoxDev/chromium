@@ -27,18 +27,20 @@ class COMPONENT_EXPORT(ASSISTANT_SERVICE) FakeAssistantManagerServiceImpl
   ~FakeAssistantManagerServiceImpl() override;
 
   // assistant::AssistantManagerService overrides
-  void Start(const std::string& access_token,
+  void Start(const base::Optional<std::string>& access_token,
              bool enable_hotword,
              base::OnceClosure callback) override;
   void Stop() override;
   void SetAccessToken(const std::string& access_token) override;
   void EnableListening(bool enable) override;
   void EnableHotword(bool enable) override;
+  void SetArcPlayStoreEnabled(bool enabled) override;
   State GetState() const override;
   AssistantSettingsManager* GetAssistantSettingsManager() override;
 
   // mojom::Assistant overrides:
   void StartCachedScreenContextInteraction() override;
+  void StartEditReminderInteraction(const std::string& client_id) override;
   void StartMetalayerInteraction(const gfx::Rect& region) override;
   void StartTextInteraction(const std::string& query, bool allow_tts) override;
   void StartVoiceInteraction() override;

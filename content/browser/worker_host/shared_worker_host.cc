@@ -20,7 +20,6 @@
 #include "content/browser/worker_host/shared_worker_content_settings_proxy_impl.h"
 #include "content/browser/worker_host/shared_worker_instance.h"
 #include "content/browser/worker_host/shared_worker_service_impl.h"
-#include "content/common/navigation_subresource_loader_params.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_task_traits.h"
 #include "content/public/browser/browser_thread.h"
@@ -28,21 +27,19 @@
 #include "content/public/browser/render_process_host.h"
 #include "content/public/common/content_client.h"
 #include "services/network/public/cpp/features.h"
-#include "third_party/blink/public/common/features.h"
 #include "third_party/blink/public/common/loader/url_loader_factory_bundle.h"
 #include "third_party/blink/public/common/messaging/message_port_channel.h"
-#include "third_party/blink/public/common/service_worker/service_worker_utils.h"
 #include "third_party/blink/public/mojom/appcache/appcache.mojom.h"
 #include "third_party/blink/public/mojom/renderer_preference_watcher.mojom.h"
+#include "third_party/blink/public/mojom/web_feature/web_feature.mojom.h"
 #include "third_party/blink/public/mojom/worker/shared_worker_info.mojom.h"
 #include "third_party/blink/public/mojom/worker/worker_content_settings_proxy.mojom.h"
-#include "third_party/blink/public/platform/web_feature.mojom.h"
 
 namespace content {
 namespace {
 
 SharedWorkerHost::CreateNetworkFactoryCallback&
-GetCreateNetworkFactoryCallback() {
+GetCreateNetworkFactoryCallbackForSharedWorker() {
   static base::NoDestructor<SharedWorkerHost::CreateNetworkFactoryCallback>
       s_callback;
   return *s_callback;
@@ -70,6 +67,15 @@ bool AllowIndexedDBOnIOThread(const GURL& url,
                               std::vector<GlobalFrameRoutingId> render_frames) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
   return GetContentClient()->browser()->AllowWorkerIndexedDB(
+      url, resource_context, render_frames);
+}
+
+bool AllowCacheStorageOnIOThread(
+    const GURL& url,
+    ResourceContext* resource_context,
+    std::vector<GlobalFrameRoutingId> render_frames) {
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
+  return GetContentClient()->browser()->AllowWorkerCacheStorage(
       url, resource_context, render_frames);
 }
 
@@ -156,10 +162,11 @@ void SharedWorkerHost::SetNetworkFactoryForTesting(
   DCHECK(!BrowserThread::IsThreadInitialized(BrowserThread::UI) ||
          BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(create_network_factory_callback.is_null() ||
-         GetCreateNetworkFactoryCallback().is_null())
+         GetCreateNetworkFactoryCallbackForSharedWorker().is_null())
       << "It is not expected that this is called with non-null callback when "
       << "another overriding callback is already set.";
-  GetCreateNetworkFactoryCallback() = create_network_factory_callback;
+  GetCreateNetworkFactoryCallbackForSharedWorker() =
+      create_network_factory_callback;
 }
 
 void SharedWorkerHost::Start(
@@ -171,36 +178,29 @@ void SharedWorkerHost::Start(
     blink::mojom::WorkerMainScriptLoadParamsPtr main_script_load_params,
     std::unique_ptr<blink::URLLoaderFactoryBundleInfo>
         subresource_loader_factories,
-    base::Optional<SubresourceLoaderParams> subresource_loader_params) {
+    blink::mojom::ControllerServiceWorkerInfoPtr controller,
+    base::WeakPtr<ServiceWorkerObjectHost>
+        controller_service_worker_object_host) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
   AdvanceTo(Phase::kStarted);
 
 #if DCHECK_IS_ON()
   // Verify the combination of the given args based on the flags. See the
   // function comment for details.
+  DCHECK(service_worker_provider_info);
+  DCHECK(subresource_loader_factories);
   if (base::FeatureList::IsEnabled(network::features::kNetworkService)) {
     // NetworkService (PlzWorker):
-    DCHECK(service_worker_provider_info);
     DCHECK(!main_script_loader_factory);
     DCHECK(main_script_load_params);
-    DCHECK(subresource_loader_factories);
     DCHECK(!subresource_loader_factories->default_factory_info());
-  } else if (base::FeatureList::IsEnabled(
-                 blink::features::kServiceWorkerServicification)) {
-    // S13nServiceWorker (non-NetworkService):
-    DCHECK(service_worker_provider_info);
-    DCHECK(main_script_loader_factory);
-    DCHECK(subresource_loader_factories);
-    DCHECK(subresource_loader_factories->default_factory_info());
-    DCHECK(!subresource_loader_params);
-    DCHECK(!main_script_load_params);
   } else {
-    // Legacy case (to be deprecated):
-    DCHECK(!service_worker_provider_info);
-    DCHECK(!main_script_loader_factory);
-    DCHECK(!subresource_loader_factories);
-    DCHECK(!subresource_loader_params);
+    // non-NetworkService:
+    DCHECK(main_script_loader_factory);
     DCHECK(!main_script_load_params);
+    DCHECK(subresource_loader_factories->default_factory_info());
+    DCHECK(!controller);
+    DCHECK(!controller_service_worker_object_host);
   }
 #endif  // DCHECK_IS_ON()
 
@@ -224,7 +224,7 @@ void SharedWorkerHost::Start(
   blink::mojom::RendererPreferenceWatcherPtr watcher_ptr;
   blink::mojom::RendererPreferenceWatcherRequest preference_watcher_request =
       mojo::MakeRequest(&watcher_ptr);
-  GetContentClient()->browser()->RegisterRendererPreferenceWatcherForWorkers(
+  GetContentClient()->browser()->RegisterRendererPreferenceWatcher(
       RenderProcessHost::FromID(process_id_)->GetBrowserContext(),
       std::move(watcher_ptr));
 
@@ -244,7 +244,7 @@ void SharedWorkerHost::Start(
       mojo::MakeRequest(&interface_provider)));
 
   // Set the default factory to the bundle for subresource loading to pass to
-  // the renderer when NetworkService is on. When S13nServiceWorker is on, the
+  // the renderer when NetworkService is on. When NetworkService is off, the
   // default factory is already provided by
   // WorkerScriptFetchInitiator::CreateFactoryBundle().
   if (base::FeatureList::IsEnabled(network::features::kNetworkService)) {
@@ -255,24 +255,20 @@ void SharedWorkerHost::Start(
   }
 
   // NetworkService (PlzWorker):
-  // Prepare the controller service worker info to pass to the renderer. This is
-  // only provided if NetworkService is enabled. In the non-NetworkService case,
-  // the controller is sent in SetController IPCs during the request for the
-  // shared worker script.
-  blink::mojom::ControllerServiceWorkerInfoPtr controller;
-  blink::mojom::ServiceWorkerObjectAssociatedPtrInfo remote_object;
-  blink::mojom::ServiceWorkerState sent_state;
-  if (subresource_loader_params &&
-      subresource_loader_params->controller_service_worker_info) {
+  // Prepare the controller service worker info to pass to the renderer.
+  // |controller| is only provided if NetworkService is enabled. In the
+  // non-NetworkService case, the controller is sent in SetController IPCs
+  // during the request for the shared worker script.
+  // |object_info| can be nullptr when the service worker context or the service
+  // worker version is gone during shared worker startup.
+  blink::mojom::ServiceWorkerObjectAssociatedPtrInfo
+      service_worker_remote_object;
+  blink::mojom::ServiceWorkerState service_worker_sent_state;
+  if (controller && controller->object_info) {
     DCHECK(base::FeatureList::IsEnabled(network::features::kNetworkService));
-    controller =
-        std::move(subresource_loader_params->controller_service_worker_info);
-    // |object_info| can be nullptr when the service worker context or the
-    // service worker version is gone during shared worker startup.
-    if (controller->object_info) {
-      controller->object_info->request = mojo::MakeRequest(&remote_object);
-      sent_state = controller->object_info->state;
-    }
+    controller->object_info->request =
+        mojo::MakeRequest(&service_worker_remote_object);
+    service_worker_sent_state = controller->object_info->state;
   }
 
   // Send the CreateSharedWorker message.
@@ -289,17 +285,19 @@ void SharedWorkerHost::Start(
       std::move(interface_provider));
 
   // NetworkService (PlzWorker):
-  // |remote_object| is an associated interface ptr, so calls can't be made on
-  // it until its request endpoint is sent. Now that the request endpoint was
-  // sent, it can be used, so add it to ServiceWorkerObjectHost.
-  if (remote_object.is_valid()) {
+  // |service_worker_remote_object| is an associated interface ptr, so calls
+  // can't be made on it until its request endpoint is sent. Now that the
+  // request endpoint was sent, it can be used, so add it to
+  // ServiceWorkerObjectHost.
+  if (service_worker_remote_object.is_valid()) {
     DCHECK(base::FeatureList::IsEnabled(network::features::kNetworkService));
     base::PostTaskWithTraits(
         FROM_HERE, {BrowserThread::IO},
         base::BindOnce(
             &ServiceWorkerObjectHost::AddRemoteObjectPtrAndUpdateState,
-            subresource_loader_params->controller_service_worker_object_host,
-            std::move(remote_object), sent_state));
+            controller_service_worker_object_host,
+            std::move(service_worker_remote_object),
+            service_worker_sent_state));
   }
 
   // Monitor the lifetime of the worker.
@@ -318,15 +316,15 @@ void SharedWorkerHost::CreateNetworkFactory(
   RenderProcessHost* process = RenderProcessHost::FromID(process_id_);
   url::Origin origin = instance_->constructor_origin();
   network::mojom::TrustedURLLoaderHeaderClientPtrInfo no_header_client;
-  if (GetCreateNetworkFactoryCallback().is_null()) {
+  if (GetCreateNetworkFactoryCallbackForSharedWorker().is_null()) {
     process->CreateURLLoaderFactory(origin, std::move(no_header_client),
                                     std::move(request));
   } else {
     network::mojom::URLLoaderFactoryPtr original_factory;
     process->CreateURLLoaderFactory(origin, std::move(no_header_client),
                                     mojo::MakeRequest(&original_factory));
-    GetCreateNetworkFactoryCallback().Run(std::move(request), process_id_,
-                                          original_factory.PassInterface());
+    GetCreateNetworkFactoryCallbackForSharedWorker().Run(
+        std::move(request), process_id_, original_factory.PassInterface());
   }
 }
 
@@ -347,6 +345,19 @@ void SharedWorkerHost::AllowIndexedDB(const GURL& url,
   base::PostTaskWithTraitsAndReplyWithResult(
       FROM_HERE, {BrowserThread::IO},
       base::BindOnce(&AllowIndexedDBOnIOThread, url,
+                     RenderProcessHost::FromID(process_id_)
+                         ->GetBrowserContext()
+                         ->GetResourceContext(),
+                     GetRenderFrameIDsForWorker()),
+      std::move(callback));
+}
+
+void SharedWorkerHost::AllowCacheStorage(
+    const GURL& url,
+    base::OnceCallback<void(bool)> callback) {
+  base::PostTaskWithTraitsAndReplyWithResult(
+      FROM_HERE, {BrowserThread::IO},
+      base::BindOnce(&AllowCacheStorageOnIOThread, url,
                      RenderProcessHost::FromID(process_id_)
                          ->GetBrowserContext()
                          ->GetResourceContext(),

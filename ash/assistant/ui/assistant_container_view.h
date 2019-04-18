@@ -13,10 +13,6 @@
 #include "base/macros.h"
 #include "ui/views/bubble/bubble_dialog_delegate_view.h"
 
-namespace aura {
-class Window;
-}  // namespace aura
-
 namespace ash {
 
 class AssistantContainerViewAnimator;
@@ -32,21 +28,16 @@ class COMPONENT_EXPORT(ASSISTANT_UI) AssistantContainerView
   explicit AssistantContainerView(AssistantViewDelegate* delegate);
   ~AssistantContainerView() override;
 
-  // Instructs the event targeter for the Assistant window to only allow mouse
-  // click events to reach the specified |window|. All other events will not
-  // be explored by |window|'s subtree for handling.
-  static void OnlyAllowMouseClickEvents(aura::Window* window);
-
   // views::BubbleDialogDelegateView:
   const char* GetClassName() const override;
   void AddedToWidget() override;
-  ax::mojom::Role GetAccessibleWindowRole() const override;
+  ax::mojom::Role GetAccessibleWindowRole() override;
   base::string16 GetAccessibleWindowTitle() const override;
   int GetDialogButtons() const override;
   views::FocusTraversable* GetFocusTraversable() override;
   void ChildPreferredSizeChanged(views::View* child) override;
   void ViewHierarchyChanged(
-      const ViewHierarchyChangedDetails& details) override;
+      const views::ViewHierarchyChangedDetails& details) override;
   void SizeToContents() override;
   void OnBeforeBubbleWidgetInit(views::Widget::InitParams* params,
                                 views::Widget* widget) const override;

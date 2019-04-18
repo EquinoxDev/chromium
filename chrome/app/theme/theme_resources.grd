@@ -155,10 +155,6 @@
         <structure type="chrome_scaled_image" name="IDR_ARC_PLAY_STORE_OPTIN_IN_PROGRESS_NOTIFICATION" file="cros/notification_play_store_optin_in_progress.png" />
         <structure type="chrome_scaled_image" name="IDR_NOTIFICATION_EASYUNLOCK_ENABLED" file="cros/notification_easyunlock_enabled.png" />
       </if>
-      <if expr="not is_android">
-        <structure type="chrome_scaled_image" name="IDR_OMNIBOX_CALCULATOR_ROUND" file="common/calculator_round_24.png" />
-        <structure type="chrome_scaled_image" name="IDR_OMNIBOX_TRANSLATION_ROUND" file="common/translate_round_32.png" />
-      </if>
       <structure type="chrome_scaled_image" name="IDR_PLUGINS_FAVICON" file="common/favicon_extensions.png" />
       <structure type="chrome_scaled_image" name="IDR_PRERENDER" file="common/prerender_succeed_icon.png" />
       <if expr="chromeos">
@@ -209,6 +205,19 @@
       <structure type="chrome_scaled_image" name="IDR_PROFILE_AVATAR_24" file="common/profile_avatar_note.png" />
       <structure type="chrome_scaled_image" name="IDR_PROFILE_AVATAR_25" file="common/profile_avatar_sun_cloud.png" />
       <structure type="chrome_scaled_image" name="IDR_PROFILE_AVATAR_26" file="common/profile_avatar_placeholder.png" />
+      <if expr="not is_android and not chromeos">
+        <structure type="chrome_scaled_image" name="IDR_PROFILE_AVATAR_27" file="common/origami/avatar_cat.png" />
+        <structure type="chrome_scaled_image" name="IDR_PROFILE_AVATAR_28" file="common/origami/avatar_corgi.png" />
+        <structure type="chrome_scaled_image" name="IDR_PROFILE_AVATAR_29" file="common/origami/avatar_dragon.png" />
+        <structure type="chrome_scaled_image" name="IDR_PROFILE_AVATAR_30" file="common/origami/avatar_elephant.png" />
+        <structure type="chrome_scaled_image" name="IDR_PROFILE_AVATAR_31" file="common/origami/avatar_fox.png" />
+        <structure type="chrome_scaled_image" name="IDR_PROFILE_AVATAR_32" file="common/origami/avatar_monkey.png" />
+        <structure type="chrome_scaled_image" name="IDR_PROFILE_AVATAR_33" file="common/origami/avatar_panda.png" />
+        <structure type="chrome_scaled_image" name="IDR_PROFILE_AVATAR_34" file="common/origami/avatar_penguin.png" />
+        <structure type="chrome_scaled_image" name="IDR_PROFILE_AVATAR_35" file="common/origami/avatar_pinkbutterfly.png" />
+        <structure type="chrome_scaled_image" name="IDR_PROFILE_AVATAR_36" file="common/origami/avatar_rabbit.png" />
+        <structure type="chrome_scaled_image" name="IDR_PROFILE_AVATAR_37" file="common/origami/avatar_unicorn.png" />
+      </if>
       <structure type="chrome_scaled_image" name="IDR_PROFILE_AVATAR_PLACEHOLDER_LARGE" file="common/profile_avatar_placeholder_large.png" />
       <structure type="chrome_scaled_image" name="IDR_PROFILES_DICE_TURN_ON_SYNC" file="common/turn_on_sync_illustration.png" />
 
@@ -222,6 +231,7 @@
         <structure type="chrome_scaled_image" name="IDR_SECONDARY_USER_SETTINGS" file="cros/secondary_user_settings.png" />
       </if>
       <structure type="chrome_scaled_image" name="IDR_SETTINGS_FAVICON" file="common/favicon_settings.png" />
+      <structure type="chrome_scaled_image" name="IDR_MANAGEMENT_FAVICON" file="common/favicon_management.png" />
       <structure type="chrome_scaled_image" name="IDR_SHOW_PASSWORD_HOVER" file="common/show_password_hover.png" />
       <if expr="chromeos">
         <structure type="chrome_scaled_image" name="IDR_SMB_ICON" file="cros/smb_icon.png" />
@@ -298,18 +308,27 @@
       </if>
       <if expr="is_win or is_macosx or desktop_linux or chromeos">
         <structure type="chrome_scaled_image" name="IDR_WEBAUTHN_ILLUSTRATION_BLE" file="common/webauthn/ble.png" />
+        <structure type="chrome_scaled_image" name="IDR_WEBAUTHN_ILLUSTRATION_BLE_DARK" file="common/webauthn/ble_dark.png" />
         <structure type="chrome_scaled_image" name="IDR_WEBAUTHN_ILLUSTRATION_BLE_NAME" file="common/webauthn/ble_name.png" />
+        <structure type="chrome_scaled_image" name="IDR_WEBAUTHN_ILLUSTRATION_BLE_NAME_DARK" file="common/webauthn/ble_name_dark.png" />
         <structure type="chrome_scaled_image" name="IDR_WEBAUTHN_ILLUSTRATION_BLE_TAP" file="common/webauthn/ble_tap.png" />
+        <structure type="chrome_scaled_image" name="IDR_WEBAUTHN_ILLUSTRATION_BLE_TAP_DARK" file="common/webauthn/ble_tap_dark.png" />
         <structure type="chrome_scaled_image" name="IDR_WEBAUTHN_ILLUSTRATION_BLE_PIN" file="common/webauthn/ble_pin.png" />
+        <structure type="chrome_scaled_image" name="IDR_WEBAUTHN_ILLUSTRATION_BLE_PIN_DARK" file="common/webauthn/ble_pin_dark.png" />
         <structure type="chrome_scaled_image" name="IDR_WEBAUTHN_ILLUSTRATION_ERROR_BLUETOOTH" file="common/webauthn/error_bt.png" />
+        <structure type="chrome_scaled_image" name="IDR_WEBAUTHN_ILLUSTRATION_ERROR_BLUETOOTH_DARK" file="common/webauthn/error_bt_dark.png" />
         <structure type="chrome_scaled_image" name="IDR_WEBAUTHN_ILLUSTRATION_ERROR" file="common/webauthn/error.png" />
+        <structure type="chrome_scaled_image" name="IDR_WEBAUTHN_ILLUSTRATION_ERROR_DARK" file="common/webauthn/error_dark.png" />
         <structure type="chrome_scaled_image" name="IDR_WEBAUTHN_ILLUSTRATION_PHONE" file="common/webauthn/phone.png" />
+        <structure type="chrome_scaled_image" name="IDR_WEBAUTHN_ILLUSTRATION_PHONE_DARK" file="common/webauthn/phone_dark.png" />
         <structure type="chrome_scaled_image" name="IDR_WEBAUTHN_ILLUSTRATION_USB" file="common/webauthn/usb.png" />
+        <structure type="chrome_scaled_image" name="IDR_WEBAUTHN_ILLUSTRATION_USB_DARK" file="common/webauthn/usb_dark.png" />
         <structure type="chrome_scaled_image" name="IDR_WEBAUTHN_ILLUSTRATION_WELCOME" file="common/webauthn/welcome.png" />
+        <structure type="chrome_scaled_image" name="IDR_WEBAUTHN_ILLUSTRATION_WELCOME_DARK" file="common/webauthn/welcome_dark.png" />
         <structure type="chrome_scaled_image" name="IDR_WEBAUTHN_ILLUSTRATION_PIN" file="common/webauthn/usb.png" />
-      </if>
-      <if expr="is_macosx">
-        <structure type="chrome_scaled_image" name="IDR_WEBAUTHN_ILLUSTRATION_TOUCHID" file="common/webauthn/touchid.png" />
+        <structure type="chrome_scaled_image" name="IDR_WEBAUTHN_ILLUSTRATION_PIN_DARK" file="common/webauthn/usb_dark.png" />
+        <structure type="chrome_scaled_image" name="IDR_WEBAUTHN_ILLUSTRATION_PERMISSION" file="common/webauthn/permission.png" />
+        <structure type="chrome_scaled_image" name="IDR_WEBAUTHN_ILLUSTRATION_PERMISSION_DARK" file="common/webauthn/permission_dark.png" />
       </if>
     </structures>
   </release>

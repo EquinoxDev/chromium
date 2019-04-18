@@ -12,14 +12,41 @@ function MockVolumeManager() {
   this.driveConnectionState = {
     type: VolumeManagerCommon.DriveConnectionType.ONLINE
   };
-  this.createVolumeInfo(
+
+  // Create Drive.   Drive attempts to resolve FilesSystemURLs for '/root',
+  // '/team_drives' and '/Computers' during initialization. Create a filesystem
+  // with those entries now, and mock webkitResolveLocalFileSystemURL.
+  const driveFs = new MockFileSystem(
       VolumeManagerCommon.VolumeType.DRIVE,
-      'drive',
+      'filesystem:' + VolumeManagerCommon.VolumeType.DRIVE);
+  driveFs.populate(['/root/', '/team_drives/', '/Computers/']);
+
+  // Mock window.webkitResolve to return entries.
+  const orig = window.webkitResolveLocalFileSystemURL;
+  window.webkitResolveLocalFileSystemURL = (url, success) => {
+    const match = url.match(/^filesystem:drive(\/.*)/);
+    if (match) {
+      const path = match[1];
+      const entry = driveFs.entries[path];
+      if (entry) {
+        return setTimeout(success, 0, entry);
+      }
+    }
+    throw new DOMException('Unknown drive url: ' + url, 'NotFoundError');
+  };
+
+  // Create Drive, swap entries back in, revert window.webkitResolve.
+  const drive = this.createVolumeInfo(
+      VolumeManagerCommon.VolumeType.DRIVE, VolumeManagerCommon.RootType.DRIVE,
       str('DRIVE_DIRECTORY_LABEL'));
+  /** @type {MockFileSystem} */ (drive.fileSystem)
+      .populate(Object.values(driveFs.entries));
+  window.webkitResolveLocalFileSystmeURL = orig;
+
+  // Create Downloads.
   this.createVolumeInfo(
       VolumeManagerCommon.VolumeType.DOWNLOADS,
-      'downloads',
-      str('DOWNLOADS_DIRECTORY_LABEL'));
+      VolumeManagerCommon.RootType.DOWNLOADS, str('DOWNLOADS_DIRECTORY_LABEL'));
 }
 
 /**
@@ -86,10 +113,10 @@ MockVolumeManager.prototype.getLocationInfo = function(entry) {
     var isRootEntry = entry.fullPath === '/root';
     if (entry.fullPath.startsWith('/team_drives')) {
       if (entry.fullPath === '/team_drives') {
-        rootType = VolumeManagerCommon.RootType.TEAM_DRIVES_GRAND_ROOT;
+        rootType = VolumeManagerCommon.RootType.SHARED_DRIVES_GRAND_ROOT;
         isRootEntry = true;
       } else {
-        rootType = VolumeManagerCommon.RootType.TEAM_DRIVE;
+        rootType = VolumeManagerCommon.RootType.SHARED_DRIVE;
         isRootEntry = util.isTeamDriveRoot(entry);
       }
     } else if (entry.fullPath.startsWith('/Computers')) {
@@ -151,37 +178,41 @@ MockVolumeManager.prototype.getDriveConnectionState = function() {
  * @param {string=} providerId Provider id.
  * @return {!VolumeInfo} Created mock VolumeInfo.
  */
-MockVolumeManager.createMockVolumeInfo = (type, volumeId, label, devicePath, providerId) => {
-  const fileSystem = new MockFileSystem(volumeId, 'filesystem:' + volumeId);
+MockVolumeManager.createMockVolumeInfo =
+    (type, volumeId, label, devicePath, providerId) => {
+      const fileSystem = new MockFileSystem(volumeId, 'filesystem:' + volumeId);
 
-  // If there's no label set it to volumeId to make it shorter to write tests.
-  const volumeInfo = new VolumeInfoImpl(
-      type, volumeId, fileSystem,
-      '',                                          // error
-      '',                                          // deviceType
-      devicePath || '',                            // devicePath
-      false,                                       // isReadOnly
-      false,                                       // isReadOnlyRemovableDevice
-      {isCurrentProfile: true, displayName: ''},   // profile
-      label || volumeId,                           // label
-      providerId,                                  // providerId
-      false,                                       // hasMedia
-      false,                                       // configurable
-      false,                                       // watchable
-      VolumeManagerCommon.Source.NETWORK,          // source
-      VolumeManagerCommon.FileSystemType.UNKNOWN,  // diskFileSystemType
-      {},                                          // iconSet
-      '');                                         // driveLabel
+      // If there's no label set it to volumeId to make it shorter to write
+      // tests.
+      const volumeInfo = new VolumeInfoImpl(
+          type, volumeId, fileSystem,
+          '',                // error
+          '',                // deviceType
+          devicePath || '',  // devicePath
+          false,             // isReadOnly
+          false,             // isReadOnlyRemovableDevice
+          {isCurrentProfile: true, displayName: ''},   // profile
+          label || volumeId,                           // label
+          providerId,                                  // providerId
+          false,                                       // hasMedia
+          false,                                       // configurable
+          false,                                       // watchable
+          VolumeManagerCommon.Source.NETWORK,          // source
+          VolumeManagerCommon.FileSystemType.UNKNOWN,  // diskFileSystemType
+          {},                                          // iconSet
+          '');                                         // driveLabel
 
-  return volumeInfo;
-};
+      return volumeInfo;
+    };
 
-MockVolumeManager.prototype.mountArchive = (fileUrl, successCallback, errorCallback) => {
-  throw new Error('Not implemented.');
-};
-MockVolumeManager.prototype.unmount = (volumeInfo, successCallback, errorCallback) => {
-  throw new Error('Not implemented.');
-};
+MockVolumeManager.prototype.mountArchive =
+    (fileUrl, successCallback, errorCallback) => {
+      throw new Error('Not implemented.');
+    };
+MockVolumeManager.prototype.unmount =
+    (volumeInfo, successCallback, errorCallback) => {
+      throw new Error('Not implemented.');
+    };
 MockVolumeManager.prototype.configure = volumeInfo => {
   throw new Error('Not implemented.');
 };

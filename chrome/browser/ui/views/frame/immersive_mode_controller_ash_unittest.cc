@@ -27,6 +27,7 @@
 #include "chrome/browser/ui/views/toolbar/toolbar_view.h"
 #include "ui/aura/window.h"
 #include "ui/events/event.h"
+#include "ui/views/controls/native/native_view_host.h"
 #include "ui/views/controls/webview/webview.h"
 
 class ImmersiveModeControllerAshTest : public TestWithBrowserView {
@@ -42,7 +43,6 @@ class ImmersiveModeControllerAshTest : public TestWithBrowserView {
     browser()->window()->Show();
 
     controller_ = browser_view()->immersive_mode_controller();
-    ASSERT_EQ(ImmersiveModeController::Type::ASH, controller_->type());
     ash::ImmersiveFullscreenControllerTestApi(
         static_cast<ImmersiveModeControllerAsh*>(controller_)->controller())
         .SetupForTest();
@@ -128,6 +128,8 @@ TEST_F(ImmersiveModeControllerAshTest, Layout) {
   // By default, the tabstrip and toolbar should be visible.
   EXPECT_TRUE(tabstrip->visible());
   EXPECT_TRUE(toolbar->visible());
+  EXPECT_EQ(
+      0, browser_view()->contents_web_view()->holder()->GetHitTestTopInset());
 
   ToggleFullscreen();
   EXPECT_TRUE(browser_view()->GetWidget()->IsFullscreen());
@@ -139,6 +141,8 @@ TEST_F(ImmersiveModeControllerAshTest, Layout) {
   // Tabstrip and top container view should be completely offscreen.
   EXPECT_EQ(0, GetBoundsInWidget(tabstrip).bottom());
   EXPECT_EQ(0, GetBoundsInWidget(browser_view()->top_container()).bottom());
+  EXPECT_EQ(
+      0, browser_view()->contents_web_view()->holder()->GetHitTestTopInset());
 
   // Since the tab strip and tool bar are both hidden in immersive fullscreen
   // mode, the web contents should extend to the edge of screen.
@@ -150,6 +154,8 @@ TEST_F(ImmersiveModeControllerAshTest, Layout) {
   EXPECT_TRUE(controller()->IsRevealed());
   EXPECT_TRUE(tabstrip->visible());
   EXPECT_TRUE(toolbar->visible());
+  EXPECT_NE(
+      0, browser_view()->contents_web_view()->holder()->GetHitTestTopInset());
 
   // The TopContainerView should be flush with the top edge of the widget. If
   // it is not flush with the top edge the immersive reveal animation looks
@@ -189,6 +195,8 @@ TEST_F(ImmersiveModeControllerAshTest, Layout) {
   // Exiting both immersive and tab fullscreen should show the tab strip and
   // toolbar.
   ToggleFullscreen();
+  EXPECT_EQ(
+      0, browser_view()->contents_web_view()->holder()->GetHitTestTopInset());
   EXPECT_FALSE(browser_view()->GetWidget()->IsFullscreen());
   EXPECT_FALSE(controller()->IsEnabled());
   EXPECT_FALSE(controller()->IsRevealed());

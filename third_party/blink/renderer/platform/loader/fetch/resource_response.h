@@ -42,6 +42,7 @@
 #include "third_party/blink/renderer/platform/network/http_parsers.h"
 #include "third_party/blink/renderer/platform/platform_export.h"
 #include "third_party/blink/renderer/platform/weborigin/kurl.h"
+#include "third_party/blink/renderer/platform/wtf/allocator.h"
 #include "third_party/blink/renderer/platform/wtf/ref_counted.h"
 #include "third_party/blink/renderer/platform/wtf/text/cstring.h"
 #include "third_party/blink/renderer/platform/wtf/time.h"
@@ -56,6 +57,8 @@ namespace blink {
 //
 // This class is thread-bound. Do not copy/pass an instance across threads.
 class PLATFORM_EXPORT ResourceResponse final {
+  USING_FAST_MALLOC(ResourceResponse);
+
  public:
   enum HTTPVersion : uint8_t {
     kHTTPVersionUnknown,
@@ -78,6 +81,8 @@ class PLATFORM_EXPORT ResourceResponse final {
   };
 
   class PLATFORM_EXPORT SignedCertificateTimestamp final {
+    DISALLOW_NEW();
+
    public:
     SignedCertificateTimestamp(String status,
                                String origin,
@@ -194,15 +199,15 @@ class PLATFORM_EXPORT ResourceResponse final {
   void SetTextEncodingName(const AtomicString&);
 
   int HttpStatusCode() const;
-  void SetHTTPStatusCode(int);
+  void SetHttpStatusCode(int);
 
   const AtomicString& HttpStatusText() const;
-  void SetHTTPStatusText(const AtomicString&);
+  void SetHttpStatusText(const AtomicString&);
 
   const AtomicString& HttpHeaderField(const AtomicString& name) const;
-  void SetHTTPHeaderField(const AtomicString& name, const AtomicString& value);
-  void AddHTTPHeaderField(const AtomicString& name, const AtomicString& value);
-  void ClearHTTPHeaderField(const AtomicString& name);
+  void SetHttpHeaderField(const AtomicString& name, const AtomicString& value);
+  void AddHttpHeaderField(const AtomicString& name, const AtomicString& value);
+  void ClearHttpHeaderField(const AtomicString& name);
   const HTTPHeaderMap& HttpHeaderFields() const;
 
   bool IsAttachment() const;
@@ -239,7 +244,7 @@ class PLATFORM_EXPORT ResourceResponse final {
   void SetResourceLoadInfo(scoped_refptr<ResourceLoadInfo>);
 
   HTTPVersion HttpVersion() const { return http_version_; }
-  void SetHTTPVersion(HTTPVersion version) { http_version_ = version; }
+  void SetHttpVersion(HTTPVersion version) { http_version_ = version; }
 
   int RequestId() const { return request_id_; }
   void SetRequestId(int request_id) { request_id_ = request_id; }
@@ -324,7 +329,7 @@ class PLATFORM_EXPORT ResourceResponse final {
   const Vector<KURL>& UrlListViaServiceWorker() const {
     return url_list_via_service_worker_;
   }
-  void SetURLListViaServiceWorker(const Vector<KURL>& url_list) {
+  void SetUrlListViaServiceWorker(const Vector<KURL>& url_list) {
     url_list_via_service_worker_ = url_list;
   }
 
@@ -357,8 +362,8 @@ class PLATFORM_EXPORT ResourceResponse final {
     remote_ip_address_ = value;
   }
 
-  unsigned short RemotePort() const { return remote_port_; }
-  void SetRemotePort(unsigned short value) { remote_port_ = value; }
+  uint16_t RemotePort() const { return remote_port_; }
+  void SetRemotePort(uint16_t value) { remote_port_ = value; }
 
   const AtomicString& AlpnNegotiatedProtocol() const {
     return alpn_negotiated_protocol_;
@@ -418,7 +423,7 @@ class PLATFORM_EXPORT ResourceResponse final {
 
   KURL current_request_url_;
   AtomicString mime_type_;
-  long long expected_content_length_ = 0;
+  int64_t expected_content_length_ = 0;
   AtomicString text_encoding_name_;
 
   unsigned connection_id_ = 0;
@@ -430,7 +435,7 @@ class PLATFORM_EXPORT ResourceResponse final {
   AtomicString remote_ip_address_;
 
   // Remote port number of the socket which fetched this resource.
-  unsigned short remote_port_ = 0;
+  uint16_t remote_port_ = 0;
 
   bool was_cached_ = false;
   bool connection_reused_ = false;

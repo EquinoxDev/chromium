@@ -23,6 +23,7 @@
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/resource_request_info.h"
 #include "content/public/browser/web_contents_observer.h"
+#include "net/base/auth.h"
 
 class GURL;
 class LoginInterstitialDelegate;
@@ -31,13 +32,10 @@ namespace content {
 class WebContents;
 }  // namespace content
 
-namespace net {
-class AuthChallengeInfo;
-}  // namespace net
-
 // This is the base implementation for the OS-specific classes that prompt for
 // authentication information.
-class LoginHandler : public content::NotificationObserver,
+class LoginHandler : public content::LoginDelegate,
+                     public content::NotificationObserver,
                      public content::WebContentsObserver {
  public:
   // The purpose of this struct is to enforce that BuildViewImpl receives either
@@ -55,7 +53,7 @@ class LoginHandler : public content::NotificationObserver,
     const autofill::PasswordForm& form;
   };
 
-  LoginHandler(net::AuthChallengeInfo* auth_info,
+  LoginHandler(const net::AuthChallengeInfo& auth_info,
                content::WebContents* web_contents,
                LoginAuthRequiredCallback auth_required_callback);
   ~LoginHandler() override;
@@ -66,7 +64,7 @@ class LoginHandler : public content::NotificationObserver,
   // them, the login request is aborted and the callback will not be called. The
   // callback must remain valid until one of those two events occurs.
   static std::unique_ptr<LoginHandler> Create(
-      net::AuthChallengeInfo* auth_info,
+      const net::AuthChallengeInfo& auth_info,
       content::WebContents* web_contents,
       LoginAuthRequiredCallback auth_required_callback);
 
@@ -92,7 +90,7 @@ class LoginHandler : public content::NotificationObserver,
                const content::NotificationDetails& details) override;
 
   // Who/where/what asked for the authentication.
-  const net::AuthChallengeInfo* auth_info() const { return auth_info_.get(); }
+  const net::AuthChallengeInfo& auth_info() const { return auth_info_; }
 
  protected:
   // Implement this to initialize the underlying platform specific view. If
@@ -168,7 +166,7 @@ class LoginHandler : public content::NotificationObserver,
                           LoginModelData* login_model_data);
 
   // Who/where/what asked for the authentication.
-  scoped_refptr<net::AuthChallengeInfo> auth_info_;
+  net::AuthChallengeInfo auth_info_;
 
   // The PasswordForm sent to the PasswordManager. This is so we can refer to it
   // when later notifying the password manager if the credentials were accepted
@@ -181,6 +179,9 @@ class LoginHandler : public content::NotificationObserver,
   LoginAuthRequiredCallback auth_required_callback_;
 
   base::WeakPtr<LoginInterstitialDelegate> interstitial_delegate_;
+
+  // True if the extensions logic has run and the prompt logic has started.
+  bool prompt_started_;
   base::WeakPtrFactory<LoginHandler> weak_factory_;
 };
 
@@ -224,18 +225,12 @@ class AuthSuppliedLoginNotificationDetails : public LoginNotificationDetails {
   DISALLOW_COPY_AND_ASSIGN(AuthSuppliedLoginNotificationDetails);
 };
 
-// Prompts the user for their username and password.  This is designed to
-// be called on the background (I/O) thread, in response to
-// net::URLRequest::Delegate::OnAuthRequired.  The prompt will be created
-// on the main UI thread via a call to UI loop's InvokeLater, and will send the
-// credentials back to the net::URLRequest on the calling thread.
-// A LoginDelegate object (which lives on the calling thread) is returned,
-// which can be used to set or cancel authentication programmatically.  The
-// caller must invoke OnRequestCancelled() on this LoginDelegate before
-// destroying the net::URLRequest.
-scoped_refptr<content::LoginDelegate> CreateLoginPrompt(
-    net::AuthChallengeInfo* auth_info,
-    content::ResourceRequestInfo::WebContentsGetter web_contents_getter,
+// Prompts the user for their username and password. The caller may cancel the
+// request by destroying the returned LoginDelegate. It must do this before
+// invalidating the callback.
+std::unique_ptr<content::LoginDelegate> CreateLoginPrompt(
+    const net::AuthChallengeInfo& auth_info,
+    content::WebContents* web_contents,
     const content::GlobalRequestID& request_id,
     bool is_main_frame,
     const GURL& url,

@@ -183,14 +183,13 @@
 <translation id="6810143991807788455">நடப்பு அமைப்புகள் குறித்து தெரிவிப்பதன் மூலம் Chromiumஐச் சிறந்ததாக்க உதவவும்</translation>
 <translation id="6857782730669500492">Chromium - <ph name="PAGE_TITLE" /></translation>
 <translation id="6863361426438995919">Google Pay (Chromiumக்கு நகலெடுக்கப்பட்டது)</translation>
-<translation id="6877899728743402439">மாற்று உலாவியைத் திறக்க, உங்கள் சாதன நிர்வாகி Chromeமை உள்ளமைத்துள்ளார்.</translation>
 <translation id="6893813176749746474">Chromium புதுப்பிக்கப்பட்டது. ஆனால், அதை நீங்கள் 30 நாட்களாக பயன்படுத்தவில்லை.</translation>
 <translation id="6964305034639999644">Chromium மறை&amp;நிலை சாளரத்தில் இணைப்பைத் திற</translation>
 <translation id="6970811910055250180">உங்கள் சாதனம் புதுப்பிக்கப்படுகிறது...</translation>
 <translation id="6990124437352146030">இந்தத் தளத்திற்காக மைக்ரோஃபோனை அணுக, Chromiumக்கு அனுமதி தேவை</translation>
 <translation id="705851970750939768">Chromiumஐப் புதுப்பி</translation>
 <translation id="7066436765290594559">Chromium OS ஆல் உங்கள் தரவை ஒத்திசைக்க முடியவில்லை. உங்கள் ஒத்திசைவு கடவுச்சொற்றொடரைப் புதுப்பிக்கவும்.</translation>
-<translation id="7162152143154757523">நீங்கள் உலாவியில் தட்டச்சு செய்ததை Google சேவையகங்களுக்கு அனுப்புவதன் மூலம் விரைவான எழுத்துப்பிழைச் சரிப்பார்த்தலை Chromium வழங்குகிறது, Google தேடல் பயன்படுத்தும் அதே எழுத்துப்பிழைச் சரிபார்த்தல் தொழில்நுட்பத்தை நீங்கள் பயன்படுத்த அனுமதிக்கிறது.</translation>
+<translation id="7067091210845072982">ஒரு படத்திற்குப் பயனுள்ள விளக்கம் இல்லாதபட்சத்தில் Chromium உங்களுக்காக அதை வழங்க முயலும். விளக்கங்களை உருவாக்குவதற்காக படங்கள் Googleளுக்கு அனுப்பப்படும்.</translation>
 <translation id="7196312274710523067">Chromiumஐத் தொடங்க முடியவில்லை. மீண்டும் முயலவும்.</translation>
 <translation id="7205698830395646142">Chromium மெனுவில் மறை</translation>
 <translation id="7223968959479464213">செயல் நிர்வாகி - Chromium</translation>
@@ -235,6 +234,7 @@
 <translation id="8030318113982266900">உங்கள் சாதனத்தை <ph name="CHANNEL_NAME" /> சேனலுக்குப் புதுப்பிக்கிறது...</translation>
 <translation id="81770708095080097">இந்தக் கோப்பு ஆபத்தானது என்பதால், அதை Chromium தடுத்துள்ளது.</translation>
 <translation id="8222496066431494154">உங்கள் மொபைலில் Chromiumஐ நிறுவவும். கணக்கின் மீட்பு மொபைல் எண்ணுக்கு SMS ஒன்றை அனுப்புவோம்: <ph name="PHONE_NUMBER" /></translation>
+<translation id="8248265253516264921">ஒரு படத்திற்குப் பயனுள்ள விளக்கம் இல்லாதபட்சத்தில் Chromium உங்களுக்காக அதை வழங்க முயலும். விளக்கங்களை உருவாக்குவதற்காக படங்கள் Googleளுக்கு அனுப்பப்படும். அமைப்புகளுக்குச் சென்று எப்போது வேண்டுமானாலும் இதை முடக்கலாம்.</translation>
 <translation id="8269379391216269538">Chromium ஐ மேலும் சிறப்பாக்க உதவவும்</translation>
 <translation id="8290862415967981663">இந்தக் கோப்பு ஆபத்தானதாக இருக்கக்கூடும் என்பதால், அதை Chromium தடுத்துள்ளது.</translation>
 <translation id="8330519371938183845">உங்கள் எல்லாச் சாதனங்களிலும் Chromiumஐ ஒத்திசைக்க மற்றும் தனிப்பயனாக்க, உள்நுழையவும்</translation>
@@ -269,6 +269,7 @@
 <translation id="9089354809943900324">Chromium காலாவதியானது</translation>
 <translation id="91086099826398415">புதிய Chromium &amp;தாவலில் இணைப்பைத் திற</translation>
 <translation id="911206726377975832">உங்கள் உலாவுதல் தரவையும் நீக்க வேண்டுமா?</translation>
+<translation id="9158494823179993217"><ph name="TARGET_URL_HOSTNAME" />ஐ அணுக Chromium அதை மாற்று உலாவியில் திறக்கும்படி உங்கள் சிஸ்டம் நிர்வாகி உள்ளமைத்துள்ளார்.</translation>
 <translation id="918373042641772655"><ph name="USERNAME" /> ஐத் துண்டிப்பது, இந்தச் சாதனத்தில் உள்ள உங்கள் வரலாறு, புக்மார்க்குகள், அமைப்புகள் மற்றும் பிற Chromium தரவை அழிக்கும். உங்கள் Google கணக்கில் சேமிக்கப்பட்ட தரவு அழிக்கப்படாது, மேலும் <ph name="GOOGLE_DASHBOARD_LINK" />Google டாஷ்போர்டில்<ph name="END_GOOGLE_DASHBOARD_LINK" /> நிர்வகிக்கலாம்.</translation>
 <translation id="9190841055450128916">Chromium (mDNS-In)</translation>
 <translation id="9197815481970649201">இப்போது Chromium இல் உள்நுழைந்துள்ளீர்கள்</translation>

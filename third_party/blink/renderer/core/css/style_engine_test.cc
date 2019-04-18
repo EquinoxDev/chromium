@@ -6,7 +6,7 @@
 
 #include <memory>
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/blink/public/platform/web_color_scheme.h"
+#include "third_party/blink/public/common/css/preferred_color_scheme.h"
 #include "third_party/blink/public/platform/web_float_rect.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_binding_for_core.h"
 #include "third_party/blink/renderer/core/css/css_font_selector.h"
@@ -70,7 +70,7 @@ class StyleEngineTest : public testing::Test {
 };
 
 void StyleEngineTest::SetUp() {
-  dummy_page_holder_ = DummyPageHolder::Create(IntSize(800, 600));
+  dummy_page_holder_ = std::make_unique<DummyPageHolder>(IntSize(800, 600));
 }
 
 void StyleEngineTest::TearDown() {
@@ -687,7 +687,7 @@ TEST_F(StyleEngineTest, TextToSheetCache) {
 
   // Garbage collection should clear the weak reference in the
   // StyleSheetContents cache.
-  ThreadState::Current()->CollectAllGarbage();
+  ThreadState::Current()->CollectAllGarbageForTesting();
 
   element = HTMLStyleElement::Create(GetDocument(), CreateElementFlags());
   sheet1 = GetStyleEngine().CreateSheet(*element, sheet_text, min_pos, context);
@@ -975,12 +975,12 @@ TEST_F(StyleEngineTest, ModifyStyleRuleMatchedPropertiesCache) {
   EXPECT_EQ(MakeRGB(0, 0, 255), t1->GetComputedStyle()->VisitedDependentColor(
                                     GetCSSPropertyColor()));
 
-  CSSStyleSheet* sheet = ToCSSStyleSheet(GetDocument().StyleSheets().item(0));
+  auto* sheet = To<CSSStyleSheet>(GetDocument().StyleSheets().item(0));
   ASSERT_TRUE(sheet);
   DummyExceptionStateForTesting exception_state;
   ASSERT_TRUE(sheet->cssRules(exception_state));
   CSSStyleRule* style_rule =
-      ToCSSStyleRule(sheet->cssRules(exception_state)->item(0));
+      To<CSSStyleRule>(sheet->cssRules(exception_state)->item(0));
   ASSERT_FALSE(exception_state.HadException());
   ASSERT_TRUE(style_rule);
   ASSERT_TRUE(style_rule->style());
@@ -1021,7 +1021,7 @@ TEST_F(StyleEngineTest, VisitedExplicitInheritanceMatchedPropertiesCache) {
   style = span->firstChild()->GetComputedStyle();
   EXPECT_TRUE(MatchedPropertiesCache::IsStyleCacheable(*style));
 
-  span->SetInlineStyleProperty(CSSPropertyColor, "blue");
+  span->SetInlineStyleProperty(CSSPropertyID::kColor, "blue");
 
   // Should not DCHECK on applying overflow:inherit on cached matched properties
   UpdateAllLifecyclePhases();
@@ -1225,7 +1225,7 @@ TEST_F(StyleEngineTest, ViewportDescriptionForZoomDSF) {
       WebWidget::LifecycleUpdateReason::kTest);
 
   Document* document =
-      ToLocalFrame(web_view_impl->GetPage()->MainFrame())->GetDocument();
+      To<LocalFrame>(web_view_impl->GetPage()->MainFrame())->GetDocument();
 
   auto desc = document->GetViewportData().GetViewportDescription();
   float min_width = desc.min_width.GetFloatValue();
@@ -1502,7 +1502,33 @@ TEST_F(StyleEngineTest, MediaQueriesChangeColorScheme) {
             GetDocument().body()->GetComputedStyle()->VisitedDependentColor(
                 GetCSSPropertyColor()));
 
-  GetDocument().GetSettings()->SetPreferredColorScheme(WebColorScheme::kDark);
+  GetDocument().GetSettings()->SetPreferredColorScheme(
+      PreferredColorScheme::kDark);
+  UpdateAllLifecyclePhases();
+  EXPECT_EQ(MakeRGB(0, 128, 0),
+            GetDocument().body()->GetComputedStyle()->VisitedDependentColor(
+                GetCSSPropertyColor()));
+}
+
+TEST_F(StyleEngineTest, MediaQueriesChangeColorSchemeForcedDarkMode) {
+  RuntimeEnabledFeatures::SetMediaQueryPrefersColorSchemeEnabled(true);
+
+  GetDocument().GetSettings()->SetForceDarkModeEnabled(true);
+  GetDocument().GetSettings()->SetPreferredColorScheme(
+      PreferredColorScheme::kDark);
+
+  GetDocument().body()->SetInnerHTMLFromString(R"HTML(
+    <style>
+      @media (prefers-color-scheme: no-preference) {
+        body { color: green }
+      }
+      @media (prefers-color-scheme: dark) {
+        body { color: red }
+      }
+    </style>
+    <body></body>
+  )HTML");
+
   UpdateAllLifecyclePhases();
   EXPECT_EQ(MakeRGB(0, 128, 0),
             GetDocument().body()->GetComputedStyle()->VisitedDependentColor(
@@ -1550,7 +1576,7 @@ TEST_F(StyleEngineTest, ShadowRootStyleRecalcCrash) {
 
   // This should not cause DCHECK errors on style recalc flags.
   shadow_root.getElementById("span")->remove();
-  host->SetInlineStyleProperty(CSSPropertyDisplay, "inline");
+  host->SetInlineStyleProperty(CSSPropertyID::kDisplay, "inline");
   UpdateAllLifecyclePhases();
 }
 
@@ -1567,7 +1593,7 @@ TEST_F(StyleEngineTest, GetComputedStyleOutsideFlatTreeCrash) {
   UpdateAllLifecyclePhases();
   GetDocument().body()->EnsureComputedStyle();
   GetDocument().getElementById("inner")->SetInlineStyleProperty(
-      CSSPropertyColor, "blue");
+      CSSPropertyID::kColor, "blue");
   UpdateAllLifecyclePhases();
 }
 
@@ -1589,7 +1615,7 @@ TEST_F(StyleEngineTest, RejectSelectorForPseudoElement) {
 
   Element* div = GetDocument().QuerySelector("div");
   ASSERT_TRUE(div);
-  div->SetInlineStyleProperty(CSSPropertyColor, "green");
+  div->SetInlineStyleProperty(CSSPropertyID::kColor, "green");
 
   GetDocument().Lifecycle().AdvanceTo(DocumentLifecycle::kInStyleRecalc);
   GetStyleEngine().RecalcStyle({});
@@ -1801,7 +1827,7 @@ TEST_F(StyleEngineTest, EnsuredComputedStyleRecalc) {
   EXPECT_FALSE(span_inner->GetComputedStyle());
 
   // Setting span color should not create ComputedStyles during style recalc.
-  span_outer->SetInlineStyleProperty(CSSPropertyColor, "blue");
+  span_outer->SetInlineStyleProperty(CSSPropertyID::kColor, "blue");
   EXPECT_TRUE(span_outer->NeedsStyleRecalc());
   GetDocument().Lifecycle().AdvanceTo(DocumentLifecycle::kInStyleRecalc);
   GetStyleEngine().RecalcStyle({});
@@ -1815,7 +1841,7 @@ TEST_F(StyleEngineTest, EnsuredComputedStyleRecalc) {
 
   // Triggering style recalc which propagates the color down the tree should
   // clear ComputedStyle objects in the display:none subtree.
-  GetDocument().body()->SetInlineStyleProperty(CSSPropertyColor, "pink");
+  GetDocument().body()->SetInlineStyleProperty(CSSPropertyID::kColor, "pink");
   UpdateAllLifecyclePhases();
 
   EXPECT_FALSE(computed->GetComputedStyle());
@@ -1848,7 +1874,7 @@ TEST_F(StyleEngineTest, EnsureCustomComputedStyle) {
   }
 
   // This triggers layout tree building.
-  div->SetInlineStyleProperty(CSSPropertyDisplay, "inline");
+  div->SetInlineStyleProperty(CSSPropertyID::kDisplay, "inline");
   UpdateAllLifecyclePhases();
 
   // We must not create LayoutObjects for Nodes with

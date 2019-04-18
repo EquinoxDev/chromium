@@ -6,7 +6,10 @@
 #define SERVICES_MEDIA_SESSION_MEDIA_CONTROLLER_H_
 
 #include <memory>
+#include <utility>
+#include <vector>
 
+#include "base/containers/flat_map.h"
 #include "base/optional.h"
 #include "base/sequence_checker.h"
 #include "mojo/public/cpp/bindings/binding.h"
@@ -15,6 +18,10 @@
 #include "services/media_session/public/cpp/media_metadata.h"
 #include "services/media_session/public/mojom/media_controller.mojom.h"
 #include "services/media_session/public/mojom/media_session.mojom.h"
+
+namespace base {
+class UnguessableToken;
+}  // namespace base
 
 namespace media_session {
 
@@ -37,6 +44,10 @@ class MediaController : public mojom::MediaController,
   void PreviousTrack() override;
   void NextTrack() override;
   void Seek(base::TimeDelta seek_time) override;
+  void ObserveImages(mojom::MediaSessionImageType type,
+                     int minimum_size_px,
+                     int desired_size_px,
+                     mojom::MediaControllerImageObserverPtr observer) override;
 
   // mojom::MediaSessionObserver overrides.
   void MediaSessionInfoChanged(
@@ -49,14 +60,23 @@ class MediaController : public mojom::MediaController,
       const base::flat_map<mojom::MediaSessionImageType,
                            std::vector<MediaImage>>& images) override;
 
-  // Sets the media session that the controller should be bound to. If the
-  // session is already bound to the same session then we will return false.
-  bool SetMediaSession(mojom::MediaSession* session);
+  void SetMediaSession(mojom::MediaSession* session,
+                       const base::UnguessableToken& request_id);
+  void ClearMediaSession();
 
   void BindToInterface(mojom::MediaControllerRequest request);
   void FlushForTesting();
 
  private:
+  friend class MediaControllerTest;
+
+  class ImageObserverHolder;
+
+  // Removes unbound or faulty image observers.
+  void CleanupImageObservers();
+
+  void Reset();
+
   // Holds mojo bindings for mojom::MediaController.
   mojo::BindingSet<mojom::MediaController> bindings_;
 
@@ -69,6 +89,10 @@ class MediaController : public mojom::MediaController,
   // The current actions for |session_|.
   std::vector<mojom::MediaSessionAction> session_actions_;
 
+  // The current images for |session_|.
+  base::flat_map<mojom::MediaSessionImageType, std::vector<MediaImage>>
+      session_images_;
+
   // Raw pointer to the local proxy. This is used for sending control events to
   // the underlying MediaSession.
   mojom::MediaSession* session_ = nullptr;
@@ -78,6 +102,12 @@ class MediaController : public mojom::MediaController,
 
   // Binding for |this| to act as an observer to |session_|.
   mojo::Binding<mojom::MediaSessionObserver> session_binding_{this};
+
+  // Manages individual image observers.
+  std::vector<std::unique_ptr<ImageObserverHolder>> image_observers_;
+
+  // The request id for the bound media session.
+  base::Optional<base::UnguessableToken> request_id_;
 
   // Protects |session_| as it is not thread safe.
   SEQUENCE_CHECKER(sequence_checker_);

@@ -91,6 +91,11 @@ void RecordTimeFromDeviceSetupToInstallMetric() {
 void crostini::ShowCrostiniInstallerView(
     Profile* profile,
     crostini::CrostiniUISurface ui_surface) {
+  // Defensive check to prevent showing the installer when crostini is not
+  // allowed.
+  if (!IsCrostiniUIAllowedForProfile(profile)) {
+    return;
+  }
   base::UmaHistogramEnumeration(kCrostiniSetupSourceHistogram, ui_surface,
                                 crostini::CrostiniUISurface::kCount);
   return CrostiniInstallerView::Show(profile);
@@ -110,6 +115,9 @@ void CrostiniInstallerView::Show(Profile* profile) {
   // set it to the desired value.
   g_crostini_installer_view->SetBigMessageLabel();
   g_crostini_installer_view->GetWidget()->Show();
+
+  crostini::CrostiniManager::GetForProfile(profile)->SetInstallerViewStatus(
+      true);
 }
 
 int CrostiniInstallerView::GetDialogButtons() const {
@@ -318,22 +326,6 @@ void CrostiniInstallerView::OnContainerDownloading(int32_t download_percent) {
 void CrostiniInstallerView::OnContainerCreated(CrostiniResult result) {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
   DCHECK_EQ(state_, State::CREATE_CONTAINER);
-  UpdateState(State::START_CONTAINER);
-}
-
-void CrostiniInstallerView::OnContainerStarted(CrostiniResult result) {
-  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
-  DCHECK_EQ(state_, State::START_CONTAINER);
-
-  if (result != CrostiniResult::SUCCESS) {
-    LOG(ERROR) << "Failed to start container with error code: "
-               << static_cast<int>(result);
-    HandleError(
-        l10n_util::GetStringUTF16(IDS_CROSTINI_INSTALLER_START_CONTAINER_ERROR),
-        SetupResult::kErrorStartingContainer);
-    return;
-  }
-  VLOG(1) << "Started container successfully";
   UpdateState(State::SETUP_CONTAINER);
 }
 
@@ -350,6 +342,22 @@ void CrostiniInstallerView::OnContainerSetup(CrostiniResult result) {
     return;
   }
   VLOG(1) << "Set up container successfully";
+  UpdateState(State::START_CONTAINER);
+}
+
+void CrostiniInstallerView::OnContainerStarted(CrostiniResult result) {
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+  DCHECK_EQ(state_, State::START_CONTAINER);
+
+  if (result != CrostiniResult::SUCCESS) {
+    LOG(ERROR) << "Failed to start container with error code: "
+               << static_cast<int>(result);
+    HandleError(
+        l10n_util::GetStringUTF16(IDS_CROSTINI_INSTALLER_START_CONTAINER_ERROR),
+        SetupResult::kErrorStartingContainer);
+    return;
+  }
+  VLOG(1) << "Started container successfully";
   UpdateState(State::FETCH_SSH_KEYS);
 }
 
@@ -372,6 +380,16 @@ void CrostiniInstallerView::OnSshKeysFetched(CrostiniResult result) {
 // static
 CrostiniInstallerView* CrostiniInstallerView::GetActiveViewForTesting() {
   return g_crostini_installer_view;
+}
+
+void CrostiniInstallerView::SetCloseCallbackForTesting(
+    base::OnceClosure quit_closure) {
+  quit_closure_for_testing_ = std::move(quit_closure);
+}
+
+void CrostiniInstallerView::SetProgressBarCallbackForTesting(
+    base::RepeatingCallback<void(double)> callback) {
+  progress_bar_callback_for_testing_ = callback;
 }
 
 CrostiniInstallerView::CrostiniInstallerView(Profile* profile)
@@ -460,7 +478,12 @@ CrostiniInstallerView::CrostiniInstallerView(Profile* profile)
 }
 
 CrostiniInstallerView::~CrostiniInstallerView() {
+  crostini::CrostiniManager::GetForProfile(profile_)->SetInstallerViewStatus(
+      false);
   g_crostini_installer_view = nullptr;
+  if (quit_closure_for_testing_) {
+    std::move(quit_closure_for_testing_).Run();
+  }
 }
 
 void CrostiniInstallerView::FinishCleanup(CrostiniResult result) {
@@ -562,18 +585,22 @@ void CrostiniInstallerView::StepProgress() {
       state_end_mark = 0.90;
       state_max_seconds = 180;
       break;
-    case State::START_CONTAINER:
+    case State::SETUP_CONTAINER:
       state_start_mark = 0.90;
       state_end_mark = 0.95;
       state_max_seconds = 8;
       break;
-    case State::SETUP_CONTAINER:
+    case State::START_CONTAINER:
       state_start_mark = 0.95;
       state_end_mark = 0.99;
       state_max_seconds = 8;
       break;
     case State::FETCH_SSH_KEYS:
       state_start_mark = 0.99;
+      state_end_mark = 1;
+      break;
+    case State::MOUNT_CONTAINER:
+      state_start_mark = 1;
       state_end_mark = 1;
       break;
 
@@ -596,6 +623,9 @@ void CrostiniInstallerView::StepProgress() {
                             base::ClampToRange(state_fraction, 0.0, 1.0) *
                                 (state_end_mark - state_start_mark));
     progress_bar_->SetVisible(true);
+    if (progress_bar_callback_for_testing_) {
+      progress_bar_callback_for_testing_.Run(progress_bar_->current_value());
+    }
   } else {
     progress_bar_->SetVisible(false);
   }

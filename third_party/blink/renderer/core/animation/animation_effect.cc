@@ -189,12 +189,10 @@ void AnimationEffect::UpdateInheritedTime(double inherited_time,
 
     const Phase current_phase =
         CalculatePhase(active_duration, local_time, direction, timing_);
-    // FIXME: parentPhase depends on groups being implemented.
-    const AnimationEffect::Phase kParentPhase = AnimationEffect::kPhaseActive;
     const double active_time = CalculateActiveTime(
         active_duration,
         ResolvedFillMode(timing_.fill_mode, IsKeyframeEffect()), local_time,
-        kParentPhase, current_phase, timing_);
+        current_phase, timing_);
 
     double current_iteration;
     base::Optional<double> progress;
@@ -210,7 +208,9 @@ void AnimationEffect::UpdateInheritedTime(double inherited_time,
           current_phase, timing_);
 
       current_iteration = CalculateCurrentIteration(
-          iteration_duration, iteration_time, offset_active_time, timing_);
+          current_phase, active_time, iteration_duration,
+          timing_.iteration_count, timing_.iteration_start);
+
       const base::Optional<double> transformed_time = CalculateTransformedTime(
           current_iteration, iteration_duration, iteration_time, timing_);
 
@@ -251,7 +251,7 @@ void AnimationEffect::UpdateInheritedTime(double inherited_time,
       const double local_active_time = CalculateActiveTime(
           local_active_duration,
           ResolvedFillMode(timing_.fill_mode, IsKeyframeEffect()),
-          local_local_time, kParentPhase, local_current_phase, timing_);
+          local_local_time, local_current_phase, timing_);
       const double start_offset =
           timing_.iteration_start * kLocalIterationDuration;
       DCHECK_GE(start_offset, 0);
@@ -261,8 +261,11 @@ void AnimationEffect::UpdateInheritedTime(double inherited_time,
           kLocalIterationDuration, local_active_duration, offset_active_time,
           start_offset, current_phase, timing_);
 
-      current_iteration = CalculateCurrentIteration(
-          kLocalIterationDuration, iteration_time, offset_active_time, timing_);
+      current_iteration = CalculateCurrentIteration(current_phase, active_time,
+                                                    /*iteration_duration=*/0,
+                                                    timing_.iteration_count,
+                                                    timing_.iteration_start);
+
       progress = CalculateTransformedTime(
           current_iteration, kLocalIterationDuration, iteration_time, timing_);
     }

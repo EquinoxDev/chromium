@@ -33,6 +33,19 @@ namespace base {
 class DictionaryValue;
 }
 
+namespace identity {
+class IdentityManager;
+void SimulateSuccessfulFetchOfAccountInfo(IdentityManager*,
+                                          const std::string&,
+                                          const std::string&,
+                                          const std::string&,
+                                          const std::string&,
+                                          const std::string&,
+                                          const std::string&,
+                                          const std::string&,
+                                          const std::string&);
+}
+
 // AccountTrackerService is a KeyedService that retrieves and caches GAIA
 // information about Google Accounts.
 class AccountTrackerService : public KeyedService {
@@ -133,7 +146,16 @@ class AccountTrackerService : public KeyedService {
 
  private:
   friend class AccountFetcherService;
-  friend class FakeAccountFetcherService;
+  friend void identity::SimulateSuccessfulFetchOfAccountInfo(
+      identity::IdentityManager*,
+      const std::string&,
+      const std::string&,
+      const std::string&,
+      const std::string&,
+      const std::string&,
+      const std::string&,
+      const std::string&,
+      const std::string&);
 
   void NotifyAccountUpdated(const AccountInfo& account_info);
   void NotifyAccountUpdateFailed(const std::string& account_id);

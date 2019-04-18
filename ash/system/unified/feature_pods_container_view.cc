@@ -39,9 +39,14 @@ int FeaturePodsContainerView::GetExpandedHeight() const {
   // floor(visible_count / kUnifiedFeaturePodItemsInRow)
   int number_of_lines = (visible_count + kUnifiedFeaturePodItemsInRow - 1) /
                         kUnifiedFeaturePodItemsInRow;
-  return kUnifiedFeaturePodVerticalPadding +
+  return kUnifiedFeaturePodBottomPadding +
          (kUnifiedFeaturePodVerticalPadding + kUnifiedFeaturePodSize.height()) *
              number_of_lines;
+}
+
+int FeaturePodsContainerView::GetCollapsedHeight() const {
+  return 2 * kUnifiedFeaturePodCollapsedVerticalPadding +
+         kUnifiedFeaturePodCollapsedSize.height();
 }
 
 void FeaturePodsContainerView::SaveFocus() {
@@ -61,11 +66,9 @@ void FeaturePodsContainerView::RestoreFocus() {
 }
 
 gfx::Size FeaturePodsContainerView::CalculatePreferredSize() const {
-  const int collapsed_height = 2 * kUnifiedFeaturePodCollapsedVerticalPadding +
-                               kUnifiedFeaturePodCollapsedSize.height();
   return gfx::Size(
       kTrayMenuWidth,
-      static_cast<int>(collapsed_height * (1.0 - expanded_amount_) +
+      static_cast<int>(GetCollapsedHeight() * (1.0 - expanded_amount_) +
                        GetExpandedHeight() * expanded_amount_));
 }
 
@@ -85,7 +88,7 @@ void FeaturePodsContainerView::ChildVisibilityChanged(View* child) {
 }
 
 void FeaturePodsContainerView::ViewHierarchyChanged(
-    const ViewHierarchyChangedDetails& details) {
+    const views::ViewHierarchyChangedDetails& details) {
   UpdateChildVisibility();
 }
 
@@ -142,10 +145,9 @@ gfx::Point FeaturePodsContainerView::GetButtonPosition(
           (kUnifiedFeaturePodSize.width() +
            kUnifiedFeaturePodHorizontalMiddlePadding) *
               column;
-  int y =
-      kUnifiedFeaturePodVerticalPadding +
-      (kUnifiedFeaturePodSize.height() + kUnifiedFeaturePodVerticalPadding) *
-          row;
+  int y = kUnifiedFeaturePodTopPadding + (kUnifiedFeaturePodSize.height() +
+                                          kUnifiedFeaturePodVerticalPadding) *
+                                             row;
 
   // When fully expanded, or below the second row, always return the same
   // position.

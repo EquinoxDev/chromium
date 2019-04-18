@@ -41,6 +41,7 @@ import org.chromium.chrome.browser.ntp.NewTabPage;
 import org.chromium.chrome.browser.tab.SadTab;
 import org.chromium.chrome.browser.tab.Tab;
 import org.chromium.chrome.browser.tab.Tab.TabHidingType;
+import org.chromium.chrome.browser.tab.TabFullscreenHandler;
 import org.chromium.chrome.browser.tab.TabThemeColorHelper;
 import org.chromium.chrome.browser.tabmodel.EmptyTabModelObserver;
 import org.chromium.chrome.browser.tabmodel.EmptyTabModelSelectorObserver;
@@ -90,9 +91,12 @@ public class LayoutManager implements LayoutUpdateHost, LayoutProvider,
     // External Dependencies
     private TabModelSelector mTabModelSelector;
 
-    private TabModelObserver mTabModelObserver;
     private TabModelSelectorObserver mTabModelSelectorObserver;
     private TabModelSelectorTabObserver mTabModelSelectorTabObserver;
+
+    // An observer for watching TabModelFilters changes events.
+    private TabModelObserver mTabModelFilterObserver;
+
     private ViewGroup mContentContainer;
 
     // External Observers
@@ -442,8 +446,9 @@ public class LayoutManager implements LayoutUpdateHost, LayoutProvider,
         selector.addObserver(mTabModelSelectorObserver);
         selector.setCloseAllTabsDelegate(this);
 
-        mTabModelObserver = createTabModelObserver();
-        for (TabModel model : selector.getModels()) model.addObserver(mTabModelObserver);
+        mTabModelFilterObserver = createTabModelObserver();
+        getTabModelSelector().getTabModelFilterProvider().addTabModelFilterObserver(
+                mTabModelFilterObserver);
     }
 
     /**
@@ -454,14 +459,14 @@ public class LayoutManager implements LayoutUpdateHost, LayoutProvider,
         mSceneChangeObservers.clear();
         if (mStaticLayout != null) mStaticLayout.destroy();
         if (mOverlayPanelManager != null) mOverlayPanelManager.destroy();
+        if (mEphemeralTabPanel != null) mEphemeralTabPanel.destroy();
         if (mTabModelSelectorTabObserver != null) mTabModelSelectorTabObserver.destroy();
         if (mTabModelSelectorObserver != null) {
             getTabModelSelector().removeObserver(mTabModelSelectorObserver);
         }
-        if (mTabModelObserver != null) {
-            for (TabModel model : getTabModelSelector().getModels()) {
-                model.removeObserver(mTabModelObserver);
-            }
+        if (mTabModelFilterObserver != null) {
+            getTabModelSelector().getTabModelFilterProvider().removeTabModelFilterObserver(
+                    mTabModelFilterObserver);
         }
     }
 
@@ -505,8 +510,7 @@ public class LayoutManager implements LayoutUpdateHost, LayoutProvider,
     @Override
     public void releaseOverlayPanelContent() {
         if (getTabModelSelector() == null) return;
-        Tab tab = getTabModelSelector().getCurrentTab();
-        if (tab != null) tab.updateFullscreenEnabledState();
+        TabFullscreenHandler.updateEnabledState(getTabModelSelector().getCurrentTab());
     }
 
     /**
@@ -645,9 +649,10 @@ public class LayoutManager implements LayoutUpdateHost, LayoutProvider,
 
         boolean isNtp = tab.getNativePage() instanceof NewTabPage;
         boolean isLocationBarShownInNtp =
-                isNtp ? ((NewTabPage) tab.getNativePage()).isLocationBarShownInNTP() : false;
-        boolean needsUpdate = layoutTab.initFromHost(tab.getBackgroundColor(), shouldStall(tab),
-                canUseLiveTexture, themeColor,
+                isNtp && ((NewTabPage) tab.getNativePage()).isLocationBarShownInNTP();
+
+        boolean needsUpdate = layoutTab.initFromHost(TabThemeColorHelper.getBackgroundColor(tab),
+                shouldStall(tab), canUseLiveTexture, ColorUtils.getToolbarSceneLayerBackground(tab),
                 ColorUtils.getTextBoxColorForToolbarBackground(
                         mContext.getResources(), isLocationBarShownInNtp, themeColor),
                 ColorUtils.getTextBoxAlphaForToolbarBackground(tab));
@@ -904,7 +909,7 @@ public class LayoutManager implements LayoutUpdateHost, LayoutProvider,
         if (tab != null) mTabCache.put(tabId, tab);
     }
 
-    private int getOrientation() {
+    private @Orientation int getOrientation() {
         return mHost.getWidth() > mHost.getHeight() ? Orientation.LANDSCAPE : Orientation.PORTRAIT;
     }
 

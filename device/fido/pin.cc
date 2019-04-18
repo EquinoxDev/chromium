@@ -12,6 +12,7 @@
 #include "components/cbor/writer.h"
 #include "device/fido/fido_constants.h"
 #include "device/fido/pin.h"
+#include "device/fido/pin_internal.h"
 #include "third_party/boringssl/src/include/openssl/aes.h"
 #include "third_party/boringssl/src/include/openssl/bn.h"
 #include "third_party/boringssl/src/include/openssl/ec.h"
@@ -24,32 +25,6 @@
 
 namespace device {
 namespace pin {
-
-// kProtocolVersion is the version of the PIN protocol that this code
-// implements.
-constexpr int kProtocolVersion = 1;
-
-// Subcommand enumerates the subcommands to the main |authenticatorClientPIN|
-// command. See
-// https://fidoalliance.org/specs/fido-v2.0-rd-20180702/fido-client-to-authenticator-protocol-v2.0-rd-20180702.html#authenticatorClientPIN
-enum class Subcommand : uint8_t {
-  kGetRetries = 0x01,
-  kGetKeyAgreement = 0x02,
-  kSetPIN = 0x03,
-  kChangePIN = 0x04,
-  kGetPINToken = 0x05,
-};
-
-// CommandKeys enumerates the keys in the top-level CBOR map for all PIN
-// commands.
-enum class CommandKeys : int {
-  kProtocol = 1,
-  kSubcommand = 2,
-  kKeyAgreement = 3,
-  kPINAuth = 4,
-  kNewPINEnc = 5,
-  kPINHashEnc = 6,
-};
 
 // HasAtLeastFourCodepoints returns true if |pin| is UTF-8 encoded and contains
 // four or more code points. This reflects the "4 Unicode characters"
@@ -65,29 +40,28 @@ bool IsValid(const std::string& pin) {
          HasAtLeastFourCodepoints(pin);
 }
 
-// EncodePINCommand returns a serialised CTAP2 PIN command for the operation
-// |subcommand|. Additional elements of the top-level CBOR map can be added with
-// the optional |add_additional| callback.
-static std::vector<uint8_t> EncodePINCommand(
+// EncodePINCommand returns a CTAP2 PIN command for the operation |subcommand|.
+// Additional elements of the top-level CBOR map can be added with the optional
+// |add_additional| callback.
+static std::pair<CtapRequestCommand, base::Optional<cbor::Value>>
+EncodePINCommand(
     Subcommand subcommand,
     std::function<void(cbor::Value::MapValue*)> add_additional = nullptr) {
   cbor::Value::MapValue map;
-  map.emplace(static_cast<int>(CommandKeys::kProtocol), kProtocolVersion);
-  map.emplace(static_cast<int>(CommandKeys::kSubcommand),
+  map.emplace(static_cast<int>(RequestKey::kProtocol), kProtocolVersion);
+  map.emplace(static_cast<int>(RequestKey::kSubcommand),
               static_cast<int>(subcommand));
 
   if (add_additional) {
     add_additional(&map);
   }
 
-  auto serialized = cbor::Writer::Write(cbor::Value(map));
-  serialized->insert(
-      serialized->begin(),
-      static_cast<uint8_t>(CtapRequestCommand::kAuthenticatorClientPin));
-  return *serialized;
+  return std::make_pair(CtapRequestCommand::kAuthenticatorClientPin,
+                        cbor::Value(std::move(map)));
 }
 
-std::vector<uint8_t> RetriesRequest::EncodeAsCBOR() const {
+std::pair<CtapRequestCommand, base::Optional<cbor::Value>>
+RetriesRequest::EncodeAsCBOR() const {
   return EncodePINCommand(Subcommand::kGetRetries);
 }
 
@@ -95,31 +69,30 @@ RetriesResponse::RetriesResponse() = default;
 
 // static
 base::Optional<RetriesResponse> RetriesResponse::Parse(
-    base::span<const uint8_t> buffer) {
-  // The response status code (the first byte) has already been processed by
-  // this point.
-  if (buffer.empty()) {
+    const base::Optional<cbor::Value>& cbor) {
+  if (!cbor || !cbor->is_map()) {
     return base::nullopt;
   }
+  const auto& response_map = cbor->GetMap();
 
-  base::Optional<cbor::Value> decoded_response =
-      cbor::Reader::Read(buffer.subspan(1));
-  if (!decoded_response || !decoded_response->is_map()) {
-    return base::nullopt;
-  }
-  const auto& response_map = decoded_response->GetMap();
-
-  auto it = response_map.find(cbor::Value(3));
+  auto it =
+      response_map.find(cbor::Value(static_cast<int>(ResponseKey::kRetries)));
   if (it == response_map.end() || !it->second.is_unsigned()) {
     return base::nullopt;
   }
 
+  const int64_t retries = it->second.GetUnsigned();
+  if (retries > INT_MAX) {
+    return base::nullopt;
+  }
+
   RetriesResponse ret;
-  ret.retries = it->second.GetUnsigned();
+  ret.retries = static_cast<int>(retries);
   return ret;
 }
 
-std::vector<uint8_t> KeyAgreementRequest::EncodeAsCBOR() const {
+std::pair<CtapRequestCommand, base::Optional<cbor::Value>>
+KeyAgreementRequest::EncodeAsCBOR() const {
   return EncodePINCommand(Subcommand::kGetKeyAgreement);
 }
 
@@ -128,7 +101,7 @@ KeyAgreementResponse::KeyAgreementResponse() = default;
 // PointFromKeyAgreementResponse returns an |EC_POINT| that represents the same
 // P-256 point as |response|. It returns |nullopt| if |response| encodes an
 // invalid point.
-static base::Optional<bssl::UniquePtr<EC_POINT>> PointFromKeyAgreementResponse(
+base::Optional<bssl::UniquePtr<EC_POINT>> PointFromKeyAgreementResponse(
     const EC_GROUP* group,
     const KeyAgreementResponse& response) {
   bssl::UniquePtr<EC_POINT> ret(EC_POINT_new(group));
@@ -153,27 +126,26 @@ static base::Optional<bssl::UniquePtr<EC_POINT>> PointFromKeyAgreementResponse(
 
 // static
 base::Optional<KeyAgreementResponse> KeyAgreementResponse::Parse(
-    base::span<const uint8_t> buffer) {
-  // The response status code (the first byte) has already been processed by
-  // this point.
-  if (buffer.empty()) {
+    const base::Optional<cbor::Value>& cbor) {
+  if (!cbor || !cbor->is_map()) {
     return base::nullopt;
   }
+  const auto& response_map = cbor->GetMap();
 
-  base::Optional<cbor::Value> decoded_response =
-      cbor::Reader::Read(buffer.subspan(1));
-  if (!decoded_response || !decoded_response->is_map()) {
-    return base::nullopt;
-  }
-  const auto& response_map = decoded_response->GetMap();
-
-  // The ephemeral key is encoded as a COSE structure under key 1.
-  auto it = response_map.find(cbor::Value(1));
+  // The ephemeral key is encoded as a COSE structure.
+  auto it = response_map.find(
+      cbor::Value(static_cast<int>(ResponseKey::kKeyAgreement)));
   if (it == response_map.end() || !it->second.is_map()) {
     return base::nullopt;
   }
   const auto& cose_key = it->second.GetMap();
 
+  return ParseFromCOSE(cose_key);
+}
+
+// static
+base::Optional<KeyAgreementResponse> KeyAgreementResponse::ParseFromCOSE(
+    const cbor::Value::MapValue& cose_key) {
   // The COSE key must be a P-256 point. See
   // https://tools.ietf.org/html/rfc8152#section-7.1
   for (const auto& pair : std::vector<std::pair<int, int>>({
@@ -239,32 +211,30 @@ static void* SHA256KDF(const void* in,
   return out;
 }
 
-// CalculateSharedKey generates and returns an ephemeral key, and writes the
-// shared key between that ephemeral key and the authenticator's ephemeral key
-// (from |peers_key|) to |out_shared_key|.
-static cbor::Value::MapValue CalculateSharedKey(
-    const KeyAgreementResponse& peers_key,
-    uint8_t out_shared_key[SHA256_DIGEST_LENGTH]) {
-  bssl::UniquePtr<EC_KEY> key(EC_KEY_new_by_curve_name(NID_X9_62_prime256v1));
-  CHECK(EC_KEY_generate_key(key.get()));
-  auto peers_point =
-      PointFromKeyAgreementResponse(EC_KEY_get0_group(key.get()), peers_key);
+// CalculateSharedKey writes the CTAP2 shared key between |key| and |peers_key|
+// to |out_shared_key|.
+void CalculateSharedKey(const EC_KEY* key,
+                        const EC_POINT* peers_key,
+                        uint8_t out_shared_key[SHA256_DIGEST_LENGTH]) {
   CHECK_EQ(static_cast<int>(SHA256_DIGEST_LENGTH),
-           ECDH_compute_key(out_shared_key, SHA256_DIGEST_LENGTH,
-                            peers_point->get(), key.get(), SHA256KDF));
+           ECDH_compute_key(out_shared_key, SHA256_DIGEST_LENGTH, peers_key,
+                            key, SHA256KDF));
+}
 
+// EncodeCOSEPublicKey returns the public part of |key| as a COSE structure.
+cbor::Value::MapValue EncodeCOSEPublicKey(const EC_KEY* key) {
   // X9.62 is the standard for serialising elliptic-curve points.
   uint8_t x962[1 /* type byte */ + 32 /* x */ + 32 /* y */];
-  CHECK_EQ(sizeof(x962),
-           EC_POINT_point2oct(EC_KEY_get0_group(key.get()),
-                              EC_KEY_get0_public_key(key.get()),
-                              POINT_CONVERSION_UNCOMPRESSED, x962, sizeof(x962),
-                              nullptr /* BN_CTX */));
+  CHECK_EQ(
+      sizeof(x962),
+      EC_POINT_point2oct(EC_KEY_get0_group(key), EC_KEY_get0_public_key(key),
+                         POINT_CONVERSION_UNCOMPRESSED, x962, sizeof(x962),
+                         nullptr /* BN_CTX */));
 
   cbor::Value::MapValue cose_key;
   cose_key.emplace(1 /* key type */, 2 /* uncompressed elliptic curve */);
   cose_key.emplace(3 /* algorithm */,
-                   2 /* ECDH, ephemeral–static, HKDF-SHA-256 */);
+                   -25 /* ECDH, ephemeral–static, HKDF-SHA-256 */);
   cose_key.emplace(-1 /* curve */, 1 /* P-256 */);
   cose_key.emplace(-2 /* x */, base::span<const uint8_t>(x962 + 1, 32));
   cose_key.emplace(-3 /* y */, base::span<const uint8_t>(x962 + 33, 32));
@@ -272,23 +242,48 @@ static cbor::Value::MapValue CalculateSharedKey(
   return cose_key;
 }
 
-std::vector<uint8_t> SetRequest::EncodeAsCBOR() const {
-  // See
-  // https://fidoalliance.org/specs/fido-v2.0-rd-20180702/fido-client-to-authenticator-protocol-v2.0-rd-20180702.html#settingNewPin
-  uint8_t shared_key[SHA256_DIGEST_LENGTH];
-  auto cose_key = CalculateSharedKey(peer_key_, shared_key);
+// GenerateSharedKey generates and returns an ephemeral key, and writes the
+// shared key between that ephemeral key and the authenticator's ephemeral key
+// (from |peers_key|) to |out_shared_key|.
+static cbor::Value::MapValue GenerateSharedKey(
+    const KeyAgreementResponse& peers_key,
+    uint8_t out_shared_key[SHA256_DIGEST_LENGTH]) {
+  bssl::UniquePtr<EC_KEY> key(EC_KEY_new_by_curve_name(NID_X9_62_prime256v1));
+  CHECK(EC_KEY_generate_key(key.get()));
+  auto peers_point =
+      PointFromKeyAgreementResponse(EC_KEY_get0_group(key.get()), peers_key);
+  CalculateSharedKey(key.get(), peers_point->get(), out_shared_key);
+  return EncodeCOSEPublicKey(key.get());
+}
+
+// Encrypt encrypts |plaintext| using |key|, writing the ciphertext to
+// |out_ciphertext|. |plaintext| must be a whole number of AES blocks.
+void Encrypt(const uint8_t key[SHA256_DIGEST_LENGTH],
+             base::span<const uint8_t> plaintext,
+             uint8_t* out_ciphertext) {
+  DCHECK_EQ(0u, plaintext.size() % AES_BLOCK_SIZE);
 
   EVP_CIPHER_CTX aes_ctx;
   EVP_CIPHER_CTX_init(&aes_ctx);
   const uint8_t kZeroIV[AES_BLOCK_SIZE] = {0};
-  CHECK(EVP_EncryptInit_ex(&aes_ctx, EVP_aes_256_cbc(), nullptr, shared_key,
-                           kZeroIV));
+  CHECK(EVP_EncryptInit_ex(&aes_ctx, EVP_aes_256_cbc(), nullptr, key, kZeroIV));
+  CHECK(EVP_CIPHER_CTX_set_padding(&aes_ctx, 0 /* no padding */));
+  CHECK(
+      EVP_Cipher(&aes_ctx, out_ciphertext, plaintext.data(), plaintext.size()));
+  EVP_CIPHER_CTX_cleanup(&aes_ctx);
+}
+
+std::pair<CtapRequestCommand, base::Optional<cbor::Value>>
+SetRequest::EncodeAsCBOR() const {
+  // See
+  // https://fidoalliance.org/specs/fido-v2.0-rd-20180702/fido-client-to-authenticator-protocol-v2.0-rd-20180702.html#settingNewPin
+  uint8_t shared_key[SHA256_DIGEST_LENGTH];
+  auto cose_key = GenerateSharedKey(peer_key_, shared_key);
 
   static_assert((sizeof(pin_) % AES_BLOCK_SIZE) == 0,
                 "pin_ is not a multiple of the AES block size");
-  uint8_t encrypted_pin[sizeof(pin_) + AES_BLOCK_SIZE];
-  CHECK(EVP_Cipher(&aes_ctx, encrypted_pin, pin_, sizeof(pin_)));
-  EVP_CIPHER_CTX_cleanup(&aes_ctx);
+  uint8_t encrypted_pin[sizeof(pin_)];
+  Encrypt(shared_key, pin_, encrypted_pin);
 
   uint8_t pin_auth[SHA256_DIGEST_LENGTH];
   unsigned hmac_bytes;
@@ -299,13 +294,12 @@ std::vector<uint8_t> SetRequest::EncodeAsCBOR() const {
   return EncodePINCommand(
       Subcommand::kSetPIN,
       [&cose_key, &encrypted_pin, &pin_auth](cbor::Value::MapValue* map) {
-        map->emplace(static_cast<int>(CommandKeys::kKeyAgreement),
+        map->emplace(static_cast<int>(RequestKey::kKeyAgreement),
                      std::move(cose_key));
-        map->emplace(static_cast<int>(CommandKeys::kNewPINEnc),
-                     // Note that the final AES block of |encrypted_pin| is
-                     // discarded because CTAP2 doesn't include any padding.
-                     base::span<const uint8_t>(encrypted_pin, sizeof(pin_)));
-        map->emplace(static_cast<int>(CommandKeys::kPINAuth),
+        map->emplace(
+            static_cast<int>(RequestKey::kNewPINEnc),
+            base::span<const uint8_t>(encrypted_pin, sizeof(encrypted_pin)));
+        map->emplace(static_cast<int>(RequestKey::kPINAuth),
                      base::span<const uint8_t>(pin_auth));
       });
 }
@@ -326,10 +320,12 @@ ChangeRequest::ChangeRequest(const std::string& old_pin,
 
 // static
 base::Optional<EmptyResponse> EmptyResponse::Parse(
-    base::span<const uint8_t> buffer) {
-  // The response status code (the first byte) has already been processed by
-  // this point.
-  if (buffer.size() != 1) {
+    const base::Optional<cbor::Value>& cbor) {
+  // Yubikeys can return just the status byte, and no CBOR bytes, for the empty
+  // response, which will end up here with |cbor| being |nullopt|. This seems
+  // wrong, but is handled. (The response should, instead, encode an empty CBOR
+  // map.)
+  if (cbor && (!cbor->is_map() || !cbor->GetMap().empty())) {
     return base::nullopt;
   }
 
@@ -337,39 +333,27 @@ base::Optional<EmptyResponse> EmptyResponse::Parse(
   return ret;
 }
 
-std::vector<uint8_t> ChangeRequest::EncodeAsCBOR() const {
+std::pair<CtapRequestCommand, base::Optional<cbor::Value>>
+ChangeRequest::EncodeAsCBOR() const {
   // See
   // https://fidoalliance.org/specs/fido-v2.0-rd-20180702/fido-client-to-authenticator-protocol-v2.0-rd-20180702.html#changingExistingPin
   uint8_t shared_key[SHA256_DIGEST_LENGTH];
-  auto cose_key = CalculateSharedKey(peer_key_, shared_key);
+  auto cose_key = GenerateSharedKey(peer_key_, shared_key);
 
-  EVP_CIPHER_CTX aes_ctx;
-  EVP_CIPHER_CTX_init(&aes_ctx);
-  const uint8_t kZeroIV[AES_BLOCK_SIZE] = {0};
-
-  CHECK(EVP_EncryptInit_ex(&aes_ctx, EVP_aes_256_cbc(), nullptr, shared_key,
-                           kZeroIV));
   static_assert((sizeof(new_pin_) % AES_BLOCK_SIZE) == 0,
                 "new_pin_ is not a multiple of the AES block size");
-  uint8_t encrypted_pin[sizeof(new_pin_) + AES_BLOCK_SIZE];
-  CHECK(EVP_Cipher(&aes_ctx, encrypted_pin, new_pin_, sizeof(new_pin_)));
+  uint8_t encrypted_pin[sizeof(new_pin_)];
+  Encrypt(shared_key, new_pin_, encrypted_pin);
 
-  CHECK(EVP_EncryptInit_ex(&aes_ctx, EVP_aes_256_cbc(), nullptr, shared_key,
-                           kZeroIV));
   static_assert((sizeof(old_pin_hash_) % AES_BLOCK_SIZE) == 0,
                 "old_pin_hash_ is not a multiple of the AES block size");
-  uint8_t old_pin_hash_enc[sizeof(old_pin_hash_) + AES_BLOCK_SIZE];
-  CHECK(EVP_Cipher(&aes_ctx, old_pin_hash_enc, old_pin_hash_,
-                   sizeof(old_pin_hash_)));
+  uint8_t old_pin_hash_enc[sizeof(old_pin_hash_)];
+  Encrypt(shared_key, old_pin_hash_, old_pin_hash_enc);
 
-  EVP_CIPHER_CTX_cleanup(&aes_ctx);
-
-  uint8_t ciphertexts_concat[sizeof(new_pin_) + sizeof(old_pin_hash_)];
-  // Note that the final AES blocks of |encrypted_pin| and |old_pin_hash_enc|
-  // are discarded because CTAP2 doesn't include any padding.
-  memcpy(ciphertexts_concat, encrypted_pin, sizeof(new_pin_));
-  memcpy(ciphertexts_concat + sizeof(new_pin_), old_pin_hash_enc,
-         sizeof(old_pin_hash_));
+  uint8_t ciphertexts_concat[sizeof(encrypted_pin) + sizeof(old_pin_hash_enc)];
+  memcpy(ciphertexts_concat, encrypted_pin, sizeof(encrypted_pin));
+  memcpy(ciphertexts_concat + sizeof(encrypted_pin), old_pin_hash_enc,
+         sizeof(old_pin_hash_enc));
 
   uint8_t pin_auth[SHA256_DIGEST_LENGTH];
   unsigned hmac_bytes;
@@ -380,26 +364,27 @@ std::vector<uint8_t> ChangeRequest::EncodeAsCBOR() const {
   return EncodePINCommand(
       Subcommand::kChangePIN, [&cose_key, &encrypted_pin, &old_pin_hash_enc,
                                &pin_auth](cbor::Value::MapValue* map) {
-        map->emplace(static_cast<int>(CommandKeys::kKeyAgreement),
+        map->emplace(static_cast<int>(RequestKey::kKeyAgreement),
                      std::move(cose_key));
+        map->emplace(static_cast<int>(RequestKey::kPINHashEnc),
+                     base::span<const uint8_t>(old_pin_hash_enc,
+                                               sizeof(old_pin_hash_enc)));
         map->emplace(
-            static_cast<int>(CommandKeys::kPINHashEnc),
-            base::span<const uint8_t>(old_pin_hash_enc, sizeof(old_pin_hash_)));
-        map->emplace(
-            static_cast<int>(CommandKeys::kNewPINEnc),
-            base::span<const uint8_t>(encrypted_pin, sizeof(new_pin_)));
-        map->emplace(static_cast<int>(CommandKeys::kPINAuth),
+            static_cast<int>(RequestKey::kNewPINEnc),
+            base::span<const uint8_t>(encrypted_pin, sizeof(encrypted_pin)));
+        map->emplace(static_cast<int>(RequestKey::kPINAuth),
                      base::span<const uint8_t>(pin_auth));
       });
 }
 
-std::vector<uint8_t> ResetRequest::EncodeAsCBOR() const {
-  return {static_cast<uint8_t>(CtapRequestCommand::kAuthenticatorReset)};
+std::pair<CtapRequestCommand, base::Optional<cbor::Value>>
+ResetRequest::EncodeAsCBOR() const {
+  return std::make_pair(CtapRequestCommand::kAuthenticatorReset, base::nullopt);
 }
 
 TokenRequest::TokenRequest(const std::string& pin,
                            const KeyAgreementResponse& peer_key)
-    : cose_key_(CalculateSharedKey(peer_key, shared_key_.data())) {
+    : cose_key_(GenerateSharedKey(peer_key, shared_key_.data())) {
   DCHECK_EQ(static_cast<size_t>(SHA256_DIGEST_LENGTH), shared_key_.size());
   uint8_t digest[SHA256_DIGEST_LENGTH];
   SHA256(reinterpret_cast<const uint8_t*>(pin.data()), pin.size(), digest);
@@ -408,31 +393,27 @@ TokenRequest::TokenRequest(const std::string& pin,
 
 TokenRequest::~TokenRequest() = default;
 
+TokenRequest::TokenRequest(TokenRequest&& other) = default;
+
 const std::array<uint8_t, 32>& TokenRequest::shared_key() const {
   return shared_key_;
 }
 
-std::vector<uint8_t> TokenRequest::EncodeAsCBOR() const {
-  EVP_CIPHER_CTX aes_ctx;
-  EVP_CIPHER_CTX_init(&aes_ctx);
-  const uint8_t kZeroIV[AES_BLOCK_SIZE] = {0};
-
-  CHECK(EVP_EncryptInit_ex(&aes_ctx, EVP_aes_256_cbc(), nullptr,
-                           shared_key_.data(), kZeroIV));
+std::pair<CtapRequestCommand, base::Optional<cbor::Value>>
+TokenRequest::EncodeAsCBOR() const {
   static_assert((sizeof(pin_hash_) % AES_BLOCK_SIZE) == 0,
                 "pin_hash_ is not a multiple of the AES block size");
-  uint8_t encrypted_pin[sizeof(pin_hash_) + AES_BLOCK_SIZE];
-  CHECK(EVP_Cipher(&aes_ctx, encrypted_pin, pin_hash_, sizeof(pin_hash_)));
-  EVP_CIPHER_CTX_cleanup(&aes_ctx);
+  uint8_t encrypted_pin[sizeof(pin_hash_)];
+  Encrypt(shared_key_.data(), pin_hash_, encrypted_pin);
 
   return EncodePINCommand(
       Subcommand::kGetPINToken,
       [this, &encrypted_pin](cbor::Value::MapValue* map) {
-        map->emplace(static_cast<int>(CommandKeys::kKeyAgreement),
+        map->emplace(static_cast<int>(RequestKey::kKeyAgreement),
                      std::move(this->cose_key_));
         map->emplace(
-            static_cast<int>(CommandKeys::kPINHashEnc),
-            base::span<const uint8_t>(encrypted_pin, sizeof(pin_hash_)));
+            static_cast<int>(RequestKey::kPINHashEnc),
+            base::span<const uint8_t>(encrypted_pin, sizeof(encrypted_pin)));
       });
 }
 
@@ -440,24 +421,34 @@ TokenResponse::TokenResponse() = default;
 TokenResponse::~TokenResponse() = default;
 TokenResponse::TokenResponse(const TokenResponse&) = default;
 
+// Decrypt AES-256 CBC decrypts some number of whole blocks from |ciphertext|
+// into |plaintext|, using |key|.
+void Decrypt(const uint8_t key[SHA256_DIGEST_LENGTH],
+             base::span<const uint8_t> ciphertext,
+             uint8_t* out_plaintext) {
+  DCHECK_EQ(0u, ciphertext.size() % AES_BLOCK_SIZE);
+
+  EVP_CIPHER_CTX aes_ctx;
+  EVP_CIPHER_CTX_init(&aes_ctx);
+  const uint8_t kZeroIV[AES_BLOCK_SIZE] = {0};
+  CHECK(EVP_DecryptInit_ex(&aes_ctx, EVP_aes_256_cbc(), nullptr, key, kZeroIV));
+  CHECK(EVP_CIPHER_CTX_set_padding(&aes_ctx, 0 /* no padding */));
+
+  CHECK(EVP_Cipher(&aes_ctx, out_plaintext, ciphertext.data(),
+                   ciphertext.size()));
+  EVP_CIPHER_CTX_cleanup(&aes_ctx);
+}
+
 base::Optional<TokenResponse> TokenResponse::Parse(
     std::array<uint8_t, 32> shared_key,
-    base::span<const uint8_t> buffer) {
-  // The response status code (the first byte) has already been processed by
-  // this point.
-  if (buffer.empty()) {
+    const base::Optional<cbor::Value>& cbor) {
+  if (!cbor || !cbor->is_map()) {
     return base::nullopt;
   }
+  const auto& response_map = cbor->GetMap();
 
-  base::Optional<cbor::Value> decoded_response =
-      cbor::Reader::Read(buffer.subspan(1));
-  if (!decoded_response || !decoded_response->is_map()) {
-    return base::nullopt;
-  }
-  const auto& response_map = decoded_response->GetMap();
-
-  // The encrypted PIN-token is under key 2.
-  auto it = response_map.find(cbor::Value(2));
+  auto it =
+      response_map.find(cbor::Value(static_cast<int>(ResponseKey::kPINToken)));
   if (it == response_map.end() || !it->second.is_bytestring()) {
     return base::nullopt;
   }
@@ -466,18 +457,9 @@ base::Optional<TokenResponse> TokenResponse::Parse(
     return base::nullopt;
   }
 
-  EVP_CIPHER_CTX aes_ctx;
-  EVP_CIPHER_CTX_init(&aes_ctx);
-  const uint8_t kZeroIV[AES_BLOCK_SIZE] = {0};
-  CHECK(EVP_DecryptInit_ex(&aes_ctx, EVP_aes_256_cbc(), nullptr,
-                           shared_key.data(), kZeroIV));
-  CHECK(EVP_CIPHER_CTX_set_padding(&aes_ctx, 0 /* no padding */));
-
   TokenResponse ret;
   ret.token_.resize(encrypted_token.size());
-  CHECK(EVP_Cipher(&aes_ctx, ret.token_.data(), encrypted_token.data(),
-                   encrypted_token.size()));
-  EVP_CIPHER_CTX_cleanup(&aes_ctx);
+  Decrypt(shared_key.data(), encrypted_token, ret.token_.data());
 
   return ret;
 }

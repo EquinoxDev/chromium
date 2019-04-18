@@ -231,8 +231,8 @@ void SingleThreadProxy::CommitComplete() {
       << "Activation is expected to have synchronously occurred by now.";
 
   DebugScopedSetMainThread main(task_runner_provider_);
-  layer_tree_host_->CommitComplete();
   layer_tree_host_->DidBeginMainFrame();
+  layer_tree_host_->CommitComplete();
 
   next_frame_is_newly_committed_frame_ = true;
 }
@@ -286,18 +286,26 @@ void SingleThreadProxy::SetDeferMainFrameUpdate(bool defer_main_frame_update) {
   scheduler_on_impl_thread_->SetDeferBeginMainFrame(defer_main_frame_update_);
 }
 
-void SingleThreadProxy::SetDeferCommits(bool defer_commits) {
+void SingleThreadProxy::StartDeferringCommits(base::TimeDelta timeout) {
   DCHECK(task_runner_provider_->IsMainThread());
 
-  if (defer_commits_ == defer_commits)
+  // Do nothing if already deferring. The timeout remains as it was from when
+  // we most recently began deferring.
+  if (defer_commits_)
     return;
 
-  if (defer_commits)
-    TRACE_EVENT_ASYNC_BEGIN0("cc", "SingleThreadProxy::SetDeferCommits", this);
-  else
-    TRACE_EVENT_ASYNC_END0("cc", "SingleThreadProxy::SetDeferCommits", this);
+  TRACE_EVENT_ASYNC_BEGIN0("cc", "SingleThreadProxy::SetDeferCommits", this);
 
-  defer_commits_ = defer_commits;
+  defer_commits_ = true;
+  commits_restart_time_ = base::TimeTicks::Now() + timeout;
+}
+
+void SingleThreadProxy::StopDeferringCommits() {
+  if (!defer_commits_)
+    return;
+  defer_commits_ = false;
+  commits_restart_time_ = base::TimeTicks();
+  TRACE_EVENT_ASYNC_END0("cc", "SingleThreadProxy::SetDeferCommits", this);
 }
 
 bool SingleThreadProxy::CommitRequested() const {
@@ -521,6 +529,12 @@ void SingleThreadProxy::DidGenerateLocalSurfaceIdAllocationOnImplThread(
     const viz::LocalSurfaceIdAllocation& allocation) {
   DebugScopedSetMainThread main(task_runner_provider_);
   layer_tree_host_->DidGenerateLocalSurfaceIdAllocation(allocation);
+}
+
+void SingleThreadProxy::NotifyAnimationWorkletStateChange(
+    AnimationWorkletMutationState state,
+    ElementListType element_list_type) {
+  layer_tree_host_->NotifyAnimationWorkletStateChange(state, element_list_type);
 }
 
 uint32_t SingleThreadProxy::GenerateChildSurfaceSequenceNumberSync() {
@@ -796,6 +810,11 @@ void SingleThreadProxy::BeginMainFrame(
 
   // New commits requested inside UpdateLayers should be respected.
   commit_requested_ = false;
+
+  // Check now if we should stop deferring commits
+  if (defer_commits_ && base::TimeTicks::Now() > commits_restart_time_) {
+    StopDeferringCommits();
+  }
 
   // At this point the main frame may have deferred commits to avoid committing
   // right now.

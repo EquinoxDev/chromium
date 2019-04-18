@@ -2,25 +2,25 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-var entryA = /** @type {!Entry} */ ({
+const entryA = /** @type {!Entry} */ ({
   toURL: function() {
     return 'filesystem://A';
   },
 });
 
-var entryB = /** @type {!Entry} */ ({
+const entryB = /** @type {!Entry} */ ({
   toURL: function() {
     return 'filesystem://B';
   },
 });
 
-var entryC = /** @type {!Entry} */ ({
+const entryC = /** @type {!Entry} */ ({
   toURL: function() {
     return 'filesystem://C';
   },
 });
 
-var volumeManager = /** @type {!VolumeManager} */ ({
+const volumeManager = /** @type {!VolumeManager} */ ({
   getVolumeInfo: function(entry) {
     if (entry.toURL() === 'filesystem://A') {
       return {
@@ -40,7 +40,7 @@ var volumeManager = /** @type {!VolumeManager} */ ({
 });
 
 function testMultiMetadataProviderBasic(callback) {
-  var model = new MultiMetadataProvider(
+  const model = new MultiMetadataProvider(
       /** @type {!FileSystemMetadataProvider} */ ({
         get: function(requests) {
           assertEquals(1, requests.length);
@@ -77,28 +77,32 @@ function testMultiMetadataProviderBasic(callback) {
       }),
       volumeManager);
 
-  reportPromise(model.get([
-    new MetadataRequest(
-        entryA, ['size', 'modificationTime', 'contentThumbnailUrl']),
-    new MetadataRequest(
-        entryB, ['size', 'modificationTime', 'contentThumbnailUrl'])
-  ]).then(function(results) {
-    assertEquals(2, results.length);
-    assertEquals(
-        new Date(2015, 0, 1).toString(),
-        results[0].modificationTime.toString());
-    assertEquals(1024, results[0].size);
-    assertEquals('THUMBNAIL_URL_A', results[0].contentThumbnailUrl);
-    assertEquals(
-        new Date(2015, 1, 2).toString(),
-        results[1].modificationTime.toString());
-    assertEquals(2048, results[1].size);
-    assertEquals('THUMBNAIL_URL_B', results[1].contentThumbnailUrl);
-  }), callback);
+  reportPromise(
+      model
+          .get([
+            new MetadataRequest(
+                entryA, ['size', 'modificationTime', 'contentThumbnailUrl']),
+            new MetadataRequest(
+                entryB, ['size', 'modificationTime', 'contentThumbnailUrl'])
+          ])
+          .then(results => {
+            assertEquals(2, results.length);
+            assertEquals(
+                new Date(2015, 0, 1).toString(),
+                results[0].modificationTime.toString());
+            assertEquals(1024, results[0].size);
+            assertEquals('THUMBNAIL_URL_A', results[0].contentThumbnailUrl);
+            assertEquals(
+                new Date(2015, 1, 2).toString(),
+                results[1].modificationTime.toString());
+            assertEquals(2048, results[1].size);
+            assertEquals('THUMBNAIL_URL_B', results[1].contentThumbnailUrl);
+          }),
+      callback);
 }
 
 function testMultiMetadataProviderExternalAndContentProperty(callback) {
-  var model = new MultiMetadataProvider(
+  const model = new MultiMetadataProvider(
       /** @type {!FileSystemMetadataProvider} */ ({
         get: function(requests) {
           assertEquals(0, requests.length);
@@ -114,7 +118,7 @@ function testMultiMetadataProviderExternalAndContentProperty(callback) {
           assertArrayEquals(['imageWidth', 'present'], requests[1].names);
           return Promise.resolve([
             {present: false, imageWidth: 200},
-            {present: true, imageWidth: 400}
+            {present: true, imageWidth: 400},
           ]);
         }
       }),
@@ -131,14 +135,18 @@ function testMultiMetadataProviderExternalAndContentProperty(callback) {
       }),
       volumeManager);
 
-  reportPromise(model.get([
-    new MetadataRequest(entryA, ['imageWidth']),
-    new MetadataRequest(entryB, ['imageWidth']),
-    new MetadataRequest(entryC, ['imageWidth'])
-  ]).then(function(results) {
-    assertEquals(3, results.length);
-    assertEquals(100, results[0].imageWidth);
-    assertEquals(200, results[1].imageWidth);
-    assertEquals(300, results[2].imageWidth);
-  }), callback);
+  reportPromise(
+      model
+          .get([
+            new MetadataRequest(entryA, ['imageWidth']),
+            new MetadataRequest(entryB, ['imageWidth']),
+            new MetadataRequest(entryC, ['imageWidth'])
+          ])
+          .then(results => {
+            assertEquals(3, results.length);
+            assertEquals(100, results[0].imageWidth);
+            assertEquals(200, results[1].imageWidth);
+            assertEquals(300, results[2].imageWidth);
+          }),
+      callback);
 }

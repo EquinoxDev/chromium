@@ -8,9 +8,9 @@
 
 #include "android_webview/browser/aw_content_browser_client.h"
 #include "android_webview/browser/aw_media_url_interceptor.h"
-#include "android_webview/browser/browser_view_renderer.h"
-#include "android_webview/browser/command_line_helper.h"
-#include "android_webview/browser/deferred_gpu_command_service.h"
+#include "android_webview/browser/gfx/browser_view_renderer.h"
+#include "android_webview/browser/gfx/deferred_gpu_command_service.h"
+#include "android_webview/browser/scoped_add_feature_flags.h"
 #include "android_webview/browser/tracing/aw_trace_event_args_whitelist.h"
 #include "android_webview/common/aw_descriptors.h"
 #include "android_webview/common/aw_paths.h"
@@ -50,6 +50,7 @@
 #include "gin/public/isolate_holder.h"
 #include "gin/v8_initializer.h"
 #include "gpu/command_buffer/service/gpu_switches.h"
+#include "gpu/config/gpu_finch_features.h"
 #include "gpu/ipc/gl_in_process_context.h"
 #include "media/base/media_switches.h"
 #include "media/media_buildflags.h"
@@ -162,43 +163,46 @@ bool AwMainDelegate::BasicStartupComplete(int* exit_code) {
     cl->AppendSwitch(switches::kInProcessGPU);
   }
 
+  {
+    ScopedAddFeatureFlags features(cl);
+
 #if BUILDFLAG(ENABLE_SPELLCHECK)
-  CommandLineHelper::AddEnabledFeature(
-      *cl, spellcheck::kAndroidSpellCheckerNonLowEnd.name);
+    features.EnableIfNotSet(spellcheck::kAndroidSpellCheckerNonLowEnd);
 #endif  // ENABLE_SPELLCHECK
 
-  CommandLineHelper::AddDisabledFeature(*cl, features::kWebPayments.name);
+    features.EnableIfNotSet(
+        autofill::features::kAutofillSkipComparingInferredLabels);
 
-  // WebView does not and should not support WebAuthN.
-  CommandLineHelper::AddDisabledFeature(*cl, features::kWebAuth.name);
+    if (cl->HasSwitch(switches::kWebViewLogJsConsoleMessages)) {
+      features.EnableIfNotSet(features::kLogJsConsoleMessages);
+    }
 
-  // WebView isn't compatible with OOP-D.
-  CommandLineHelper::AddDisabledFeature(*cl,
-                                        features::kVizDisplayCompositor.name);
+    features.DisableIfNotSet(features::kWebPayments);
 
-  // WebView does not support AndroidOverlay yet for video overlays.
-  CommandLineHelper::AddDisabledFeature(*cl, media::kUseAndroidOverlay.name);
+    // WebView does not and should not support WebAuthN.
+    features.DisableIfNotSet(features::kWebAuth);
 
-  // WebView doesn't support embedding CompositorFrameSinks which is needed for
-  // UseSurfaceLayerForVideo[PIP] feature. https://crbug.com/853832
-  CommandLineHelper::AddDisabledFeature(*cl,
-                                        media::kUseSurfaceLayerForVideo.name);
-  CommandLineHelper::AddDisabledFeature(
-      *cl, media::kUseSurfaceLayerForVideoPIP.name);
+    // WebView isn't compatible with OOP-D.
+    features.DisableIfNotSet(features::kVizDisplayCompositor);
 
-  // WebView does not support EME persistent license yet, because it's not
-  // clear on how user can remove persistent media licenses from UI.
-  CommandLineHelper::AddDisabledFeature(*cl,
-                                        media::kMediaDrmPersistentLicense.name);
+    // WebView does not support AndroidOverlay yet for video overlays.
+    features.DisableIfNotSet(media::kUseAndroidOverlay);
 
-  CommandLineHelper::AddEnabledFeature(
-      *cl, autofill::features::kAutofillSkipComparingInferredLabels.name);
+    // WebView doesn't support embedding CompositorFrameSinks which is needed
+    // for UseSurfaceLayerForVideo feature. https://crbug.com/853832
+    features.EnableIfNotSet(media::kDisableSurfaceLayerForVideo);
 
-  CommandLineHelper::AddDisabledFeature(
-      *cl, autofill::features::kAutofillRestrictUnownedFieldsToFormlessCheckout
-               .name);
+    // WebView does not support EME persistent license yet, because it's not
+    // clear on how user can remove persistent media licenses from UI.
+    features.DisableIfNotSet(media::kMediaDrmPersistentLicense);
 
-  CommandLineHelper::AddDisabledFeature(*cl, features::kBackgroundFetch.name);
+    features.DisableIfNotSet(
+        autofill::features::kAutofillRestrictUnownedFieldsToFormlessCheckout);
+
+    features.DisableIfNotSet(features::kBackgroundFetch);
+
+    features.DisableIfNotSet(features::kAndroidSurfaceControl);
+  }
 
   android_webview::RegisterPathProvider();
 
@@ -211,6 +215,8 @@ bool AwMainDelegate::BasicStartupComplete(int* exit_code) {
   // as is the case by default in aw_tracing_controller.cc
   base::trace_event::TraceLog::GetInstance()->SetArgumentFilterPredicate(
       base::BindRepeating(&IsTraceEventArgsWhitelisted));
+  base::trace_event::TraceLog::GetInstance()->SetMetadataFilterPredicate(
+      base::BindRepeating(&IsTraceMetadataWhitelisted));
 
   // The TLS slot used by the memlog allocator shim needs to be initialized
   // early to ensure that it gets assigned a low slot number. If it gets
@@ -343,11 +349,21 @@ gpu::SyncPointManager* GetSyncPointManager() {
   DCHECK(DeferredGpuCommandService::GetInstance());
   return DeferredGpuCommandService::GetInstance()->sync_point_manager();
 }
+gpu::SharedImageManager* GetSharedImageManager() {
+  DCHECK(DeferredGpuCommandService::GetInstance());
+  const bool enable_shared_image =
+      base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kWebViewEnableSharedImage);
+  return enable_shared_image
+             ? DeferredGpuCommandService::GetInstance()->shared_image_manager()
+             : nullptr;
+}
 }  // namespace
 
 content::ContentGpuClient* AwMainDelegate::CreateContentGpuClient() {
-  content_gpu_client_.reset(
-      new AwContentGpuClient(base::BindRepeating(&GetSyncPointManager)));
+  content_gpu_client_ = std::make_unique<AwContentGpuClient>(
+      base::BindRepeating(&GetSyncPointManager),
+      base::BindRepeating(&GetSharedImageManager));
   return content_gpu_client_.get();
 }
 

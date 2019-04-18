@@ -61,6 +61,8 @@ SkColor GetAuraColor(NativeTheme::ColorId color_id,
       case NativeTheme::kColorId_DialogBackground:
         return color_utils::AlphaBlend(SK_ColorWHITE, gfx::kGoogleGrey900,
                                        0.04f);
+      case NativeTheme::kColorId_BubbleFooterBackground:
+        return SkColorSetRGB(0x32, 0x36, 0x39);
       case NativeTheme::kColorId_ProminentButtonColor:
         return gfx::kGoogleBlue300;
       case NativeTheme::kColorId_TextOnProminentButtonColor:
@@ -89,6 +91,10 @@ SkColor GetAuraColor(NativeTheme::ColorId color_id,
         return gfx::kGoogleBlue300;
       case NativeTheme::kColorId_HighlightedMenuItemBackgroundColor:
         return SkColorSetRGB(0x32, 0x36, 0x39);
+      case NativeTheme::kColorId_MenuItemAlertBackgroundColorMax:
+        return SkColorSetA(gfx::kGoogleGrey100, 0x1A);
+      case NativeTheme::kColorId_MenuItemAlertBackgroundColorMin:
+        return SkColorSetA(gfx::kGoogleGrey100, 0x4D);
       case NativeTheme::kColorId_TreeBackground:
         return gfx::kGoogleGrey800;
       case NativeTheme::kColorId_TreeText:
@@ -155,6 +161,8 @@ SkColor GetAuraColor(NativeTheme::ColorId color_id,
     case NativeTheme::kColorId_DialogBackground:
     case NativeTheme::kColorId_BubbleBackground:
       return SK_ColorWHITE;
+    case NativeTheme::kColorId_BubbleFooterBackground:
+      return gfx::kGoogleGrey050;
 
     // Buttons
     case NativeTheme::kColorId_ButtonEnabledColor:

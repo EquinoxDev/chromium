@@ -16,7 +16,7 @@
 #include "ash/assistant/assistant_screen_context_controller.h"
 #include "ash/assistant/assistant_setup_controller.h"
 #include "ash/cast_config_controller.h"
-#include "ash/contained_shell/contained_shell_controller.h"
+#include "ash/custom_tab/arc_custom_tab_controller.h"
 #include "ash/display/ash_display_controller.h"
 #include "ash/display/cros_display_config.h"
 #include "ash/display/display_output_protection.h"
@@ -24,7 +24,9 @@
 #include "ash/first_run/first_run_helper.h"
 #include "ash/highlighter/highlighter_controller.h"
 #include "ash/ime/ime_controller.h"
+#include "ash/ime/ime_engine_factory_registry.h"
 #include "ash/keyboard/ash_keyboard_controller.h"
+#include "ash/kiosk_next/kiosk_next_shell_controller.h"
 #include "ash/login/login_screen_controller.h"
 #include "ash/magnifier/docked_magnifier_controller.h"
 #include "ash/media/media_controller.h"
@@ -79,7 +81,16 @@ void BindAccessibilityFocusRingControllerRequestOnMainThread(
 
 void BindAppListControllerRequestOnMainThread(
     mojom::AppListControllerRequest request) {
-  Shell::Get()->app_list_controller()->BindRequest(std::move(request));
+  // The AppListController is not available in KioskNext sessions.
+  // TODO(michaelpg): Also disable the Chrome AppList client in KioskNext
+  // sessions.
+  if (Shell::Get()->app_list_controller())
+    Shell::Get()->app_list_controller()->BindRequest(std::move(request));
+}
+
+void BindArcCustomTabControllerRequestOnMainThread(
+    mojom::ArcCustomTabControllerRequest request) {
+  Shell::Get()->arc_custom_tab_controller()->BindRequest(std::move(request));
 }
 
 void BindAshDisplayControllerRequestOnMainThread(
@@ -137,11 +148,6 @@ void BindCastConfigOnMainThread(mojom::CastConfigRequest request) {
   Shell::Get()->cast_config()->BindRequest(std::move(request));
 }
 
-void BindContainedShellControllerRequestOnMainThread(
-    mojom::ContainedShellControllerRequest request) {
-  Shell::Get()->contained_shell_controller()->BindRequest(std::move(request));
-}
-
 void BindDisplayOutputProtectionRequestOnMainThread(
     mojom::DisplayOutputProtectionRequest request) {
   Shell::Get()->display_output_protection()->BindRequest(std::move(request));
@@ -171,9 +177,19 @@ void BindImeControllerRequestOnMainThread(mojom::ImeControllerRequest request) {
   Shell::Get()->ime_controller()->BindRequest(std::move(request));
 }
 
+void BindImeEngineFactoryRegistryRequestOnMainThread(
+    ime::mojom::ImeEngineFactoryRegistryRequest request) {
+  Shell::Get()->ime_engine_factory_registry()->BindRequest(std::move(request));
+}
+
 void BindKeyboardControllerRequestOnMainThread(
     mojom::KeyboardControllerRequest request) {
   Shell::Get()->ash_keyboard_controller()->BindRequest(std::move(request));
+}
+
+void BindKioskNextShellControllerRequestOnMainThread(
+    mojom::KioskNextShellControllerRequest request) {
+  Shell::Get()->kiosk_next_shell_controller()->BindRequest(std::move(request));
 }
 
 void BindLocaleUpdateControllerOnMainThread(
@@ -274,6 +290,9 @@ void RegisterInterfaces(
   registry->AddInterface(
       base::BindRepeating(&BindAppListControllerRequestOnMainThread),
       main_thread_task_runner);
+  registry->AddInterface(
+      base::BindRepeating(&BindArcCustomTabControllerRequestOnMainThread),
+      main_thread_task_runner);
   if (chromeos::switches::IsAssistantEnabled()) {
     registry->AddInterface(
         base::BindRepeating(
@@ -308,9 +327,9 @@ void RegisterInterfaces(
       main_thread_task_runner);
   registry->AddInterface(base::BindRepeating(&BindCastConfigOnMainThread),
                          main_thread_task_runner);
-  if (base::FeatureList::IsEnabled(features::kContainedShell)) {
+  if (base::FeatureList::IsEnabled(features::kKioskNextShell)) {
     registry->AddInterface(
-        base::BindRepeating(&BindContainedShellControllerRequestOnMainThread),
+        base::BindRepeating(&BindKioskNextShellControllerRequestOnMainThread),
         main_thread_task_runner);
   }
   registry->AddInterface(
@@ -330,6 +349,9 @@ void RegisterInterfaces(
       main_thread_task_runner);
   registry->AddInterface(
       base::BindRepeating(&BindImeControllerRequestOnMainThread),
+      main_thread_task_runner);
+  registry->AddInterface(
+      base::BindRepeating(&BindImeEngineFactoryRegistryRequestOnMainThread),
       main_thread_task_runner);
   registry->AddInterface(
       base::BindRepeating(&BindKeyboardControllerRequestOnMainThread),

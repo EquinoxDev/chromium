@@ -63,6 +63,9 @@ class AssistantOptInFlowScreenHandler
   void OnActivityControlOptInResult(bool opted_in);
   void OnEmailOptInResult(bool opted_in);
 
+  // Called when the UI dialog is closed.
+  void OnDialogClosed();
+
  private:
   // BaseScreenHandler:
   void Initialize() override;
@@ -121,6 +124,11 @@ class AssistantOptInFlowScreenHandler
   // Whether user chose to enable hotword.
   bool enable_hotword_ = true;
 
+  // Whether the use has completed voice match enrollment.
+  bool voice_match_enrollment_done_ = false;
+
+  bool is_retrain_flow_ = false;
+
   // Time that get settings request is sent.
   base::TimeTicks send_request_time_;
 
@@ -130,11 +138,7 @@ class AssistantOptInFlowScreenHandler
   // Whether the screen has been initialized.
   bool initialized_ = false;
 
-  // Whether there is a pending voice match enrollment request.
-  bool voice_enrollment_pending = false;
-
   mojo::Binding<assistant::mojom::SpeakerIdEnrollmentClient> client_binding_;
-  assistant::mojom::SpeakerIdEnrollmentClientPtr client_ptr_;
   assistant::mojom::AssistantSettingsManagerPtr settings_manager_;
   base::WeakPtrFactory<AssistantOptInFlowScreenHandler> weak_factory_;
 

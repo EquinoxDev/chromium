@@ -77,104 +77,6 @@ void RecordHttpAuthPromptType(AuthPromptType prompt_type) {
                             AUTH_PROMPT_TYPE_ENUM_COUNT);
 }
 
-// LoginHandlerProxy bridges between the reference-counted IO-thread
-// content::LoginHandler interface and the uniquely-owned single-threaded
-// LoginHandler. This is a temporary measure until the IO/UI hop is moved to the
-// other side of the //content boundary. https://crbug.com/908926.
-class LoginHandlerProxy : public content::LoginDelegate {
- public:
-  explicit LoginHandlerProxy(LoginAuthRequiredCallback callback)
-      : callback_(std::move(callback)) {}
-
-  void Start(
-      net::AuthChallengeInfo* auth_info,
-      content::ResourceRequestInfo::WebContentsGetter web_contents_getter,
-      const content::GlobalRequestID& request_id,
-      bool is_request_for_main_frame,
-      const GURL& url,
-      scoped_refptr<net::HttpResponseHeaders> response_headers) {
-    DCHECK_CURRENTLY_ON(BrowserThread::IO);
-    base::PostTaskWithTraits(
-        FROM_HERE, {BrowserThread::UI},
-        base::BindOnce(
-            &LoginHandlerProxy::StartUI, this, base::RetainedRef(auth_info),
-            std::move(web_contents_getter), request_id,
-            is_request_for_main_frame, url, std::move(response_headers)));
-  }
-
-  void OnRequestCancelled() override {
-    DCHECK_CURRENTLY_ON(BrowserThread::IO);
-    callback_.Reset();
-    base::PostTaskWithTraits(
-        FROM_HERE, {BrowserThread::UI},
-        base::BindOnce(&LoginHandlerProxy::OnRequestCancelledUI, this));
-  }
-
- private:
-  friend class base::RefCountedThreadSafe<LoginHandlerProxy>;
-  ~LoginHandlerProxy() override {
-    // At least one of OnRequestCancelledUI or OnAuthCredentialsUI must have
-    // been called at this point.
-    CHECK(!handler_);
-  }
-
-  void StartUI(
-      net::AuthChallengeInfo* auth_info,
-      content::ResourceRequestInfo::WebContentsGetter web_contents_getter,
-      const content::GlobalRequestID& request_id,
-      bool is_request_for_main_frame,
-      const GURL& url,
-      scoped_refptr<net::HttpResponseHeaders> response_headers) {
-    DCHECK_CURRENTLY_ON(BrowserThread::UI);
-    WebContents* web_contents = web_contents_getter.Run();
-    if (!web_contents) {
-      // The request may have been canceled, or it may be for a renderer not
-      // hosted by a tab (e.g. an extension).
-      OnAuthCredentialsUI(base::nullopt);
-      return;
-    }
-
-    handler_ = LoginHandler::Create(
-                   auth_info, web_contents,
-                   base::BindOnce(&LoginHandlerProxy::OnAuthCredentialsUI,
-                                  base::Unretained(this)))
-                   .release();
-    handler_->Start(request_id, is_request_for_main_frame, url,
-                    std::move(response_headers));
-  }
-
-  void OnAuthCredentialsUI(
-      const base::Optional<net::AuthCredentials>& auth_credentials) {
-    DCHECK_CURRENTLY_ON(BrowserThread::UI);
-    delete handler_;
-    handler_ = nullptr;
-    base::PostTaskWithTraits(
-        FROM_HERE, {BrowserThread::IO},
-        base::BindOnce(&LoginHandlerProxy::OnAuthCredentialsIO, this,
-                       auth_credentials));
-  }
-
-  void OnAuthCredentialsIO(
-      const base::Optional<net::AuthCredentials>& auth_credentials) {
-    DCHECK_CURRENTLY_ON(BrowserThread::IO);
-    // OnRequestCancelled does inform handler_ of the cancelation, but that
-    // IO-to-UI hop may happen concurrently with handler_ calling
-    // OnAuthCredentialsUI.
-    if (callback_) {
-      std::move(callback_).Run(auth_credentials);
-    }
-  }
-
-  void OnRequestCancelledUI() {
-    DCHECK_CURRENTLY_ON(BrowserThread::UI);
-    delete handler_;
-    handler_ = nullptr;
-  }
-
-  LoginHandler* handler_ = nullptr;  // owned on the UI thread
-  LoginAuthRequiredCallback callback_;
-};
-
 }  // namespace
 
 // ----------------------------------------------------------------------------
@@ -187,25 +89,15 @@ LoginHandler::LoginModelData::LoginModelData(
   DCHECK(model);
 }
 
-LoginHandler::LoginHandler(net::AuthChallengeInfo* auth_info,
+LoginHandler::LoginHandler(const net::AuthChallengeInfo& auth_info,
                            content::WebContents* web_contents,
                            LoginAuthRequiredCallback auth_required_callback)
     : WebContentsObserver(web_contents),
       auth_info_(auth_info),
       auth_required_callback_(std::move(auth_required_callback)),
+      prompt_started_(false),
       weak_factory_(this) {
   DCHECK(web_contents);
-  DCHECK(auth_info_) << "LoginHandler constructed with NULL auth info";
-
-  // This is probably OK; we need to listen to everything and we break out of
-  // the Observe() if we aren't handling the same auth_info().
-  //
-  // TODO(davidben): We only need to listen to notifications within a single
-  // BrowserContext.
-  registrar_.Add(this, chrome::NOTIFICATION_AUTH_SUPPLIED,
-                 content::NotificationService::AllBrowserContextsAndSources());
-  registrar_.Add(this, chrome::NOTIFICATION_AUTH_CANCELLED,
-                 content::NotificationService::AllBrowserContextsAndSources());
 }
 
 LoginHandler::~LoginHandler() {
@@ -246,15 +138,21 @@ void LoginHandler::Start(
       base::BindOnce(&LoginHandler::MaybeSetUpLoginPrompt,
                      weak_factory_.GetWeakPtr(), request_url, is_main_frame);
   if (api->MaybeProxyAuthRequest(web_contents()->GetBrowserContext(),
-                                 auth_info_.get(), std::move(response_headers),
+                                 auth_info_, std::move(response_headers),
                                  request_id, is_main_frame,
                                  std::move(continuation))) {
     return;
   }
 #endif
 
-  MaybeSetUpLoginPrompt(request_url, is_main_frame, base::nullopt,
-                        false /* should_cancel */);
+  // To avoid reentrancy problems, this function must not call
+  // |auth_required_callback_| synchronously. Defer MaybeSetUpLoginPrompt by an
+  // event loop iteration.
+  base::PostTaskWithTraits(
+      FROM_HERE, {BrowserThread::UI},
+      base::BindOnce(&LoginHandler::MaybeSetUpLoginPrompt,
+                     weak_factory_.GetWeakPtr(), request_url, is_main_frame,
+                     base::nullopt, false /* should_cancel */));
 }
 
 void LoginHandler::SetAuth(const base::string16& username,
@@ -286,7 +184,7 @@ void LoginHandler::SetAuth(const base::string16& username,
   if (password_manager) {
     password_form_.username_value = username;
     password_form_.password_value = password;
-    password_manager->ProvisionallySavePassword(password_form_, nullptr);
+    password_manager->OnPasswordHttpAuthFormSubmitted(password_form_);
     if (logger) {
       logger->LogPasswordForm(
           autofill::SavePasswordProgressLogger::STRING_LOGINHANDLER_FORM,
@@ -337,7 +235,7 @@ void LoginHandler::Observe(int type,
   DCHECK(login_details->handler() != this);
 
   // Only handle notification for the identical auth info.
-  if (!login_details->handler()->auth_info()->Equals(*auth_info()))
+  if (login_details->handler()->auth_info() != auth_info())
     return;
 
   // Ignore login notification events from other profiles.
@@ -362,7 +260,7 @@ void LoginHandler::Observe(int type,
 
 void LoginHandler::NotifyAuthNeeded() {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
-  if (WasAuthHandled())
+  if (WasAuthHandled() || !prompt_started_)
     return;
 
   content::NotificationService* service =
@@ -381,7 +279,7 @@ void LoginHandler::NotifyAuthSupplied(const base::string16& username,
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
   DCHECK(WasAuthHandled());
 
-  if (!web_contents())
+  if (!web_contents() || !prompt_started_)
     return;
 
   content::NotificationService* service =
@@ -398,6 +296,9 @@ void LoginHandler::NotifyAuthSupplied(const base::string16& username,
 void LoginHandler::NotifyAuthCancelled() {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
   DCHECK(WasAuthHandled());
+
+  if (!prompt_started_)
+    return;
 
   content::NotificationService* service =
       content::NotificationService::current();
@@ -528,6 +429,17 @@ void LoginHandler::MaybeSetUpLoginPrompt(
     return;
   }
 
+  // This is OK; we break out of the Observe() if we aren't handling the same
+  // auth_info() or BrowserContext.
+  //
+  // TODO(davidben): Only listen to notifications within a single
+  // BrowserContext.
+  registrar_.Add(this, chrome::NOTIFICATION_AUTH_SUPPLIED,
+                 content::NotificationService::AllBrowserContextsAndSources());
+  registrar_.Add(this, chrome::NOTIFICATION_AUTH_CANCELLED,
+                 content::NotificationService::AllBrowserContextsAndSources());
+  prompt_started_ = true;
+
   // Check if this is a main frame navigation and
   // (a) if the request is cross origin or
   // (b) if an interstitial is already being shown or
@@ -559,7 +471,7 @@ void LoginHandler::MaybeSetUpLoginPrompt(
       request_url.GetOrigin();
   if (is_request_for_main_frame &&
       (is_cross_origin_request || web_contents()->ShowingInterstitialPage() ||
-       auth_info()->is_proxy) &&
+       auth_info().is_proxy) &&
       web_contents()->GetDelegate()->GetDisplayMode(web_contents()) !=
           blink::kWebDisplayModeStandalone) {
     RecordHttpAuthPromptType(AUTH_PROMPT_TYPE_WITH_INTERSTITIAL);
@@ -573,7 +485,7 @@ void LoginHandler::MaybeSetUpLoginPrompt(
     // This cancels any existing interstitial.
     interstitial_delegate_ =
         (new LoginInterstitialDelegate(
-             web_contents(), auth_info()->is_proxy ? GURL() : request_url,
+             web_contents(), auth_info().is_proxy ? GURL() : request_url,
              std::move(callback)))
             ->GetWeakPtr();
 
@@ -605,7 +517,7 @@ void LoginHandler::ShowLoginPrompt(const GURL& request_url) {
 
   base::string16 authority;
   base::string16 explanation;
-  GetDialogStrings(request_url, *auth_info(), &authority, &explanation);
+  GetDialogStrings(request_url, auth_info(), &authority, &explanation);
 
   password_manager::PasswordManager* password_manager =
       GetPasswordManagerForLogin();
@@ -635,7 +547,7 @@ void LoginHandler::ShowLoginPrompt(const GURL& request_url) {
   }
 
   PasswordForm observed_form(
-      MakeInputForPasswordManager(request_url, *auth_info()));
+      MakeInputForPasswordManager(request_url, auth_info()));
   LoginModelData model_data(password_manager, observed_form);
   BuildViewAndNotify(authority, explanation, &model_data);
 }
@@ -656,17 +568,17 @@ void LoginHandler::BuildViewAndNotify(
 
 // ----------------------------------------------------------------------------
 // Public API
-scoped_refptr<content::LoginDelegate> CreateLoginPrompt(
-    net::AuthChallengeInfo* auth_info,
-    content::ResourceRequestInfo::WebContentsGetter web_contents_getter,
+std::unique_ptr<content::LoginDelegate> CreateLoginPrompt(
+    const net::AuthChallengeInfo& auth_info,
+    content::WebContents* web_contents,
     const content::GlobalRequestID& request_id,
     bool is_request_for_main_frame,
     const GURL& url,
     scoped_refptr<net::HttpResponseHeaders> response_headers,
     LoginAuthRequiredCallback auth_required_callback) {
-  auto delegate = base::MakeRefCounted<LoginHandlerProxy>(
-      std::move(auth_required_callback));
-  delegate->Start(auth_info, std::move(web_contents_getter), request_id,
-                  is_request_for_main_frame, url, std::move(response_headers));
-  return delegate;
+  std::unique_ptr<LoginHandler> handler = LoginHandler::Create(
+      auth_info, web_contents, std::move(auth_required_callback));
+  handler->Start(request_id, is_request_for_main_frame, url,
+                 std::move(response_headers));
+  return handler;
 }

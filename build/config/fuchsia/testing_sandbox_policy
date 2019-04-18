@@ -1,6 +1,6 @@
 {
   "features": [
-      "deprecated-global-persistent-storage",
+      "isolated-persistent-storage",
       "root-ssl-certificates",
       "system-temp",
       "vulkan" ],
@@ -13,7 +13,9 @@
       "fuchsia.net.SocketProvider",
       "fuchsia.netstack.Netstack",
       "fuchsia.process.Launcher",
+      "fuchsia.sys.Environment",
       "fuchsia.sys.Launcher",
+      "fuchsia.sys.Loader",
       "fuchsia.ui.input.ImeService",
       "fuchsia.ui.input.ImeVisibilityService",
       "fuchsia.ui.policy.Presenter",

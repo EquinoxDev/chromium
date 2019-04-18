@@ -20,6 +20,16 @@ import java.util.List;
  */
 public interface TabModelSelector {
     /**
+     * @param tab The Tab to get its {@link TabModelSelector} from.
+     * @return {@link TabModelSelector} that currently hosts the {@link TabModel} for this
+     *         {@link Tab}.
+     */
+    public static TabModelSelector from(Tab tab) {
+        if (tab == null || tab.getActivity() == null) return null;
+        return tab.getActivity().getTabModelSelector();
+    }
+
+    /**
      * A delegate interface to push close all tabs requests.
      */
     public interface CloseAllTabsDelegate {
@@ -42,6 +52,12 @@ public interface TabModelSelector {
      * @return Never returns null.  Returns a stub when real model is uninitialized.
      */
     TabModel getModel(boolean incognito);
+
+    /**
+     * Get the {@link TabModelFilterProvider} that provides {@link TabModelFilter}.
+     * @return  Never returns null. Returns a stub when real model is uninitialized.
+     */
+    TabModelFilterProvider getTabModelFilterProvider();
 
     /**
      * @return a list for the underlying models

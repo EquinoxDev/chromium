@@ -11,6 +11,7 @@
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/chromeos/login/screens/gaia_view.h"
 #include "chrome/browser/chromeos/login/screens/sync_consent_screen.h"
+#include "chrome/browser/chromeos/login/test/fake_gaia_mixin.h"
 #include "chrome/browser/chromeos/login/test/js_checker.h"
 #include "chrome/browser/chromeos/login/test/oobe_base_test.h"
 #include "chrome/browser/chromeos/login/test/test_condition_waiter.h"
@@ -20,6 +21,7 @@
 #include "chrome/browser/ui/webui/chromeos/login/signin_screen_handler.h"
 #include "chrome/grit/generated_resources.h"
 #include "content/public/browser/notification_service.h"
+#include "content/public/test/test_utils.h"
 #include "ui/base/l10n/l10n_util.h"
 
 namespace chromeos {
@@ -77,17 +79,6 @@ class ConsentRecordedWaiter
   base::RunLoop run_loop_;
 };
 
-// Waits for js condition to be fulfilled.
-void WaitForJsCondition(const std::string& js_condition) {
-  return test::TestConditionWaiter(base::BindRepeating(
-                                       [](const std::string& js_condition) {
-                                         return test::OobeJS().GetBool(
-                                             js_condition);
-                                       },
-                                       js_condition))
-      .Wait();
-}
-
 std::string GetLocalizedConsentString(const int id) {
   std::string sanitized_string =
       base::UTF16ToUTF8(l10n_util::GetStringUTF16(id));
@@ -128,7 +119,7 @@ class SyncConsentTest : public OobeBaseTest {
                             "');");
     const std::string condition =
         base::StringPrintf("%s > %d", get_num_reloads, prev_reloads);
-    WaitForJsCondition(condition);
+    test::OobeJS().CreateWaiter(condition)->Wait();
   }
 
   void LoginToSyncConsentScreen() {
@@ -138,11 +129,11 @@ class SyncConsentTest : public OobeBaseTest {
     LoginDisplayHost::default_host()
         ->GetOobeUI()
         ->GetGaiaScreenView()
-        ->ShowSigninScreenForTest(OobeBaseTest::kFakeUserEmail,
-                                  OobeBaseTest::kFakeUserPassword,
-                                  OobeBaseTest::kEmptyUserServices);
+        ->ShowSigninScreenForTest(FakeGaiaMixin::kFakeUserEmail,
+                                  FakeGaiaMixin::kFakeUserPassword,
+                                  FakeGaiaMixin::kEmptyUserServices);
 
-    WaitForJsCondition("Oobe.getInstance().currentScreen.id == 'sync-consent'");
+    test::CreateOobeScreenWaiter("sync-consent")->Wait();
   }
 
  protected:
@@ -158,12 +149,12 @@ class SyncConsentTest : public OobeBaseTest {
     screen->SetProfileSyncDisabledByPolicyForTesting(false);
     screen->SetProfileSyncEngineInitializedForTesting(true);
     screen->OnStateChanged(nullptr);
+    test::OobeJS().CreateVisibilityWaiter(true, {"sync-consent-impl"})->Wait();
 
-    WaitForJsCondition("!$('sync-consent-impl').hidden");
-    test::OobeJS().ExpectTrue(
-        "!$('sync-consent-impl').$.syncConsentOverviewDialog.hidden");
-    test::OobeJS().Evaluate(
-        "$('sync-consent-impl').$. settingsSaveAndContinueButton.click()");
+    test::OobeJS().ExpectVisiblePath(
+        {"sync-consent-impl", "syncConsentOverviewDialog"});
+    test::OobeJS().TapOnPath(
+        {"sync-consent-impl", "settingsSaveAndContinueButton"});
     consent_recorded_waiter.Wait();
     screen->SetDelegateForTesting(nullptr);  // cleanup
 
@@ -279,7 +270,9 @@ IN_PROC_BROWSER_TEST_P(SyncConsenPolicyDisabledTest,
   screen->OnStateChanged(nullptr);
 
   // Expect to see "user image selection" or some other screen here.
-  WaitForJsCondition("Oobe.getInstance().currentScreen.id != 'sync-consent'");
+  test::OobeJS()
+      .CreateWaiter("Oobe.getInstance().currentScreen.id != 'sync-consent'")
+      ->Wait();
 }
 
 INSTANTIATE_TEST_SUITE_P(/* no prefix */,

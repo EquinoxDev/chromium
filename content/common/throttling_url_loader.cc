@@ -61,6 +61,14 @@ class ThrottlingURLLoader::ForwardingThrottleDelegate
     loader_->SetPriority(priority);
   }
 
+  void UpdateDeferredRequestHeaders(
+      const net::HttpRequestHeaders& modified_request_headers) override {
+    if (!loader_)
+      return;
+    ScopedDelegateCall scoped_delegate_call(this);
+    loader_->UpdateDeferredRequestHeaders(modified_request_headers);
+  }
+
   void UpdateDeferredResponseHead(
       const network::ResourceResponseHead& new_response_head) override {
     if (!loader_)
@@ -553,7 +561,9 @@ void ThrottlingURLLoader::OnReceiveRedirect(
       deferred_stage_ = DEFERRED_REDIRECT;
       redirect_info_ =
           std::make_unique<RedirectInfo>(redirect_info, response_head);
-      client_binding_.PauseIncomingMethodCallProcessing();
+      // |client_binding_| can be unbound if the redirect came from a throttle.
+      if (client_binding_.is_bound())
+        client_binding_.PauseIncomingMethodCallProcessing();
       return;
     }
   }
@@ -614,6 +624,31 @@ void ThrottlingURLLoader::OnComplete(
   DCHECK_EQ(DEFERRED_NONE, deferred_stage_);
   DCHECK(!loader_completed_);
 
+  // Only dispatch WillOnCompleteWithError() if status is not OK.
+  if (!throttles_.empty() && status.error_code != net::OK) {
+    pending_restart_flags_ = 0;
+    has_pending_restart_ = false;
+    bool deferred = false;
+    for (auto& entry : throttles_) {
+      auto* throttle = entry.throttle.get();
+      bool throttle_deferred = false;
+      throttle->WillOnCompleteWithError(status, &throttle_deferred);
+      if (!HandleThrottleResult(throttle, throttle_deferred, &deferred))
+        return;
+    }
+
+    if (deferred) {
+      deferred_stage_ = DEFERRED_COMPLETE;
+      client_binding_.PauseIncomingMethodCallProcessing();
+      return;
+    }
+
+    if (has_pending_restart_) {
+      RestartWithFlagsNow();
+      return;
+    }
+  }
+
   // This is the last expected message. Pipe closure before this is an error
   // (see OnClientConnectionError). After this it is expected and should be
   // ignored. The owner of |this| is expected to destroy |this| when
@@ -653,7 +688,9 @@ void ThrottlingURLLoader::Resume() {
       break;
     }
     case DEFERRED_REDIRECT: {
-      client_binding_.ResumeIncomingMethodCallProcessing();
+      // |client_binding_| can be unbound if the redirect came from a throttle.
+      if (client_binding_.is_bound())
+        client_binding_.ResumeIncomingMethodCallProcessing();
       // TODO(dhausknecht) at this point we do not actually know if we commit to
       // the redirect or if it will be cancelled. FollowRedirect would be a more
       // suitable place to set this URL but there we do not have the data.
@@ -680,6 +717,17 @@ void ThrottlingURLLoader::Resume() {
       // Note: |this| may be deleted here.
       break;
     }
+    case DEFERRED_COMPLETE: {
+      // TODO(eroman): For simplicity we require throttles that defer during
+      // WillOnCompleteWithError() to do a restart. We could support deferring
+      // and choosing not to restart if needed, however the current consumers
+      // don't need that.
+      CHECK(has_pending_restart_);
+
+      RestartWithFlagsNow();
+      // Note: |this| may be deleted here.
+      break;
+    }
     default:
       NOTREACHED();
       break;
@@ -689,6 +737,18 @@ void ThrottlingURLLoader::Resume() {
 void ThrottlingURLLoader::SetPriority(net::RequestPriority priority) {
   if (url_loader_)
     url_loader_->SetPriority(priority, -1);
+}
+
+void ThrottlingURLLoader::UpdateDeferredRequestHeaders(
+    const net::HttpRequestHeaders& modified_request_headers) {
+  if (deferred_stage_ == DEFERRED_START) {
+    start_info_->url_request.headers.MergeFrom(modified_request_headers);
+  } else if (deferred_stage_ == DEFERRED_REDIRECT) {
+    modified_headers_.MergeFrom(modified_request_headers);
+  } else {
+    NOTREACHED()
+        << "Can only update headers of a request before it's sent out.";
+  }
 }
 
 void ThrottlingURLLoader::UpdateDeferredResponseHead(

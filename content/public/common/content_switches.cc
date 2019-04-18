@@ -25,6 +25,10 @@ const char kAllowInsecureLocalhost[] = "allow-insecure-localhost";
 const char kAllowLoopbackInPeerConnection[] =
     "allow-loopback-in-peer-connection";
 
+// Allow a page to show popups during its unloading.
+// TODO(https://crbug.com/937569): Remove this in Chrome 82.
+const char kAllowPopupsDuringPageUnload[] = "allow-popups-during-page-unload";
+
 // Uses the android SkFontManager on linux. The specified directory should
 // include the configuration xml file with the name "fonts.xml".
 // This is used in blimp to emulate android fonts on linux.
@@ -101,10 +105,6 @@ const char kDisableBlinkFeatures[]          = "disable-blink-features";
 // permission prompt for testing.
 const char kEnableWebBluetoothScanning[] = "enable-web-bluetooth-scanning";
 
-// Disables compositor Ukm recording in browser tests.
-// TODO(khushalsagar): Remove once crbug.com/761524 is resolved.
-const char kDisableCompositorUkmForTests[] = "disable-compositor-ukm-for-tests";
-
 // Disables HTML5 DB support.
 const char kDisableDatabases[]              = "disable-databases";
 
@@ -153,6 +153,11 @@ const char kDisableGpuMemoryBufferVideoFrames[] =
 // For tests, to disable the limit on the number of times the GPU process may be
 // restarted.
 const char kDisableGpuProcessCrashLimit[] = "disable-gpu-process-crash-limit";
+
+// For tests, to disable falling back to software compositing if the GPU Process
+// has crashed, and reached the GPU Process crash limit.
+const char kDisableSoftwareCompositingFallback[] =
+    "disable-software-compositing-fallback";
 
 // When using CPU rasterizing disable low resolution tiling. This uses
 // less power, particularly during animations, but more white may be seen
@@ -210,6 +215,13 @@ const char kDisableNotifications[]          = "disable-notifications";
 // Disable partial raster in the renderer. Disabling this switch also disables
 // the use of persistent gpu memory buffers.
 const char kDisablePartialRaster[] = "disable-partial-raster";
+
+// By default, in devtools_session.cc, we use CBOR for protocol messages
+// except for sending JSON to clients that request it.
+// This switch undoes this default. We plan to remove it after after transition
+// to binary is sufficiently complete (2019-04-15).
+const char kDisableInternalDevToolsBinaryProtocol[] =
+    "disable-internal-devtools-binary-protocol";
 
 // Enable partial raster in the renderer.
 const char kEnablePartialRaster[] = "enable-partial-raster";
@@ -369,9 +381,6 @@ const char kEnableNetworkInformationDownlinkMax[] =
 
 // Disables the video decoder from drawing to an NV12 textures instead of ARGB.
 const char kDisableNv12DxgiVideo[] = "disable-nv12-dxgi-video";
-
-// Enables compositor-accelerated touch-screen pinch gestures.
-const char kEnablePinch[]                   = "enable-pinch";
 
 // Enables testing features of the Plugin Placeholder. For internal use only.
 const char kEnablePluginPlaceholderTesting[] =
@@ -570,17 +579,6 @@ const char kLogFile[] = "log-file";
 // portrait mode (i.e. Android) so the page should be rescaled to fit.
 const char kMainFrameResizesAreOrientationChanges[] =
     "main-frame-resizes-are-orientation-changes";
-
-// Specifies the maximum disk cache size for the ApplicationCache. The default
-// value is 250MB.
-// TODO(crbug.com/895825): Remove this flag in Feb 2019.
-const char kMaxAppCacheDiskCacheSizeMb[] = "max-appcache-disk-cache-size-mb";
-
-// Specifies the maximum cache size per an origin for the ApplicationCache.
-// The default value is 5MB.
-// TODO(crbug.com/895825): Remove this flag in Feb 2019.
-const char kMaxAppCacheOriginCacheSizeMb[] =
-    "max-appcache-origin-cache-size-mb";
 
 // Sets the maximium decoded image size limitation.
 const char kMaxDecodedImageSizeMb[] = "max-decoded-image-size-mb";

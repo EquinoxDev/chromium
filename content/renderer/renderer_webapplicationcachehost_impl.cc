@@ -23,17 +23,17 @@ namespace content {
 RendererWebApplicationCacheHostImpl::RendererWebApplicationCacheHostImpl(
     RenderViewImpl* render_view,
     WebApplicationCacheHostClient* client,
-    blink::mojom::AppCacheBackend* backend,
     int appcache_host_id,
-    int frame_routing_id)
+    int frame_routing_id,
+    scoped_refptr<base::SingleThreadTaskRunner> task_runner)
     : WebApplicationCacheHostImpl(client,
-                                  backend,
                                   appcache_host_id,
-                                  frame_routing_id),
+                                  frame_routing_id,
+                                  std::move(task_runner)),
       routing_id_(render_view->GetRoutingID()),
       frame_routing_id_(frame_routing_id) {}
 
-void RendererWebApplicationCacheHostImpl::OnLogMessage(
+void RendererWebApplicationCacheHostImpl::LogMessage(
     blink::mojom::ConsoleMessageLevel log_level,
     const std::string& message) {
   if (RenderThreadImpl::current()->web_test_mode())

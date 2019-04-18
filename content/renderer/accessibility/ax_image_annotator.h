@@ -13,10 +13,12 @@
 #include "base/memory/weak_ptr.h"
 #include "base/observer_list_types.h"
 #include "base/optional.h"
+#include "content/common/content_export.h"
 #include "content/renderer/accessibility/render_accessibility_impl.h"
 #include "services/image_annotation/public/cpp/image_processor.h"
 #include "services/image_annotation/public/mojom/image_annotation.mojom.h"
 #include "third_party/skia/include/core/SkBitmap.h"
+#include "ui/accessibility/ax_enums.mojom.h"
 
 namespace blink {
 
@@ -26,18 +28,23 @@ class WebAXObject;
 
 namespace content {
 
+class ContentClient;
+
 // This class gets notified that certain images have been added, removed or
 // updated on a page. This class is then responsible for retrieving the
 // automatic label for all images and notifying the RenderAccessibility that
 // owns it to update the relevant image annotations.
-class AXImageAnnotator final : public base::CheckedObserver {
+class CONTENT_EXPORT AXImageAnnotator : public base::CheckedObserver {
  public:
-  AXImageAnnotator(RenderAccessibilityImpl* const render_accessibility);
+  AXImageAnnotator(RenderAccessibilityImpl* const render_accessibility,
+                   image_annotation::mojom::AnnotatorPtr annotator_ptr);
   ~AXImageAnnotator() override;
 
   void Destroy();
 
   std::string GetImageAnnotation(blink::WebAXObject& image) const;
+  ax::mojom::ImageAnnotationStatus GetImageAnnotationStatus(
+      blink::WebAXObject& image) const;
   bool HasAnnotationInCache(blink::WebAXObject& image) const;
   bool HasImageInCache(const blink::WebAXObject& image) const;
 
@@ -55,8 +62,14 @@ class AXImageAnnotator final : public base::CheckedObserver {
     image_annotation::mojom::ImageProcessorPtr GetImageProcessor();
     bool HasAnnotation() const;
 
+    ax::mojom::ImageAnnotationStatus status() const { return status_; }
+
+    void set_status(ax::mojom::ImageAnnotationStatus status) {
+      DCHECK_NE(status, ax::mojom::ImageAnnotationStatus::kNone);
+      status_ = status;
+    }
+
     std::string annotation() const {
-      DCHECK(annotation_.has_value());
       return annotation_.value_or("");
     }
 
@@ -64,24 +77,38 @@ class AXImageAnnotator final : public base::CheckedObserver {
 
    private:
     image_annotation::ImageProcessor image_processor_;
+    ax::mojom::ImageAnnotationStatus status_;
     base::Optional<std::string> annotation_;
   };
-
-  // Given the URL of the main document and the src attribute of an image,
-  // generates a unique identifier for the image that could be provided to the
-  // image annotation service.
-  static std::string GenerateImageSourceId(const std::string& document_url,
-                                           const std::string& image_src);
 
   // Retrieves the image data from the renderer.
   static SkBitmap GetImageData(const blink::WebAXObject& image);
 
+  // Used by tests to override the content client.
+  virtual ContentClient* GetContentClient() const;
+
+  // Given a WebImage, it uses the URL of the main document and the src
+  // attribute of the image, generates a unique identifier for the image that
+  // could be provided to the image annotation service.
+  //
+  // This method is virtual to allow overriding it from tests.
+  virtual std::string GenerateImageSourceId(
+      const blink::WebAXObject& image) const;
+
   // Removes the automatic image annotations from all images.
   void MarkAllImagesDirty();
+
+  // Marks a node in the accessibility tree dirty when an image annotation
+  // changes. Also marks dirty a link or document that immediately contains
+  // an image.
+  void MarkDirty(const blink::WebAXObject& image) const;
 
   // Gets called when an image gets annotated by the image annotation service.
   void OnImageAnnotated(const blink::WebAXObject& image,
                         image_annotation::mojom::AnnotateImageResultPtr result);
+
+  // Only for local logging when running with --v=1.
+  std::string GetDocumentUrl() const;
 
   // Weak, owns us.
   RenderAccessibilityImpl* const render_accessibility_;

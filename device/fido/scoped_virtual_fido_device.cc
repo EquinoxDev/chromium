@@ -26,19 +26,22 @@ class VirtualFidoDeviceDiscovery
   explicit VirtualFidoDeviceDiscovery(
       FidoTransportProtocol transport,
       scoped_refptr<VirtualFidoDevice::State> state,
-      ProtocolVersion supported_protocol)
+      ProtocolVersion supported_protocol,
+      const VirtualCtap2Device::Config& ctap2_config)
       : FidoDeviceDiscovery(transport),
         state_(std::move(state)),
-        supported_protocol_(supported_protocol) {}
+        supported_protocol_(supported_protocol),
+        ctap2_config_(ctap2_config) {}
   ~VirtualFidoDeviceDiscovery() override = default;
 
  protected:
   void StartInternal() override {
     std::unique_ptr<FidoDevice> device;
-    if (supported_protocol_ == ProtocolVersion::kCtap)
-      device = std::make_unique<VirtualCtap2Device>(state_);
-    else
+    if (supported_protocol_ == ProtocolVersion::kCtap) {
+      device = std::make_unique<VirtualCtap2Device>(state_, ctap2_config_);
+    } else {
       device = std::make_unique<VirtualU2fDevice>(state_);
+    }
 
     AddDevice(std::move(device));
     base::SequencedTaskRunnerHandle::Get()->PostTask(
@@ -49,7 +52,8 @@ class VirtualFidoDeviceDiscovery
 
  private:
   scoped_refptr<VirtualFidoDevice::State> state_;
-  ProtocolVersion supported_protocol_;
+  const ProtocolVersion supported_protocol_;
+  const VirtualCtap2Device::Config ctap2_config_;
   DISALLOW_COPY_AND_ASSIGN(VirtualFidoDeviceDiscovery);
 };
 
@@ -66,6 +70,12 @@ void ScopedVirtualFidoDevice::SetTransport(FidoTransportProtocol transport) {
   transport_ = transport;
 }
 
+void ScopedVirtualFidoDevice::SetCtap2Config(
+    const VirtualCtap2Device::Config& config) {
+  supported_protocol_ = ProtocolVersion::kCtap;
+  ctap2_config_ = config;
+}
+
 VirtualFidoDevice::State* ScopedVirtualFidoDevice::mutable_state() {
   return state_.get();
 }
@@ -76,8 +86,8 @@ std::unique_ptr<FidoDiscoveryBase> ScopedVirtualFidoDevice::CreateFidoDiscovery(
   if (transport != transport_) {
     return nullptr;
   }
-  return std::make_unique<VirtualFidoDeviceDiscovery>(transport_, state_,
-                                                      supported_protocol_);
+  return std::make_unique<VirtualFidoDeviceDiscovery>(
+      transport_, state_, supported_protocol_, ctap2_config_);
 }
 
 }  // namespace test

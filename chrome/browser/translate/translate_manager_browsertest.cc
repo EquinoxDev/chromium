@@ -7,12 +7,9 @@
 #include <memory>
 
 #include "base/bind.h"
-#include "base/feature_list.h"
 #include "base/strings/utf_string_conversions.h"
-#include "base/test/metrics/histogram_tester.h"
 #include "build/build_config.h"
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/metrics/subprocess_metrics_provider.h"
 #include "chrome/browser/prefs/session_startup_pref.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
@@ -23,8 +20,6 @@
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/search_test_utils.h"
 #include "chrome/test/base/ui_test_utils.h"
-#include "components/search_engines/template_url.h"
-#include "components/search_engines/template_url_service.h"
 #include "components/translate/core/browser/translate_accept_languages.h"
 #include "components/translate/core/browser/translate_error_details.h"
 #include "components/translate/core/common/language_detection_details.h"
@@ -32,10 +27,9 @@
 #include "content/public/browser/notification_service.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/test/browser_test_utils.h"
+#include "net/dns/mock_host_resolver.h"
 #include "net/test/embedded_test_server/http_request.h"
 #include "net/test/embedded_test_server/http_response.h"
-#include "services/network/initiator_lock_compatibility.h"
-#include "services/network/public/cpp/features.h"
 #include "url/gurl.h"
 
 namespace {
@@ -196,6 +190,8 @@ static const char kTestScriptLoadError[] =
 
 }  // namespace
 
+namespace translate {
+
 class TranslateManagerBrowserTest : public InProcessBrowserTest {
  public:
   TranslateManagerBrowserTest() {
@@ -253,6 +249,7 @@ class TranslateManagerBrowserTest : public InProcessBrowserTest {
     ResetObserver();
     error_type_ = translate::TranslateErrors::NONE;
 
+    host_resolver()->AddRule("www.google.com", "127.0.0.1");
     embedded_test_server()->RegisterRequestHandler(base::BindRepeating(
         &TranslateManagerBrowserTest::HandleRequest, base::Unretained(this)));
     embedded_test_server()->StartAcceptingConnections();
@@ -262,7 +259,7 @@ class TranslateManagerBrowserTest : public InProcessBrowserTest {
 
     // Enable Experimental web platform features for HrefTranslate tests
     command_line->AppendSwitch(
-        switches::kEnableExperimentalWebPlatformFeatures);
+        ::switches::kEnableExperimentalWebPlatformFeatures);
 
     command_line->AppendSwitchASCII(
         translate::switches::kTranslateScriptURL,
@@ -275,21 +272,6 @@ class TranslateManagerBrowserTest : public InProcessBrowserTest {
   }
 
   void SetTranslateScript(const std::string& script) { script_ = script; }
-
-  void SetupDefaultSearchEngine(const std::string& base_url) {
-    base::ScopedAllowBlockingForTesting allow_blocking;
-    TemplateURLData data;
-    data.SetShortName(base::UTF8ToUTF16(base_url));
-    data.SetKeyword(base::UTF8ToUTF16(base_url));
-    data.SetURL(base_url + "url?bar={searchTerms}");
-
-    TemplateURLService* template_url_service =
-        TemplateURLServiceFactory::GetForProfile(browser()->profile());
-    search_test_utils::WaitForTemplateURLServiceToLoad(template_url_service);
-    TemplateURL* template_url =
-        template_url_service->Add(std::make_unique<TemplateURL>(data));
-    template_url_service->SetUserSelectedDefaultSearchProvider(template_url);
-  }
 
  private:
   translate::TranslateErrors::Type error_type_;
@@ -425,13 +407,47 @@ IN_PROC_BROWSER_TEST_F(TranslateManagerBrowserTest, PageTranslationSuccess) {
   EXPECT_EQ(translate::TranslateErrors::NONE, GetPageTranslatedResult());
 }
 
+// Test that the translation was successful in an about:blank page.
+// This is a regression test for https://crbug.com/943685.
+IN_PROC_BROWSER_TEST_F(TranslateManagerBrowserTest, PageTranslationAboutBlank) {
+  SetTranslateScript(kTestValidScript);
+  ResetObserver();
+  AddTabAtIndex(0, GURL(embedded_test_server()->GetURL("/french_page.html")),
+                ui::PAGE_TRANSITION_TYPED);
+
+  // Open a pop-up window and leave it at the initial about:blank URL.
+  content::WebContentsAddedObserver popup_observer;
+  ASSERT_TRUE(
+      content::ExecJs(browser()->tab_strip_model()->GetActiveWebContents(),
+                      "window.open('about:blank', 'popup')"));
+  content::WebContents* popup = popup_observer.GetWebContents();
+
+  // A round-trip to the renderer process helps avoid a race where the
+  // browser-side translate structures are not yet ready for the translate call.
+  EXPECT_EQ("ping", content::EvalJs(popup, "'ping'"));
+
+  // Translate the about:blank page.
+  ChromeTranslateClient* chrome_translate_client =
+      ChromeTranslateClient::FromWebContents(popup);
+  translate::TranslateManager* manager =
+      chrome_translate_client->GetTranslateManager();
+  manager->TranslatePage("fr", "en", true);
+
+  // Verify that the crash from https://crbug.com/943685 didn't happen.
+  EXPECT_EQ("still alive", content::EvalJs(popup, "'still alive'"));
+
+  // Wait for translation to finish and verify it was successful.
+  WaitUntilPageTranslated();
+  EXPECT_FALSE(chrome_translate_client->GetLanguageState().translation_error());
+  EXPECT_EQ(translate::TranslateErrors::NONE, GetPageTranslatedResult());
+}
+
 // Test that hrefTranslate is propagating properly
 IN_PROC_BROWSER_TEST_F(TranslateManagerBrowserTest, HrefTranslateSuccess) {
   ChromeTranslateClient* chrome_translate_client = GetChromeTranslateClient();
   chrome_translate_client->GetTranslateManager()->SetIgnoreMissingKeyForTesting(
       true);
   SetTranslateScript(kTestValidScript);
-  SetupDefaultSearchEngine(embedded_test_server()->base_url().spec());
 
   // There is a possible race condition, when the language is not yet detected,
   // so we check for that and wait if necessary.
@@ -443,9 +459,10 @@ IN_PROC_BROWSER_TEST_F(TranslateManagerBrowserTest, HrefTranslateSuccess) {
 
   ResetObserver();
   // Load a German page and detect it's language
-  AddTabAtIndex(
-      0, GURL(embedded_test_server()->GetURL("/href_translate_test.html")),
-      ui::PAGE_TRANSITION_TYPED);
+  AddTabAtIndex(0,
+                GURL(embedded_test_server()->GetURL(
+                    "www.google.com", "/href_translate_test.html")),
+                ui::PAGE_TRANSITION_TYPED);
   chrome_translate_client = GetChromeTranslateClient();
   WaitUntilLanguageDetected();
   EXPECT_EQ("de",
@@ -477,13 +494,13 @@ IN_PROC_BROWSER_TEST_F(TranslateManagerBrowserTest, HrefTranslateSuccess) {
 }
 
 // Test that hrefTranslate doesn't auto-translate if the originator of the
-// navigation isn't the default search engine.
-IN_PROC_BROWSER_TEST_F(TranslateManagerBrowserTest, HrefTranslateWrongDSE) {
+// navigation isn't a Google origin.
+IN_PROC_BROWSER_TEST_F(TranslateManagerBrowserTest,
+                       HrefTranslateNotFromGoogle) {
   ChromeTranslateClient* chrome_translate_client = GetChromeTranslateClient();
   chrome_translate_client->GetTranslateManager()->SetIgnoreMissingKeyForTesting(
       true);
   SetTranslateScript(kTestValidScript);
-  SetupDefaultSearchEngine("https://www.google.com/");
 
   // There is a possible race condition, when the language is not yet detected,
   // so we check for that and wait if necessary.
@@ -526,7 +543,6 @@ IN_PROC_BROWSER_TEST_F(TranslateManagerBrowserTest, HrefTranslateUnsupported) {
   chrome_translate_client->GetTranslateManager()->SetIgnoreMissingKeyForTesting(
       true);
   SetTranslateScript(kTestValidScript);
-  SetupDefaultSearchEngine(embedded_test_server()->base_url().spec());
 
   // There is a possible race condition, when the language is not yet detected,
   // so we check for that and wait if necessary.
@@ -538,9 +554,10 @@ IN_PROC_BROWSER_TEST_F(TranslateManagerBrowserTest, HrefTranslateUnsupported) {
 
   ResetObserver();
   // Load a German page and detect it's language
-  AddTabAtIndex(
-      0, GURL(embedded_test_server()->GetURL("/href_translate_test.html")),
-      ui::PAGE_TRANSITION_TYPED);
+  AddTabAtIndex(0,
+                GURL(embedded_test_server()->GetURL(
+                    "www.google.com", "/href_translate_test.html")),
+                ui::PAGE_TRANSITION_TYPED);
   chrome_translate_client = GetChromeTranslateClient();
   WaitUntilLanguageDetected();
   EXPECT_EQ("de",
@@ -572,7 +589,6 @@ IN_PROC_BROWSER_TEST_F(TranslateManagerBrowserTest, HrefTranslateConflict) {
   chrome_translate_client->GetTranslateManager()->SetIgnoreMissingKeyForTesting(
       true);
   SetTranslateScript(kTestValidScript);
-  SetupDefaultSearchEngine(embedded_test_server()->base_url().spec());
 
   // There is a possible race condition, when the language is not yet detected,
   // so we check for that and wait if necessary.
@@ -584,9 +600,10 @@ IN_PROC_BROWSER_TEST_F(TranslateManagerBrowserTest, HrefTranslateConflict) {
 
   ResetObserver();
   // Load a German page and detect it's language
-  AddTabAtIndex(
-      0, GURL(embedded_test_server()->GetURL("/href_translate_test.html")),
-      ui::PAGE_TRANSITION_TYPED);
+  AddTabAtIndex(0,
+                GURL(embedded_test_server()->GetURL(
+                    "www.google.com", "/href_translate_test.html")),
+                ui::PAGE_TRANSITION_TYPED);
   chrome_translate_client = GetChromeTranslateClient();
   WaitUntilLanguageDetected();
   EXPECT_EQ("de",
@@ -619,7 +636,6 @@ IN_PROC_BROWSER_TEST_F(TranslateManagerBrowserTest, HrefTranslateNoHrefLang) {
   chrome_translate_client->GetTranslateManager()->SetIgnoreMissingKeyForTesting(
       true);
   SetTranslateScript(kTestValidScript);
-  SetupDefaultSearchEngine(embedded_test_server()->base_url().spec());
 
   // There is a possible race condition, when the language is not yet detected,
   // so we check for that and wait if necessary.
@@ -631,9 +647,10 @@ IN_PROC_BROWSER_TEST_F(TranslateManagerBrowserTest, HrefTranslateNoHrefLang) {
 
   ResetObserver();
   // Load a German page and detect it's language
-  AddTabAtIndex(
-      0, GURL(embedded_test_server()->GetURL("/href_translate_test.html")),
-      ui::PAGE_TRANSITION_TYPED);
+  AddTabAtIndex(0,
+                GURL(embedded_test_server()->GetURL(
+                    "www.google.com", "/href_translate_test.html")),
+                ui::PAGE_TRANSITION_TYPED);
   chrome_translate_client = GetChromeTranslateClient();
   WaitUntilLanguageDetected();
   EXPECT_EQ("de",
@@ -973,7 +990,8 @@ IN_PROC_BROWSER_TEST_F(TranslateManagerBrowserTest,
 
   // Make restored tab active to (on some platforms) initiate language
   // detection.
-  browser()->tab_strip_model()->ActivateTabAt(0, true);
+  browser()->tab_strip_model()->ActivateTabAt(
+      0, {TabStripModel::GestureType::kOther});
 
   content::WebContents* restored_web_contents =
       browser()->tab_strip_model()->GetWebContentsAt(0);
@@ -989,106 +1007,57 @@ IN_PROC_BROWSER_TEST_F(TranslateManagerBrowserTest,
             restored_translate_client->GetLanguageState().current_language());
 }
 
-// Test that the translation is successful in presence of AppCache.
-// See also:
-// - https://crbug.com/910287#c24: AppCache / Translate renderer kills.
-// - https://crbug.com/925457: Translate is incompatible with
-//                             |request_initiator_site_lock|.
-IN_PROC_BROWSER_TEST_F(TranslateManagerBrowserTest, AppCacheInteraction) {
-  // The real translate script used in production will try to fetch some stuff
-  // from the translate servers - the test tries to simulate a close-enough
-  // scenario below (close-enough to repro https://crbug.com/910287#c24).
-  //
-  // Unlike the real script, the request below doesn't use
-  // GetTranslateSecurityOrigin and instead fetches a resource from localhost,
-  // to simplify the test (e.g. avoid having to set up a https test server with
-  // the right certs).  Also, unlike the real script, the test below uses a
-  // random png resource (although as with the real script the resource is not
-  // protected by CORB).
-  const char kTranslateScriptTemplate[] = R"(
-      var google = {};
-      google.translate = (function() {
-        return {
-          TranslateService: function() {
-            return {
-              isAvailable : function() { return true; },
-              restore : function() { return; },
-              getDetectedLanguage : function() { return "fr"; },
-              translatePage : function(originalLang, targetLang,
-                                       onTranslateProgress) {
-                fetch($1, {mode: 'no-cors'})
-                    .then(_ => onTranslateProgress(100, true, false));
-              }
-            };
-          }
-        };
-      })();
-      cr.googleTranslate.onTranslateElementLoad();
-  )";
-  GURL fetch_url =
-      embedded_test_server()->GetURL("/downloads/image-octet-stream.png");
-  std::string translate_script =
-      content::JsReplace(kTranslateScriptTemplate, fetch_url);
-  SetTranslateScript(translate_script);
-
+// Test that hrefTranslate overrides manual translate
+IN_PROC_BROWSER_TEST_F(TranslateManagerBrowserTest,
+                       HrefTranslateOverridesManualTranslate) {
   ChromeTranslateClient* chrome_translate_client = GetChromeTranslateClient();
+  translate::TranslateManager* manager =
+      chrome_translate_client->GetTranslateManager();
+  manager->SetIgnoreMissingKeyForTesting(true);
+
+  // Set target language manually
+  manager->SetPredefinedTargetLanguage("ru");
+  EXPECT_EQ("ru", manager->GetLanguageState().GetPredefinedTargetLanguage());
+
+  SetTranslateScript(kTestValidScript);
 
   // There is a possible race condition, when the language is not yet detected,
   // so we check for that and wait if necessary.
   if (chrome_translate_client->GetLanguageState().original_language().empty())
     WaitUntilLanguageDetected();
+
   EXPECT_EQ("und",
             chrome_translate_client->GetLanguageState().original_language());
 
-  // Open a new tab with a page in French and wait until AppCache controls
-  // subresource loads.
-  GURL main_url = embedded_test_server()->GetURL(
-      "/appcache/french_page_with_appcache.html");
   ResetObserver();
-  AddTabAtIndex(0, main_url, ui::PAGE_TRANSITION_TYPED);
-  content::WebContents* web_contents =
-      browser()->tab_strip_model()->GetActiveWebContents();
-  base::string16 expected_title = base::UTF8ToUTF16("AppCache mis à jour");
-  content::TitleWatcher title_watcher(web_contents, expected_title);
+  // Load a German page and detect it's language
+  AddTabAtIndex(0,
+                GURL(embedded_test_server()->GetURL(
+                    "www.google.com", "/href_translate_test.html")),
+                ui::PAGE_TRANSITION_TYPED);
   chrome_translate_client = GetChromeTranslateClient();
   WaitUntilLanguageDetected();
-  EXPECT_EQ(expected_title, title_watcher.WaitAndGetTitle());
-  ui_test_utils::NavigateToURL(browser(), main_url);
+  EXPECT_EQ("de",
+            chrome_translate_client->GetLanguageState().original_language());
+
+  // Navigate to the French page by way of a link on the original page
+  ResetObserver();
+  content::WebContents* web_contents =
+      browser()->tab_strip_model()->GetWebContentsAt(0);
+
+  const std::string click_link_js =
+      "(function() { document.getElementById('test').click(); })();";
+  ASSERT_TRUE(content::ExecuteScript(web_contents, click_link_js));
+
+  // Detect language on the new page
   WaitUntilLanguageDetected();
+  EXPECT_EQ("fr",
+            chrome_translate_client->GetLanguageState().original_language());
 
-  // Translate the page through TranslateManager.
-  // In the past, this might have led to renderer kills, because of
-  // request_initiator in requests triggered by the Translate feature was
-  // different than the request_initiator_site_lock associated with the
-  // URLLoaderFactory.  See also https://crbug.com/910287#c24.
-  base::HistogramTester histograms;
-  translate::TranslateManager* manager =
-      chrome_translate_client->GetTranslateManager();
-  manager->TranslatePage(
-      chrome_translate_client->GetLanguageState().original_language(), "en",
-      true);
-
-  // Wait for NOTIFICATION_PAGE_TRANSLATED notification.
+  // Href-translate to ja should override manual translate to ru.
   WaitUntilPageTranslated();
-
-  EXPECT_FALSE(chrome_translate_client->GetLanguageState().translation_error());
-  EXPECT_EQ(translate::TranslateErrors::NONE, GetPageTranslatedResult());
-
-  // Verify that |request_initiator| seen by the network service was compatible
-  // with |request_initiator_site_lock| that was declared by the browser for the
-  // URLLoaderFactory.  See also https://crbug.com/925457.
-  if (base::FeatureList::IsEnabled(network::features::kNetworkService)) {
-    SubprocessMetricsProvider::MergeHistogramDeltasForTesting();
-    using LockCompatibility = network::InitiatorLockCompatibility;
-    EXPECT_EQ(
-        0,
-        histograms.GetBucketCount(
-            "NetworkService.URLLoader.RequestInitiatorOriginLockCompatibility",
-            static_cast<int>(LockCompatibility::kIncorrectLock)));
-    EXPECT_LE(
-        1,
-        histograms.GetBucketCount(
-            "NetworkService.URLLoader.RequestInitiatorOriginLockCompatibility",
-            static_cast<int>(LockCompatibility::kCompatibleLock)));
-  }
+  EXPECT_EQ("ja",
+            chrome_translate_client->GetLanguageState().current_language());
 }
+
+}  // namespace translate

@@ -9,6 +9,8 @@
 #include "base/memory/weak_ptr.h"
 #include "base/unguessable_token.h"
 #include "chrome/browser/chromeos/android_sms/android_sms_app_setup_controller.h"
+#include "extensions/common/extension_id.h"
+#include "net/cookies/canonical_cookie.h"
 #include "url/gurl.h"
 
 class HostContentSettingsMap;
@@ -51,6 +53,10 @@ class AndroidSmsAppSetupControllerImpl : public AndroidSmsAppSetupController {
                                                       Profile* profile);
     virtual network::mojom::CookieManager* GetCookieManager(const GURL& app_url,
                                                             Profile* profile);
+    // |error| will contain the failure reason if RemovePwa returns false.
+    virtual bool RemovePwa(const extensions::ExtensionId& extension_id,
+                           base::string16* error,
+                           Profile* profile);
   };
 
   // AndroidSmsAppSetupController:
@@ -65,23 +71,23 @@ class AndroidSmsAppSetupControllerImpl : public AndroidSmsAppSetupController {
                  const GURL& migrated_to_app_url,
                  SuccessCallback callback) override;
 
-  void OnSetRememberDeviceByDefaultCookieResult(const GURL& app_url,
-                                                const GURL& install_url,
-                                                SuccessCallback callback,
-                                                bool succeeded);
-  void OnSetMigrationCookieResult(const GURL& app_url,
-                                  SuccessCallback callback,
-                                  bool succeeded);
+  void OnSetRememberDeviceByDefaultCookieResult(
+      const GURL& app_url,
+      const GURL& install_url,
+      SuccessCallback callback,
+      net::CanonicalCookie::CookieInclusionStatus status);
+  void OnSetMigrationCookieResult(
+      const GURL& app_url,
+      SuccessCallback callback,
+      net::CanonicalCookie::CookieInclusionStatus status);
 
   void OnAppInstallResult(SuccessCallback callback,
                           const GURL& app_url,
                           const GURL& install_url,
                           web_app::InstallResultCode code);
-  void OnAppUninstallResult(const base::UnguessableToken& id,
-                            const GURL& app_url,
-                            const GURL& migrated_to_app_url,
-                            const GURL& install_url,
-                            bool succeeded);
+  void SetMigrationCookie(const GURL& app_url,
+                          const GURL& migrated_to_app_url,
+                          SuccessCallback callback);
   void OnDeleteRememberDeviceByDefaultCookieResult(const GURL& app_url,
                                                    SuccessCallback callback,
                                                    uint32_t num_deleted);
@@ -97,8 +103,6 @@ class AndroidSmsAppSetupControllerImpl : public AndroidSmsAppSetupController {
   HostContentSettingsMap* host_content_settings_map_;
 
   std::unique_ptr<PwaDelegate> pwa_delegate_;
-  base::flat_map<base::UnguessableToken, SuccessCallback>
-      uninstall_id_to_callback_map_;
   base::WeakPtrFactory<AndroidSmsAppSetupControllerImpl> weak_ptr_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(AndroidSmsAppSetupControllerImpl);

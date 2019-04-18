@@ -85,7 +85,7 @@ static inline bool HasDisplayContents(const Node& node) {
 // |node| is neither a shadow root nor the owner of a layout object.
 static bool NotSkipping(const Node& node) {
   return node.GetLayoutObject() || HasDisplayContents(node) ||
-         (node.IsShadowRoot() && node.OwnerShadowHost()->GetLayoutObject());
+         (IsA<ShadowRoot>(node) && node.OwnerShadowHost()->GetLayoutObject());
 }
 
 template <typename Strategy>
@@ -311,13 +311,13 @@ void TextIteratorAlgorithm<Strategy>::Advance() {
 
     LayoutObject* layout_object = node_->GetLayoutObject();
     if (!layout_object) {
-      if (node_->IsShadowRoot() || HasDisplayContents(*node_)) {
+      if (IsA<ShadowRoot>(node_.Get()) || HasDisplayContents(*node_)) {
         // Shadow roots or display: contents elements don't have LayoutObjects,
         // but we want to visit children anyway.
         iteration_progress_ = iteration_progress_ < kHandledNode
                                   ? kHandledNode
                                   : iteration_progress_;
-        handle_shadow_root_ = node_->IsShadowRoot();
+        handle_shadow_root_ = IsA<ShadowRoot>(node_.Get());
       } else {
         iteration_progress_ = kHandledChildren;
       }
@@ -421,12 +421,12 @@ void TextIteratorAlgorithm<Strategy>::Advance() {
           // 4. Reached the top of a shadow root. If it's created by author,
           // then try to visit the next
           // sibling shadow root, if any.
-          if (!node_->IsShadowRoot()) {
+          const auto* shadow_root = DynamicTo<ShadowRoot>(node_.Get());
+          if (!shadow_root) {
             NOTREACHED();
             should_stop_ = true;
             return;
           }
-          const ShadowRoot* shadow_root = ToShadowRoot(node_);
           if (shadow_root->GetType() == ShadowRootType::V0 ||
               shadow_root->GetType() == ShadowRootType::kOpen) {
             // We are the shadow root; exit from here and go back to
@@ -716,7 +716,7 @@ bool TextIteratorAlgorithm<Strategy>::ShouldRepresentNodeOffsetZero() {
       node_->GetLayoutObject()->Style()->Visibility() !=
           EVisibility::kVisible ||
       (node_->GetLayoutObject()->IsLayoutBlockFlow() &&
-       !ToLayoutBlock(node_->GetLayoutObject())->Size().Height() &&
+       !To<LayoutBlock>(node_->GetLayoutObject())->Size().Height() &&
        !IsHTMLBodyElement(*node_)))
     return false;
 
@@ -997,40 +997,6 @@ int TextIteratorAlgorithm<Strategy>::RangeLength(
     const EphemeralRangeTemplate<Strategy>& range,
     const TextIteratorBehavior& behavior) {
   return RangeLength(range.StartPosition(), range.EndPosition(), behavior);
-}
-
-template <typename Strategy>
-bool TextIteratorAlgorithm<Strategy>::IsBetweenSurrogatePair(
-    unsigned position) const {
-  return position > 0 && position < static_cast<unsigned>(length()) &&
-         U16_IS_LEAD(CharacterAt(position - 1)) &&
-         U16_IS_TRAIL(CharacterAt(position));
-}
-
-template <typename Strategy>
-int TextIteratorAlgorithm<Strategy>::CopyTextTo(ForwardsTextBuffer* output,
-                                                int position,
-                                                int min_length) const {
-  unsigned end = std::min(length(), position + min_length);
-  if (IsBetweenSurrogatePair(end))
-    ++end;
-  unsigned copied_length = end - position;
-  CopyCodeUnitsTo(output, position, copied_length);
-  return copied_length;
-}
-
-template <typename Strategy>
-int TextIteratorAlgorithm<Strategy>::CopyTextTo(ForwardsTextBuffer* output,
-                                                int position) const {
-  return CopyTextTo(output, position, length() - position);
-}
-
-template <typename Strategy>
-void TextIteratorAlgorithm<Strategy>::CopyCodeUnitsTo(
-    ForwardsTextBuffer* output,
-    unsigned position,
-    unsigned copy_length) const {
-  text_state_.AppendTextTo(output, position, copy_length);
 }
 
 // --------

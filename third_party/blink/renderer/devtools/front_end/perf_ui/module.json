@@ -1,9 +1,19 @@
 {
     "extensions": [
         {
+            "type": "late-initialization",
+            "className": "PerfUI.LiveHeapProfile",
+            "experiment": "liveHeapProfile"
+        },
+        {
             "type": "@SourceFrame.LineDecorator",
             "className": "PerfUI.LineLevelProfile.LineDecorator",
             "decoratorType": "performance"
+        },
+        {
+            "type": "@SourceFrame.LineDecorator",
+            "className": "PerfUI.LineLevelProfile.LineDecorator",
+            "decoratorType": "memory"
         },
         {
             "type": "setting",
@@ -22,6 +32,25 @@
                     "title": "Zoom",
                     "text": "Zoom",
                     "value": "zoom"
+                }
+            ]
+        },
+        {
+            "type": "setting",
+            "category": "Memory",
+            "experiment": "liveHeapProfile",
+            "title": "Live memory allocation annotations",
+            "settingName": "memoryLiveHeapProfile",
+            "settingType": "boolean",
+            "defaultValue": false,
+            "options": [
+                {
+                    "value": true,
+                    "title": "Show live memory allocation annotations"
+                },
+                {
+                    "value": false,
+                    "title": "Hide live memory allocation annotations"
                 }
             ]
         },
@@ -46,6 +75,7 @@
         "FlameChart.js",
         "GCActionDelegate.js",
         "LineLevelProfile.js",
+        "LiveHeapProfile.js",
         "NetworkPriorities.js",
         "OverviewGrid.js",
         "PieChart.js",

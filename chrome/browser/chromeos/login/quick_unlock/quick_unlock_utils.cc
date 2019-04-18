@@ -4,9 +4,14 @@
 
 #include "chrome/browser/chromeos/login/quick_unlock/quick_unlock_utils.h"
 
+#include <string>
+#include <vector>
+
 #include "base/feature_list.h"
 #include "base/files/file_path.h"
 #include "base/no_destructor.h"
+#include "base/strings/string_split.h"
+#include "base/system/sys_info.h"
 #include "base/time/time.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chromeos/policy/browser_policy_connector_chromeos.h"
@@ -110,6 +115,17 @@ bool IsPinEnabled(PrefService* pref_service) {
   return base::FeatureList::IsEnabled(features::kQuickUnlockPin);
 }
 
+// Returns true if the fingerprint sensor is on the keyboard.
+// TODO(crbug.com/938738): Replace this disallowed board name reference
+// with a flag that's determined based on settings from chromeos-config.
+bool IsFingerprintReaderOnKeyboard() {
+  const std::vector<std::string> board =
+      base::SplitString(base::SysInfo::GetLsbReleaseBoard(), "-",
+                        base::TRIM_WHITESPACE, base::SPLIT_WANT_NONEMPTY);
+  const std::string board_name = board[0];
+  return board_name == "nami";
+}
+
 bool IsFingerprintEnabled(Profile* profile) {
   if (enable_for_testing_)
     return true;
@@ -135,8 +151,8 @@ bool IsFingerprintEnabled(Profile* profile) {
   return base::FeatureList::IsEnabled(features::kQuickUnlockFingerprint);
 }
 
-void EnableForTesting() {
-  enable_for_testing_ = true;
+void EnabledForTesting(bool state) {
+  enable_for_testing_ = state;
 }
 
 bool IsEnabledForTesting() {

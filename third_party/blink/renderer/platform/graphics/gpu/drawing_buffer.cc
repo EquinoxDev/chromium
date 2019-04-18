@@ -715,8 +715,8 @@ bool DrawingBuffer::Initialize(const IntSize& size, bool use_multisampling) {
         anti_aliasing_mode_ = gpu::kAntialiasingModeMSAAImplicitResolve;
       } else if (extensions_util_->SupportsExtension(
                      "GL_CHROMIUM_screen_space_antialiasing") &&
-                 !ContextProvider()->GetGpuFeatureInfo().IsWorkaroundEnabled(
-                     gpu::DISABLE_FRAMEBUFFER_CMAA)) {
+                 ContextProvider()->GetGpuFeatureInfo().IsWorkaroundEnabled(
+                     gpu::USE_FRAMEBUFFER_CMAA)) {
         anti_aliasing_mode_ = gpu::kAntialiasingModeScreenSpaceAntialiasing;
       }
     } else {
@@ -749,8 +749,16 @@ bool DrawingBuffer::Initialize(const IntSize& size, bool use_multisampling) {
 
   sample_count_ = std::min(
       static_cast<int>(webgl_preferences.msaa_sample_count), max_sample_count);
+  eqaa_storage_sample_count_ = webgl_preferences.eqaa_storage_sample_count;
+  if (ContextProvider()->GetGpuFeatureInfo().IsWorkaroundEnabled(
+          gpu::USE_EQAA_STORAGE_SAMPLES_2))
+    eqaa_storage_sample_count_ = 2;
+  if (extensions_util_->SupportsExtension(
+          "GL_AMD_framebuffer_multisample_advanced"))
+    has_eqaa_support = true;
 
   texture_target_ = GL_TEXTURE_2D;
+
 #if defined(OS_MACOSX)
   if (ShouldUseChromiumImage()) {
     // A CHROMIUM_image backed texture requires a specialized set of parameters
@@ -831,6 +839,7 @@ bool DrawingBuffer::Initialize(const IntSize& size, bool use_multisampling) {
 bool DrawingBuffer::CopyToPlatformTexture(gpu::gles2::GLES2Interface* dst_gl,
                                           GLenum dst_texture_target,
                                           GLuint dst_texture,
+                                          GLint dst_level,
                                           bool premultiply_alpha,
                                           bool flip_y,
                                           const IntPoint& dst_texture_offset,
@@ -891,7 +900,7 @@ bool DrawingBuffer::CopyToPlatformTexture(gpu::gles2::GLES2Interface* dst_gl,
   dst_gl->BeginSharedImageAccessDirectCHROMIUM(
       src_texture, GL_SHARED_IMAGE_ACCESS_MODE_READ_CHROMIUM);
   dst_gl->CopySubTextureCHROMIUM(
-      src_texture, 0, dst_texture_target, dst_texture, 0,
+      src_texture, 0, dst_texture_target, dst_texture, dst_level,
       dst_texture_offset.X(), dst_texture_offset.Y(), src_sub_rectangle.X(),
       src_sub_rectangle.Y(), src_sub_rectangle.Width(),
       src_sub_rectangle.Height(), flip_y, unpack_premultiply_alpha_needed,
@@ -915,6 +924,7 @@ cc::Layer* DrawingBuffer::CcLayer() {
     layer_ = cc::TextureLayer::CreateForMailbox(this);
 
     layer_->SetIsDrawable(true);
+    layer_->SetHitTestable(true);
     layer_->SetContentsOpaque(!want_alpha_channel_);
     layer_->SetBlendBackgroundColor(want_alpha_channel_);
     // If premultiplied_alpha_false_texture_ exists, then premultiplied_alpha_
@@ -1053,9 +1063,15 @@ bool DrawingBuffer::ResizeDefaultFramebuffer(const IntSize& size) {
       DCHECK(want_alpha_channel_);
       internal_format = GL_RGBA16F_EXT;
     }
-    gl_->RenderbufferStorageMultisampleCHROMIUM(GL_RENDERBUFFER, sample_count_,
-                                                internal_format, size.Width(),
-                                                size.Height());
+    if (has_eqaa_support) {
+      gl_->RenderbufferStorageMultisampleAdvancedAMD(
+          GL_RENDERBUFFER, sample_count_, eqaa_storage_sample_count_,
+          internal_format, size.Width(), size.Height());
+    } else {
+      gl_->RenderbufferStorageMultisampleCHROMIUM(
+          GL_RENDERBUFFER, sample_count_, internal_format, size.Width(),
+          size.Height());
+    }
 
     if (gl_->GetError() == GL_OUT_OF_MEMORY)
       return false;
@@ -1572,22 +1588,13 @@ bool DrawingBuffer::SetupRGBEmulationForBlitFramebuffer(
   GLuint rgb_texture = back_color_buffer_->rgb_workaround_texture_id;
   DCHECK_EQ(texture_target_, GC3D_TEXTURE_RECTANGLE_ARB);
   if (!rgb_texture) {
-    gpu::SharedImageInterface* sii = ContextProvider()->SharedImageInterface();
-    gpu::GpuMemoryBufferManager* gpu_memory_buffer_manager =
-        Platform::Current()->GetGpuMemoryBufferManager();
-    back_color_buffer_->rgb_workaround_mailbox = sii->CreateSharedImage(
-        back_color_buffer_->gpu_memory_buffer.get(), gpu_memory_buffer_manager,
-        storage_color_space_,
-        gpu::SHARED_IMAGE_USAGE_GLES2 |
-            gpu::SHARED_IMAGE_USAGE_GLES2_FRAMEBUFFER_HINT |
-            gpu::SHARED_IMAGE_USAGE_DISPLAY | gpu::SHARED_IMAGE_USAGE_SCANOUT |
-            gpu::SHARED_IMAGE_USAGE_RGB_EMULATION);
-    gl_->WaitSyncTokenCHROMIUM(sii->GenUnverifiedSyncToken().GetConstData());
-    rgb_texture = gl_->CreateAndTexStorage2DSharedImageCHROMIUM(
-        back_color_buffer_->rgb_workaround_mailbox.name);
+    rgb_texture =
+        gl_->CreateAndTexStorage2DSharedImageWithInternalFormatCHROMIUM(
+            back_color_buffer_->mailbox.name, GL_RGB);
     back_color_buffer_->rgb_workaround_texture_id = rgb_texture;
   }
 
+  gl_->EndSharedImageAccessDirectCHROMIUM(back_color_buffer_->texture_id);
   gl_->BeginSharedImageAccessDirectCHROMIUM(
       rgb_texture, GL_SHARED_IMAGE_ACCESS_MODE_READWRITE_CHROMIUM);
   gl_->FramebufferTexture2D(GL_DRAW_FRAMEBUFFER_ANGLE, GL_COLOR_ATTACHMENT0,
@@ -1602,6 +1609,9 @@ void DrawingBuffer::CleanupRGBEmulationForBlitFramebuffer() {
   DCHECK(back_color_buffer_->gpu_memory_buffer);
   gl_->EndSharedImageAccessDirectCHROMIUM(
       back_color_buffer_->rgb_workaround_texture_id);
+  gl_->BeginSharedImageAccessDirectCHROMIUM(
+      back_color_buffer_->texture_id,
+      GL_SHARED_IMAGE_ACCESS_MODE_READWRITE_CHROMIUM);
   gl_->FramebufferTexture2D(GL_DRAW_FRAMEBUFFER_ANGLE, GL_COLOR_ATTACHMENT0,
                             texture_target_, back_color_buffer_->texture_id, 0);
   // Clear the alpha channel.

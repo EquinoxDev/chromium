@@ -12,13 +12,13 @@
 #include "base/command_line.h"
 #include "base/feature_list.h"
 #include "base/macros.h"
+#include "base/one_shot_event.h"
 #include "base/stl_util.h"
 #include "base/values.h"
 #include "build/build_config.h"
 #include "chrome/browser/chromeos/arc/arc_util.h"
 #include "chrome/browser/chromeos/crostini/crostini_util.h"
 #include "chrome/browser/chromeos/file_manager/app_id.h"
-#include "chrome/browser/chromeos/plugin_vm/plugin_vm_util.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/app_list/app_list_client_impl.h"
@@ -36,7 +36,6 @@
 #include "chrome/browser/ui/app_list/internal_app/internal_app_model_builder.h"
 #include "chrome/browser/ui/app_list/page_break_app_item.h"
 #include "chrome/browser/ui/app_list/page_break_constants.h"
-#include "chrome/browser/ui/app_list/plugin_vm/plugin_vm_app_model_builder.h"
 #include "chrome/common/chrome_features.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/extensions/extension_constants.h"
@@ -51,7 +50,6 @@
 #include "extensions/browser/extension_system.h"
 #include "extensions/browser/uninstall_reason.h"
 #include "extensions/common/constants.h"
-#include "extensions/common/one_shot_event.h"
 #include "ui/base/l10n/l10n_util.h"
 
 using syncer::SyncChange;
@@ -294,8 +292,8 @@ AppListSyncableService::AppListSyncableService(
     BuildModel();
   } else {
     extension_system_->ready().Post(
-        FROM_HERE, base::Bind(&AppListSyncableService::BuildModel,
-                              weak_ptr_factory_.GetWeakPtr()));
+        FROM_HERE, base::BindOnce(&AppListSyncableService::BuildModel,
+                                  weak_ptr_factory_.GetWeakPtr()));
   }
 }
 
@@ -376,10 +374,6 @@ void AppListSyncableService::BuildModel() {
       crostini_apps_builder_ =
           std::make_unique<CrostiniAppModelBuilder>(controller);
     }
-    if (plugin_vm::IsPluginVmAllowedForProfile(profile_)) {
-      plugin_vm_apps_builder_ =
-          std::make_unique<PluginVmAppModelBuilder>(controller);
-    }
     internal_apps_builder_ =
         std::make_unique<InternalAppModelBuilder>(controller);
   }
@@ -395,12 +389,13 @@ void AppListSyncableService::BuildModel() {
       arc_apps_builder_->Initialize(this, profile_, model_updater_.get());
     if (crostini_apps_builder_.get())
       crostini_apps_builder_->Initialize(this, profile_, model_updater_.get());
-    if (plugin_vm_apps_builder_.get())
-      plugin_vm_apps_builder_->Initialize(this, profile_, model_updater_.get());
     internal_apps_builder_->Initialize(this, profile_, model_updater_.get());
   }
 
   HandleUpdateFinished();
+
+  if (wait_until_ready_to_sync_cb_)
+    std::move(wait_until_ready_to_sync_cb_).Run();
 }
 
 void AppListSyncableService::AddObserverAndStart(Observer* observer) {
@@ -787,6 +782,17 @@ void AppListSyncableService::InstallDefaultPageBreaksForTest() {
   InstallDefaultPageBreaks();
 }
 
+void AppListSyncableService::WaitUntilReadyToSync(base::OnceClosure done) {
+  DCHECK(!wait_until_ready_to_sync_cb_);
+
+  if (IsInitialized()) {
+    std::move(done).Run();
+  } else {
+    // Wait until initialization is completed in BuildModel();
+    wait_until_ready_to_sync_cb_ = std::move(done);
+  }
+}
+
 syncer::SyncMergeResult AppListSyncableService::MergeDataAndStartSyncing(
     syncer::ModelType type,
     const syncer::SyncDataList& initial_sync_data,
@@ -967,7 +973,6 @@ void AppListSyncableService::Shutdown() {
   crostini_apps_builder_.reset();
   arc_apps_builder_.reset();
   ext_apps_builder_.reset();
-  plugin_vm_apps_builder_.reset();
 }
 
 // AppListSyncableService private

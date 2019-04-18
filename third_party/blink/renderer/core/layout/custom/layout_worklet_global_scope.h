@@ -26,8 +26,7 @@ class CORE_EXPORT LayoutWorkletGlobalScope final : public WorkletGlobalScope {
       LocalFrame*,
       std::unique_ptr<GlobalScopeCreationParams>,
       WorkerReportingProxy&,
-      PendingLayoutRegistry*,
-      size_t global_scope_number);
+      PendingLayoutRegistry*);
 
   LayoutWorkletGlobalScope(LocalFrame*,
                            std::unique_ptr<GlobalScopeCreationParams>,
@@ -49,8 +48,7 @@ class CORE_EXPORT LayoutWorkletGlobalScope final : public WorkletGlobalScope {
 
  private:
   // https://drafts.css-houdini.org/css-layout-api/#layout-definitions
-  typedef HeapHashMap<String, TraceWrapperMember<CSSLayoutDefinition>>
-      DefinitionMap;
+  typedef HeapHashMap<String, Member<CSSLayoutDefinition>> DefinitionMap;
   DefinitionMap layout_definitions_;
   Member<PendingLayoutRegistry> pending_layout_registry_;
 };

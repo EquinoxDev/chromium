@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <map>
+#include <ostream>
 
 #include "base/bind.h"
 #include "base/strings/stringprintf.h"
@@ -24,6 +25,19 @@ using ::testing::IsEmpty;
 
 namespace autofill_assistant {
 
+// User-friendly RectF string representation for matchers.
+//
+// operator<< must not be in an anonymous namespace to be usable in all
+// matchers.
+std::string ToString(const RectF& rect) {
+  return base::StringPrintf("RectF(%2.2f, %2.2f, %2.2f, %2.2f)", rect.left,
+                            rect.top, rect.right, rect.bottom);
+}
+
+std::ostream& operator<<(std::ostream& out, const RectF& rectf) {
+  return out << ToString(rectf);
+}
+
 namespace {
 
 MATCHER_P4(MatchingRectF,
@@ -31,13 +45,21 @@ MATCHER_P4(MatchingRectF,
            top,
            right,
            bottom,
-           base::StringPrintf("MatchingRectF(%2.2f, %2.2f, %2.2f, %2.2f)",
-                              left,
-                              top,
-                              right,
-                              bottom)) {
-  return abs(left - arg.left) < 0.01 && abs(top - arg.top) < 0.01 &&
-         abs(right - arg.right) < 0.01 && abs(bottom - arg.bottom) < 0.01;
+           ToString(RectF{left, top, right, bottom})) {
+  if (abs(left - arg.left) < 0.01 && abs(top - arg.top) < 0.01 &&
+      abs(right - arg.right) < 0.01 && abs(bottom - arg.bottom) < 0.01) {
+    return true;
+  }
+  *result_listener << arg;
+  return false;
+}
+
+MATCHER(EmptyRectF, "EmptyRectF") {
+  if (arg.empty())
+    return true;
+
+  *result_listener << arg;
+  return false;
 }
 
 ACTION(DoNothing) {}
@@ -74,54 +96,52 @@ class ElementAreaTest : public testing::Test {
 };
 
 TEST_F(ElementAreaTest, Empty) {
-  EXPECT_TRUE(element_area_.IsEmpty());
   EXPECT_THAT(reported_area_, IsEmpty());
 
   std::vector<RectF> rectangles;
-  element_area_.GetArea(&rectangles);
+  element_area_.GetRectangles(&rectangles);
   EXPECT_THAT(rectangles, IsEmpty());
 }
 
 TEST_F(ElementAreaTest, ElementNotFound) {
   SetElement("#not_found");
-  EXPECT_TRUE(element_area_.IsEmpty());
-  EXPECT_THAT(reported_area_, IsEmpty());
+  EXPECT_THAT(reported_area_, ElementsAre(EmptyRectF()));
 
   std::vector<RectF> rectangles;
-  element_area_.GetArea(&rectangles);
-  EXPECT_THAT(rectangles, IsEmpty());
+  element_area_.GetRectangles(&rectangles);
+  EXPECT_THAT(rectangles, ElementsAre(EmptyRectF()));
 }
 
 TEST_F(ElementAreaTest, OneRectangle) {
   EXPECT_CALL(mock_web_controller_,
-              OnGetElementPosition(Eq(Selector({"#found"})), _))
+              OnGetElementPosition(Eq(Selector({"#found"}).MustBeVisible()), _))
       .WillOnce(RunOnceCallback<1>(true, RectF(0.25f, 0.25f, 0.75f, 0.75f)));
 
   SetElement("#found");
-  EXPECT_FALSE(element_area_.IsEmpty());
   std::vector<RectF> rectangles;
-  element_area_.GetArea(&rectangles);
+  element_area_.GetRectangles(&rectangles);
   EXPECT_THAT(rectangles,
               ElementsAre(MatchingRectF(0.25f, 0.25f, 0.75f, 0.75f)));
 }
 
 TEST_F(ElementAreaTest, CallOnUpdate) {
   EXPECT_CALL(mock_web_controller_,
-              OnGetElementPosition(Eq(Selector({"#found"})), _))
+              OnGetElementPosition(Eq(Selector({"#found"}).MustBeVisible()), _))
       .WillOnce(RunOnceCallback<1>(true, RectF(0.25f, 0.25f, 0.75f, 0.75f)));
 
   SetElement("#found");
-  EXPECT_FALSE(element_area_.IsEmpty());
   EXPECT_THAT(reported_area_,
               ElementsAre(MatchingRectF(0.25f, 0.25f, 0.75f, 0.75f)));
 }
 
 TEST_F(ElementAreaTest, TwoRectangles) {
-  EXPECT_CALL(mock_web_controller_,
-              OnGetElementPosition(Eq(Selector({"#top_left"})), _))
+  EXPECT_CALL(
+      mock_web_controller_,
+      OnGetElementPosition(Eq(Selector({"#top_left"}).MustBeVisible()), _))
       .WillOnce(RunOnceCallback<1>(true, RectF(0.0f, 0.0f, 0.25f, 0.25f)));
-  EXPECT_CALL(mock_web_controller_,
-              OnGetElementPosition(Eq(Selector({"#bottom_right"})), _))
+  EXPECT_CALL(
+      mock_web_controller_,
+      OnGetElementPosition(Eq(Selector({"#bottom_right"}).MustBeVisible()), _))
       .WillOnce(RunOnceCallback<1>(true, RectF(0.25f, 0.25f, 1.0f, 1.0f)));
 
   ElementAreaProto area_proto;
@@ -129,19 +149,20 @@ TEST_F(ElementAreaTest, TwoRectangles) {
   area_proto.add_rectangles()->add_elements()->add_selectors("#bottom_right");
   element_area_.SetFromProto(area_proto);
 
-  EXPECT_FALSE(element_area_.IsEmpty());
   std::vector<RectF> rectangles;
-  element_area_.GetArea(&rectangles);
+  element_area_.GetRectangles(&rectangles);
   EXPECT_THAT(rectangles, ElementsAre(MatchingRectF(0.0f, 0.0f, 0.25f, 0.25f),
                                       MatchingRectF(0.25f, 0.25f, 1.0f, 1.0f)));
 }
 
 TEST_F(ElementAreaTest, OneRectangleTwoElements) {
-  EXPECT_CALL(mock_web_controller_,
-              OnGetElementPosition(Eq(Selector({"#element1"})), _))
+  EXPECT_CALL(
+      mock_web_controller_,
+      OnGetElementPosition(Eq(Selector({"#element1"}).MustBeVisible()), _))
       .WillOnce(RunOnceCallback<1>(true, RectF(0.1f, 0.3f, 0.2f, 0.4f)));
-  EXPECT_CALL(mock_web_controller_,
-              OnGetElementPosition(Eq(Selector({"#element2"})), _))
+  EXPECT_CALL(
+      mock_web_controller_,
+      OnGetElementPosition(Eq(Selector({"#element2"}).MustBeVisible()), _))
       .WillOnce(RunOnceCallback<1>(true, RectF(0.5f, 0.2f, 0.6f, 0.5f)));
 
   ElementAreaProto area_proto;
@@ -150,21 +171,22 @@ TEST_F(ElementAreaTest, OneRectangleTwoElements) {
   rectangle_proto->add_elements()->add_selectors("#element2");
   element_area_.SetFromProto(area_proto);
 
-  EXPECT_FALSE(element_area_.IsEmpty());
   std::vector<RectF> rectangles;
-  element_area_.GetArea(&rectangles);
+  element_area_.GetRectangles(&rectangles);
   EXPECT_THAT(rectangles, ElementsAre(MatchingRectF(0.1f, 0.2f, 0.6f, 0.5f)));
 }
 
 TEST_F(ElementAreaTest, DoNotReportIncompleteRectangles) {
-  EXPECT_CALL(mock_web_controller_,
-              OnGetElementPosition(Eq(Selector({"#element1"})), _))
+  EXPECT_CALL(
+      mock_web_controller_,
+      OnGetElementPosition(Eq(Selector({"#element1"}).MustBeVisible()), _))
       .WillOnce(RunOnceCallback<1>(true, RectF(0.1f, 0.3f, 0.2f, 0.4f)));
 
   // Getting the position of #element2 neither succeeds nor fails, simulating an
   // intermediate state which shouldn't be reported to the callback.
-  EXPECT_CALL(mock_web_controller_,
-              OnGetElementPosition(Eq(Selector({"#element2"})), _))
+  EXPECT_CALL(
+      mock_web_controller_,
+      OnGetElementPosition(Eq(Selector({"#element2"}).MustBeVisible()), _))
       .WillOnce(DoNothing());  // overrides default action
 
   ElementAreaProto area_proto;
@@ -173,27 +195,29 @@ TEST_F(ElementAreaTest, DoNotReportIncompleteRectangles) {
   rectangle_proto->add_elements()->add_selectors("#element2");
   element_area_.SetFromProto(area_proto);
 
-  EXPECT_TRUE(element_area_.HasElements());
-  EXPECT_FALSE(element_area_.IsEmpty());
-  EXPECT_THAT(reported_area_, IsEmpty());
+  EXPECT_THAT(reported_area_, ElementsAre(EmptyRectF()));
 
   std::vector<RectF> rectangles;
-  element_area_.GetArea(&rectangles);
+  element_area_.GetRectangles(&rectangles);
   EXPECT_THAT(rectangles, ElementsAre(MatchingRectF(0.1f, 0.3f, 0.2f, 0.4f)));
 }
 
 TEST_F(ElementAreaTest, OneRectangleFourElements) {
-  EXPECT_CALL(mock_web_controller_,
-              OnGetElementPosition(Eq(Selector({"#element1"})), _))
+  EXPECT_CALL(
+      mock_web_controller_,
+      OnGetElementPosition(Eq(Selector({"#element1"}).MustBeVisible()), _))
       .WillOnce(RunOnceCallback<1>(true, RectF(0.0f, 0.0f, 0.1f, 0.1f)));
-  EXPECT_CALL(mock_web_controller_,
-              OnGetElementPosition(Eq(Selector({"#element2"})), _))
+  EXPECT_CALL(
+      mock_web_controller_,
+      OnGetElementPosition(Eq(Selector({"#element2"}).MustBeVisible()), _))
       .WillOnce(RunOnceCallback<1>(true, RectF(0.9f, 0.9f, 1.0f, 1.0f)));
-  EXPECT_CALL(mock_web_controller_,
-              OnGetElementPosition(Eq(Selector({"#element3"})), _))
+  EXPECT_CALL(
+      mock_web_controller_,
+      OnGetElementPosition(Eq(Selector({"#element3"}).MustBeVisible()), _))
       .WillOnce(RunOnceCallback<1>(true, RectF(0.0f, 0.9f, 0.1f, 1.0f)));
-  EXPECT_CALL(mock_web_controller_,
-              OnGetElementPosition(Eq(Selector({"#element4"})), _))
+  EXPECT_CALL(
+      mock_web_controller_,
+      OnGetElementPosition(Eq(Selector({"#element4"}).MustBeVisible()), _))
       .WillOnce(RunOnceCallback<1>(true, RectF(0.9f, 0.0f, 1.0f, 0.1f)));
 
   ElementAreaProto area_proto;
@@ -205,16 +229,18 @@ TEST_F(ElementAreaTest, OneRectangleFourElements) {
   element_area_.SetFromProto(area_proto);
 
   std::vector<RectF> rectangles;
-  element_area_.GetArea(&rectangles);
+  element_area_.GetRectangles(&rectangles);
   EXPECT_THAT(rectangles, ElementsAre(MatchingRectF(0.0f, 0.0f, 1.0f, 1.0f)));
 }
 
 TEST_F(ElementAreaTest, OneRectangleMissingElementsReported) {
-  EXPECT_CALL(mock_web_controller_,
-              OnGetElementPosition(Eq(Selector({"#element1"})), _))
+  EXPECT_CALL(
+      mock_web_controller_,
+      OnGetElementPosition(Eq(Selector({"#element1"}).MustBeVisible()), _))
       .WillOnce(RunOnceCallback<1>(true, RectF(0.1f, 0.1f, 0.2f, 0.2f)));
-  EXPECT_CALL(mock_web_controller_,
-              OnGetElementPosition(Eq(Selector({"#element2"})), _))
+  EXPECT_CALL(
+      mock_web_controller_,
+      OnGetElementPosition(Eq(Selector({"#element2"}).MustBeVisible()), _))
       .WillOnce(RunOnceCallback<1>(false, RectF()));
 
   ElementAreaProto area_proto;
@@ -224,7 +250,7 @@ TEST_F(ElementAreaTest, OneRectangleMissingElementsReported) {
   element_area_.SetFromProto(area_proto);
 
   std::vector<RectF> rectangles;
-  element_area_.GetArea(&rectangles);
+  element_area_.GetRectangles(&rectangles);
   EXPECT_THAT(rectangles, ElementsAre(MatchingRectF(0.1f, 0.1f, 0.2f, 0.2f)));
 
   EXPECT_THAT(reported_area_,
@@ -232,11 +258,13 @@ TEST_F(ElementAreaTest, OneRectangleMissingElementsReported) {
 }
 
 TEST_F(ElementAreaTest, FullWidthRectangle) {
-  EXPECT_CALL(mock_web_controller_,
-              OnGetElementPosition(Eq(Selector({"#element1"})), _))
+  EXPECT_CALL(
+      mock_web_controller_,
+      OnGetElementPosition(Eq(Selector({"#element1"}).MustBeVisible()), _))
       .WillOnce(RunOnceCallback<1>(true, RectF(0.1f, 0.3f, 0.2f, 0.4f)));
-  EXPECT_CALL(mock_web_controller_,
-              OnGetElementPosition(Eq(Selector({"#element2"})), _))
+  EXPECT_CALL(
+      mock_web_controller_,
+      OnGetElementPosition(Eq(Selector({"#element2"}).MustBeVisible()), _))
       .WillOnce(RunOnceCallback<1>(true, RectF(0.5f, 0.7f, 0.6f, 0.8f)));
 
   ElementAreaProto area_proto;
@@ -247,14 +275,15 @@ TEST_F(ElementAreaTest, FullWidthRectangle) {
   element_area_.SetFromProto(area_proto);
 
   std::vector<RectF> rectangles;
-  element_area_.GetArea(&rectangles);
+  element_area_.GetRectangles(&rectangles);
   EXPECT_THAT(rectangles, ElementsAre(MatchingRectF(0.0f, 0.3f, 1.0f, 0.8f)));
 }
 
 TEST_F(ElementAreaTest, ElementMovesAfterUpdate) {
   testing::InSequence seq;
-  EXPECT_CALL(mock_web_controller_,
-              OnGetElementPosition(Eq(Selector({"#element"})), _))
+  EXPECT_CALL(
+      mock_web_controller_,
+      OnGetElementPosition(Eq(Selector({"#element"}).MustBeVisible()), _))
       .WillOnce(RunOnceCallback<1>(true, RectF(0.0f, 0.25f, 1.0f, 0.5f)))
       .WillOnce(RunOnceCallback<1>(true, RectF(0.0f, 0.5f, 1.0f, 0.75f)));
 
@@ -267,7 +296,7 @@ TEST_F(ElementAreaTest, ElementMovesAfterUpdate) {
 
   // Updated area is available
   std::vector<RectF> rectangles;
-  element_area_.GetArea(&rectangles);
+  element_area_.GetRectangles(&rectangles);
   EXPECT_THAT(rectangles, ElementsAre(MatchingRectF(0.0f, 0.5f, 1.0f, 0.75f)));
 
   // Updated area is reported
@@ -277,8 +306,9 @@ TEST_F(ElementAreaTest, ElementMovesAfterUpdate) {
 
 TEST_F(ElementAreaTest, ElementMovesWithTime) {
   testing::InSequence seq;
-  EXPECT_CALL(mock_web_controller_,
-              OnGetElementPosition(Eq(Selector({"#element"})), _))
+  EXPECT_CALL(
+      mock_web_controller_,
+      OnGetElementPosition(Eq(Selector({"#element"}).MustBeVisible()), _))
       .WillOnce(RunOnceCallback<1>(true, RectF(0.0f, 0.25f, 1.0f, 0.5f)))
       .WillOnce(RunOnceCallback<1>(true, RectF(0.0f, 0.5f, 1.0f, 0.75f)));
 
@@ -292,7 +322,7 @@ TEST_F(ElementAreaTest, ElementMovesWithTime) {
 
   // Updated area is available
   std::vector<RectF> rectangles;
-  element_area_.GetArea(&rectangles);
+  element_area_.GetRectangles(&rectangles);
   EXPECT_THAT(rectangles, ElementsAre(MatchingRectF(0.0f, 0.5f, 1.0f, 0.75f)));
 
   // Updated area is reported

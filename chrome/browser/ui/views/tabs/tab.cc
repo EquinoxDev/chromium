@@ -23,12 +23,13 @@
 #include "cc/paint/paint_flags.h"
 #include "cc/paint/paint_recorder.h"
 #include "cc/paint/paint_shader.h"
-#include "chrome/browser/browser_features.h"
 #include "chrome/browser/themes/theme_properties.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/layout_constants.h"
 #include "chrome/browser/ui/tab_contents/core_tab_helper.h"
+#include "chrome/browser/ui/tabs/tab_style.h"
 #include "chrome/browser/ui/tabs/tab_utils.h"
+#include "chrome/browser/ui/ui_features.h"
 #include "chrome/browser/ui/view_ids.h"
 #include "chrome/browser/ui/views/chrome_layout_provider.h"
 #include "chrome/browser/ui/views/frame/browser_view.h"
@@ -39,7 +40,7 @@
 #include "chrome/browser/ui/views/tabs/tab_hover_card_bubble_view.h"
 #include "chrome/browser/ui/views/tabs/tab_icon.h"
 #include "chrome/browser/ui/views/tabs/tab_strip.h"
-#include "chrome/browser/ui/views/tabs/tab_style.h"
+#include "chrome/browser/ui/views/tabs/tab_style_views.h"
 #include "chrome/browser/ui/views/touch_uma/touch_uma.h"
 #include "chrome/common/chrome_features.h"
 #include "chrome/grit/generated_resources.h"
@@ -69,7 +70,7 @@
 #include "ui/views/controls/button/image_button.h"
 #include "ui/views/controls/label.h"
 #include "ui/views/rect_based_targeting_utils.h"
-#include "ui/views/view_properties.h"
+#include "ui/views/view_class_properties.h"
 #include "ui/views/view_targeter.h"
 #include "ui/views/widget/tooltip_manager.h"
 #include "ui/views/widget/widget.h"
@@ -121,7 +122,7 @@ Tab::Tab(TabController* controller)
       title_animation_(this) {
   DCHECK(controller);
 
-  tab_style_ = TabStyle::CreateForTab(this);
+  tab_style_ = TabStyleViews::CreateForTab(this);
 
   // So we get don't get enter/exit on children and don't prematurely stop the
   // hover.
@@ -197,9 +198,9 @@ void Tab::ButtonPressed(views::Button* sender, const ui::Event& event) {
     TouchUMA::RecordGestureAction(TouchUMA::kGestureTabCloseTap);
 }
 
-void Tab::ShowContextMenuForView(views::View* source,
-                                 const gfx::Point& point,
-                                 ui::MenuSourceType source_type) {
+void Tab::ShowContextMenuForViewImpl(views::View* source,
+                                     const gfx::Point& point,
+                                     ui::MenuSourceType source_type) {
   if (!closing_)
     controller_->ShowContextMenuForTab(this, point, source_type);
 }
@@ -373,7 +374,7 @@ void Tab::OnBoundsChanged(const gfx::Rect& previous_bounds) {
 bool Tab::OnKeyPressed(const ui::KeyEvent& event) {
   controller_->UpdateHoverCard(this, false);
   if (event.key_code() == ui::VKEY_SPACE && !IsSelected()) {
-    controller_->SelectTab(this);
+    controller_->SelectTab(this, event);
     return true;
   }
 
@@ -416,11 +417,11 @@ bool Tab::OnMousePressed(const ui::MouseEvent& event) {
           return false;
         }
       } else if (!IsSelected()) {
-        controller_->SelectTab(this);
+        controller_->SelectTab(this, event);
         base::RecordAction(UserMetricsAction("SwitchTab_Click"));
       }
     } else if (!IsSelected()) {
-      controller_->SelectTab(this);
+      controller_->SelectTab(this, event);
       base::RecordAction(UserMetricsAction("SwitchTab_Click"));
     }
     ui::MouseEvent cloned_event(event_in_parent, parent(),
@@ -468,7 +469,7 @@ void Tab::OnMouseReleased(const ui::MouseEvent& event) {
     // If the tab was already selected mouse pressed doesn't change the
     // selection. Reset it now to handle the case where multiple tabs were
     // selected.
-    controller_->SelectTab(this);
+    controller_->SelectTab(this, event);
   }
 }
 
@@ -483,7 +484,7 @@ void Tab::OnMouseMoved(const ui::MouseEvent& event) {
 
 void Tab::OnMouseEntered(const ui::MouseEvent& event) {
   mouse_hovered_ = true;
-  tab_style_->ShowHover(GlowHoverController::ShowStyle::kSubtle);
+  tab_style_->ShowHover(TabStyle::ShowHoverStyle::kSubtle);
   UpdateForegroundColors();
   Layout();
   controller_->UpdateHoverCard(this, true);
@@ -491,7 +492,7 @@ void Tab::OnMouseEntered(const ui::MouseEvent& event) {
 
 void Tab::OnMouseExited(const ui::MouseEvent& event) {
   mouse_hovered_ = false;
-  tab_style_->HideHover(GlowHoverController::HideStyle::kGradual);
+  tab_style_->HideHover(TabStyle::HideHoverStyle::kGradual);
   UpdateForegroundColors();
   Layout();
 }
@@ -510,7 +511,7 @@ void Tab::OnGestureEvent(ui::GestureEvent* event) {
       original_selection = controller_->GetSelectionModel();
       tab_activated_with_last_tap_down_ = !IsActive();
       if (!IsSelected())
-        controller_->SelectTab(this);
+        controller_->SelectTab(this, *event);
       gfx::Point loc(event->location());
       views::View::ConvertPointToScreen(this, &loc);
       ui::GestureEvent cloned_event(event_in_parent, parent(),
@@ -533,22 +534,16 @@ void Tab::OnGestureEvent(ui::GestureEvent* event) {
   event->SetHandled();
 }
 
-bool Tab::GetTooltipText(const gfx::Point& p, base::string16* tooltip) const {
+base::string16 Tab::GetTooltipText(const gfx::Point& p) const {
   // TODO(corising): Make sure that accessibility is solved properly for hover
   // cards.
   // Tab hover cards replace tooltips.
   if (base::FeatureList::IsEnabled(features::kTabHoverCards))
-    return false;
+    return base::string16();
+
   // Note: Anything that affects the tooltip text should be accounted for when
   // calling TooltipTextChanged() from Tab::SetData().
-  *tooltip = GetTooltipText(data_.title, data_.alert_state);
-  return !tooltip->empty();
-}
-
-bool Tab::GetTooltipTextOrigin(const gfx::Point& p, gfx::Point* origin) const {
-  origin->set_x(title_->x() + 10);
-  origin->set_y(-4);
-  return true;
+  return GetTooltipText(data_.title, data_.alert_state);
 }
 
 void Tab::GetAccessibleNodeData(ui::AXNodeData* node_data) {
@@ -636,6 +631,7 @@ SkColor Tab::GetAlertIndicatorColor(TabAlertState state) const {
       return theme_provider->GetColor(ThemeProperties::COLOR_TAB_PIP_PLAYING);
     case TabAlertState::BLUETOOTH_CONNECTED:
     case TabAlertState::USB_CONNECTED:
+    case TabAlertState::SERIAL_CONNECTED:
     case TabAlertState::NONE:
     case TabAlertState::VR_PRESENTING_IN_HEADSET:
       return button_color_;
@@ -699,10 +695,8 @@ void Tab::SetData(TabRendererData data) {
   if (old.pinned != data_.pinned)
     showing_alert_indicator_ = false;
 
-  if (data_.alert_state != old.alert_state || data_.title != old.title) {
+  if (data_.alert_state != old.alert_state || data_.title != old.title)
     TooltipTextChanged();
-    controller_->UpdateHoverCard(this, mouse_hovered_);
-  }
 
   Layout();
   SchedulePaint();
@@ -761,6 +755,10 @@ base::string16 Tab::GetTooltipText(const base::string16& title,
     case TabAlertState::USB_CONNECTED:
       result.append(
           l10n_util::GetStringUTF16(IDS_TOOLTIP_TAB_ALERT_STATE_USB_CONNECTED));
+      break;
+    case TabAlertState::SERIAL_CONNECTED:
+      result.append(l10n_util::GetStringUTF16(
+          IDS_TOOLTIP_TAB_ALERT_STATE_SERIAL_CONNECTED));
       break;
     case TabAlertState::PIP_PLAYING:
       result.append(

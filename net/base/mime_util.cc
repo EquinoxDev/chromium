@@ -235,7 +235,7 @@ static const char* FindMimeType(const MimeInfo (&mappings)[num_mappings],
       extensions += 1;  // skip over comma
     }
   }
-  return NULL;
+  return nullptr;
 }
 
 static base::FilePath::StringType StringToFilePathStringType(
@@ -261,7 +261,8 @@ static bool FindPreferredExtension(const MimeInfo (&mappings)[num_mappings],
     if (mapping.mime_type == mime_type) {
       const char* extensions = mapping.extensions;
       const char* extension_end = strchr(extensions, ',');
-      int len = extension_end ? extension_end - extensions : strlen(extensions);
+      size_t len =
+          extension_end ? extension_end - extensions : strlen(extensions);
       *result = StringToFilePathStringType(base::StringPiece(extensions, len));
       return true;
     }
@@ -302,6 +303,9 @@ bool MimeUtil::GetMimeTypeFromExtensionHelper(
     const base::FilePath::StringType& ext,
     bool include_platform_types,
     string* result) const {
+  DCHECK(ext.empty() || ext[0] != '.')
+      << "extension passed in must not include leading dot";
+
   // Avoids crash when unable to handle a long file path. See crbug.com/48733.
   const unsigned kMaxFilePathSize = 65536;
   if (ext.length() > kMaxFilePathSize)

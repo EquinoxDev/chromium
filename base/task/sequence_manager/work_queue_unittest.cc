@@ -54,7 +54,8 @@ class WorkQueueTest : public testing::Test {
     work_queue_.reset(new WorkQueue(task_queue_.get(), "test",
                                     WorkQueue::QueueType::kImmediate));
     mock_observer_.reset(new MockObserver);
-    work_queue_sets_.reset(new WorkQueueSets("test", mock_observer_.get()));
+    work_queue_sets_.reset(new WorkQueueSets("test", mock_observer_.get(),
+                                             SequenceManager::Settings()));
     work_queue_sets_->AddQueue(work_queue_.get(), 0);
   }
 
@@ -158,11 +159,69 @@ TEST_F(WorkQueueTest, Push) {
   EXPECT_EQ(work_queue_.get(), work_queue_sets_->GetOldestQueueInSet(0));
 }
 
+TEST_F(WorkQueueTest, PushMultiple) {
+  EXPECT_EQ(nullptr, work_queue_sets_->GetOldestQueueInSet(0));
+
+  work_queue_->Push(FakeTaskWithEnqueueOrder(2));
+  work_queue_->Push(FakeTaskWithEnqueueOrder(3));
+  work_queue_->Push(FakeTaskWithEnqueueOrder(4));
+  EXPECT_EQ(work_queue_.get(), work_queue_sets_->GetOldestQueueInSet(0));
+  EXPECT_EQ(2ull, work_queue_->GetFrontTask()->enqueue_order());
+  EXPECT_EQ(4ull, work_queue_->GetBackTask()->enqueue_order());
+}
+
 TEST_F(WorkQueueTest, PushAfterFenceHit) {
   work_queue_->InsertFence(EnqueueOrder::blocking_fence());
   EXPECT_EQ(nullptr, work_queue_sets_->GetOldestQueueInSet(0));
 
   work_queue_->Push(FakeTaskWithEnqueueOrder(2));
+  EXPECT_EQ(nullptr, work_queue_sets_->GetOldestQueueInSet(0));
+}
+
+TEST_F(WorkQueueTest, CreateTaskPusherNothingPushed) {
+  EXPECT_EQ(nullptr, work_queue_sets_->GetOldestQueueInSet(0));
+  { WorkQueue::TaskPusher task_pusher(work_queue_->CreateTaskPusher()); }
+  EXPECT_EQ(nullptr, work_queue_sets_->GetOldestQueueInSet(0));
+}
+
+TEST_F(WorkQueueTest, CreateTaskPusherOneTask) {
+  EXPECT_EQ(nullptr, work_queue_sets_->GetOldestQueueInSet(0));
+  {
+    WorkQueue::TaskPusher task_pusher(work_queue_->CreateTaskPusher());
+    Task task = FakeTaskWithEnqueueOrder(2);
+    task_pusher.Push(&task);
+  }
+  EXPECT_EQ(work_queue_.get(), work_queue_sets_->GetOldestQueueInSet(0));
+}
+
+TEST_F(WorkQueueTest, CreateTaskPusherThreeTasks) {
+  EXPECT_EQ(nullptr, work_queue_sets_->GetOldestQueueInSet(0));
+  {
+    WorkQueue::TaskPusher task_pusher(work_queue_->CreateTaskPusher());
+    Task task1 = FakeTaskWithEnqueueOrder(2);
+    Task task2 = FakeTaskWithEnqueueOrder(3);
+    Task task3 = FakeTaskWithEnqueueOrder(4);
+    task_pusher.Push(&task1);
+    task_pusher.Push(&task2);
+    task_pusher.Push(&task3);
+  }
+  EXPECT_EQ(work_queue_.get(), work_queue_sets_->GetOldestQueueInSet(0));
+  EXPECT_EQ(2ull, work_queue_->GetFrontTask()->enqueue_order());
+  EXPECT_EQ(4ull, work_queue_->GetBackTask()->enqueue_order());
+}
+
+TEST_F(WorkQueueTest, CreateTaskPusherAfterFenceHit) {
+  work_queue_->InsertFence(EnqueueOrder::blocking_fence());
+  EXPECT_EQ(nullptr, work_queue_sets_->GetOldestQueueInSet(0));
+  {
+    WorkQueue::TaskPusher task_pusher(work_queue_->CreateTaskPusher());
+    Task task1 = FakeTaskWithEnqueueOrder(2);
+    Task task2 = FakeTaskWithEnqueueOrder(3);
+    Task task3 = FakeTaskWithEnqueueOrder(4);
+    task_pusher.Push(&task1);
+    task_pusher.Push(&task2);
+    task_pusher.Push(&task3);
+  }
   EXPECT_EQ(nullptr, work_queue_sets_->GetOldestQueueInSet(0));
 }
 
@@ -469,6 +528,27 @@ TEST_F(WorkQueueTest, RemoveAllCanceledTasksFromFrontTasksNotCanceled) {
     EXPECT_TRUE(work_queue_->GetFrontTaskEnqueueOrder(&enqueue_order));
     EXPECT_EQ(2ull, enqueue_order);
   }
+}
+
+TEST_F(WorkQueueTest, RemoveAllCanceledTasksFromFrontQueueBlockedByFence) {
+  {
+    Cancelable cancelable;
+    work_queue_->Push(FakeCancelableTaskWithEnqueueOrder(
+        2, cancelable.weak_ptr_factory.GetWeakPtr()));
+    work_queue_->Push(FakeCancelableTaskWithEnqueueOrder(
+        3, cancelable.weak_ptr_factory.GetWeakPtr()));
+    work_queue_->Push(FakeCancelableTaskWithEnqueueOrder(
+        4, cancelable.weak_ptr_factory.GetWeakPtr()));
+    work_queue_->Push(FakeTaskWithEnqueueOrder(5));
+  }
+
+  EXPECT_FALSE(work_queue_->InsertFence(EnqueueOrder::blocking_fence()));
+  EXPECT_TRUE(work_queue_->BlockedByFence());
+
+  EXPECT_TRUE(work_queue_->RemoveAllCanceledTasksFromFront());
+
+  EnqueueOrder enqueue_order;
+  EXPECT_FALSE(work_queue_->GetFrontTaskEnqueueOrder(&enqueue_order));
 }
 
 }  // namespace internal

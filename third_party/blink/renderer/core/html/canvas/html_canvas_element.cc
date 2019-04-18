@@ -71,7 +71,6 @@
 #include "third_party/blink/renderer/core/layout/hit_test_canvas_result.h"
 #include "third_party/blink/renderer/core/layout/layout_html_canvas.h"
 #include "third_party/blink/renderer/core/layout/layout_view.h"
-#include "third_party/blink/renderer/core/origin_trials/origin_trials.h"
 #include "third_party/blink/renderer/core/page/chrome_client.h"
 #include "third_party/blink/renderer/core/paint/compositing/paint_layer_compositor.h"
 #include "third_party/blink/renderer/core/paint/paint_layer.h"
@@ -158,6 +157,9 @@ void HTMLCanvasElement::Dispose() {
   if (PlaceholderFrame())
     ReleasePlaceholderFrame();
 
+  // We need to drop frame dispatcher, to prevent mojo calls from completing.
+  frame_dispatcher_ = nullptr;
+
   if (context_) {
     context_->DetachHost();
     context_ = nullptr;
@@ -182,12 +184,12 @@ void HTMLCanvasElement::ParseAttribute(
   HTMLElement::ParseAttribute(params);
 }
 
-LayoutObject* HTMLCanvasElement::CreateLayoutObject(
-    const ComputedStyle& style) {
+LayoutObject* HTMLCanvasElement::CreateLayoutObject(const ComputedStyle& style,
+                                                    LegacyLayout legacy) {
   LocalFrame* frame = GetDocument().GetFrame();
   if (frame && GetDocument().CanExecuteScripts(kNotAboutToExecuteScript))
     return new LayoutHTMLCanvas(this);
-  return HTMLElement::CreateLayoutObject(style);
+  return HTMLElement::CreateLayoutObject(style, legacy);
 }
 
 Node::InsertionNotificationRequest HTMLCanvasElement::InsertedInto(
@@ -270,7 +272,7 @@ CanvasRenderingContext* HTMLCanvasElement::GetCanvasRenderingContextInternal(
   // Unknown type.
   if (context_type == CanvasRenderingContext::kContextTypeUnknown ||
       (context_type == CanvasRenderingContext::kContextXRPresent &&
-       !origin_trials::WebXREnabled(&GetDocument()))) {
+       !RuntimeEnabledFeatures::WebXREnabled(&GetDocument()))) {
     return nullptr;
   }
 
@@ -306,7 +308,7 @@ CanvasRenderingContext* HTMLCanvasElement::GetCanvasRenderingContextInternal(
 
   context_creation_was_blocked_ = false;
 
-  probe::didCreateCanvasContext(&GetDocument());
+  probe::DidCreateCanvasContext(&GetDocument());
 
   if (Is3d())
     UpdateMemoryUsage();
@@ -318,8 +320,7 @@ CanvasRenderingContext* HTMLCanvasElement::GetCanvasRenderingContextInternal(
     DidDraw();
   }
 
-  if (context_->CreationAttributes().low_latency &&
-      origin_trials::LowLatencyCanvasEnabled(&GetDocument())) {
+  if (context_->CreationAttributes().desynchronized) {
     CreateLayer();
     SetNeedsUnbufferedInputEvents(true);
     frame_dispatcher_ = std::make_unique<CanvasResourceDispatcher>(
@@ -330,8 +331,7 @@ CanvasRenderingContext* HTMLCanvasElement::GetCanvasRenderingContextInternal(
     // but we need to subscribe to it or else dispatching frames will not work.
     frame_dispatcher_->SetNeedsBeginFrame(GetPage()->IsPageVisible());
 
-    UseCounter::Count(GetDocument().GetFrame(),
-                      WebFeature::kHTMLCanvasElementLowLatency);
+    UseCounter::Count(GetDocument(), WebFeature::kHTMLCanvasElementLowLatency);
   }
 
   SetNeedsCompositingUpdate();
@@ -446,7 +446,7 @@ void HTMLCanvasElement::FinalizeFrame() {
 
       const base::TimeTicks start_time = WTF::CurrentTimeTicks();
       const scoped_refptr<CanvasResource> canvas_resource =
-          ResourceProvider()->ProduceFrame();
+          ResourceProvider()->ProduceCanvasResource();
       const FloatRect src_rect(0, 0, Size().Width(), Size().Height());
       dirty_rect_.Intersect(src_rect);
       const IntRect int_dirty = EnclosingIntRect(dirty_rect_);
@@ -795,8 +795,12 @@ scoped_refptr<StaticBitmapImage> HTMLCanvasElement::Snapshot(
     AccelerationHint hint) const {
   if (size_.IsEmpty())
     return nullptr;
+
   scoped_refptr<StaticBitmapImage> image_bitmap = nullptr;
-  if (Is3d()) {
+  if (PlaceholderFrame()) {  // Offscreen Canvas
+    DCHECK(PlaceholderFrame()->OriginClean());
+    image_bitmap = PlaceholderFrame()->Bitmap();
+  } else if (Is3d()) {  // WebGL or WebGL2 canvas
     if (context_->CreationAttributes().premultiplied_alpha) {
       context_->PaintRenderingResultsToCanvas(source_buffer);
       if (ResourceProvider())
@@ -818,15 +822,13 @@ scoped_refptr<StaticBitmapImage> HTMLCanvasElement::Snapshot(
         image_bitmap = StaticBitmapImage::Create(std::move(data_array), info);
       }
     }
-  } else if (context_ || PlaceholderFrame()) {
-    DCHECK(Is2d() || PlaceholderFrame());
-    if (canvas2d_bridge_) {
-      image_bitmap = canvas2d_bridge_->NewImageSnapshot(hint);
-    } else if (PlaceholderFrame()) {
-      DCHECK(PlaceholderFrame()->OriginClean());
-      image_bitmap = PlaceholderFrame()->Bitmap();
-    }
+  } else if (canvas2d_bridge_) {  // 2D Canvas
+    DCHECK(Is2d());
+    image_bitmap = canvas2d_bridge_->NewImageSnapshot(hint);
+  } else if (context_) {  // Bitmap renderer canvas
+    image_bitmap = context_->GetImage(hint);
   }
+
   if (!image_bitmap)
     image_bitmap = CreateTransparentImage(size_);
   return image_bitmap;
@@ -1420,7 +1422,7 @@ HitTestCanvasResult* HTMLCanvasElement::GetControlAndIdIfHitRegionExists(
     const LayoutPoint& location) {
   if (Is2d())
     return context_->GetControlAndIdIfHitRegionExists(location);
-  return HitTestCanvasResult::Create(String(), nullptr);
+  return MakeGarbageCollected<HitTestCanvasResult>(String(), nullptr);
 }
 
 String HTMLCanvasElement::GetIdFromControl(const Element* element) {

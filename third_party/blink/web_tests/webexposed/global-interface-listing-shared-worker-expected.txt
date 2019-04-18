@@ -43,6 +43,7 @@ Starting worker: resources/global-interface-listing-worker.js
 [Worker]     method matchAll
 [Worker]     setter onprogress
 [Worker] interface BarcodeDetector
+[Worker]     static method getSupportedFormats
 [Worker]     attribute @@toStringTag
 [Worker]     method constructor
 [Worker]     method detect
@@ -774,6 +775,7 @@ Starting worker: resources/global-interface-listing-worker.js
 [Worker]     getter onshow
 [Worker]     getter renotify
 [Worker]     getter requireInteraction
+[Worker]     getter showTrigger
 [Worker]     getter silent
 [Worker]     getter tag
 [Worker]     getter timestamp
@@ -1159,6 +1161,10 @@ Starting worker: resources/global-interface-listing-worker.js
 [Worker]     getter readable
 [Worker]     getter writable
 [Worker]     method constructor
+[Worker] interface TimestampTrigger
+[Worker]     attribute @@toStringTag
+[Worker]     getter timestamp
+[Worker]     method constructor
 [Worker] interface TransformStream
 [Worker]     attribute @@toStringTag
 [Worker]     getter readable
@@ -1223,6 +1229,7 @@ Starting worker: resources/global-interface-listing-worker.js
 [Worker]     attribute ACTIVE_VARIABLES
 [Worker]     attribute ALIASED_LINE_WIDTH_RANGE
 [Worker]     attribute ALIASED_POINT_SIZE_RANGE
+[Worker]     attribute ALL_BARRIER_BITS
 [Worker]     attribute ALPHA
 [Worker]     attribute ALPHA_BITS
 [Worker]     attribute ALREADY_SIGNALED
@@ -3454,7 +3461,6 @@ Starting worker: resources/global-interface-listing-worker.js
 [Worker]     getter connection
 [Worker]     getter deviceMemory
 [Worker]     getter hardwareConcurrency
-[Worker]     getter idle
 [Worker]     getter language
 [Worker]     getter languages
 [Worker]     getter locks

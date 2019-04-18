@@ -628,7 +628,7 @@ bool ChromePasswordProtectionService::IsPingingEnabled(
 
 bool ChromePasswordProtectionService::IsHistorySyncEnabled() {
   syncer::SyncService* sync =
-      ProfileSyncServiceFactory::GetSyncServiceForProfile(profile_);
+      ProfileSyncServiceFactory::GetForProfile(profile_);
   return sync && sync->IsSyncFeatureActive() && !sync->IsLocalSyncEnabled() &&
          sync->GetActiveDataTypes().Has(syncer::HISTORY_DELETE_DIRECTIVES);
 }
@@ -713,7 +713,6 @@ ChromePasswordProtectionService::GetSyncAccountType() const {
              ? PasswordReuseEvent::GMAIL
              : PasswordReuseEvent::GSUITE;
 }
-
 
 void ChromePasswordProtectionService::MaybeLogPasswordReuseLookupResult(
     content::WebContents* web_contents,
@@ -977,8 +976,14 @@ AccountInfo ChromePasswordProtectionService::GetAccountInfo() const {
   auto* identity_manager = IdentityManagerFactory::GetForProfileIfExists(
       profile_->GetOriginalProfile());
 
-  return identity_manager ? identity_manager->GetPrimaryAccountInfo()
-                          : AccountInfo();
+  if (!identity_manager)
+    return AccountInfo();
+
+  base::Optional<AccountInfo> primary_account_info =
+      identity_manager->FindExtendedAccountInfoForAccount(
+          identity_manager->GetPrimaryAccountInfo());
+
+  return primary_account_info.value_or(AccountInfo());
 }
 
 GURL ChromePasswordProtectionService::GetEnterpriseChangePasswordURL() const {
@@ -1219,7 +1224,10 @@ base::string16 ChromePasswordProtectionService::GetWarningDetailText(
 
   if (GetSyncAccountType() !=
       safe_browsing::LoginReputationClientRequest::PasswordReuseEvent::GSUITE) {
-    return l10n_util::GetStringUTF16(IDS_PAGE_INFO_CHANGE_PASSWORD_DETAILS);
+    return l10n_util::GetStringUTF16(
+        GetSyncAccountType() == PasswordReuseEvent::NOT_SIGNED_IN
+            ? IDS_PAGE_INFO_CHANGE_PASSWORD_DETAILS_SIGNED_IN_NON_SYNC
+            : IDS_PAGE_INFO_CHANGE_PASSWORD_DETAILS_SYNC);
   }
 
   std::string org_name = GetOrganizationName(password_type);

@@ -160,7 +160,7 @@ void RangeInputType::HandleMouseDownEvent(MouseEvent& event) {
 
   Node* target_node = event.target()->ToNode();
   if (event.button() !=
-          static_cast<short>(WebPointerProperties::Button::kLeft) ||
+          static_cast<int16_t>(WebPointerProperties::Button::kLeft) ||
       !target_node)
     return;
   DCHECK(IsShadowHost(GetElement()));
@@ -228,7 +228,8 @@ void RangeInputType::HandleKeydownEvent(KeyboardEvent& event) {
 
   if (new_value != current) {
     EventQueueScope scope;
-    TextFieldEventBehavior event_behavior = kDispatchInputAndChangeEvent;
+    TextFieldEventBehavior event_behavior =
+        TextFieldEventBehavior::kDispatchInputAndChangeEvent;
     SetValueAsDecimal(new_value, event_behavior, IGNORE_EXCEPTION_FOR_TESTING);
 
     if (AXObjectCache* cache =
@@ -252,7 +253,8 @@ void RangeInputType::CreateShadowSubtree() {
   GetElement().UserAgentShadowRoot()->AppendChild(container);
 }
 
-LayoutObject* RangeInputType::CreateLayoutObject(const ComputedStyle&) const {
+LayoutObject* RangeInputType::CreateLayoutObject(const ComputedStyle&,
+                                                 LegacyLayout) const {
   return new LayoutSlider(&GetElement());
 }
 

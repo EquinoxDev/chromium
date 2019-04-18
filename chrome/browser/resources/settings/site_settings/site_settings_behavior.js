@@ -195,13 +195,11 @@ const SiteSettingsBehaviorImpl = {
     addOrRemoveSettingWithFlag(
         settings.ContentSettingsTypes.SENSORS, 'enableSensorsContentSetting');
     addOrRemoveSettingWithFlag(
+        settings.ContentSettingsTypes.SERIAL_PORTS,
+        'enableExperimentalWebPlatformFeatures');
+    addOrRemoveSettingWithFlag(
         settings.ContentSettingsTypes.ADS,
         'enableSafeBrowsingSubresourceFilter');
-    addOrRemoveSettingWithFlag(
-        settings.ContentSettingsTypes.SOUND, 'enableSoundContentSetting');
-    addOrRemoveSettingWithFlag(
-        settings.ContentSettingsTypes.CLIPBOARD,
-        'enableClipboardContentSetting');
     addOrRemoveSettingWithFlag(
         settings.ContentSettingsTypes.PAYMENT_HANDLER,
         'enablePaymentHandlerContentSetting');

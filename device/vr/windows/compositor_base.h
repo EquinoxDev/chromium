@@ -10,6 +10,8 @@
 #include "base/time/time.h"
 #include "build/build_config.h"
 #include "device/vr/public/mojom/vr_service.mojom.h"
+#include "device/vr/util/fps_meter.h"
+#include "device/vr/util/sliding_average.h"
 #include "device/vr/vr_device.h"
 #include "mojo/public/cpp/bindings/binding.h"
 #include "mojo/public/cpp/system/platform_handle.h"
@@ -119,6 +121,8 @@ class XRCompositorCommon : public base::Thread,
   void RequestNextOverlayPose(RequestNextOverlayPoseCallback callback) override;
   void SetOverlayAndWebXRVisibility(bool overlay_visible,
                                     bool webxr_visible) override;
+  void RequestNotificationOnWebXrSubmitted(
+      RequestNotificationOnWebXrSubmittedCallback callback) override;
 
   struct OutstandingFrame {
     OutstandingFrame();
@@ -130,14 +134,22 @@ class XRCompositorCommon : public base::Thread,
     bool waiting_for_webxr_ = false;
     bool waiting_for_overlay_ = false;
     mojom::XRFrameDataPtr frame_data_;
+
+    base::TimeTicks sent_frame_data_time_;
+    base::TimeTicks submit_frame_time_;
+    base::TimeTicks frame_ready_time_;
   };
+
+  FPSMeter fps_meter_;
+  SlidingTimeDeltaAverage webxr_js_time_;
+  SlidingTimeDeltaAverage webxr_gpu_time_;
+
   base::Optional<OutstandingFrame> pending_frame_;
 
   bool is_presenting_ = false;  // True if we have a presenting session.
   bool webxr_visible_ = true;   // The browser may hide a presenting session.
   bool overlay_visible_ = false;
   base::OnceCallback<void()> delayed_get_frame_data_callback_;
-  base::OnceCallback<void()> delayed_overlay_get_frame_data_callback_;
 
   gfx::RectF left_webxr_bounds_;
   gfx::RectF right_webxr_bounds_;
@@ -145,6 +157,8 @@ class XRCompositorCommon : public base::Thread,
 
   mojom::XRPresentationClientPtr submit_client_;
   SubmitOverlayTextureCallback overlay_submit_callback_;
+  RequestNotificationOnWebXrSubmittedCallback on_webxr_submitted_;
+  bool webxr_has_pose_ = false;
   base::OnceCallback<void()> on_presentation_ended_;
   mojom::IsolatedXRGamepadProvider::RequestUpdateCallback gamepad_callback_;
   mojo::Binding<mojom::XRPresentationProvider> presentation_binding_;

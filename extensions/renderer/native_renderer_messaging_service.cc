@@ -19,6 +19,7 @@
 #include "extensions/renderer/api_activity_logger.h"
 #include "extensions/renderer/bindings/api_binding_util.h"
 #include "extensions/renderer/bindings/get_per_context_data.h"
+#include "extensions/renderer/get_script_context.h"
 #include "extensions/renderer/ipc_message_sender.h"
 #include "extensions/renderer/message_target.h"
 #include "extensions/renderer/native_extension_bindings_system.h"
@@ -115,8 +116,7 @@ void NativeRendererMessagingService::PostMessageToPort(
     const PortId& port_id,
     int routing_id,
     std::unique_ptr<Message> message) {
-  ScriptContext* script_context =
-      ScriptContextSet::GetContextByV8Context(context);
+  ScriptContext* script_context = GetScriptContextFromV8Context(context);
   CHECK(script_context);
   if (!ScriptContextIsValid(script_context))
     return;
@@ -128,8 +128,7 @@ void NativeRendererMessagingService::PostMessageToPort(
 void NativeRendererMessagingService::ClosePort(v8::Local<v8::Context> context,
                                                const PortId& port_id,
                                                int routing_id) {
-  ScriptContext* script_context =
-      ScriptContextSet::GetContextByV8Context(context);
+  ScriptContext* script_context = GetScriptContextFromV8Context(context);
   CHECK(script_context);
 
   MessagingPerContextData* data = GetPerContextData<MessagingPerContextData>(
@@ -186,8 +185,6 @@ void NativeRendererMessagingService::DispatchOnConnectToListeners(
     const ExtensionMsg_TabConnectionInfo* source,
     const ExtensionMsg_ExternalConnectionInfo& info,
     const std::string& event_name) {
-  DCHECK_NE(info.source_endpoint.type, MessagingEndpoint::Type::kNativeApp);
-
   v8::Isolate* isolate = script_context->isolate();
   v8::HandleScope handle_scope(isolate);
   v8::Local<v8::Context> v8_context = script_context->v8_context();
@@ -196,6 +193,10 @@ void NativeRendererMessagingService::DispatchOnConnectToListeners(
   gin::DataObjectBuilder sender_builder(isolate);
   if (info.source_endpoint.extension_id)
     sender_builder.Set("id", *info.source_endpoint.extension_id);
+  if (info.source_endpoint.native_app_name) {
+    sender_builder.Set("nativeApplication",
+                       *info.source_endpoint.native_app_name);
+  }
   if (!info.source_url.is_empty())
     sender_builder.Set("url", info.source_url.spec());
   if (source->frame_id >= 0)
@@ -247,6 +248,8 @@ void NativeRendererMessagingService::DispatchOnConnectToListeners(
     list.reserve(2u);
     if (info.source_endpoint.extension_id)
       list.emplace_back(*info.source_endpoint.extension_id);
+    else if (info.source_endpoint.native_app_name)
+      list.emplace_back(*info.source_endpoint.native_app_name);
     else
       list.emplace_back();
 

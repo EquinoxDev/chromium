@@ -41,6 +41,8 @@ namespace printing {
 
 namespace {
 
+PrintingMessageFilter::TestDelegate* g_test_delegate = nullptr;
+
 class PrintingMessageFilterShutdownNotifierFactory
     : public BrowserContextKeyedServiceShutdownNotifierFactory {
  public:
@@ -81,6 +83,11 @@ PrintViewManager* GetPrintViewManager(int render_process_id,
 #endif  // defined(OS_WIN) && BUILDFLAG(ENABLE_PRINT_PREVIEW)
 
 }  // namespace
+
+// static
+void PrintingMessageFilter::SetDelegateForTesting(TestDelegate* delegate) {
+  g_test_delegate = delegate;
+}
 
 PrintingMessageFilter::PrintingMessageFilter(int render_process_id,
                                              Profile* profile)
@@ -264,10 +271,14 @@ void PrintingMessageFilter::OnUpdatePrintSettingsReply(
     int routing_id = reply_msg->routing_id();
     base::PostTaskWithTraits(
         FROM_HERE, {BrowserThread::UI},
-        base::Bind(&PrintingMessageFilter::NotifySystemDialogCancelled, this,
-                   routing_id));
+        base::BindOnce(&PrintingMessageFilter::NotifySystemDialogCancelled,
+                       this, routing_id));
   }
 #endif
+
+  if (g_test_delegate)
+    params.params = g_test_delegate->GetPrintParams();
+
   PrintHostMsg_UpdatePrintSettings::WriteReplyParams(reply_msg, params,
                                                      canceled);
   Send(reply_msg);

@@ -22,8 +22,6 @@ GLOutputSurfaceBufferQueue::GLOutputSurfaceBufferQueue(
     gpu::SurfaceHandle surface_handle,
     SyntheticBeginFrameSource* synthetic_begin_frame_source,
     gpu::GpuMemoryBufferManager* gpu_memory_buffer_manager,
-    uint32_t target,
-    uint32_t internalformat,
     gfx::BufferFormat buffer_format)
     : GLOutputSurface(context_provider, synthetic_begin_frame_source) {
   capabilities_.uses_default_gl_framebuffer = false;
@@ -38,8 +36,8 @@ GLOutputSurfaceBufferQueue::GLOutputSurfaceBufferQueue(
   capabilities_.max_frames_pending = 2;
 
   buffer_queue_ = std::make_unique<BufferQueue>(
-      context_provider->ContextGL(), target, internalformat, buffer_format,
-      gpu_memory_buffer_manager, surface_handle);
+      context_provider->ContextGL(), buffer_format, gpu_memory_buffer_manager,
+      surface_handle, context_provider->ContextCapabilities());
   buffer_queue_->Initialize();
 }
 
@@ -65,6 +63,11 @@ void GLOutputSurfaceBufferQueue::Reshape(const gfx::Size& size,
   GLOutputSurface::Reshape(size, device_scale_factor, color_space, has_alpha,
                            use_stencil);
   buffer_queue_->Reshape(size, device_scale_factor, color_space, use_stencil);
+}
+
+void GLOutputSurfaceBufferQueue::SetDrawRectangle(const gfx::Rect& damage) {
+  GLOutputSurface::SetDrawRectangle(damage);
+  buffer_queue_->CopyDamageForCurrentSurface(damage);
 }
 
 void GLOutputSurfaceBufferQueue::SwapBuffers(OutputSurfaceFrame frame) {

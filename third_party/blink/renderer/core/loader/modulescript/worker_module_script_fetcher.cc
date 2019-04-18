@@ -21,6 +21,7 @@ WorkerModuleScriptFetcher::WorkerModuleScriptFetcher(
 void WorkerModuleScriptFetcher::Fetch(
     FetchParameters& fetch_params,
     ResourceFetcher* fetch_client_settings_object_fetcher,
+    const Modulator* modulator_for_built_in_modules,
     ModuleGraphLevel level,
     ModuleScriptFetcher::Client* client) {
   DCHECK(global_scope_->IsContextThread());
@@ -72,7 +73,8 @@ void WorkerModuleScriptFetcher::NotifyFinished(Resource* resource) {
         !global_scope_->GetSecurityOrigin()->IsSameSchemeHostPort(
             SecurityOrigin::Create(response_url).get())) {
       error_messages.push_back(ConsoleMessage::Create(
-          kSecurityMessageSource, kErrorMessageLevel,
+          mojom::ConsoleMessageSource::kSecurity,
+          mojom::ConsoleMessageLevel::kError,
           "Refused to cross-origin redirects of the top-level worker script."));
       client_->NotifyFetchFinished(base::nullopt, error_messages);
       return;

@@ -12,16 +12,17 @@
 #include "base/feature_list.h"
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
+#include "base/hash/sha1.h"
 #include "base/i18n/case_conversion.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/path_service.h"
 #include "base/sequenced_task_runner.h"
-#include "base/sha1.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/task/post_task.h"
 #include "base/task_runner_util.h"
 #include "base/time/time.h"
 #include "base/win/registry.h"
+#include "base/win/windows_version.h"
 #include "chrome/browser/conflicts/module_blacklist_cache_util_win.h"
 #include "chrome/browser/conflicts/module_database_win.h"
 #include "chrome/browser/conflicts/module_info_util_win.h"
@@ -155,12 +156,15 @@ bool ShouldInsertInBlacklistCache(ModuleBlockingDecision blocking_decision) {
       break;
 
     // All of these are reasons that allow the module to be loaded.
+    case ModuleBlockingDecision::kNotLoaded:
+    case ModuleBlockingDecision::kAllowedInProcessType:
     case ModuleBlockingDecision::kAllowedIME:
     case ModuleBlockingDecision::kAllowedSameCertificate:
     case ModuleBlockingDecision::kAllowedSameDirectory:
     case ModuleBlockingDecision::kAllowedMicrosoft:
     case ModuleBlockingDecision::kAllowedWhitelisted:
     case ModuleBlockingDecision::kTolerated:
+    case ModuleBlockingDecision::kNotAnalyzed:
       return false;
 
     // The following are reasons for the module to be blocked.
@@ -175,16 +179,14 @@ bool ShouldInsertInBlacklistCache(ModuleBlockingDecision blocking_decision) {
 
 }  // namespace
 
-// static
-constexpr base::TimeDelta ModuleBlacklistCacheUpdater::kUpdateTimerDuration;
-
 ModuleBlacklistCacheUpdater::ModuleBlacklistCacheUpdater(
     ModuleDatabaseEventSource* module_database_event_source,
     const CertificateInfo& exe_certificate_info,
     scoped_refptr<ModuleListFilter> module_list_filter,
     const std::vector<third_party_dlls::PackedListModule>&
         initial_blacklisted_modules,
-    OnCacheUpdatedCallback on_cache_updated_callback)
+    OnCacheUpdatedCallback on_cache_updated_callback,
+    bool module_analysis_disabled)
     : module_database_event_source_(module_database_event_source),
       exe_certificate_info_(exe_certificate_info),
       module_list_filter_(std::move(module_list_filter)),
@@ -193,6 +195,7 @@ ModuleBlacklistCacheUpdater::ModuleBlacklistCacheUpdater(
       background_sequence_(base::CreateSequencedTaskRunnerWithTraits(
           {base::MayBlock(), base::TaskPriority::BEST_EFFORT,
            base::TaskShutdownBehavior::CONTINUE_ON_SHUTDOWN})),
+      module_analysis_disabled_(module_analysis_disabled),
       weak_ptr_factory_(this) {
   DCHECK(module_list_filter_);
   module_database_event_source_->AddObserver(this);
@@ -203,11 +206,8 @@ ModuleBlacklistCacheUpdater::~ModuleBlacklistCacheUpdater() {
 }
 
 // static
-bool ModuleBlacklistCacheUpdater::IsThirdPartyModuleBlockingEnabled() {
-  // The ThirdPartyConflictsManager can exist even if the blocking is disabled
-  // because that class also controls the warning of incompatible applications.
-  return ModuleDatabase::GetInstance() &&
-         ModuleDatabase::GetInstance()->third_party_conflicts_manager() &&
+bool ModuleBlacklistCacheUpdater::IsBlockingEnabled() {
+  return base::win::GetVersion() >= base::win::VERSION_WIN8 &&
          base::FeatureList::IsEnabled(features::kThirdPartyModulesBlocking);
 }
 
@@ -305,10 +305,8 @@ ModuleBlacklistCacheUpdater::GetModuleBlockingState(
   return it->second;
 }
 
-void ModuleBlacklistCacheUpdater::OnTimerExpired() {
-  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-
-  StartModuleBlacklistCacheUpdate();
+void ModuleBlacklistCacheUpdater::DisableModuleAnalysis() {
+  module_analysis_disabled_ = true;
 }
 
 ModuleBlacklistCacheUpdater::ModuleListState
@@ -332,6 +330,22 @@ ModuleBlacklistCacheUpdater::DetermineModuleBlockingDecision(
     const ModuleInfoKey& module_key,
     const ModuleInfoData& module_data) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+
+  // Don't analyze unloaded modules.
+  if ((module_data.module_properties & ModuleInfoData::kPropertyLoadedModule) ==
+      0) {
+    return ModuleBlockingDecision::kNotLoaded;
+  }
+
+  // Don't add modules to the blacklist if they were never loaded in a process
+  // where blocking is enabled.
+  if (!IsBlockingEnabledInProcessTypes(module_data.process_types))
+    return ModuleBlockingDecision::kAllowedInProcessType;
+
+  // New modules should not be added to the cache when the module analysis is
+  // disabled.
+  if (module_analysis_disabled_)
+    return ModuleBlockingDecision::kNotAnalyzed;
 
   // First check if this module is a part of Chrome's installation. This can
   // override explicit directions in the module list. This prevents us from

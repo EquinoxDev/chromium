@@ -22,10 +22,10 @@
 #include "components/unified_consent/feature.h"
 #include "ios/chrome/browser/application_context.h"
 #include "ios/chrome/browser/browser_state/chrome_browser_state.h"
-#include "ios/chrome/browser/experimental_flags.h"
 #include "ios/chrome/browser/ios_chrome_flag_descriptions.h"
 #include "ios/chrome/browser/passwords/ios_chrome_password_store_factory.h"
 #include "ios/chrome/browser/pref_names.h"
+#include "ios/chrome/browser/search_engines/search_engine_observer_bridge.h"
 #include "ios/chrome/browser/search_engines/template_url_service_factory.h"
 #import "ios/chrome/browser/signin/authentication_service.h"
 #include "ios/chrome/browser/signin/authentication_service_factory.h"
@@ -34,6 +34,7 @@
 #include "ios/chrome/browser/sync/profile_sync_service_factory.h"
 #import "ios/chrome/browser/sync/sync_observer_bridge.h"
 #include "ios/chrome/browser/sync/sync_setup_service_factory.h"
+#include "ios/chrome/browser/system_flags.h"
 #import "ios/chrome/browser/ui/authentication/cells/signin_promo_view_consumer.h"
 #import "ios/chrome/browser/ui/authentication/cells/table_view_account_item.h"
 #import "ios/chrome/browser/ui/authentication/cells/table_view_signin_promo_item.h"
@@ -44,7 +45,6 @@
 #import "ios/chrome/browser/ui/settings/autofill/autofill_profile_table_view_controller.h"
 #import "ios/chrome/browser/ui/settings/bandwidth_management_table_view_controller.h"
 #import "ios/chrome/browser/ui/settings/cells/account_sign_in_item.h"
-#import "ios/chrome/browser/ui/settings/cells/settings_detail_item.h"
 #import "ios/chrome/browser/ui/settings/cells/settings_switch_cell.h"
 #import "ios/chrome/browser/ui/settings/cells/settings_switch_item.h"
 #import "ios/chrome/browser/ui/settings/content_settings_table_view_controller.h"
@@ -61,6 +61,8 @@
 #import "ios/chrome/browser/ui/signin_interaction/public/signin_presenter.h"
 #import "ios/chrome/browser/ui/signin_interaction/signin_interaction_coordinator.h"
 #import "ios/chrome/browser/ui/table_view/cells/table_view_cells_constants.h"
+#import "ios/chrome/browser/ui/table_view/cells/table_view_detail_icon_item.h"
+#import "ios/chrome/browser/ui/table_view/cells/table_view_image_item.h"
 #import "ios/chrome/browser/ui/table_view/table_view_model.h"
 #include "ios/chrome/browser/ui/ui_feature_flags.h"
 #import "ios/chrome/browser/ui/util/uikit_ui_util.h"
@@ -94,6 +96,12 @@ namespace {
 const CGFloat kAccountProfilePhotoDimension = 40.0f;
 
 NSString* const kSyncAndGoogleServicesImageName = @"sync_and_google_services";
+NSString* const kSyncAndGoogleServicesSyncErrorImageName =
+    @"sync_and_google_services_sync_error";
+NSString* const kSyncAndGoogleServicesSyncOffImageName =
+    @"sync_and_google_services_sync_off";
+NSString* const kSyncAndGoogleServicesSyncOnImageName =
+    @"sync_and_google_services_sync_on";
 NSString* const kSettingsSearchEngineImageName = @"settings_search_engine";
 NSString* const kSettingsPasswordsImageName = @"settings_passwords";
 NSString* const kSettingsAutofillCreditCardImageName =
@@ -195,14 +203,16 @@ void IdentityObserverBridge::OnPrimaryAccountCleared(
     GoogleServicesSettingsCoordinatorDelegate,
     PrefObserverDelegate,
     SettingsControllerProtocol,
+    SearchEngineObserving,
     SettingsMainPageCommands,
     SigninPresenter,
     SigninPromoViewConsumer,
     SyncObserverModelBridge> {
   // The current browser state that hold the settings. Never off the record.
   ios::ChromeBrowserState* _browserState;  // weak
-
-  std::unique_ptr<IdentityObserverBridge> _notificationBridge;
+  // Bridge for TemplateURLServiceObserver.
+  std::unique_ptr<SearchEngineObserverBridge> _searchEngineObserverBridge;
+  std::unique_ptr<IdentityObserverBridge> _identityObserverBridge;
   std::unique_ptr<SyncObserverBridge> _syncObserverBridge;
   // Whether the impression of the Signin button has already been recorded.
   BOOL _hasRecordedSigninImpression;
@@ -238,11 +248,11 @@ void IdentityObserverBridge::OnPrimaryAccountCleared(
   PrefChangeRegistrar _prefChangeRegistrar;
 
   // Updatable Items.
-  SettingsDetailItem* _voiceSearchDetailItem;
-  SettingsDetailItem* _defaultSearchEngineItem;
-  SettingsDetailItem* _passwordsDetailItem;
-  SettingsDetailItem* _autoFillProfileDetailItem;
-  SettingsDetailItem* _autoFillCreditCardDetailItem;
+  TableViewDetailIconItem* _voiceSearchDetailItem;
+  TableViewDetailIconItem* _defaultSearchEngineItem;
+  TableViewDetailIconItem* _passwordsDetailItem;
+  TableViewDetailIconItem* _autoFillProfileDetailItem;
+  TableViewDetailIconItem* _autoFillCreditCardDetailItem;
 
   // YES if the user used at least once the sign-in promo view buttons.
   BOOL _signinStarted;
@@ -281,7 +291,11 @@ void IdentityObserverBridge::OnPrimaryAccountCleared(
   if (self) {
     _browserState = browserState;
     self.title = l10n_util::GetNSStringWithFixup(IDS_IOS_SETTINGS_TITLE);
-    _notificationBridge.reset(new IdentityObserverBridge(_browserState, self));
+    _searchEngineObserverBridge.reset(new SearchEngineObserverBridge(
+        self,
+        ios::TemplateURLServiceFactory::GetForBrowserState(_browserState)));
+    _identityObserverBridge.reset(
+        new IdentityObserverBridge(_browserState, self));
     syncer::SyncService* syncService =
         ProfileSyncServiceFactory::GetForBrowserState(_browserState);
     _syncObserverBridge.reset(new SyncObserverBridge(self, syncService));
@@ -337,7 +351,7 @@ void IdentityObserverBridge::OnPrimaryAccountCleared(
 
 - (void)stopBrowserStateServiceObservers {
   _syncObserverBridge.reset();
-  _notificationBridge.reset();
+  _identityObserverBridge.reset();
   _identityServiceObserver.reset();
   [_showMemoryDebugToolsEnabled setObserver:nil];
   [_articlesEnabled setObserver:nil];
@@ -357,14 +371,6 @@ void IdentityObserverBridge::OnPrimaryAccountCleared(
 
   self.navigationItem.largeTitleDisplayMode =
       UINavigationItemLargeTitleDisplayModeAlways;
-}
-
-// TODO(crbug.com/661915): Refactor TemplateURLObserver and re-implement this so
-// it observes the default search engine name instead of reloading on
-// ViewWillAppear.
-- (void)viewWillAppear:(BOOL)animated {
-  [super viewWillAppear:animated];
-  [self updateSearchCell];
 }
 
 #pragma mark SettingsRootTableViewController
@@ -438,12 +444,8 @@ void IdentityObserverBridge::OnPrimaryAccountCleared(
       toSectionWithIdentifier:SectionIdentifierAdvanced];
   [model addItem:[self contentSettingsDetailItem]
       toSectionWithIdentifier:SectionIdentifierAdvanced];
-  if (!unified_consent::IsUnifiedConsentFeatureEnabled()) {
-    // When unified consent flag is enabled, the bandwidth settings is available
-    // under the Google services and sync settings.
-    [model addItem:[self bandwidthManagementDetailItem]
-        toSectionWithIdentifier:SectionIdentifierAdvanced];
-  }
+  [model addItem:[self bandwidthManagementDetailItem]
+      toSectionWithIdentifier:SectionIdentifierAdvanced];
 
   // Info Section
   [model addSectionWithIdentifier:SectionIdentifierInfo];
@@ -509,11 +511,14 @@ void IdentityObserverBridge::OnPrimaryAccountCleared(
 - (TableViewItem*)googleServicesCellItem {
   // TODO(crbug.com/805214): This branded icon image needs to come from
   // BrandedImageProvider.
-  return [self detailItemWithType:ItemGoogleServices
-                             text:l10n_util::GetNSString(
-                                      IDS_IOS_GOOGLE_SERVICES_SETTINGS_TITLE)
-                       detailText:nil
-                    iconImageName:kSyncAndGoogleServicesImageName];
+  TableViewImageItem* googleServicesItem =
+      [[TableViewImageItem alloc] initWithType:ItemGoogleServices];
+  googleServicesItem.accessoryType =
+      UITableViewCellAccessoryDisclosureIndicator;
+  googleServicesItem.title =
+      l10n_util::GetNSString(IDS_IOS_GOOGLE_SERVICES_SETTINGS_TITLE);
+  [self updateGoogleServicesItem:googleServicesItem];
+  return googleServicesItem;
 }
 
 - (TableViewItem*)accountCellItem {
@@ -669,14 +674,14 @@ void IdentityObserverBridge::OnPrimaryAccountCleared(
                   withDefaultsKey:kDevViewSourceKey];
 }
 
-- (SettingsDetailItem*)collectionViewCatalogDetailItem {
+- (TableViewDetailIconItem*)collectionViewCatalogDetailItem {
   return [self detailItemWithType:ItemTypeCollectionCellCatalog
                              text:@"Collection Cell Catalog"
                        detailText:nil
                     iconImageName:kSettingsDebugImageName];
 }
 
-- (SettingsDetailItem*)tableViewCatalogDetailItem {
+- (TableViewDetailIconItem*)tableViewCatalogDetailItem {
   return [self detailItemWithType:ItemTypeTableCellCatalog
                              text:@"TableView Cell Catalog"
                        detailText:nil
@@ -684,25 +689,14 @@ void IdentityObserverBridge::OnPrimaryAccountCleared(
 }
 #endif  // CHROMIUM_BUILD && !defined(NDEBUG)
 
-#pragma mark Item Updaters
-
-- (void)updateSearchCell {
-  NSString* defaultSearchEngineName =
-      base::SysUTF16ToNSString(GetDefaultSearchEngineName(
-          ios::TemplateURLServiceFactory::GetForBrowserState(_browserState)));
-
-  _defaultSearchEngineItem.detailText = defaultSearchEngineName;
-  [self reconfigureCellsForItems:@[ _defaultSearchEngineItem ]];
-}
-
 #pragma mark Item Constructors
 
-- (SettingsDetailItem*)detailItemWithType:(NSInteger)type
-                                     text:(NSString*)text
-                               detailText:(NSString*)detailText
-                            iconImageName:(NSString*)iconImageName {
-  SettingsDetailItem* detailItem =
-      [[SettingsDetailItem alloc] initWithType:type];
+- (TableViewDetailIconItem*)detailItemWithType:(NSInteger)type
+                                          text:(NSString*)text
+                                    detailText:(NSString*)detailText
+                                 iconImageName:(NSString*)iconImageName {
+  TableViewDetailIconItem* detailItem =
+      [[TableViewDetailIconItem alloc] initWithType:type];
   detailItem.text = text;
   detailItem.detailText = detailText;
   detailItem.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
@@ -736,9 +730,9 @@ void IdentityObserverBridge::OnPrimaryAccountCleared(
                      cellForRowAtIndexPath:indexPath];
   NSInteger itemType = [self.tableViewModel itemTypeForIndexPath:indexPath];
 
-  if ([cell isKindOfClass:[SettingsDetailCell class]]) {
-    SettingsDetailCell* detailCell =
-        base::mac::ObjCCastStrict<SettingsDetailCell>(cell);
+  if ([cell isKindOfClass:[TableViewDetailIconCell class]]) {
+    TableViewDetailIconCell* detailCell =
+        base::mac::ObjCCastStrict<TableViewDetailIconCell>(cell);
     if (itemType == ItemTypePasswords) {
       scoped_refptr<password_manager::PasswordStore> passwordStore =
           IOSChromePasswordStoreFactory::GetForBrowserState(
@@ -940,7 +934,8 @@ void IdentityObserverBridge::OnPrimaryAccountCleared(
   _googleServicesSettingsCoordinator =
       [[GoogleServicesSettingsCoordinator alloc]
           initWithBaseViewController:self.navigationController
-                        browserState:_browserState];
+                        browserState:_browserState
+                                mode:GoogleServicesSettingsModeSettings];
   _googleServicesSettingsCoordinator.dispatcher = self.dispatcher;
   _googleServicesSettingsCoordinator.navigationController =
       self.navigationController;
@@ -981,6 +976,10 @@ void IdentityObserverBridge::OnPrimaryAccountCleared(
   }
   identityAccountItem.image = [self userAccountImage];
   identityAccountItem.text = [_identity userFullName];
+  if (unified_consent::IsUnifiedConsentFeatureEnabled()) {
+    identityAccountItem.detailText = _identity.userEmail;
+    return;
+  }
 
   SyncSetupService* syncSetupService =
       SyncSetupServiceFactory::GetForBrowserState(_browserState);
@@ -1021,6 +1020,65 @@ void IdentityObserverBridge::OnPrimaryAccountCleared(
     [self updateIdentityAccountItem:identityAccountItem];
     [self reconfigureCellsForItems:@[ identityAccountItem ]];
   }
+}
+
+// Updates the Google services item to display the right icon and status message
+// in the detail text of the cell.
+- (void)updateGoogleServicesItem:(TableViewImageItem*)googleServicesItem {
+  googleServicesItem.detailTextColor = nil;
+  syncer::SyncService* syncService =
+      ProfileSyncServiceFactory::GetForBrowserState(_browserState);
+  SyncSetupService* syncSetupService =
+      SyncSetupServiceFactory::GetForBrowserState(_browserState);
+  AuthenticationService* authService =
+      AuthenticationServiceFactory::GetForBrowserState(_browserState);
+  if (!authService->IsAuthenticated()) {
+    // No sync status when the user is not signed-in.
+    googleServicesItem.detailText = nil;
+    googleServicesItem.image =
+        [UIImage imageNamed:kSyncAndGoogleServicesImageName];
+  } else if (syncService->GetDisableReasons() &
+             syncer::SyncService::DISABLE_REASON_ENTERPRISE_POLICY) {
+    googleServicesItem.detailText = l10n_util::GetNSString(
+        IDS_IOS_GOOGLE_SERVICES_SETTINGS_SYNC_DISABLBED_BY_ADMINISTRATOR_STATUS);
+    googleServicesItem.image =
+        [UIImage imageNamed:kSyncAndGoogleServicesSyncOffImageName];
+  } else if (!syncSetupService->HasFinishedInitialSetup()) {
+    googleServicesItem.detailText =
+        l10n_util::GetNSString(IDS_IOS_SYNC_SETUP_IN_PROGRESS);
+    googleServicesItem.image =
+        [UIImage imageNamed:kSyncAndGoogleServicesSyncOnImageName];
+  } else if (!IsTransientSyncError(syncSetupService->GetSyncServiceState())) {
+    googleServicesItem.detailTextColor = UIColor.redColor;
+    googleServicesItem.detailText =
+        GetSyncErrorDescriptionForSyncSetupService(syncSetupService);
+    googleServicesItem.image =
+        [UIImage imageNamed:kSyncAndGoogleServicesSyncErrorImageName];
+  } else if (syncSetupService->IsSyncEnabled()) {
+    googleServicesItem.detailText =
+        l10n_util::GetNSString(IDS_IOS_SIGN_IN_TO_CHROME_SETTING_SYNC_ON);
+    googleServicesItem.image =
+        [UIImage imageNamed:kSyncAndGoogleServicesSyncOnImageName];
+  } else {
+    googleServicesItem.detailText =
+        l10n_util::GetNSString(IDS_IOS_SIGN_IN_TO_CHROME_SETTING_SYNC_OFF);
+    googleServicesItem.image =
+        [UIImage imageNamed:kSyncAndGoogleServicesSyncOffImageName];
+  }
+  DCHECK(googleServicesItem.image);
+}
+
+// Updates and reloads the Google service cell.
+- (void)reloadGoogleServicesCell {
+  NSIndexPath* googleServicesCellIndexPath =
+      [self.tableViewModel indexPathForItemType:ItemGoogleServices
+                              sectionIdentifier:SectionIdentifierAccount];
+  TableViewImageItem* googleServicesItem =
+      base::mac::ObjCCast<TableViewImageItem>(
+          [self.tableViewModel itemAtIndexPath:googleServicesCellIndexPath]);
+  DCHECK(googleServicesItem);
+  [self updateGoogleServicesItem:googleServicesItem];
+  [self reconfigureCellsForItems:@[ googleServicesItem ]];
 }
 
 #pragma mark - SigninPresenter
@@ -1089,6 +1147,9 @@ void IdentityObserverBridge::OnPrimaryAccountCleared(
 
 - (void)settingsWillBeDismissed {
   DCHECK(!_settingsHasBeenDismissed);
+  [_googleServicesSettingsCoordinator stop];
+  _googleServicesSettingsCoordinator.delegate = nil;
+  _googleServicesSettingsCoordinator = nil;
   _settingsHasBeenDismissed = YES;
   [self.signinInteractionCoordinator cancel];
   [_signinPromoViewMediator signinPromoViewRemoved];
@@ -1099,7 +1160,11 @@ void IdentityObserverBridge::OnPrimaryAccountCleared(
 #pragma mark SyncObserverModelBridge
 
 - (void)onSyncStateChanged {
-  [self reloadAccountCell];
+  if (unified_consent::IsUnifiedConsentFeatureEnabled()) {
+    [self reloadGoogleServicesCell];
+  } else {
+    [self reloadAccountCell];
+  }
 }
 
 #pragma mark - IdentityRefreshLogic
@@ -1135,6 +1200,15 @@ void IdentityObserverBridge::OnPrimaryAccountCleared(
   }
   _resizedImage = image;
   return _resizedImage;
+}
+
+#pragma mark - SearchEngineObserverBridge
+
+- (void)searchEngineChanged {
+  _defaultSearchEngineItem.detailText =
+      base::SysUTF16ToNSString(GetDefaultSearchEngineName(
+          ios::TemplateURLServiceFactory::GetForBrowserState(_browserState)));
+  [self reconfigureCellsForItems:@[ _defaultSearchEngineItem ]];
 }
 
 #pragma mark ChromeIdentityServiceObserver
@@ -1255,6 +1329,8 @@ void IdentityObserverBridge::OnPrimaryAccountCleared(
 - (void)googleServicesSettingsCoordinatorDidRemove:
     (GoogleServicesSettingsCoordinator*)coordinator {
   DCHECK_EQ(_googleServicesSettingsCoordinator, coordinator);
+  [_googleServicesSettingsCoordinator stop];
+  _googleServicesSettingsCoordinator.delegate = nil;
   _googleServicesSettingsCoordinator = nil;
 }
 

@@ -21,11 +21,13 @@
 #include "chrome/browser/ui/views/omnibox/omnibox_popup_contents_view.h"
 #include "chrome/browser/ui/views/omnibox/omnibox_tab_switch_button.h"
 #include "chrome/browser/ui/views/omnibox/omnibox_text_view.h"
+#include "chrome/browser/ui/views/omnibox/remove_suggestion_bubble.h"
 #include "chrome/browser/ui/views/omnibox/rounded_omnibox_results_frame.h"
 #include "chrome/grit/generated_resources.h"
 #include "components/omnibox/browser/omnibox_field_trial.h"
 #include "components/omnibox/browser/omnibox_popup_model.h"
 #include "components/omnibox/browser/vector_icons.h"
+#include "components/omnibox/common/omnibox_features.h"
 #include "components/strings/grit/components_strings.h"
 #include "third_party/skia/include/core/SkColor.h"
 #include "ui/accessibility/ax_node_data.h"
@@ -62,7 +64,7 @@ OmniboxResultView::OmniboxResultView(
   keyword_view_->icon()->SizeToPreferredSize();
 
   if (base::FeatureList::IsEnabled(
-          omnibox::kOmniboxContextMenuForSuggestions)) {
+          omnibox::kOmniboxSuggestionTransparencyOptions)) {
     // TODO(tommycli): Replace this with the real translated string from UX.
     context_menu_contents_.AddItem(COMMAND_REMOVE_SUGGESTION,
                                    base::ASCIIToUTF16("Remove suggestion..."));
@@ -163,6 +165,8 @@ void OmniboxResultView::Invalidate() {
   // Answers use their own styling for additional content text and the
   // description text, whereas non-answer suggestions use the match text and
   // calculated classifications for the description text.
+  bool blue_search_query = base::FeatureList::IsEnabled(
+      omnibox::kUIExperimentBlueSearchLoopAndSearchQuery);
   if (match_.answer) {
     const bool reverse = OmniboxFieldTrial::IsReverseAnswersEnabled() &&
                          !match_.IsExceptedFromLineReversal();
@@ -171,14 +175,16 @@ void OmniboxResultView::Invalidate() {
       suggestion_view_->description()->SetText(match_.contents,
                                                match_.contents_class, true);
       suggestion_view_->description()->ApplyTextColor(
-          OmniboxPart::RESULTS_TEXT_DIMMED);
+          blue_search_query ? OmniboxPart::RESULTS_TEXT_URL
+                            : OmniboxPart::RESULTS_TEXT_DIMMED);
       suggestion_view_->description()->AppendExtraText(
           match_.answer->first_line());
     } else {
       suggestion_view_->content()->SetText(match_.contents,
                                            match_.contents_class);
       suggestion_view_->content()->ApplyTextColor(
-          OmniboxPart::RESULTS_TEXT_DEFAULT);
+          blue_search_query ? OmniboxPart::RESULTS_TEXT_URL
+                            : OmniboxPart::RESULTS_TEXT_DEFAULT);
       suggestion_view_->content()->AppendExtraText(match_.answer->first_line());
       suggestion_view_->description()->SetText(match_.answer->second_line(),
                                                true);
@@ -189,6 +195,10 @@ void OmniboxResultView::Invalidate() {
     // adjustments like answers above.  Pedals do likewise.
     suggestion_view_->content()->SetText(match_.contents,
                                          match_.contents_class);
+    if (blue_search_query) {
+      suggestion_view_->content()->ApplyTextColor(
+          OmniboxPart::RESULTS_TEXT_URL);
+    }
     suggestion_view_->description()->SetText(match_.description,
                                              match_.description_class, -1);
     suggestion_view_->description()->ApplyTextColor(
@@ -206,6 +216,13 @@ void OmniboxResultView::Invalidate() {
     if (high_contrast) {
       suggestion_view_->content()->ReapplyStyling();
       suggestion_view_->description()->ReapplyStyling();
+    }
+
+    // If the blue search query experiment is on, search suggestions are
+    // recolored at the end.
+    if (blue_search_query && AutocompleteMatch::IsSearchType(match_.type)) {
+      suggestion_view_->content()->ApplyTextColor(
+          OmniboxPart::RESULTS_TEXT_URL);
     }
   }
 
@@ -255,7 +272,7 @@ void OmniboxResultView::OnMatchIconUpdated() {
 }
 
 void OmniboxResultView::SetRichSuggestionImage(const gfx::ImageSkia& image) {
-  suggestion_view_->answer_image()->SetImage(image);
+  suggestion_view_->SetImage(image);
   Layout();
   SchedulePaint();
 }
@@ -405,9 +422,10 @@ void OmniboxResultView::OnNativeThemeChanged(const ui::NativeTheme* theme) {
   SchedulePaint();
 }
 
-void OmniboxResultView::ShowContextMenuForView(views::View* source,
-                                               const gfx::Point& point,
-                                               ui::MenuSourceType source_type) {
+void OmniboxResultView::ShowContextMenuForViewImpl(
+    views::View* source,
+    const gfx::Point& point,
+    ui::MenuSourceType source_type) {
   // Deferred unhover of the result until the context menu is closed.
   // If the mouse is still over the result when the context menu is closed, the
   // View will receive an OnMouseMoved call anyways, which sets hover to true.
@@ -418,9 +436,9 @@ void OmniboxResultView::ShowContextMenuForView(views::View* source,
       &context_menu_contents_,
       views::MenuRunner::HAS_MNEMONICS | views::MenuRunner::CONTEXT_MENU,
       set_hovered_false);
-  context_menu_runner_->RunMenuAt(GetWidget(), nullptr,
-                                  gfx::Rect(point, gfx::Size()),
-                                  views::MENU_ANCHOR_TOPLEFT, source_type);
+  context_menu_runner_->RunMenuAt(
+      GetWidget(), nullptr, gfx::Rect(point, gfx::Size()),
+      views::MenuAnchorPosition::kTopLeft, source_type);
 
   // Opening the context menu unsets the hover state, but we still want the
   // result 'hovered' as long as the context menu is open.
@@ -436,11 +454,28 @@ bool OmniboxResultView::IsCommandIdEnabled(int command_id) const {
 void OmniboxResultView::ExecuteCommand(int command_id, int event_flags) {
   DCHECK_EQ(COMMAND_REMOVE_SUGGESTION, command_id);
 
-  // TODO(tommycli): Launch modal bubble to confirm removing the suggestion.
+  // Temporarily inhibit the popup closing on blur while we open the remove
+  // suggestion confirmation bubble.
+  popup_contents_view_->model()->set_popup_closes_on_blur(false);
+
+  // TODO(tommycli): We re-fetch the original match from the popup model,
+  // because |match_| already has its contents and description swapped by this
+  // class, and we don't want that for the bubble. We should improve this.
+  AutocompleteMatch raw_match =
+      popup_contents_view_->model()->result().match_at(model_index_);
+  ShowRemoveSuggestion(this, raw_match,
+                       base::BindOnce(&OmniboxResultView::RemoveSuggestion,
+                                      weak_factory_.GetWeakPtr()));
+
+  popup_contents_view_->model()->set_popup_closes_on_blur(true);
 }
 
 void OmniboxResultView::ProvideButtonFocusHint() {
   suggestion_tab_switch_button_->ProvideFocusHint();
+}
+
+void OmniboxResultView::RemoveSuggestion() const {
+  popup_contents_view_->model()->TryDeletingLine(model_index_);
 }
 
 ////////////////////////////////////////////////////////////////////////////////

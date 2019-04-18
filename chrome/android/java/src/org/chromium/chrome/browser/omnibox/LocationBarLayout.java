@@ -32,7 +32,6 @@ import org.chromium.base.VisibleForTesting;
 import org.chromium.base.metrics.RecordUserAction;
 import org.chromium.chrome.R;
 import org.chromium.chrome.browser.ActivityTabProvider;
-import org.chromium.chrome.browser.ChromeFeatureList;
 import org.chromium.chrome.browser.ChromeSwitches;
 import org.chromium.chrome.browser.WindowDelegate;
 import org.chromium.chrome.browser.locale.LocaleManager;
@@ -104,8 +103,6 @@ public class LocationBarLayout extends FrameLayout
     private boolean mVoiceSearchEnabled;
 
     private OmniboxPrerender mOmniboxPrerender;
-
-    private boolean mUseDarkColors;
 
     private boolean mOmniboxVoiceSearchAlwaysVisible;
     protected float mUrlFocusChangePercent;
@@ -301,8 +298,6 @@ public class LocationBarLayout extends FrameLayout
 
         updateVisualsForState();
 
-        mOmniboxVoiceSearchAlwaysVisible =
-                ChromeFeatureList.isEnabled(ChromeFeatureList.OMNIBOX_VOICE_SEARCH_ALWAYS_VISIBLE);
         updateMicButtonVisibility(mUrlFocusChangePercent);
     }
 
@@ -1009,7 +1004,7 @@ public class LocationBarLayout extends FrameLayout
      * @param urlFocusChangePercent The completion percentage of the URL focus change animation.
      */
     protected void updateMicButtonVisibility(float urlFocusChangePercent) {
-        boolean visible = mOmniboxVoiceSearchAlwaysVisible || !shouldShowDeleteButton();
+        boolean visible = !shouldShowDeleteButton();
         boolean showMicButton = mVoiceSearchEnabled && visible
                 && (mUrlBar.hasFocus() || mUrlFocusChangeInProgress || urlFocusChangePercent > 0f);
         mMicButton.setVisibility(showMicButton ? VISIBLE : GONE);
@@ -1021,41 +1016,28 @@ public class LocationBarLayout extends FrameLayout
      */
     @Override
     public void updateVisualsForState() {
-        updateUseDarkColors();
+        // If the location bar is focused, the toolbar background color would be the default color
+        // regardless of whether it is branded or not.
+        final int defaultPrimaryColor =
+                ColorUtils.getDefaultThemeColor(getResources(), mToolbarDataProvider.isIncognito());
+        final int primaryColor =
+                mUrlHasFocus ? defaultPrimaryColor : mToolbarDataProvider.getPrimaryColor();
+        final boolean useDarkColors = !ColorUtils.shouldUseLightForegroundOnBackground(primaryColor);
 
-        int id = mUseDarkColors ? R.color.dark_mode_tint : R.color.light_mode_tint;
+        int id = ColorUtils.getIconTintRes(!useDarkColors);
         ColorStateList colorStateList = AppCompatResources.getColorStateList(getContext(), id);
         ApiCompatibilityUtils.setImageTintList(mMicButton, colorStateList);
         ApiCompatibilityUtils.setImageTintList(mDeleteButton, colorStateList);
 
         // If the URL changed colors and is not focused, update the URL to account for the new
         // color scheme.
-        if (mUrlCoordinator.setUseDarkTextColors(mUseDarkColors) && !mUrlBar.hasFocus()) {
+        if (mUrlCoordinator.setUseDarkTextColors(useDarkColors) && !mUrlBar.hasFocus()) {
             setUrlToPageUrl();
         }
 
-        mStatusViewCoordinator.setUseDarkColors(mUseDarkColors);
-        mAutocompleteCoordinator.updateVisualsForState(mUseDarkColors);
-    }
-
-    /**
-     * Checks the current specs and updates {@link LocationBarLayout#mUseDarkColors} if necessary.
-     * @return Whether {@link LocationBarLayout#mUseDarkColors} has been updated.
-     */
-    private boolean updateUseDarkColors() {
-        boolean brandColorNeedsLightText = false;
-        if (mToolbarDataProvider.isUsingBrandColor() && !mUrlHasFocus) {
-            int currentPrimaryColor = mToolbarDataProvider.getPrimaryColor();
-            brandColorNeedsLightText =
-                    ColorUtils.shouldUseLightForegroundOnBackground(currentPrimaryColor);
-        }
-
-        boolean useDarkColors = !mToolbarDataProvider.isIncognito()
-                && (!mToolbarDataProvider.hasTab() || !brandColorNeedsLightText);
-        boolean hasChanged = useDarkColors != mUseDarkColors;
-        mUseDarkColors = useDarkColors;
-
-        return hasChanged;
+        mStatusViewCoordinator.setUseDarkColors(useDarkColors);
+        mAutocompleteCoordinator.updateVisualsForState(
+                useDarkColors, mToolbarDataProvider.isIncognito());
     }
 
     @Override

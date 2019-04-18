@@ -52,8 +52,8 @@ void SessionStorageNamespaceImplMojo::PopulateFromMetadata(
         delegate_->MaybeGetExistingDataMapForId(
             pair.second->MapNumberAsBytes());
     if (!data_map) {
-      data_map = SessionStorageDataMap::Create(data_map_listener_, pair.second,
-                                               database_);
+      data_map = SessionStorageDataMap::CreateFromDisk(data_map_listener_,
+                                                       pair.second, database_);
     }
     origin_areas_[pair.first] = std::make_unique<SessionStorageAreaImpl>(
         namespace_entry_, pair.first, std::move(data_map),
@@ -92,23 +92,22 @@ void SessionStorageNamespaceImplMojo::Reset() {
   populated_ = false;
   origin_areas_.clear();
   bindings_.CloseAllBindings();
+  namespaces_waiting_for_clone_call_.clear();
 }
 
 void SessionStorageNamespaceImplMojo::Bind(
     blink::mojom::SessionStorageNamespaceRequest request,
-    int process_id,
-    base::OnceClosure bind_done) {
+    int process_id) {
   if (waiting_on_clone_population_) {
     bind_waiting_on_clone_population_ = true;
-    run_after_clone_population_.push_back(base::BindOnce(
-        &SessionStorageNamespaceImplMojo::Bind, base::Unretained(this),
-        std::move(request), process_id, std::move(bind_done)));
+    run_after_clone_population_.push_back(
+        base::BindOnce(&SessionStorageNamespaceImplMojo::Bind,
+                       base::Unretained(this), std::move(request), process_id));
     return;
   }
   DCHECK(IsPopulated());
   bindings_.AddBinding(this, std::move(request), process_id);
   bind_waiting_on_clone_population_ = false;
-  std::move(bind_done).Run();
 }
 
 void SessionStorageNamespaceImplMojo::PurgeUnboundAreas() {
@@ -148,8 +147,15 @@ void SessionStorageNamespaceImplMojo::OpenArea(
   DCHECK(IsPopulated());
   DCHECK(!bindings_.empty());
   int process_id = bindings_.dispatch_context();
-  if (!ChildProcessSecurityPolicyImpl::GetInstance()->CanAccessDataForOrigin(
-          process_id, origin)) {
+  // TODO(943887): Replace HasSecurityState() call with something that can
+  // preserve security state after process shutdown. The security state check
+  // is a temporary solution to avoid crashes when this method is run after the
+  // process associated with |process_id| has been destroyed.
+  // It temporarily restores the old behavior of always allowing access if the
+  // process is gone.
+  auto* policy = ChildProcessSecurityPolicyImpl::GetInstance();
+  if (!policy->CanAccessDataForOrigin(process_id, origin) &&
+      policy->HasSecurityState(process_id)) {
     bindings_.ReportBadMessage("Access denied for sessionStorage request");
     return;
   }
@@ -160,16 +166,19 @@ void SessionStorageNamespaceImplMojo::OpenArea(
     scoped_refptr<SessionStorageDataMap> data_map;
     auto map_data_it = namespace_entry_->second.find(origin);
     if (map_data_it != namespace_entry_->second.end()) {
+      // The map exists already, either on disk or being used by another
+      // namespace.
       scoped_refptr<SessionStorageMetadata::MapData> map_data =
           map_data_it->second;
       data_map =
           delegate_->MaybeGetExistingDataMapForId(map_data->MapNumberAsBytes());
       if (!data_map) {
-        data_map = SessionStorageDataMap::Create(data_map_listener_, map_data,
-                                                 database_);
+        data_map = SessionStorageDataMap::CreateFromDisk(data_map_listener_,
+                                                         map_data, database_);
       }
     } else {
-      data_map = SessionStorageDataMap::Create(
+      // The map doesn't exist yet.
+      data_map = SessionStorageDataMap::CreateEmpty(
           data_map_listener_,
           register_new_map_callback_.Run(namespace_entry_, origin), database_);
     }

@@ -11,9 +11,11 @@
 #include "ash/ash_export.h"
 #include "base/macros.h"
 #include "base/memory/weak_ptr.h"
+#include "base/optional.h"
 #include "mojo/public/cpp/bindings/binding.h"
 #include "services/media_session/public/mojom/media_controller.mojom.h"
 #include "services/media_session/public/mojom/media_session.mojom.h"
+#include "ui/gfx/image/image_skia.h"
 
 namespace ash {
 
@@ -22,9 +24,27 @@ class MediaNotificationView;
 // MediaNotificationItem manages hiding/showing a media notification and
 // updating the metadata for a single media session.
 class ASH_EXPORT MediaNotificationItem
-    : public media_session::mojom::MediaControllerObserver {
+    : public media_session::mojom::MediaControllerObserver,
+      public media_session::mojom::MediaControllerImageObserver {
  public:
+  // The name of the histogram used when recording user actions.
+  static const char kUserActionHistogramName[];
+
+  // The name of the histogram used when recording the source.
+  static const char kSourceHistogramName[];
+
+  // The source of the media session. This is used in metrics so new values must
+  // only be added to the end.
+  enum class Source {
+    kUnknown,
+    kWeb,
+    kAssistant,
+    kArc,
+    kMaxValue = kArc,
+  };
+
   MediaNotificationItem(const std::string& id,
+                        const std::string& source_name,
                         media_session::mojom::MediaControllerPtr controller,
                         media_session::mojom::MediaSessionInfoPtr session_info);
   ~MediaNotificationItem() override;
@@ -37,6 +57,13 @@ class ASH_EXPORT MediaNotificationItem
   void MediaSessionActionsChanged(
       const std::vector<media_session::mojom::MediaSessionAction>& actions)
       override;
+  void MediaSessionChanged(
+      const base::Optional<base::UnguessableToken>& request_id) override {}
+
+  // media_session::mojom::MediaControllerImageObserver:
+  void MediaControllerImageChanged(
+      media_session::mojom::MediaSessionImageType type,
+      const SkBitmap& bitmap) override;
 
   void SetView(MediaNotificationView* view);
 
@@ -62,6 +89,9 @@ class ASH_EXPORT MediaNotificationItem
   // media session.
   const std::string id_;
 
+  // The source of the media session (e.g. arc, web).
+  const Source source_;
+
   media_session::mojom::MediaControllerPtr media_controller_ptr_;
 
   media_session::mojom::MediaSessionInfoPtr session_info_;
@@ -70,8 +100,18 @@ class ASH_EXPORT MediaNotificationItem
 
   std::set<media_session::mojom::MediaSessionAction> session_actions_;
 
+  base::Optional<gfx::ImageSkia> session_artwork_;
+
+  gfx::ImageSkia session_icon_;
+
   mojo::Binding<media_session::mojom::MediaControllerObserver>
       observer_binding_{this};
+
+  mojo::Binding<media_session::mojom::MediaControllerImageObserver>
+      artwork_observer_binding_{this};
+
+  mojo::Binding<media_session::mojom::MediaControllerImageObserver>
+      icon_observer_binding_{this};
 
   base::WeakPtrFactory<MediaNotificationItem> weak_ptr_factory_{this};
 

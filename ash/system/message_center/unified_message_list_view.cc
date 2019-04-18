@@ -4,6 +4,7 @@
 
 #include "ash/system/message_center/unified_message_list_view.h"
 
+#include "ash/public/cpp/ash_features.h"
 #include "ash/system/message_center/notification_swipe_control_view.h"
 #include "ash/system/message_center/unified_message_center_view.h"
 #include "ash/system/tray/tray_constants.h"
@@ -212,10 +213,14 @@ void UnifiedMessageListView::ClearAllWithAnimation() {
 
 int UnifiedMessageListView::CountNotificationsAboveY(int y_offset) const {
   for (int i = 0; i < child_count(); ++i) {
-    if (child_at(i)->bounds().bottom() >= y_offset)
+    if (child_at(i)->bounds().bottom() > y_offset)
       return i;
   }
   return child_count();
+}
+
+int UnifiedMessageListView::GetTotalNotificationCount() const {
+  return int{children().size()};
 }
 
 void UnifiedMessageListView::ChildPreferredSizeChanged(views::View* child) {
@@ -252,10 +257,7 @@ gfx::Rect UnifiedMessageListView::GetNotificationBounds(
 }
 
 gfx::Rect UnifiedMessageListView::GetLastNotificationBounds() const {
-  if (child_count() == 0)
-    return gfx::Rect();
-
-  return GetContainer(child_count() - 1)->bounds();
+  return children().empty() ? gfx::Rect() : children().back()->bounds();
 }
 
 gfx::Rect UnifiedMessageListView::GetNotificationBoundsBelowY(
@@ -416,10 +418,14 @@ void UnifiedMessageListView::CollapseAllNotifications() {
 }
 
 void UnifiedMessageListView::UpdateBorders() {
+  // When the stacking bar is shown, there should never be a top notification.
+  bool is_top = !features::IsNotificationStackingBarRedesignEnabled() ||
+                children().size() == 1;
   for (int i = 0; i < child_count(); ++i) {
-    const bool is_top = i == 0;
-    const bool is_bottom = i == child_count() - 1;
-    GetContainer(i)->UpdateBorder(is_top, is_bottom);
+    auto* child = GetContainer(i);
+    const bool is_bottom = child == children().back();
+    child->UpdateBorder(is_top, is_bottom);
+    is_top = false;
   }
 }
 
@@ -473,9 +479,12 @@ void UnifiedMessageListView::DeleteRemovedNotifications() {
       removed_views.push_back(view);
   }
 
-  for (auto* view : removed_views) {
-    model_->RemoveNotificationExpanded(view->GetNotificationId());
-    delete view;
+  {
+    base::AutoReset<bool> auto_reset(&is_deleting_removed_notifications_, true);
+    for (auto* view : removed_views) {
+      model_->RemoveNotificationExpanded(view->GetNotificationId());
+      delete view;
+    }
   }
 
   UpdateBorders();

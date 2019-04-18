@@ -11,6 +11,8 @@ code generator and ensures the output matches a golden
 file.
 """
 
+from __future__ import print_function
+
 import difflib
 import inspect
 import optparse
@@ -29,6 +31,8 @@ SCRIPT_NAME = 'base/android/jni_generator/jni_generator.py'
 INCLUDES = (
     'base/android/jni_generator/jni_generator_helper.h'
 )
+_JAVA_SRC_DIR = os.path.join('java', 'src', 'org', 'chromium', 'example',
+                             'jni_generator')
 
 # Set this environment variable in order to regenerate the golden text
 # files.
@@ -131,23 +135,23 @@ class BaseTest(unittest.TestCase):
     stripped_generated = FilterText(generated_text)
     if stripped_golden == stripped_generated:
       return True
-    print self.id()
+    print(self.id())
     for line in difflib.context_diff(stripped_golden, stripped_generated):
-      print line
-    print '\n\nGenerated'
-    print '=' * 80
-    print generated_text
-    print '=' * 80
-    print 'Run with:'
-    print 'REBASELINE=1', sys.argv[0]
-    print 'to regenerate the data files.'
+      print(line)
+    print('\n\nGenerated')
+    print('=' * 80)
+    print(generated_text)
+    print('=' * 80)
+    print('Run with:')
+    print('REBASELINE=1', sys.argv[0])
+    print('to regenerate the data files.')
 
   def AssertGoldenTextEquals(self, generated_text, suffix='', golden_file=None):
     """Compares generated text with the corresponding golden_file
 
     By default compares generated_text with the file at
-    script_dir/golden/{caller_name}[suffix].golden. If the parameter golden_file is
-    provided it will instead compare the generated text with
+    script_dir/golden/{caller_name}[suffix].golden. If the parameter
+    golden_file is provided it will instead compare the generated text with
     script_dir/golden/golden_file."""
     # This is the caller test method.
     caller = inspect.stack()[1][3]
@@ -955,7 +959,7 @@ public class java.util.HashSet {
 
   def testJniSelfDocumentingExample(self):
     generated_text = self._CreateJniHeaderFromFile(
-        'java/src/org/chromium/example/jni_generator/SampleForTests.java',
+        os.path.join(_JAVA_SRC_DIR, 'SampleForTests.java'),
         'org/chromium/example/jni_generator/SampleForTests')
     self.AssertGoldenTextEquals(
         generated_text, golden_file='SampleForTests_jni.golden')
@@ -1253,8 +1257,7 @@ class ProxyTestGenerator(BaseTest):
       options = TestOptions()
 
     path = self._JoinScriptDir(
-        'java/src/org/chromium/example/jni_generator/SampleForAnnotationProcessor.java'
-    )
+        os.path.join(_JAVA_SRC_DIR, 'SampleForAnnotationProcessor.java'))
     reg_dict = jni_registration_generator._DictForPath(path)
     reg_dict = self._MergeRegistrationForTests([reg_dict])
 
@@ -1271,6 +1274,8 @@ class ProxyTestGenerator(BaseTest):
        void foo();
        String bar(String s, int y, char x, short z);
        String[] foobar(String[] a);
+       void baz(@JCaller BazClass caller, long nativePtr);
+       void fooBar(long nativePtr);
     }
 
     void justARegularFunction();
@@ -1495,7 +1500,7 @@ class ProxyTestGenerator(BaseTest):
   def testProxyHashedExample(self):
     opts = TestOptions()
     opts.use_proxy_hash = True
-    path = 'java/src/org/chromium/example/jni_generator/SampleForAnnotationProcessor.java'
+    path = os.path.join(_JAVA_SRC_DIR, 'SampleForAnnotationProcessor.java')
 
     generated_text = self._CreateJniHeaderFromFile(
         path, 'org/chromium/example/jni_generator/SampleForAnnotationProcessor',
@@ -1516,7 +1521,7 @@ class ProxyTestGenerator(BaseTest):
 
   def testProxyJniExample(self):
     generated_text = self._CreateJniHeaderFromFile(
-        'java/src/org/chromium/example/jni_generator/SampleForAnnotationProcessor.java',
+        os.path.join(_JAVA_SRC_DIR, 'SampleForAnnotationProcessor.java'),
         'org/chromium/example/jni_generator/SampleForAnnotationProcessor')
     self.AssertGoldenTextEquals(
         generated_text, golden_file='SampleForAnnotationProcessor_jni.golden')

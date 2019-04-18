@@ -5,7 +5,7 @@
 #ifndef FUCHSIA_ENGINE_BROWSER_CONTEXT_IMPL_H_
 #define FUCHSIA_ENGINE_BROWSER_CONTEXT_IMPL_H_
 
-#include <lib/fidl/cpp/binding_set.h>
+#include <fuchsia/web/cpp/fidl.h>
 #include <memory>
 #include <set>
 
@@ -20,10 +20,10 @@ class BrowserContext;
 
 class FrameImpl;
 
-// Implementation of Context from //fuchsia/fidl/context.fidl.
+// Implementation of Context from fuchsia.web.
 // Owns a BrowserContext instance and uses it to create new WebContents/Frames.
 // All created Frames are owned by this object.
-class WEB_ENGINE_EXPORT ContextImpl : public chromium::web::Context {
+class WEB_ENGINE_EXPORT ContextImpl : public fuchsia::web::Context {
  public:
   // |browser_context| must outlive ContextImpl.
   explicit ContextImpl(content::BrowserContext* browser_context);
@@ -41,11 +41,12 @@ class WEB_ENGINE_EXPORT ContextImpl : public chromium::web::Context {
   // Returns |true| if JS injection was enabled for this Context.
   bool IsJavaScriptInjectionAllowed();
 
-  // chromium::web::Context implementation.
-  void CreateFrame(fidl::InterfaceRequest<chromium::web::Frame> frame) override;
+  // fuchsia::web::Context implementation.
+  void CreateFrame(fidl::InterfaceRequest<fuchsia::web::Frame> frame) override;
 
   // Gets the underlying FrameImpl service object associated with a connected
   // |frame_ptr| client.
+  FrameImpl* GetFrameImplForTest(fuchsia::web::FramePtr* frame_ptr);
   FrameImpl* GetFrameImplForTest(chromium::web::FramePtr* frame_ptr);
 
  private:

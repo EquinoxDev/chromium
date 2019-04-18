@@ -3,10 +3,7 @@
 // found in the LICENSE file.
 
 var AutomationEvent = require('automationEvent').AutomationEvent;
-var automationInternal =
-    getInternalApi ?
-        getInternalApi('automationInternal') :
-        require('binding').Binding.create('automationInternal').generate();
+var automationInternal = getInternalApi('automationInternal');
 var exceptionHandler = require('uncaught_exception_handler');
 
 var natives = requireNative('automationInternal');
@@ -79,6 +76,55 @@ var GetFocusOffset = natives.GetFocusOffset;
  * @return {?string} The selection focus affinity.
  */
 var GetFocusAffinity = natives.GetFocusAffinity;
+
+/**
+ * The start of the selection always comes before its end in the accessibility
+ * tree.
+ * @param {string} axTreeID The id of the accessibility tree.
+ * @return {?number} The ID of the object at the start of the
+ *     selection.
+ */
+var GetSelectionStartObjectID = natives.GetSelectionStartObjectID;
+
+/**
+ * The start of the selection always comes before its end in the accessibility
+ * tree.
+ * @param {string} axTreeID The id of the accessibility tree.
+ * @return {?number} The offset at the start of the selection.
+ */
+var GetSelectionStartOffset = natives.GetSelectionStartOffset;
+
+/**
+ * The start of the selection always comes before its end in the accessibility
+ * tree.
+ * @param {string} axTreeID The id of the accessibility tree.
+ * @return {?string} The affinity at the start of the selection.
+ */
+var GetSelectionStartAffinity = natives.GetSelectionStartAffinity;
+
+/**
+ * The end of the selection always comes after its start in the accessibility
+ * tree.
+ * @param {string} axTreeID The id of the accessibility tree.
+ * @return {?number} The ID of the object at the end of the selection.
+ */
+var GetSelectionEndObjectID = natives.GetSelectionEndObjectID;
+
+/**
+ * The end of the selection always comes after its start in the accessibility
+ * tree.
+ * @param {string} axTreeID The id of the accessibility tree.
+ * @return {?number} The offset at the end of the selection.
+ */
+var GetSelectionEndOffset = natives.GetSelectionEndOffset;
+
+/**
+ * The end of the selection always comes after its start in the accessibility
+ * tree.
+ * @param {string} axTreeID The id of the accessibility tree.
+ * @return {?string} The affinity at the end of the selection.
+ */
+var GetSelectionEndAffinity = natives.GetSelectionEndAffinity;
 
 /**
  * @param {string} axTreeID The id of the accessibility tree.
@@ -293,6 +339,14 @@ var GetNameFrom = natives.GetNameFrom;
 /**
  * @param {string} axTreeID The id of the accessibility tree.
  * @param {number} nodeID The id of a node.
+ * @return {?string} The image annotation status, which may
+ *     include the annotation itself if completed successfully.
+ */
+var GetImageAnnotation = natives.GetImageAnnotation;
+
+/**
+ * @param {string} axTreeID The id of the accessibility tree.
+ * @param {number} nodeID The id of a node.
  * @return {boolean}
  */
 var GetBold = natives.GetBold;
@@ -339,6 +393,14 @@ var GetStandardActions = natives.GetStandardActions;
  * @return {automation.NameFromType} The source of the node's name.
  */
 var GetDefaultActionVerb = natives.GetDefaultActionVerb;
+
+
+/**
+ * @param {string} axTreeID The id of the accessibility tree.
+ * @param {number} nodeID The id of a node.
+ * @return {automation.HasPopup}
+ */
+var GetHasPopup = natives.GetHasPopup;
 
 
 /**
@@ -555,6 +617,10 @@ AutomationNodeImpl.prototype = {
     return GetNameFrom(this.treeID, this.id);
   },
 
+  get imageAnnotation() {
+    return GetImageAnnotation(this.treeID, this.id);
+  },
+
   get bold() {
     return GetBold(this.treeID, this.id);
   },
@@ -585,6 +651,10 @@ AutomationNodeImpl.prototype = {
 
   get defaultActionVerb() {
     return GetDefaultActionVerb(this.treeID, this.id);
+  },
+
+  get hasPopup() {
+    return GetHasPopup(this.treeID, this.id);
   },
 
   get tableCellColumnHeaders() {
@@ -1353,43 +1423,87 @@ AutomationRootNodeImpl.prototype = {
   },
 
   get anchorObject() {
-    var id = GetAnchorObjectID(this.treeID);
+    const id = GetAnchorObjectID(this.treeID);
     if (id && id != -1)
       return this.get(id);
-    else
-      return undefined;
+    return undefined;
   },
 
   get anchorOffset() {
-    var id = GetAnchorObjectID(this.treeID);
+    const id = GetAnchorObjectID(this.treeID);
     if (id && id != -1)
       return GetAnchorOffset(this.treeID);
+    return undefined;
   },
 
   get anchorAffinity() {
-    var id = GetAnchorObjectID(this.treeID);
+    const id = GetAnchorObjectID(this.treeID);
     if (id && id != -1)
       return GetAnchorAffinity(this.treeID);
+    return undefined;
   },
 
   get focusObject() {
-    var id = GetFocusObjectID(this.treeID);
+    const id = GetFocusObjectID(this.treeID);
     if (id && id != -1)
       return this.get(id);
-    else
-      return undefined;
+    return undefined;
   },
 
   get focusOffset() {
-    var id = GetFocusObjectID(this.treeID);
+    const id = GetFocusObjectID(this.treeID);
     if (id && id != -1)
       return GetFocusOffset(this.treeID);
+    return undefined;
   },
 
   get focusAffinity() {
-    var id = GetFocusObjectID(this.treeID);
+    const id = GetFocusObjectID(this.treeID);
     if (id && id != -1)
       return GetFocusAffinity(this.treeID);
+    return undefined;
+  },
+
+  get selectionStartObject() {
+    const id = GetSelectionStartObjectID(this.treeID);
+    if (id && id != -1)
+      return this.get(id);
+    return undefined;
+  },
+
+  get selectionStartOffset() {
+    const id = GetSelectionStartObjectID(this.treeID);
+    if (id && id != -1)
+      return GetSelectionStartOffset(this.treeID);
+    return undefined;
+  },
+
+  get selectionStartAffinity() {
+    const id = GetSelectionStartObjectID(this.treeID);
+    if (id && id != -1)
+      return GetSelectionStartAffinity(this.treeID);
+    return undefined;
+  },
+
+  get selectionEndObject() {
+    const id = GetSelectionEndObjectID(this.treeID);
+    if (id && id != -1)
+      return this.get(id);
+    return undefined;
+  },
+
+  get selectionEndOffset() {
+    const id = GetSelectionEndObjectID(this.treeID);
+    if (id && id != -1)
+      return GetSelectionEndOffset(this.treeID);
+    return undefined;
+  },
+
+  get selectionEndAffinity() {
+    const id = GetSelectionEndObjectID(this.treeID);
+    if (id && id != -1)
+      return GetSelectionEndAffinity(this.treeID);
+    return undefined;
   },
 
   get: function(id) {
@@ -1552,9 +1666,11 @@ utils.expose(AutomationNode, AutomationNodeImpl, {
         'role',
         'checked',
         'defaultActionVerb',
+        'hasPopup',
         'restriction',
         'state',
         'location',
+        'imageAnnotation',
         'indexInParent',
         'lineStartOffsets',
         'root',
@@ -1591,6 +1707,12 @@ utils.expose(AutomationRootNode, AutomationRootNodeImpl, {
     'focusObject',
     'focusOffset',
     'focusAffinity',
+    'selectionStartObject',
+    'selectionStartOffset',
+    'selectionStartAffinity',
+    'selectionEndObject',
+    'selectionEndOffset',
+    'selectionEndAffinity',
   ],
 });
 

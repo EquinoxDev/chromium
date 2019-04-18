@@ -12,6 +12,7 @@ import android.view.View;
 import org.chromium.base.VisibleForTesting;
 import org.chromium.chrome.R;
 import org.chromium.chrome.browser.previews.PreviewsUma;
+import org.chromium.chrome.browser.util.ColorUtils;
 import org.chromium.components.security_state.ConnectionSecurityLevel;
 import org.chromium.ui.modelutil.PropertyModel;
 
@@ -238,16 +239,15 @@ class StatusMediator {
         @ColorRes
         int textColor = 0;
         if (mPageIsPreview) {
-            // There will never be a Preview in Incognito and the site theme color is not used. So
-            // ignore useDarkColors.
-            textColor = R.color.locationbar_status_preview_color;
+            textColor = mDarkTheme ? R.color.locationbar_status_preview_color
+                                   : R.color.locationbar_status_preview_color_light;
         } else if (mPageIsOffline) {
             textColor = mDarkTheme ? R.color.locationbar_status_offline_color
                                    : R.color.locationbar_status_offline_color_light;
         }
 
         @ColorRes
-        int tintColor = mDarkTheme ? R.color.dark_mode_tint : R.color.light_mode_tint;
+        int tintColor = ColorUtils.getThemedToolbarIconTintRes(!mDarkTheme);
 
         mModel.set(StatusProperties.SEPARATOR_COLOR_RES, separatorColor);
         mNavigationIconTintRes = tintColor;
@@ -304,6 +304,11 @@ class StatusMediator {
             tint = mSecurityIconTintRes;
             description = mSecurityIconDescriptionRes;
             toast = R.string.menu_page_info;
+        }
+
+        if (mPageIsPreview) {
+            tint = mDarkTheme ? R.color.locationbar_status_preview_color
+                              : R.color.locationbar_status_preview_color_light;
         }
 
         mModel.set(StatusProperties.STATUS_ICON_RES, icon);

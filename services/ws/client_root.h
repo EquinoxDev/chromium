@@ -15,6 +15,7 @@
 #include "components/viz/host/host_frame_sink_client.h"
 #include "ui/aura/window_observer.h"
 #include "ui/aura/window_tree_host_observer.h"
+#include "ui/display/display_observer.h"
 #include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/geometry/size.h"
 
@@ -35,6 +36,7 @@ class SurfaceInfo;
 namespace ws {
 
 class ProxyWindow;
+class ScopedForceVisible;
 class WindowTree;
 
 // WindowTree creates a ClientRoot for each window the client is embedded in. A
@@ -45,6 +47,7 @@ class WindowTree;
 class COMPONENT_EXPORT(WINDOW_SERVICE) ClientRoot
     : public aura::WindowObserver,
       public aura::WindowTreeHostObserver,
+      public display::DisplayObserver,
       public viz::HostFrameSinkClient {
  public:
   ClientRoot(WindowTree* window_tree, aura::Window* window, bool is_top_level);
@@ -87,8 +90,18 @@ class COMPONENT_EXPORT(WINDOW_SERVICE) ClientRoot
     return parent_local_surface_id_allocator_.has_value();
   }
 
+  // See TopLevelProxyWindow::ForceWindowVisible() for details.
+  std::unique_ptr<ScopedForceVisible> ForceWindowVisible();
+
+  // Called when the WindowTreeHost containing this ClientRoot has changed its
+  // display id.
+  void OnWindowTreeHostDisplayIdChanged();
+
  private:
   friend class ClientRootTestHelper;
+  friend class ScopedForceVisible;
+
+  void OnForceVisibleDestroyed();
 
   // If necessary, this generates a new LocalSurfaceId. Generally you should
   // call UpdateLocalSurfaceIdAndClientSurfaceEmbedder(), not this. If you call
@@ -111,13 +124,20 @@ class COMPONENT_EXPORT(WINDOW_SERVICE) ClientRoot
 
   void NotifyClientOfNewBounds();
 
-  // If necessary, notifies the client that the visibility of the Window is
-  // |new_value|. This does nothing for top-levels.
-  void NotifyClientOfVisibilityChange(bool new_value);
+  // If necessary, notifies the client that the visibility changes. If |visible|
+  // has a value, it is used as the visibility, otherwise IsWindowVisible() is
+  // used.
+  void NotifyClientOfVisibilityChange(
+      base::Optional<bool> visible = base::nullopt);
+
+  // Called when the display id changes.
+  void NotifyClientOfDisplayIdChange();
 
   // Callback when the position of |window_|, relative to the root, changes.
   // This is *only* called for non-top-levels.
   void OnPositionInRootChanged();
+
+  bool IsWindowVisible();
 
   // aura::WindowObserver:
   void OnWindowPropertyChanged(aura::Window* window,
@@ -130,13 +150,14 @@ class COMPONENT_EXPORT(WINDOW_SERVICE) ClientRoot
   void OnWindowAddedToRootWindow(aura::Window* window) override;
   void OnWindowRemovingFromRootWindow(aura::Window* window,
                                       aura::Window* new_root) override;
-  void OnWillMoveWindowToDisplay(aura::Window* window,
-                                 int64_t new_display_id) override;
-  void OnDidMoveWindowToDisplay(aura::Window* window) override;
   void OnWindowVisibilityChanged(aura::Window* window, bool visible) override;
 
   // aura::WindowTreeHostObserver:
   void OnHostResized(aura::WindowTreeHost* host) override;
+
+  // display::DisplayObsever:
+  void OnDisplayMetricsChanged(const display::Display& display,
+                               uint32_t changed_metrics) override;
 
   // viz::HostFrameSinkClient:
   void OnFirstSurfaceActivation(const viz::SurfaceInfo& surface_info) override;
@@ -154,14 +175,9 @@ class COMPONENT_EXPORT(WINDOW_SERVICE) ClientRoot
 
   std::unique_ptr<aura::ClientSurfaceEmbedder> client_surface_embedder_;
 
-  // Set to true in OnWillMoveWindowToDisplay() and false in
-  // OnDidMoveWindowToDisplay().
+  // Set to true in OnWindowRemovingFromRootWindow() when |window_| is moving
+  // to a new root window and reset to false in OnWindowAddedToRootWindow().
   bool is_moving_across_displays_ = false;
-
-  // Set to true if the bounds changes between the time
-  // OnWillMoveWindowToDisplay() is called and OnDidMoveWindowToDisplay() is
-  // called.
-  bool display_move_changed_bounds_ = false;
 
   // Used for non-top-levels to watch for changes in screen coordinates.
   std::unique_ptr<aura_extra::WindowPositionInRootMonitor>
@@ -173,6 +189,9 @@ class COMPONENT_EXPORT(WINDOW_SERVICE) ClientRoot
   // Last visibility value sent to the client. This is not used for top-levels.
   bool last_visible_;
 
+  // Last display id sent to the client.
+  int64_t last_display_id_;
+
   // If true, SetBoundsInScreenFromClient() is setting the window bounds.
   bool setting_bounds_from_client_ = false;
 
@@ -183,6 +202,10 @@ class COMPONENT_EXPORT(WINDOW_SERVICE) ClientRoot
   // own LocalSurfaceId.
   base::Optional<viz::ParentLocalSurfaceIdAllocator>
       parent_local_surface_id_allocator_;
+
+  // If non-null the client is told the window is visible, regardless of
+  // whether the window is actually visible.
+  ScopedForceVisible* force_visible_ = nullptr;
 
   DISALLOW_COPY_AND_ASSIGN(ClientRoot);
 };

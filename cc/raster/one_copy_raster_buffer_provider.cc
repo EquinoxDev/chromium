@@ -11,7 +11,6 @@
 #include <utility>
 
 #include "base/debug/alias.h"
-#include "base/macros.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/strings/stringprintf.h"
 #include "base/trace_event/process_memory_dump.h"
@@ -382,7 +381,8 @@ gpu::SyncToken OneCopyRasterBufferProvider::CopyOnWorkerThread(
   }
 
   if (mailbox->IsZero()) {
-    uint32_t flags = gpu::SHARED_IMAGE_USAGE_RASTER;
+    uint32_t flags =
+        gpu::SHARED_IMAGE_USAGE_DISPLAY | gpu::SHARED_IMAGE_USAGE_RASTER;
     if (mailbox_texture_is_overlay_candidate)
       flags |= gpu::SHARED_IMAGE_USAGE_SCANOUT;
     *mailbox = sii->CreateSharedImage(resource_format, resource_size,
@@ -391,9 +391,11 @@ gpu::SyncToken OneCopyRasterBufferProvider::CopyOnWorkerThread(
 
   // Create staging shared image.
   if (staging_buffer->mailbox.IsZero()) {
-    staging_buffer->mailbox = sii->CreateSharedImage(
-        staging_buffer->gpu_memory_buffer.get(), gpu_memory_buffer_manager_,
-        color_space, gpu::SHARED_IMAGE_USAGE_RASTER);
+    uint32_t flags =
+        gpu::SHARED_IMAGE_USAGE_DISPLAY | gpu::SHARED_IMAGE_USAGE_RASTER;
+    staging_buffer->mailbox =
+        sii->CreateSharedImage(staging_buffer->gpu_memory_buffer.get(),
+                               gpu_memory_buffer_manager_, color_space, flags);
   } else {
     sii->UpdateSharedImage(staging_buffer->sync_token, staging_buffer->mailbox);
   }

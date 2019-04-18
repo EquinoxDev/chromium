@@ -12,7 +12,6 @@
 
 #import "base/mac/scoped_nsobject.h"
 #include "base/macros.h"
-#include "components/viz/common/surfaces/parent_local_surface_id_allocator.h"
 #include "mojo/public/cpp/bindings/associated_binding.h"
 #include "ui/accelerated_widget_mac/ca_transaction_observer.h"
 #include "ui/accelerated_widget_mac/display_ca_layer_tree.h"
@@ -20,10 +19,10 @@
 #include "ui/base/cocoa/ns_view_ids.h"
 #include "ui/base/ime/text_input_client.h"
 #include "ui/display/display_observer.h"
-#include "ui/views/views_export.h"
 #import "ui/views_bridge_mac/cocoa_mouse_capture_delegate.h"
 #include "ui/views_bridge_mac/mojo/bridged_native_widget.mojom.h"
 #include "ui/views_bridge_mac/mojo/text_input_host.mojom.h"
+#include "ui/views_bridge_mac/views_bridge_mac_export.h"
 
 @class BridgedContentView;
 @class ModalShowAnimationWithLayer;
@@ -58,7 +57,7 @@ using views_bridge_mac::CocoaMouseCaptureDelegate;
 // A bridge to an NSWindow managed by an instance of NativeWidgetMac or
 // DesktopNativeWidgetMac. Serves as a helper class to bridge requests from the
 // NativeWidgetMac to the Cocoa window. Behaves a bit like an aura::Window.
-class VIEWS_EXPORT BridgedNativeWidgetImpl
+class VIEWS_BRIDGE_MAC_EXPORT BridgedNativeWidgetImpl
     : public views_bridge_mac::mojom::BridgedNativeWidget,
       public display::DisplayObserver,
       public ui::CATransactionCoordinator::PreCommitObserver,
@@ -187,6 +186,10 @@ class VIEWS_EXPORT BridgedNativeWidgetImpl
   // Redispatch a keyboard event using the widget's window's CommandDispatcher.
   // Return true if the event is handled.
   bool RedispatchKeyEvent(NSEvent* event);
+  // Save an NSEvent to be used at the mojo version of RedispatchKeyEvent,
+  // rather than (inaccurately) reconstructing the NSEvent.
+  // https://crbug.com/942690
+  void SaveKeyEventForRedispatch(NSEvent* event);
 
   // display::DisplayObserver:
   void OnDisplayMetricsChanged(const display::Display& display,
@@ -200,6 +203,8 @@ class VIEWS_EXPORT BridgedNativeWidgetImpl
   void CreateWindow(
       views_bridge_mac::mojom::CreateWindowParamsPtr params) override;
   void SetParent(uint64_t parent_id) override;
+  void StackAbove(uint64_t sibling_id) override;
+  void StackAtTop() override;
   void ShowEmojiPanel() override;
   void InitWindow(views_bridge_mac::mojom::BridgedNativeWidgetInitParamsPtr
                       params) override;
@@ -221,6 +226,8 @@ class VIEWS_EXPORT BridgedNativeWidgetImpl
       views_bridge_mac::mojom::VisibilityTransition transitions) override;
   void SetVisibleOnAllSpaces(bool always_visible) override;
   void SetFullscreen(bool fullscreen) override;
+  void SetCanAppearInExistingFullscreenSpaces(
+      bool can_appear_in_existing_fullscreen_spaces) override;
   void SetMiniaturized(bool miniaturized) override;
   void SetSizeConstraints(const gfx::Size& min_size,
                           const gfx::Size& max_size,
@@ -295,6 +302,7 @@ class VIEWS_EXPORT BridgedNativeWidgetImpl
   base::scoped_nsobject<ViewsNSWindowDelegate> window_delegate_;
   base::scoped_nsobject<NSObject<CommandDispatcherDelegate>>
       window_command_dispatcher_delegate_;
+  base::scoped_nsobject<NSEvent> saved_redispatch_event_;
 
   base::scoped_nsobject<BridgedContentView> bridged_view_;
   std::unique_ptr<ui::ScopedNSViewIdMapping> bridged_view_id_mapping_;
@@ -337,6 +345,13 @@ class VIEWS_EXPORT BridgedNativeWidgetImpl
   // Whether this window is in a fullscreen transition, and the fullscreen state
   // can not currently be changed.
   bool in_fullscreen_transition_ = false;
+
+  // Trying to close an NSWindow during a fullscreen transition will cause the
+  // window to lock up. Use this to track if CloseWindow was called during a
+  // fullscreen transition, to defer the -[NSWindow close] call until the
+  // transition is complete.
+  // https://crbug.com/945237
+  bool has_deferred_window_close_ = false;
 
   // Stores the value last read from -[NSWindow isVisible], to detect visibility
   // changes.

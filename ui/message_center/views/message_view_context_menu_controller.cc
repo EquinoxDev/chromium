@@ -19,7 +19,7 @@ MessageViewContextMenuController::MessageViewContextMenuController() = default;
 
 MessageViewContextMenuController::~MessageViewContextMenuController() = default;
 
-void MessageViewContextMenuController::ShowContextMenuForView(
+void MessageViewContextMenuController::ShowContextMenuForViewImpl(
     views::View* source,
     const gfx::Point& point,
     ui::MenuSourceType source_type) {
@@ -46,7 +46,7 @@ void MessageViewContextMenuController::ShowContextMenuForView(
 
   menu_runner_->RunMenuAt(source->GetWidget()->GetTopLevelWidget(), NULL,
                           gfx::Rect(point, gfx::Size()),
-                          views::MENU_ANCHOR_TOPRIGHT, source_type);
+                          views::MenuAnchorPosition::kTopRight, source_type);
 }
 
 void MessageViewContextMenuController::OnMenuClosed() {

@@ -10,9 +10,7 @@
 #include "base/location.h"
 #include "base/macros.h"
 #include "base/run_loop.h"
-#include "base/single_thread_task_runner.h"
 #include "base/strings/utf_string_conversions.h"
-#include "base/threading/thread_restrictions.h"
 #include "build/build_config.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
@@ -39,16 +37,31 @@
 #include "ui/views/view.h"
 #include "ui/views/widget/widget.h"
 
+#if defined(OS_WIN)
+#include "base/threading/thread.h"
+#include "base/threading/thread_restrictions.h"
+#else
+#include "base/threading/thread_task_runner_handle.h"
+#endif
+
 using bookmarks::BookmarkModel;
 
 class ToolbarViewInteractiveUITest : public AppMenuButtonObserver,
-                                     public extensions::ExtensionBrowserTest {
+                                     public extensions::ExtensionBrowserTest,
+                                     public views::WidgetObserver {
  public:
   ToolbarViewInteractiveUITest() = default;
   ~ToolbarViewInteractiveUITest() override = default;
 
   // AppMenuButtonObserver:
   void AppMenuShown() override;
+
+  // views::WidgetObserver:
+  void OnWidgetDragWillStart(views::Widget* widget) override;
+  void OnWidgetDragComplete(views::Widget* widget) override;
+
+  // Starts a drag to the app menu button.
+  void StartDrag();
 
  protected:
   AppMenuButton* GetAppMenuButton() {
@@ -61,67 +74,60 @@ class ToolbarViewInteractiveUITest : public AppMenuButtonObserver,
         ->toolbar_button_provider()
         ->GetBrowserActionsContainer();
   }
-
-  // Performs a drag-and-drop operation by moving the mouse to |start|, clicking
-  // the left button, moving the mouse to |end|, and releasing the left button.
-  void DoDragAndDrop(const gfx::Point& start, const gfx::Point& end);
+  void set_task_runner(
+      scoped_refptr<base::SingleThreadTaskRunner> task_runner) {
+    task_runner_ = task_runner;
+  }
+  void set_quit_closure(base::OnceClosure quit_closure) {
+    quit_closure_ = std::move(quit_closure);
+  }
+  bool menu_shown() const { return menu_shown_; }
 
  private:
   // InProcessBrowserTest:
   void SetUpOnMainThread() override;
 
+  scoped_refptr<base::SingleThreadTaskRunner> task_runner_;
   bool menu_shown_ = false;
   base::OnceClosure quit_closure_;
 };
 
 void ToolbarViewInteractiveUITest::AppMenuShown() {
   menu_shown_ = true;
-  ui_controls::SendMouseEventsNotifyWhenDone(ui_controls::LEFT, ui_controls::UP,
-                                             std::move(quit_closure_));
+
+  // Release the mouse button, which should result in calling
+  // OnWidgetDragComplete().
+  task_runner_->PostTask(
+      FROM_HERE,
+      base::BindOnce(base::IgnoreResult(&ui_controls::SendMouseEvents),
+                     ui_controls::LEFT, ui_controls::UP,
+                     ui_controls::kNoAccelerator));
 }
 
-void ToolbarViewInteractiveUITest::DoDragAndDrop(const gfx::Point& start,
-                                                 const gfx::Point& end) {
-  // Much of this function is modeled after methods in ViewEventTestBase (in
-  // particular, the |dnd_thread|, but it's easier to move that here than try
-  // to make ViewEventTestBase play nice with a BrowserView (for the toolbar).
-  // TODO(devlin): In a perfect world, this would be factored better.
-
-  // Begin listening for the app menu to open.
-  ScopedObserver<AppMenuButton, AppMenuButtonObserver> observer(this);
-  observer.Add(GetAppMenuButton());
-
-  // Send the mouse to |start|, and click.  The event queue must be flushed
-  // after processing the click, or the next mouse move sent may get processed
-  // before the click is fully handled, causing the test to fail.
-  EXPECT_TRUE(ui_controls::SendMouseMove(start.x(), start.y()));
-  EXPECT_TRUE(
-      ui_test_utils::SendMouseEventsSync(ui_controls::LEFT, ui_controls::DOWN));
-
-  // Enqueue an event to move the mouse, which will start a drag.
-  EXPECT_TRUE(ui_controls::SendMouseMove(end.x() + 10, end.y()));
-
-  // Enqueue an event to move the mouse to |end|.  This must be done on a
-  // background thread, since starting a drag triggers a nested message loop
-  // that filters messages other than mouse events, so further tasks on the main
-  // message loop will be blocked.  Because the mouse move above is already
-  // queued, this is guaranteed to queue after that, and end the drag operation
-  // in the right place.
-  base::ScopedAllowBaseSyncPrimitivesForTesting allow_thread_join;
-  base::Thread dnd_thread("mouse_move_thread");
-  dnd_thread.Start();
-  dnd_thread.task_runner()->PostTask(
+void ToolbarViewInteractiveUITest::OnWidgetDragWillStart(
+    views::Widget* widget) {
+  // Enqueue an event to move the mouse to the app menu button, which should
+  // result in calling AppMenuShown().
+  const gfx::Point target =
+      ui_test_utils::GetCenterInScreenCoordinates(GetAppMenuButton());
+  task_runner_->PostTask(
       FROM_HERE, base::BindOnce(base::IgnoreResult(&ui_controls::SendMouseMove),
-                                end.x(), end.y()));
+                                target.x(), target.y()));
+}
 
-  base::RunLoop run_loop;
-  quit_closure_ = run_loop.QuitWhenIdleClosure();
-  run_loop.Run();
+void ToolbarViewInteractiveUITest::OnWidgetDragComplete(views::Widget* widget) {
+  // Return control to the testcase.
+  std::move(quit_closure_).Run();
+}
 
-  // Verify postconditions.
-  EXPECT_TRUE(menu_shown_);
-  // The app menu should have closed once the drag-and-drop completed.
-  EXPECT_FALSE(GetAppMenuButton()->IsMenuShowing());
+void ToolbarViewInteractiveUITest::StartDrag() {
+  // Move the mouse outside the toolbar action, which should result in calling
+  // OnWidgetDragWillStart().
+  const views::View* toolbar_action =
+      GetBrowserActions()->GetToolbarActionViewAt(0);
+  gfx::Point target(toolbar_action->width() + 1, toolbar_action->height() / 2);
+  views::View::ConvertPointToScreen(toolbar_action, &target);
+  EXPECT_TRUE(ui_controls::SendMouseMove(target.x(), target.y()));
 }
 
 void ToolbarViewInteractiveUITest::SetUpOnMainThread() {
@@ -132,16 +138,8 @@ void ToolbarViewInteractiveUITest::SetUpOnMainThread() {
   ToolbarActionsBar::disable_animations_for_testing_ = true;
 }
 
-#if defined(OS_LINUX) && defined(USE_AURA)
-// TODO(pkasting): https://crbug.com/923188 Flaky
-#define MAYBE_TestAppMenuOpensOnDrag DISABLED_TestAppMenuOpensOnDrag
-#elif defined(OS_MACOSX)
-// TODO(pkasting): https://crbug.com/910435 Test hangs in the run loop on Mac, I
-// don't know why.
-#define MAYBE_TestAppMenuOpensOnDrag DISABLED_TestAppMenuOpensOnDrag
-#elif defined(USE_OZONE)
-// TODO(pkasting): https://crbug.com/910423 Can't post mouse events from
-// background threads on Ozone, which is required to avoid hanging.
+// TODO(pkasting): https://crbug.com/939621 Fails on Mac.
+#if defined(OS_MACOSX)
 #define MAYBE_TestAppMenuOpensOnDrag DISABLED_TestAppMenuOpensOnDrag
 #else
 #define MAYBE_TestAppMenuOpensOnDrag TestAppMenuOpensOnDrag
@@ -156,20 +154,52 @@ IN_PROC_BROWSER_TEST_F(ToolbarViewInteractiveUITest,
   // with a clean slate.
   base::RunLoop().RunUntilIdle();
 
+  // Set up observers that will drive the test along.
+  AppMenuButton* const app_menu_button = GetAppMenuButton();
+  EXPECT_FALSE(app_menu_button->IsMenuShowing());
+  ScopedObserver<views::Widget, views::WidgetObserver> widget_observer(this);
+  widget_observer.Add(
+      BrowserView::GetBrowserViewForBrowser(browser())->GetWidget());
+  ScopedObserver<AppMenuButton, AppMenuButtonObserver> button_observer(this);
+  button_observer.Add(app_menu_button);
+
+  // Set up the task runner to use for posting drag actions.
+  // TODO(devlin): This is basically ViewEventTestBase::GetDragTaskRunner().  In
+  // a perfect world, this would be factored better.
+#if defined(OS_WIN)
+  // Drag events must be posted from a background thread, since starting a drag
+  // triggers a nested message loop that filters messages other than mouse
+  // events, so further tasks on the main message loop will be blocked.
+  base::ScopedAllowBaseSyncPrimitivesForTesting allow_thread_join;
+  base::Thread drag_event_thread("drag-event-thread");
+  drag_event_thread.Start();
+  set_task_runner(drag_event_thread.task_runner());
+#else
+  // Drag events must be posted from the current thread, since UI events on many
+  // platforms cannot be posted from background threads.  The nested drag
+  // message loop on non-Windows does not filter out non-input events, so these
+  // tasks will run.
+  set_task_runner(base::ThreadTaskRunnerHandle::Get());
+#endif
+
+  // Click on the toolbar action.
   BrowserActionsContainer* const browser_actions = GetBrowserActions();
   ASSERT_EQ(1u, browser_actions->VisibleBrowserActions());
   ToolbarActionView* toolbar_action =
       browser_actions->GetToolbarActionViewAt(0);
   ASSERT_TRUE(toolbar_action);
+  ui_test_utils::MoveMouseToCenterAndPress(
+      toolbar_action, ui_controls::LEFT, ui_controls::DOWN,
+      base::BindRepeating(&ToolbarViewInteractiveUITest::StartDrag,
+                          base::Unretained(this)));
+  base::RunLoop run_loop;
+  set_quit_closure(run_loop.QuitWhenIdleClosure());
+  run_loop.Run();
 
-  gfx::Point browser_action_view_loc =
-      ui_test_utils::GetCenterInScreenCoordinates(toolbar_action);
-  gfx::Point app_button_loc =
-      ui_test_utils::GetCenterInScreenCoordinates(GetAppMenuButton());
-
-  // Perform a drag and drop from the browser action view to the app button,
-  // which should open the app menu.
-  DoDragAndDrop(browser_action_view_loc, app_button_loc);
+  // Verify postconditions.
+  EXPECT_TRUE(menu_shown());
+  // The app menu should have closed once the drag-and-drop completed.
+  EXPECT_FALSE(app_menu_button->IsMenuShowing());
 }
 
 class ToolbarViewTest : public InProcessBrowserTest {

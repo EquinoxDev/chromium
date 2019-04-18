@@ -65,10 +65,9 @@ class WebUIDataSourceTest : public testing::Test {
     return source_->GetMimeType(path);
   }
 
-  bool HandleRequest(const std::string& path,
+  void HandleRequest(const std::string& path,
                      const WebUIDataSourceImpl::GotDataCallback&) {
     request_path_ = path;
-    return true;
   }
 
   void RequestFilterQueryStringCallback(
@@ -180,6 +179,7 @@ void WebUIDataSourceTest::RequestFilterQueryStringCallback(
 TEST_F(WebUIDataSourceTest, RequestFilterQueryString) {
   request_path_ = std::string();
   source()->SetRequestFilter(
+      base::BindRepeating([](const std::string& path) { return true; }),
       base::Bind(&WebUIDataSourceTest::HandleRequest, base::Unretained(this)));
   source()->SetDefaultResource(kDummyDefaultResourceId);
   source()->AddResourcePath("foobar", kDummyResourceId);
@@ -193,6 +193,7 @@ TEST_F(WebUIDataSourceTest, MimeType) {
   const char* css = "text/css";
   const char* html = "text/html";
   const char* js = "application/javascript";
+  const char* png = "image/png";
   EXPECT_EQ(GetMimeType(std::string()), html);
   EXPECT_EQ(GetMimeType("foo"), html);
   EXPECT_EQ(GetMimeType("foo.html"), html);
@@ -204,6 +205,9 @@ TEST_F(WebUIDataSourceTest, MimeType) {
   EXPECT_EQ(GetMimeType("foocss"), html);
   EXPECT_EQ(GetMimeType("foo.css"), css);
   EXPECT_EQ(GetMimeType(".css.foo"), html);
+  EXPECT_EQ(GetMimeType("foopng"), html);
+  EXPECT_EQ(GetMimeType("foo.png"), png);
+  EXPECT_EQ(GetMimeType(".png.foo"), html);
 
   // With query strings.
   EXPECT_EQ(GetMimeType("foo?abc?abc"), html);

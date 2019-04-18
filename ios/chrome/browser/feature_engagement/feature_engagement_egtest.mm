@@ -14,12 +14,11 @@
 #include "components/feature_engagement/public/tracker.h"
 #include "components/feature_engagement/test/test_tracker.h"
 #include "ios/chrome/browser/browser_state/chrome_browser_state.h"
-#include "ios/chrome/browser/experimental_flags.h"
 #include "ios/chrome/browser/feature_engagement/tracker_factory.h"
+#include "ios/chrome/browser/system_flags.h"
 #import "ios/chrome/browser/ui/popup_menu/popup_menu_constants.h"
 #import "ios/chrome/browser/ui/tab_grid/tab_grid_egtest_util.h"
 #import "ios/chrome/browser/ui/table_view/table_view_navigation_controller_constants.h"
-#include "ios/chrome/browser/ui/util/ui_util.h"
 #import "ios/chrome/browser/ui/util/uikit_ui_util.h"
 #include "ios/chrome/grit/ios_strings.h"
 #import "ios/chrome/test/app/chrome_test_util.h"
@@ -231,24 +230,15 @@ void EnableLongPressTipTriggering(base::test::ScopedFeatureList& feature_list) {
       assertWithMatcher:grey_notNil()];
 
   // Close tools menu by tapping reload.
-  if (IsUIRefreshPhase1Enabled()) {
-    [[[EarlGrey
-        selectElementWithMatcher:grey_allOf(
-                                     chrome_test_util::ReloadButton(),
-                                     grey_ancestor(grey_accessibilityID(
-                                         kPopupMenuToolsMenuTableViewId)),
-                                     nil)]
-           usingSearchAction:grey_scrollInDirection(kGREYDirectionUp, 150)
-        onElementWithMatcher:grey_accessibilityID(
-                                 kPopupMenuToolsMenuTableViewId)]
-        performAction:grey_tap()];
-  } else {
-    [[[EarlGrey selectElementWithMatcher:chrome_test_util::ReloadButton()]
-           usingSearchAction:grey_scrollInDirection(kGREYDirectionUp, 150)
-        onElementWithMatcher:grey_accessibilityID(
-                                 kPopupMenuToolsMenuTableViewId)]
-        performAction:grey_tap()];
-  }
+  [[[EarlGrey
+      selectElementWithMatcher:grey_allOf(
+                                   chrome_test_util::ReloadButton(),
+                                   grey_ancestor(
+                                       chrome_test_util::ToolsMenuView()),
+                                   nil)]
+         usingSearchAction:grey_scrollInDirection(kGREYDirectionUp, 150)
+      onElementWithMatcher:chrome_test_util::ToolsMenuView()]
+      performAction:grey_tap()];
 
   // Reopen tools menu to verify that the badge does not appear again.
   [ChromeEarlGreyUI openToolsMenu];
@@ -343,7 +333,8 @@ void EnableLongPressTipTriggering(base::test::ScopedFeatureList& feature_list) {
 
 // Verifies that the New Tab Tip does not appear if all conditions are met,
 // but the NTP is open.
-- (void)testNewTabTipPromoDoesNotAppearOnNTP {
+// TODO(crbug.com/934248) The test is flaky.
+- (void)DISABLED_testNewTabTipPromoDoesNotAppearOnNTP {
   base::test::ScopedFeatureList scoped_feature_list;
 
   EnableNewTabTipTriggering(scoped_feature_list);
@@ -368,10 +359,8 @@ void EnableLongPressTipTriggering(base::test::ScopedFeatureList& feature_list) {
 
 // Verifies that the bottom toolbar tip is displayed when the phone is in split
 // toolbar mode.
-- (void)testBottomToolbarAppear {
-  if (!IsUIRefreshPhase1Enabled())
-    return;
-
+// TODO(crbug.com/934248) The test is flaky.
+- (void)DISABLED_testBottomToolbarAppear {
   if (!IsSplitToolbarMode())
     return;
 
@@ -402,9 +391,6 @@ void EnableLongPressTipTriggering(base::test::ScopedFeatureList& feature_list) {
 // Verifies that the bottom toolbar tip is not displayed when the phone is not
 // in split toolbar mode.
 - (void)testBottomToolbarDontAppearOnNonSplitToolbar {
-  if (!IsUIRefreshPhase1Enabled())
-    return;
-
   if (IsSplitToolbarMode())
     return;
 
@@ -434,10 +420,8 @@ void EnableLongPressTipTriggering(base::test::ScopedFeatureList& feature_list) {
 
 // Verifies that the LongPress tip is displayed only after the Bottom Toolbar
 // tip is presented.
-- (void)testLongPressTipAppearAfterBottomToolbar {
-  if (!IsUIRefreshPhase1Enabled())
-    return;
-
+// TODO(crbug.com/934248) The test is flaky.
+- (void)DISABLED_testLongPressTipAppearAfterBottomToolbar {
   if (!IsSplitToolbarMode())
     return;
 

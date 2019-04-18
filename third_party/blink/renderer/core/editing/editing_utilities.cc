@@ -56,6 +56,7 @@
 #include "third_party/blink/renderer/core/frame/use_counter.h"
 #include "third_party/blink/renderer/core/html/canvas/html_canvas_element.h"
 #include "third_party/blink/renderer/core/html/forms/html_input_element.h"
+#include "third_party/blink/renderer/core/html/forms/text_control_element.h"
 #include "third_party/blink/renderer/core/html/html_br_element.h"
 #include "third_party/blink/renderer/core/html/html_div_element.h"
 #include "third_party/blink/renderer/core/html/html_image_element.h"
@@ -178,11 +179,11 @@ bool IsAtomicNode(const Node* node) {
 }
 
 template <typename Traversal>
-static int ComparePositions(const Node* container_a,
-                            int offset_a,
-                            const Node* container_b,
-                            int offset_b,
-                            bool* disconnected) {
+static int16_t ComparePositions(const Node* container_a,
+                                int offset_a,
+                                const Node* container_b,
+                                int offset_b,
+                                bool* disconnected) {
   DCHECK(container_a);
   DCHECK(container_b);
 
@@ -275,27 +276,27 @@ static int ComparePositions(const Node* container_a,
   return 0;
 }
 
-int ComparePositionsInDOMTree(const Node* container_a,
-                              int offset_a,
-                              const Node* container_b,
-                              int offset_b,
-                              bool* disconnected) {
+int16_t ComparePositionsInDOMTree(const Node* container_a,
+                                  int offset_a,
+                                  const Node* container_b,
+                                  int offset_b,
+                                  bool* disconnected) {
   return ComparePositions<NodeTraversal>(container_a, offset_a, container_b,
                                          offset_b, disconnected);
 }
 
-int ComparePositionsInFlatTree(const Node* container_a,
-                               int offset_a,
-                               const Node* container_b,
-                               int offset_b,
-                               bool* disconnected) {
+int16_t ComparePositionsInFlatTree(const Node* container_a,
+                                   int offset_a,
+                                   const Node* container_b,
+                                   int offset_b,
+                                   bool* disconnected) {
   return ComparePositions<FlatTreeTraversal>(container_a, offset_a, container_b,
                                              offset_b, disconnected);
 }
 
 // Compare two positions, taking into account the possibility that one or both
 // could be inside a shadow tree. Only works for non-null values.
-int ComparePositions(const Position& a, const Position& b) {
+int16_t ComparePositions(const Position& a, const Position& b) {
   DCHECK(a.IsNotNull());
   DCHECK(b.IsNotNull());
   const TreeScope* common_scope = Position::CommonAncestorTreeScope(a, b);
@@ -314,7 +315,7 @@ int ComparePositions(const Position& a, const Position& b) {
   bool has_descendent_b = node_b != b.ComputeContainerNode();
   int offset_b = has_descendent_b ? 0 : b.ComputeOffsetInContainerNode();
 
-  int bias = 0;
+  int16_t bias = 0;
   if (node_a == node_b) {
     if (has_descendent_a)
       bias = -1;
@@ -322,16 +323,17 @@ int ComparePositions(const Position& a, const Position& b) {
       bias = 1;
   }
 
-  int result = ComparePositionsInDOMTree(node_a, offset_a, node_b, offset_b);
+  int16_t result =
+      ComparePositionsInDOMTree(node_a, offset_a, node_b, offset_b);
   return result ? result : bias;
 }
 
-int ComparePositions(const PositionWithAffinity& a,
-                     const PositionWithAffinity& b) {
+int16_t ComparePositions(const PositionWithAffinity& a,
+                         const PositionWithAffinity& b) {
   return ComparePositions(a.GetPosition(), b.GetPosition());
 }
 
-int ComparePositions(const VisiblePosition& a, const VisiblePosition& b) {
+int16_t ComparePositions(const VisiblePosition& a, const VisiblePosition& b) {
   return ComparePositions(a.DeepEquivalent(), b.DeepEquivalent());
 }
 
@@ -409,6 +411,24 @@ bool HasRichlyEditableStyle(const Node& node) {
   return HasEditableLevel(node, kRichlyEditable);
 }
 
+// This method is copied from WebElement::IsEditable.
+// TODO(dglazkov): Remove. Consumers of this code should use
+// Node:hasEditableStyle.  http://crbug.com/612560
+bool IsEditableElement(const Node& node) {
+  if (HasEditableStyle(node))
+    return true;
+
+  if (auto* text_control = ToTextControlOrNull(&node)) {
+    if (!text_control->IsDisabledOrReadOnly())
+      return true;
+  }
+
+  if (auto* element = ToElementOrNull(const_cast<Node*>(&node)))
+    return EqualIgnoringASCIICase(element->getAttribute(kRoleAttr), "textbox");
+
+  return false;
+}
+
 bool IsRootEditableElement(const Node& node) {
   return HasEditableStyle(node) && node.IsElementNode() &&
          (!node.parentNode() || !HasEditableStyle(*node.parentNode()) ||
@@ -427,14 +447,11 @@ Element* RootEditableElement(const Node& node) {
   return ToElement(const_cast<Node*>(result));
 }
 
-ContainerNode* HighestEditableRoot(
-    const Position& position,
-    Element* (*root_editable_element_of)(const Position&),
-    bool (*has_editable_style)(const Node&)) {
+ContainerNode* HighestEditableRoot(const Position& position) {
   if (position.IsNull())
     return nullptr;
 
-  ContainerNode* highest_root = root_editable_element_of(position);
+  ContainerNode* highest_root = RootEditableElementOf(position);
   if (!highest_root)
     return nullptr;
 
@@ -443,7 +460,7 @@ ContainerNode* HighestEditableRoot(
 
   ContainerNode* node = highest_root->parentNode();
   while (node) {
-    if (has_editable_style(*node))
+    if (HasEditableStyle(*node))
       highest_root = node;
     if (IsHTMLBodyElement(*node))
       break;
@@ -680,8 +697,16 @@ PositionTemplate<Strategy> FirstEditablePositionAfterPositionInRootAlgorithm(
   // sibling position. If not, we can't get the next paragraph in
   // InsertListCommand::doApply's while loop. See http://crbug.com/571420
   if (non_editable_node &&
-      non_editable_node->IsDescendantOf(editable_position.AnchorNode()))
-    editable_position = NextVisuallyDistinctCandidate(editable_position);
+      non_editable_node->IsDescendantOf(editable_position.AnchorNode())) {
+    // Make sure not to move out of |highest_root|
+    const PositionTemplate<Strategy> boundary =
+        PositionTemplate<Strategy>::LastPositionInNode(highest_root);
+    const PositionTemplate<Strategy> next_candidate =
+        NextVisuallyDistinctCandidate(editable_position);
+    editable_position = next_candidate.IsNotNull()
+                            ? std::min(boundary, next_candidate)
+                            : boundary;
+  }
   return editable_position;
 }
 
@@ -974,19 +999,6 @@ Element* EnclosingBlockFlowElement(const Node& node) {
       return ToElement(&runner);
   }
   return nullptr;
-}
-
-EUserSelect UsedValueOfUserSelect(const Node& node) {
-  if (node.IsHTMLElement() && ToHTMLElement(node).IsTextControl())
-    return EUserSelect::kText;
-  if (!node.GetLayoutObject())
-    return EUserSelect::kNone;
-
-  const ComputedStyle* style = node.GetLayoutObject()->Style();
-  if (style->UserModify() != EUserModify::kReadOnly)
-    return EUserSelect::kText;
-
-  return style->UserSelect();
 }
 
 template <typename Strategy>
@@ -1552,9 +1564,9 @@ FloatQuad LocalToAbsoluteQuadOf(const LocalCaretRect& caret_rect) {
 }
 
 const StaticRangeVector* TargetRangesForInputEvent(const Node& node) {
-  // TODO(editing-dev): The use of updateStyleAndLayoutIgnorePendingStylesheets
+  // TODO(editing-dev): The use of UpdateStyleAndLayout
   // needs to be audited. see http://crbug.com/590369 for more details.
-  node.GetDocument().UpdateStyleAndLayoutIgnorePendingStylesheets();
+  node.GetDocument().UpdateStyleAndLayout();
   if (!HasRichlyEditableStyle(node))
     return nullptr;
   const EphemeralRange& range =
@@ -1707,6 +1719,7 @@ void WriteImageNodeToClipboard(const Node& node, const String& title) {
       StripLeadingAndTrailingHTMLSpaces(GetUrlStringFromNode(node)));
   SystemClipboard::GetInstance().WriteImageWithTag(image.get(), url_string,
                                                    title);
+  SystemClipboard::GetInstance().CommitWrite();
 }
 
 Element* FindEventTargetFrom(LocalFrame& frame,

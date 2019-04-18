@@ -4,12 +4,12 @@
 #include "third_party/blink/renderer/modules/peerconnection/adapters/p2p_quic_transport_impl.h"
 
 #include "net/quic/quic_chromium_connection_helper.h"
-#include "net/third_party/quic/core/crypto/quic_random.h"
-#include "net/third_party/quic/core/quic_config.h"
-#include "net/third_party/quic/core/quic_utils.h"
-#include "net/third_party/quic/core/tls_client_handshaker.h"
-#include "net/third_party/quic/core/tls_server_handshaker.h"
-#include "net/third_party/quic/tools/quic_simple_crypto_server_stream_helper.h"
+#include "net/third_party/quiche/src/quic/core/crypto/quic_random.h"
+#include "net/third_party/quiche/src/quic/core/quic_config.h"
+#include "net/third_party/quiche/src/quic/core/quic_utils.h"
+#include "net/third_party/quiche/src/quic/core/tls_client_handshaker.h"
+#include "net/third_party/quiche/src/quic/core/tls_server_handshaker.h"
+#include "net/third_party/quiche/src/quic/tools/quic_simple_crypto_server_stream_helper.h"
 
 namespace blink {
 
@@ -154,13 +154,9 @@ std::unique_ptr<quic::QuicConnection> CreateQuicConnection(
   ip.FromString("0.0.0.0");
   quic::QuicSocketAddress dummy_address(ip, 0 /* Port */);
   quic::QuicConnectionId dummy_connection_id;
-  if (GetQuicRestartFlag(quic_variable_length_connection_ids_client)) {
-    char connection_id_bytes[8] = {0, 0, 0, 0, 0, 0, 0, 0};
-    dummy_connection_id = quic::QuicConnectionId(connection_id_bytes,
-                                                 sizeof(connection_id_bytes));
-  } else {
-    dummy_connection_id = quic::EmptyQuicConnectionId();
-  }
+  char connection_id_bytes[8] = {0, 0, 0, 0, 0, 0, 0, 0};
+  dummy_connection_id =
+      quic::QuicConnectionId(connection_id_bytes, sizeof(connection_id_bytes));
   return std::make_unique<quic::QuicConnection>(
       dummy_connection_id, dummy_address, helper, alarm_factory, packet_writer,
       /* owns_writer */ true, perspective, quic::CurrentSupportedVersions());
@@ -185,7 +181,7 @@ class DummyCryptoServerStreamHelper
                             const quic::QuicSocketAddress& client_address,
                             const quic::QuicSocketAddress& peer_address,
                             const quic::QuicSocketAddress& self_address,
-                            quic::QuicString* error_details) const override {
+                            std::string* error_details) const override {
     return true;
   }
 
@@ -448,7 +444,7 @@ void P2PQuicTransportImpl::InitializeCryptoStream() {
       helper_->GetRandomGenerator()->RandBytes(random_hostname,
                                                kHostnameLength);
       quic::QuicServerId server_id(
-          /*host=*/quic::QuicString(random_hostname, kHostnameLength),
+          /*host=*/std::string(random_hostname, kHostnameLength),
           /*port=*/0,
           /*privacy_mode_enabled=*/false);
       crypto_stream_ = std::make_unique<quic::QuicCryptoClientStream>(
@@ -509,6 +505,12 @@ void P2PQuicTransportImpl::OnConnectionClosed(
     // This connection was closed by the application of the remote side.
     delegate_->OnRemoteStopped();
   }
+}
+
+bool P2PQuicTransportImpl::ShouldKeepConnectionAlive() const {
+  // TODO: this is default behavior; please change the timeout logic as
+  // appropriate.
+  return GetNumOpenDynamicStreams() > 0;
 }
 
 bool P2PQuicTransportImpl::IsClosed() {

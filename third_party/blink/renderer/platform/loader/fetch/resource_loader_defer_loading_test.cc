@@ -106,6 +106,9 @@ class ResourceLoaderDefersLoadingTest::TestWebURLLoader final
   void DidChangePriority(WebURLRequest::Priority, int) override {
     NOTREACHED();
   }
+  scoped_refptr<base::SingleThreadTaskRunner> GetTaskRunner() override {
+    return base::MakeRefCounted<scheduler::FakeTaskRunner>();
+  }
 
  private:
   // Points to |ResourceLoaderDefersLoadingTest::web_url_loader_defers_|.
@@ -173,7 +176,6 @@ TEST_F(ResourceLoaderDefersLoadingTest, CodeCacheFetchCheckDefers) {
   ResourceRequest request;
   request.SetURL(test_url_);
   request.SetRequestContext(mojom::RequestContextType::FETCH);
-  request.SetFrameType(network::mojom::RequestContextFrameType::kNone);
   FetchParameters fetch_parameters(request);
 
   Resource* resource = RawResource::Fetch(fetch_parameters, fetcher, nullptr);
@@ -198,7 +200,6 @@ TEST_F(ResourceLoaderDefersLoadingTest, CodeCacheFetchSyncReturn) {
   ResourceRequest request;
   request.SetURL(test_url_);
   request.SetRequestContext(mojom::RequestContextType::FETCH);
-  request.SetFrameType(network::mojom::RequestContextFrameType::kNone);
   FetchParameters fetch_parameters(request);
 
   Resource* resource = RawResource::Fetch(fetch_parameters, fetcher, nullptr);
@@ -213,7 +214,6 @@ TEST_F(ResourceLoaderDefersLoadingTest, ChangeDefersToFalse) {
   ResourceRequest request;
   request.SetURL(test_url_);
   request.SetRequestContext(mojom::RequestContextType::FETCH);
-  request.SetFrameType(network::mojom::RequestContextFrameType::kNone);
   FetchParameters fetch_parameters(request);
 
   Resource* resource = RawResource::Fetch(fetch_parameters, fetcher, nullptr);
@@ -232,7 +232,6 @@ TEST_F(ResourceLoaderDefersLoadingTest, ChangeDefersToTrue) {
   ResourceRequest request;
   request.SetURL(test_url_);
   request.SetRequestContext(mojom::RequestContextType::FETCH);
-  request.SetFrameType(network::mojom::RequestContextFrameType::kNone);
   FetchParameters fetch_parameters(request);
 
   Resource* resource = RawResource::Fetch(fetch_parameters, fetcher, nullptr);
@@ -255,7 +254,6 @@ TEST_F(ResourceLoaderDefersLoadingTest, ChangeDefersMultipleTimes) {
   ResourceRequest request;
   request.SetURL(test_url_);
   request.SetRequestContext(mojom::RequestContextType::FETCH);
-  request.SetFrameType(network::mojom::RequestContextFrameType::kNone);
 
   FetchParameters fetch_parameters(request);
   Resource* resource = RawResource::Fetch(fetch_parameters, fetcher, nullptr);

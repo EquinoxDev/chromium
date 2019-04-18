@@ -138,6 +138,7 @@ class RendererWindowTreeClient : public ws::mojom::WindowTreeClient,
   void OnWindowBoundsChanged(
       ws::Id window_id,
       const gfx::Rect& new_bounds,
+      ui::WindowShowState state,
       const base::Optional<viz::LocalSurfaceIdAllocation>&
           local_surface_id_allocation) override;
   void OnWindowTransformChanged(ws::Id window_id,
@@ -156,8 +157,6 @@ class RendererWindowTreeClient : public ws::mojom::WindowTreeClient,
                          ws::mojom::OrderDirection direction) override;
   void OnWindowDeleted(ws::Id window_id) override;
   void OnWindowVisibilityChanged(ws::Id window_id, bool visible) override;
-  void OnWindowOpacityChanged(ws::Id window_id,
-                              float new_opacity) override;
   void OnWindowDisplayChanged(ws::Id window_id, int64_t display_id) override;
   void OnWindowParentDrawnStateChanged(ws::Id window_id, bool drawn) override;
   void OnWindowSharedPropertyChanged(
@@ -206,6 +205,8 @@ class RendererWindowTreeClient : public ws::mojom::WindowTreeClient,
       const base::flat_map<ws::Id, ws::mojom::OcclusionState>&
           occlusion_changes) override;
   void CleanupGestureState(ws::Id window_id) override;
+  void OnWindowResizeLoopStarted(ws::Id window_id) override;
+  void OnWindowResizeLoopEnded(ws::Id window_id) override;
 
   const int routing_id_;
   ws::Id root_window_id_ = 0u;

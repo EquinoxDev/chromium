@@ -12,6 +12,7 @@
 #include "mojo/public/cpp/bindings/binding.h"
 #include "services/service_manager/public/cpp/service_context_ref.h"
 #include "services/video_capture/device_factory.h"
+#include "services/video_capture/public/mojom/devices_changed_observer.mojom.h"
 
 #if defined(OS_CHROMEOS)
 #include "media/capture/video/chromeos/mojo/cros_image_capture.mojom.h"
@@ -29,7 +30,7 @@ class DeviceFactoryMediaToMojoAdapter : public DeviceFactory {
  public:
   DeviceFactoryMediaToMojoAdapter(
       std::unique_ptr<media::VideoCaptureSystem> capture_system,
-      media::MojoJpegDecodeAcceleratorFactoryCB jpeg_decoder_factory_callback,
+      media::MojoMjpegDecodeAcceleratorFactoryCB jpeg_decoder_factory_callback,
       scoped_refptr<base::SequencedTaskRunner> jpeg_decoder_task_runner);
   ~DeviceFactoryMediaToMojoAdapter() override;
 
@@ -78,7 +79,7 @@ class DeviceFactoryMediaToMojoAdapter : public DeviceFactory {
 
   std::unique_ptr<service_manager::ServiceContextRef> service_ref_;
   const std::unique_ptr<media::VideoCaptureSystem> capture_system_;
-  const media::MojoJpegDecodeAcceleratorFactoryCB
+  const media::MojoMjpegDecodeAcceleratorFactoryCB
       jpeg_decoder_factory_callback_;
   scoped_refptr<base::SequencedTaskRunner> jpeg_decoder_task_runner_;
   std::map<std::string, ActiveDeviceEntry> active_devices_by_id_;

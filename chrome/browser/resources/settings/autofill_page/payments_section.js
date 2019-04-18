@@ -19,52 +19,16 @@ class PaymentsManager {
   addCreditCardListChangedListener(listener) {}
 
   /**
-   * Add an observer to the list of local credit cards.
-   * @param {function(!Array<!PaymentsManager.CreditCardEntry>):void} listener
-   */
-  addLocalCreditCardListChangedListener(listener) {}
-
-  /**
-   * Add an observer to the list of server credit cards.
-   * @param {function(!Array<!PaymentsManager.CreditCardEntry>):void} listener
-   */
-  addServerCreditCardListChangedListener(listener) {}
-
-  /**
    * Remove an observer from the list of credit cards.
    * @param {function(!Array<!PaymentsManager.CreditCardEntry>):void} listener
    */
   removeCreditCardListChangedListener(listener) {}
 
   /**
-   * Remove an observer from the list of local credit cards.
-   * @param {function(!Array<!PaymentsManager.CreditCardEntry>):void} listener
-   */
-  removeLocalCreditCardListChangedListener(listener) {}
-
-  /**
-   * Remove an observer from the list of server credit cards.
-   * @param {function(!Array<!PaymentsManager.CreditCardEntry>):void} listener
-   */
-  removeServerCreditCardListChangedListener(listener) {}
-
-  /**
    * Request the list of credit cards.
    * @param {function(!Array<!PaymentsManager.CreditCardEntry>):void} callback
    */
   getCreditCardList(callback) {}
-
-  /**
-   * Request the list of local credit cards.
-   * @param {function(!Array<!PaymentsManager.CreditCardEntry>):void} callback
-   */
-  getLocalCreditCardList(callback) {}
-
-  /**
-   * Request the list of server credit cards.
-   * @param {function(!Array<!PaymentsManager.CreditCardEntry>):void} callback
-   */
-  getServerCreditCardList(callback) {}
 
   /** @param {string} guid The GUID of the credit card to remove.  */
   removeCreditCard(guid) {}
@@ -103,45 +67,13 @@ class PaymentsManagerImpl {
   }
 
   /** @override */
-  addLocalCreditCardListChangedListener(listener) {
-    chrome.autofillPrivate.onLocalCreditCardListChanged.addListener(listener);
-  }
-
-  /** @override */
-  addServerCreditCardListChangedListener(listener) {
-    chrome.autofillPrivate.onServerCreditCardListChanged.addListener(listener);
-  }
-
-  /** @override */
   removeCreditCardListChangedListener(listener) {
     chrome.autofillPrivate.onCreditCardListChanged.removeListener(listener);
   }
 
   /** @override */
-  removeLocalCreditCardListChangedListener(listener) {
-    chrome.autofillPrivate.onLocalCreditCardListChanged.removeListener(
-        listener);
-  }
-
-  /** @override */
-  removeServerCreditCardListChangedListener(listener) {
-    chrome.autofillPrivate.onServerCreditCardListChanged.removeListener(
-        listener);
-  }
-
-  /** @override */
   getCreditCardList(callback) {
     chrome.autofillPrivate.getCreditCardList(callback);
-  }
-
-  /** @override */
-  getLocalCreditCardList(callback) {
-    chrome.autofillPrivate.getLocalCreditCardList(callback);
-  }
-
-  /** @override */
-  getServerCreditCardList(callback) {
-    chrome.autofillPrivate.getServerCreditCardList(callback);
   }
 
   /** @override */
@@ -188,19 +120,10 @@ Polymer({
      * An array of all saved credit cards.
      * @type {!Array<!PaymentsManager.CreditCardEntry>}
      */
-    creditCards: Array,
-
-    /**
-     * An array of saved locl credit cards.
-     * @type {!Array<!PaymentsManager.CreditCardEntry>}
-     */
-    localCreditCards: Array,
-
-    /**
-     * An array of saved server credit cards.
-     * @type {!Array<!PaymentsManager.CreditCardEntry>}
-     */
-    serverCreditCards: Array,
+    creditCards: {
+      type: Array,
+      value: () => [],
+    },
 
     /**
      * The model for any credit card related action menus or dialogs.
@@ -215,12 +138,6 @@ Polymer({
     migratableCreditCardsInfo_: String,
 
     /**
-     * The current sync status, supplied by SyncBrowserProxy.
-     * @type {?settings.SyncStatus}
-     */
-    syncStatus: Object,
-
-    /**
      * Whether migration local card on settings page is enabled.
      * @private
      */
@@ -228,78 +145,6 @@ Polymer({
       type: Boolean,
       value: function() {
         return loadTimeData.getBoolean('migrationEnabled');
-      },
-      readOnly: true,
-    },
-
-    /**
-     * Whether user has a Google Payments account.
-     * @private
-     */
-    hasGooglePaymentsAccount_: {
-      type: Boolean,
-      value: function() {
-        return loadTimeData.getBoolean('hasGooglePaymentsAccount');
-      },
-      readOnly: true,
-    },
-
-    /**
-     * Whether Autofill Upstream is enabled.
-     * @private
-     */
-    upstreamEnabled_: {
-      type: Boolean,
-      value: function() {
-        return loadTimeData.getBoolean('upstreamEnabled');
-      },
-      readOnly: true,
-    },
-
-    /**
-     * Whether the user has a secondary sync passphrase.
-     * @private
-     */
-    isUsingSecondaryPassphrase_: {
-      type: Boolean,
-      value: function() {
-        return loadTimeData.getBoolean('isUsingSecondaryPassphrase');
-      },
-      readOnly: true,
-    },
-
-    /**
-     * Whether the upload-to-google state is active.
-     * @private
-     */
-    uploadToGoogleActive_: {
-      type: Boolean,
-      value: function() {
-        return loadTimeData.getBoolean('uploadToGoogleActive');
-      },
-      readOnly: true,
-    },
-
-    /**
-     * Whether the domain of the user's email is allowed.
-     * @private
-     */
-    userEmailDomainAllowed_: {
-      type: Boolean,
-      value: function() {
-        return loadTimeData.getBoolean('userEmailDomainAllowed');
-      },
-      readOnly: true,
-    },
-
-    /**
-     * True when the cards list should be split in two..
-     * @private {boolean}
-     */
-    splitCreditCardList_: {
-      type: Boolean,
-      value: function() {
-        return loadTimeData.getBoolean('splitCreditCardList');
       },
       readOnly: true,
     },
@@ -330,21 +175,6 @@ Polymer({
    */
   setCreditCardsListener_: null,
 
-  /**
-   * @type {?function(!Array<!PaymentsManager.CreditCardEntry>)}
-   * @private
-   */
-  setLocalCreditCardsListener_: null,
-
-  /**
-   * @type {?function(!Array<!PaymentsManager.CreditCardEntry>)}
-   * @private
-   */
-  setServerCreditCardsListener_: null,
-
-  /** @private {?settings.SyncBrowserProxy} */
-  syncBrowserProxy_: null,
-
   /** @override */
   attached: function() {
     // Create listener function.
@@ -352,41 +182,19 @@ Polymer({
     const setCreditCardsListener = list => {
       this.creditCards = list;
     };
-    /** @type {function(!Array<!PaymentsManager.CreditCardEntry>)} */
-    const setLocalCreditCardsListener = list => {
-      this.localCreditCards = list;
-    };
-    /** @type {function(!Array<!PaymentsManager.CreditCardEntry>)} */
-    const setServerCreditCardsListener = list => {
-      this.serverCreditCards = list;
-    };
 
     // Remember the bound reference in order to detach.
     this.setCreditCardsListener_ = setCreditCardsListener;
-    this.setLocalCreditCardsListener_ = setLocalCreditCardsListener;
-    this.setServerCreditCardsListener_ = setServerCreditCardsListener;
 
     // Set the managers. These can be overridden by tests.
     this.paymentsManager_ = PaymentsManagerImpl.getInstance();
 
     // Request initial data.
     this.paymentsManager_.getCreditCardList(setCreditCardsListener);
-    this.paymentsManager_.getLocalCreditCardList(setLocalCreditCardsListener);
-    this.paymentsManager_.getServerCreditCardList(setServerCreditCardsListener);
 
     // Listen for changes.
     this.paymentsManager_.addCreditCardListChangedListener(
         setCreditCardsListener);
-    this.paymentsManager_.addLocalCreditCardListChangedListener(
-        setLocalCreditCardsListener);
-    this.paymentsManager_.addServerCreditCardListChangedListener(
-        setServerCreditCardsListener);
-
-    this.syncBrowserProxy_ = settings.SyncBrowserProxyImpl.getInstance();
-    this.syncBrowserProxy_.getSyncStatus().then(
-        this.handleSyncStatus_.bind(this));
-    this.addWebUIListener(
-        'sync-status-changed', this.handleSyncStatus_.bind(this));
 
     // Record that the user opened the payments settings.
     chrome.metricsPrivate.recordUserAction('AutofillCreditCardsViewed');
@@ -397,12 +205,6 @@ Polymer({
     this.paymentsManager_.removeCreditCardListChangedListener(
         /** @type {function(!Array<!PaymentsManager.CreditCardEntry>)} */ (
             this.setCreditCardsListener_));
-    this.paymentsManager_.removeLocalCreditCardListChangedListener(
-        /** @type {function(!Array<!PaymentsManager.CreditCardEntry>)} */ (
-            this.setLocalCreditCardsListener_));
-    this.paymentsManager_.removeServerCreditCardListChangedListener(
-        /** @type {function(!Array<!PaymentsManager.CreditCardEntry>)} */ (
-            this.setServerCreditCardsListener_));
   },
 
   /**
@@ -509,70 +311,19 @@ Polymer({
   },
 
   /**
-   * Handler for when the sync state is pushed from the browser.
-   * @param {?settings.SyncStatus} syncStatus
-   * @private
-   */
-  handleSyncStatus_: function(syncStatus) {
-    this.syncStatus = syncStatus;
-  },
-
-  /**
-   * @param {!settings.SyncStatus} syncStatus
    * @param {!Array<!PaymentsManager.CreditCardEntry>} creditCards
    * @param {boolean} creditCardEnabled
-   * @return {boolean} Whether to show the migration button. True iff at
-   *     least
-   * one valid local card, enable migration, signed-in & synced and credit
-   * card pref enabled.
+   * @return {boolean} Whether to show the migration button.
    * @private
    */
-  checkIfMigratable_: function(syncStatus, creditCards, creditCardEnabled) {
-    if (syncStatus == undefined) {
-      return false;
-    }
-
-    // If user not enable migration experimental flag, return false.
+  checkIfMigratable_: function(creditCards, creditCardEnabled) {
+    // If migration prerequisites are not met, return false.
     if (!this.migrationEnabled_) {
-      return false;
-    }
-
-    // If user does not have Google Payments Account, return false.
-    if (!this.hasGooglePaymentsAccount_) {
-      return false;
-    }
-
-    // If the Autofill Upstream feature is not enabled, return false.
-    if (!this.upstreamEnabled_) {
-      return false;
-    }
-
-    // Don't offer upload if user has a secondary passphrase. Users who have
-    // enabled a passphrase have chosen to not make their sync information
-    // accessible to Google. Since upload makes credit card data available
-    // to other Google systems, disable it for passphrase users.
-    if (this.isUsingSecondaryPassphrase_) {
-      return false;
-    }
-
-    // If upload-to-Google state is not active, card cannot be saved to
-    // Google Payments. Return false.
-    if (!this.uploadToGoogleActive_) {
-      return false;
-    }
-
-    // The domain of the user's email address is not allowed, return false.
-    if (!this.userEmailDomainAllowed_) {
       return false;
     }
 
     // If credit card enabled pref is false, return false.
     if (!creditCardEnabled) {
-      return false;
-    }
-
-    // If user not signed-in and synced, return false.
-    if (!syncStatus.signedIn || !syncStatus.syncSystemEnabled) {
       return false;
     }
 

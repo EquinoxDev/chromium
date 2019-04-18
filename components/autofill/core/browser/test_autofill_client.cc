@@ -7,7 +7,7 @@
 #include "base/strings/utf_string_conversions.h"
 #include "components/autofill/core/browser/autofill_metrics.h"
 #include "components/autofill/core/browser/autofill_test_utils.h"
-#include "components/autofill/core/browser/local_card_migration_manager.h"
+#include "components/autofill/core/browser/payments/local_card_migration_manager.h"
 #include "components/autofill/core/browser/webdata/autofill_webdata_service.h"
 
 namespace autofill {
@@ -122,10 +122,10 @@ void TestAutofillClient::ConfirmSaveAutofillProfile(
 
 void TestAutofillClient::ConfirmSaveCreditCardLocally(
     const CreditCard& card,
-    bool show_prompt,
+    SaveCreditCardOptions options,
     LocalSaveCardPromptCallback callback) {
   confirm_save_credit_card_locally_called_ = true;
-  offer_to_save_credit_card_bubble_was_shown_ = show_prompt;
+  offer_to_save_credit_card_bubble_was_shown_ = options.show_prompt;
   std::move(callback).Run(AutofillClient::ACCEPTED);
 }
 
@@ -137,6 +137,7 @@ void TestAutofillClient::ConfirmAccountNameFixFlow(
 }
 
 void TestAutofillClient::ConfirmExpirationDateFixFlow(
+    const CreditCard& card,
     base::OnceCallback<void(const base::string16&, const base::string16&)>
         callback) {
   credit_card_name_fix_flow_bubble_was_shown_ = true;
@@ -149,11 +150,9 @@ void TestAutofillClient::ConfirmExpirationDateFixFlow(
 void TestAutofillClient::ConfirmSaveCreditCardToCloud(
     const CreditCard& card,
     std::unique_ptr<base::DictionaryValue> legal_message,
-    bool should_request_name_from_user,
-    bool should_request_expiration_date_from_user,
-    bool show_prompt,
+    SaveCreditCardOptions options,
     UploadSaveCardPromptCallback callback) {
-  offer_to_save_credit_card_bubble_was_shown_ = show_prompt;
+  offer_to_save_credit_card_bubble_was_shown_ = options.show_prompt;
   std::move(callback).Run(AutofillClient::ACCEPTED, {});
 }
 

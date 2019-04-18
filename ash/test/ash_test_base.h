@@ -13,6 +13,7 @@
 #include <vector>
 
 #include "ash/public/cpp/shell_window_ids.h"
+#include "ash/wm/desks/desks_util.h"
 #include "base/macros.h"
 #include "base/test/scoped_feature_list.h"
 #include "base/threading/thread.h"
@@ -33,6 +34,10 @@ namespace test {
 class ScopedTaskEnvironment;
 }
 }  // namespace base
+
+namespace chromeos {
+class FakePowerManagerClient;
+}
 
 namespace display {
 class Display;
@@ -72,6 +77,7 @@ class Shelf;
 class TestScreenshotDelegate;
 class TestSessionControllerClient;
 class UnifiedSystemTray;
+class WorkAreaInsets;
 
 class AshTestBase : public testing::Test {
  public:
@@ -87,6 +93,9 @@ class AshTestBase : public testing::Test {
 
   // Returns the unified system tray on the primary display.
   static UnifiedSystemTray* GetPrimaryUnifiedSystemTray();
+
+  // Returns WorkAreaInsets for the primary display.
+  static WorkAreaInsets* GetPrimaryWorkAreaInsets();
 
   // AshTestBase creates a ScopedTaskEnvironment. This may not be appropriate in
   // some environments. Use this to destroy it.
@@ -111,8 +120,9 @@ class AshTestBase : public testing::Test {
   // values for |container_id|.
   static std::unique_ptr<views::Widget> CreateTestWidget(
       views::WidgetDelegate* delegate = nullptr,
-      int container_id = kShellWindowId_DefaultContainer,
-      const gfx::Rect& bounds = gfx::Rect());
+      int container_id = desks_util::GetActiveDeskContainerId(),
+      const gfx::Rect& bounds = gfx::Rect(),
+      bool show = true);
 
   // Returns the set of properties for creating a proxy window.
   std::map<std::string, std::vector<uint8_t>> CreatePropertiesForProxyWindow(
@@ -175,6 +185,9 @@ class AshTestBase : public testing::Test {
   // Convenience method to return the DisplayManager.
   display::DisplayManager* display_manager();
 
+  // Convenience method to return the FakePowerManagerClient.
+  chromeos::FakePowerManagerClient* power_manager_client() const;
+
   // Test if moving a mouse to |point_in_screen| warps it to another
   // display.
   bool TestIfMouseWarpsAt(ui::test::EventGenerator* event_generator,
@@ -222,6 +235,10 @@ class AshTestBase : public testing::Test {
 
   // Simulates kiosk mode. |user_type| must correlate to a kiosk type user.
   void SimulateKioskMode(user_manager::UserType user_type);
+
+  // Simulates setting height of the accessibility panel.
+  // Note: Accessibility panel widget needs to be setup first.
+  void SetAccessibilityPanelHeight(int panel_height);
 
   // Clears all user sessions and resets to the primary login screen state.
   void ClearLogin();
@@ -290,6 +307,7 @@ class NoSessionAshTestBase : public AshTestBase {
 // Base test class that forces single-process mash to be enabled *and* creates
 // a views::MusClient. This base class is useful for testing WindowService
 // related functionality exposed by Ash.
+// TODO(sky): this name is misleading. Rename to better indicate what it does.
 class SingleProcessMashTestBase : public AshTestBase {
  public:
   SingleProcessMashTestBase();

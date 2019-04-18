@@ -14,11 +14,12 @@
 namespace views {
 class ImageView;
 class Label;
-}
+}  // namespace views
 
 namespace message_center {
 
 class NotificationControlButtonsView;
+class TimestampView;
 
 class MESSAGE_CENTER_EXPORT NotificationHeaderView : public views::Button {
  public:
@@ -27,20 +28,30 @@ class MESSAGE_CENTER_EXPORT NotificationHeaderView : public views::Button {
   void SetAppIcon(const gfx::ImageSkia& img);
   void SetAppName(const base::string16& name);
   void SetAppNameElideBehavior(gfx::ElideBehavior elide_behavior);
+
+  // Progress, summary and overflow indicator are all the same UI element so are
+  // mutually exclusive.
   void SetProgress(int progress);
+  void SetSummaryText(const base::string16& text);
   void SetOverflowIndicator(int count);
-  void SetTimestamp(base::Time past);
+
+  void SetTimestamp(base::Time timestamp);
   void SetExpandButtonEnabled(bool enabled);
   void SetExpanded(bool expanded);
   void SetSettingsButtonEnabled(bool enabled);
   void SetCloseButtonEnabled(bool enabled);
   void SetControlButtonsVisible(bool visible);
+
   // Set the unified theme color used among the app icon, app name, and expand
   // button.
   void SetAccentColor(SkColor color);
+
+  // Sets the background color of the notification. This is used to ensure that
+  // the accent color has enough contrast against the background.
+  void SetBackgroundColor(SkColor color);
+
   void ClearAppIcon();
   void ClearProgress();
-  void ClearOverflowIndicator();
   void ClearTimestamp();
   bool IsExpandButtonEnabled();
   void SetSubpixelRenderingEnabled(bool enabled);
@@ -55,7 +66,13 @@ class MESSAGE_CENTER_EXPORT NotificationHeaderView : public views::Button {
 
   SkColor accent_color_for_testing() { return accent_color_; }
 
+  const views::Label* summary_text_for_testing() const {
+    return summary_text_view_;
+  }
+
   const base::string16& app_name_for_testing() const;
+
+  const gfx::ImageSkia& app_icon_for_testing() const;
 
  private:
   // Update visibility for both |summary_text_view_| and |timestamp_view_|.
@@ -67,15 +84,15 @@ class MESSAGE_CENTER_EXPORT NotificationHeaderView : public views::Button {
   views::Label* summary_text_divider_ = nullptr;
   views::Label* summary_text_view_ = nullptr;
   views::Label* timestamp_divider_ = nullptr;
-  views::Label* timestamp_view_ = nullptr;
+  TimestampView* timestamp_view_ = nullptr;
   views::ImageView* app_icon_view_ = nullptr;
   views::ImageView* expand_button_ = nullptr;
 
   bool settings_button_enabled_ = false;
   bool has_progress_ = false;
-  bool has_overflow_indicator_ = false;
   bool has_timestamp_ = false;
   bool is_expanded_ = false;
+  bool using_default_app_icon_ = false;
 
   DISALLOW_COPY_AND_ASSIGN(NotificationHeaderView);
 };

@@ -4,6 +4,8 @@
 
 static_library("send_tab_to_self") {
   sources = [
+    "features.cc",
+    "features.h",
     "send_tab_to_self_bridge.cc",
     "send_tab_to_self_bridge.h",
     "send_tab_to_self_entry.cc",
@@ -16,10 +18,34 @@ static_library("send_tab_to_self") {
   ]
   deps = [
     "//base",
+    "//components/history/core/browser",
     "//components/keyed_service/core",
+    "//components/send_tab_to_self/proto:send_tab_to_self_proto",
     "//components/sync",
     "//components/version_info",
     "//url",
+  ]
+  public_deps = [
+    "//components/send_tab_to_self/proto:send_tab_to_self_proto",
+  ]
+  if (is_ios || is_android) {
+    sources += [
+      "send_tab_to_self_infobar_delegate.cc",
+      "send_tab_to_self_infobar_delegate.h",
+    ]
+    deps += [ "//components/infobars/core" ]
+  }
+}
+
+source_set("test_support") {
+  testonly = true
+  sources = [
+    "test_send_tab_to_self_model.cc",
+    "test_send_tab_to_self_model.h",
+  ]
+  deps = [
+    ":send_tab_to_self",
+    "//base",
   ]
 }
 
@@ -33,6 +59,8 @@ source_set("unit_tests") {
     ":send_tab_to_self",
     "//base",
     "//base/test:test_support",
+    "//components/history/core/browser",
+    "//components/send_tab_to_self/proto:send_tab_to_self_proto",
     "//components/sync",
     "//components/sync:test_support_driver",
     "//components/sync:test_support_model",

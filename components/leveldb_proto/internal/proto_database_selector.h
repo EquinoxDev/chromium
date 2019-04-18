@@ -43,7 +43,7 @@ class ProtoDatabaseSelector
   void InitUniqueOrShared(
       const std::string& client_name,
       base::FilePath db_dir,
-      const leveldb_env::Options& options,
+      const leveldb_env::Options& unique_db_options,
       bool use_shared_db,
       scoped_refptr<base::SequencedTaskRunner> callback_task_runner,
       Callbacks::InitStatusCallback callback);
@@ -59,11 +59,6 @@ class ProtoDatabaseSelector
   void UpdateEntriesWithRemoveFilter(
       std::unique_ptr<KeyValueVector> entries_to_save,
       const KeyFilter& delete_key_filter,
-      Callbacks::UpdateCallback callback);
-  void UpdateEntriesWithRemoveFilter(
-      std::unique_ptr<KeyValueVector> entries_to_save,
-      const KeyFilter& delete_key_filter,
-      const std::string& target_prefix,
       Callbacks::UpdateCallback callback);
 
   void LoadEntries(typename Callbacks::LoadCallback callback);
@@ -86,8 +81,7 @@ class ProtoDatabaseSelector
       const std::string& end,
       typename Callbacks::LoadKeysAndEntriesCallback callback);
 
-  void LoadKeys(const std::string& target_prefix,
-                Callbacks::LoadKeysCallback callback);
+  void LoadKeys(Callbacks::LoadKeysCallback callback);
 
   void GetEntry(const std::string& key,
                 typename Callbacks::GetCallback callback);
@@ -103,7 +97,11 @@ class ProtoDatabaseSelector
  private:
   friend class base::RefCountedThreadSafe<ProtoDatabaseSelector>;
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
+=======
+  template <typename T>
+>>>>>>> 2d57e5b8afc6d01b344a8d95d3470d46b35845c5
   friend class ProtoDatabaseImplTest;
 >>>>>>> 1edcc2f128d290860af09401391ae79df290b5f3
 
@@ -178,6 +176,8 @@ class ProtoDatabaseSelector
   InitStatus init_status_ = InitStatus::NOT_STARTED;
   base::queue<base::OnceClosure> pending_tasks_;
   std::unique_ptr<UniqueProtoDatabase> db_;
+  base::FilePath unique_database_dir_;
+  std::string client_name_;
 
   SEQUENCE_CHECKER(sequence_checker_);
 };

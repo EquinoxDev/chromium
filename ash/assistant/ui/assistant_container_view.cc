@@ -37,9 +37,6 @@ namespace {
 // Appearance.
 constexpr SkColor kBackgroundColor = SK_ColorWHITE;
 
-// Window properties.
-DEFINE_UI_CLASS_PROPERTY_KEY(bool, kOnlyAllowMouseClickEvents, false)
-
 // AssistantContainerClientView ------------------------------------------------
 
 // AssistantContainerClientView is the client view for AssistantContainerView
@@ -130,7 +127,7 @@ class AssistantContainerEventTargeter : public aura::WindowTargeter {
   // aura::WindowTargeter:
   bool SubtreeShouldBeExploredForEvent(aura::Window* window,
                                        const ui::LocatedEvent& event) override {
-    if (window->GetProperty(kOnlyAllowMouseClickEvents)) {
+    if (window->GetProperty(assistant::ui::kOnlyAllowMouseClickEvents)) {
       if (event.type() != ui::ET_MOUSE_PRESSED &&
           event.type() != ui::ET_MOUSE_RELEASED) {
         return false;
@@ -273,11 +270,6 @@ AssistantContainerView::~AssistantContainerView() {
   delegate_->RemoveUiModelObserver(this);
 }
 
-// static
-void AssistantContainerView::OnlyAllowMouseClickEvents(aura::Window* window) {
-  window->SetProperty(kOnlyAllowMouseClickEvents, true);
-}
-
 const char* AssistantContainerView::GetClassName() const {
   return "AssistantContainerView";
 }
@@ -287,7 +279,7 @@ void AssistantContainerView::AddedToWidget() {
       std::make_unique<AssistantContainerEventTargeter>());
 }
 
-ax::mojom::Role AssistantContainerView::GetAccessibleWindowRole() const {
+ax::mojom::Role AssistantContainerView::GetAccessibleWindowRole() {
   return ax::mojom::Role::kWindow;
 }
 
@@ -315,7 +307,7 @@ void AssistantContainerView::ChildPreferredSizeChanged(views::View* child) {
 }
 
 void AssistantContainerView::ViewHierarchyChanged(
-    const ViewHierarchyChangedDetails& details) {
+    const views::ViewHierarchyChangedDetails& details) {
   // Do nothing. We override this method to prevent a super class implementation
   // from taking effect which would otherwise cause ChromeVox to read the entire
   // Assistant view hierarchy.
@@ -356,8 +348,6 @@ void AssistantContainerView::Init() {
 
   // Mini view.
   assistant_mini_view_ = new AssistantMiniView(delegate_);
-  assistant_mini_view_->set_mini_view_delegate(
-      delegate_->GetMiniViewDelegate());
   AddChildView(assistant_mini_view_);
 
   // Web view.

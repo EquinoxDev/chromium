@@ -57,15 +57,6 @@ class DummyLocalFrameClient : public EmptyLocalFrameClient {
 
 }  // namespace
 
-std::unique_ptr<DummyPageHolder> DummyPageHolder::Create(
-    const IntSize& initial_view_size,
-    Page::PageClients* page_clients,
-    LocalFrameClient* local_frame_client,
-    FrameSettingOverrideFunction setting_overrider) {
-  return base::WrapUnique(new DummyPageHolder(
-      initial_view_size, page_clients, local_frame_client, setting_overrider));
-}
-
 DummyPageHolder::DummyPageHolder(
     const IntSize& initial_view_size,
     Page::PageClients* page_clients_argument,
@@ -76,7 +67,7 @@ DummyPageHolder::DummyPageHolder(
     FillWithEmptyClients(page_clients);
   else
     page_clients.chrome_client = page_clients_argument->chrome_client;
-  page_ = Page::Create(page_clients);
+  page_ = Page::CreateNonOrdinary(page_clients);
   Settings& settings = page_->GetSettings();
   if (setting_overrider)
     (*setting_overrider)(settings);

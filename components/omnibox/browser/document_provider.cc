@@ -30,6 +30,8 @@
 #include "components/data_use_measurement/core/data_use_user_data.h"
 #include "components/omnibox/browser/autocomplete_input.h"
 #include "components/omnibox/browser/autocomplete_match.h"
+#include "components/omnibox/browser/autocomplete_match_classification.h"
+#include "components/omnibox/browser/autocomplete_provider.h"
 #include "components/omnibox/browser/autocomplete_provider_client.h"
 #include "components/omnibox/browser/autocomplete_provider_listener.h"
 #include "components/omnibox/browser/document_suggestions_service.h"
@@ -37,8 +39,8 @@
 #include "components/omnibox/browser/in_memory_url_index_types.h"
 #include "components/omnibox/browser/omnibox_field_trial.h"
 #include "components/omnibox/browser/omnibox_pref_names.h"
-#include "components/omnibox/browser/scored_history_match.h"
 #include "components/omnibox/browser/search_provider.h"
+#include "components/omnibox/common/omnibox_features.h"
 #include "components/pref_registry/pref_registry_syncable.h"
 #include "components/prefs/pref_service.h"
 #include "components/search_engines/search_engine_type.h"
@@ -340,9 +342,8 @@ void DocumentProvider::OnURLLoadComplete(
 }
 
 bool DocumentProvider::UpdateResults(const std::string& json_data) {
-  std::unique_ptr<base::DictionaryValue> response =
-      base::DictionaryValue::From(base::JSONReader::ReadDeprecated(
-          json_data, base::JSON_ALLOW_TRAILING_COMMAS));
+  base::Optional<base::Value> response =
+      base::JSONReader::Read(json_data, base::JSON_ALLOW_TRAILING_COMMAS);
   if (!response)
     return false;
 
@@ -430,6 +431,9 @@ bool DocumentProvider::ParseDocumentSearchResults(const base::Value& root_val,
       omnibox::kDocumentProvider, "DocumentScoreResult2", 700);
   int score2 = base::GetFieldTrialParamByFeatureAsInt(
       omnibox::kDocumentProvider, "DocumentScoreResult3", 300);
+  // During development/quality iteration we may wish to defeat server scores.
+  bool use_server_scores = base::GetFieldTrialParamByFeatureAsBool(
+      omnibox::kDocumentProvider, "DocumentUseServerScore", true);
 
   // Some users may be in a counterfactual study arm in which we perform all
   // necessary work but do not forward the autocomplete matches.
@@ -472,7 +476,7 @@ bool DocumentProvider::ParseDocumentSearchResults(const base::Value& root_val,
         break;
     }
     int server_score;
-    if (result->GetInteger("score", &server_score)) {
+    if (use_server_scores && result->GetInteger("score", &server_score)) {
       if (previous_score >= 0 && server_score >= previous_score) {
         server_score = previous_score - 1;
       }
@@ -513,7 +517,7 @@ bool DocumentProvider::ParseDocumentSearchResults(const base::Value& root_val,
         match.description = GetProductDescriptionString(mimetype);
       }
       AutocompleteMatch::AddLastClassificationIfNecessary(
-          &match.description_class, 0, ACMatchClassification::NONE);
+          &match.description_class, 0, ACMatchClassification::DIM);
     }
     match.transition = ui::PAGE_TRANSITION_GENERATED;
     if (!in_counterfactual_group) {
@@ -529,29 +533,10 @@ bool DocumentProvider::ParseDocumentSearchResults(const base::Value& root_val,
 ACMatchClassifications DocumentProvider::Classify(
     const base::string16& text,
     const base::string16& input_text) {
-  base::string16 clean_text = bookmarks::CleanUpTitleForMatching(text);
-  base::string16 lower_input_text(base::i18n::ToLower(input_text));
-  String16Vector input_terms =
-      base::SplitString(lower_input_text, base::kWhitespaceUTF16,
-                        base::TRIM_WHITESPACE, base::SPLIT_WANT_NONEMPTY);
-
-  TermMatches matches;
-  for (size_t i = 0; i < input_terms.size(); ++i) {
-    TermMatches term_matches = MatchTermInString(input_terms[i], clean_text, i);
-    matches.insert(matches.end(), term_matches.begin(), term_matches.end());
-  }
-  matches = SortMatches(matches);
-  matches = DeoverlapMatches(matches);
-
-  WordStarts word_starts;
-  String16VectorFromString16(clean_text, false, &word_starts);
-
-  WordStarts terms_to_word_starts_offsets(input_terms.size(), 0);
-  matches = ScoredHistoryMatch::FilterTermMatchesByWordStarts(
-      matches, terms_to_word_starts_offsets, word_starts, 0, std::string::npos);
-
-  return HistoryProvider::SpansFromTermMatch(matches, clean_text.length(),
-                                             false);
+  TermMatches term_matches = FindTermMatches(input_text, text, true, false);
+  return ClassifyTermMatches(term_matches, text.size(),
+                             ACMatchClassification::MATCH,
+                             ACMatchClassification::NONE);
 }
 
 // static
@@ -559,6 +544,7 @@ const GURL DocumentProvider::GetURLForDeduping(const GURL& url) {
   // We aim to prevent duplicate Drive URLs to appear between the Drive document
   // search provider and history/bookmark entries.
   // Drive URLs take on two core forms, and may have request parameters.
+  // Additionally, we may have redirector URLs which wrap a drive URL.
   // All URLs are canonicalized to a GURL form only used for deduplication and
   // not guaranteed to be usable for navigation.
   // URLs of the following forms are handled:
@@ -566,6 +552,7 @@ const GURL DocumentProvider::GetURLForDeduping(const GURL& url) {
   // https://docs.google.com/document/d/(id)/edit
   // https://docs.google.com/spreadsheets/d/(id)/edit#gid=12345
   // https://docs.google.com/presentation/d/(id)/edit#slide=id.g12345a_0_26
+  // https://www.google.com/url?[...]url=https://drive.google.com/a/google.com/open?id%3D1fkxx6KYRYnSqljThxShJVliQJLdKzuJBnzogzL3n8rE&[...]
   // where id is comprised of characters in [0-9A-Za-z\-_] = [\w\-]
   std::string id;
   if (url.host() == "drive.google.com" && url.path() == "/open") {
@@ -574,6 +561,12 @@ const GURL DocumentProvider::GetURLForDeduping(const GURL& url) {
     static re2::LazyRE2 doc_link_regex = {
         "^/(?:document|spreadsheets|presentation|forms)/d/([\\w-]+)/"};
     RE2::PartialMatch(url.path(), *doc_link_regex, &id);
+  } else if (url.host() == "www.google.com" && url.path() == "/url") {
+    // Redirect links wrapping a drive.google.com/open?id= link.
+    static re2::LazyRE2 redirect_link_regex = {
+        "^[^#]*url=https://drive\\.google\\.com/(?:a/[\\w\\.]+/"
+        ")?open\\?id%3D([^#&]*)"};
+    RE2::PartialMatch(url.query(), *redirect_link_regex, &id);
   }
 
   if (id.empty()) {

@@ -11,17 +11,13 @@
 #include "ui/gfx/buffer_types.h"
 #include "ui/gfx/geometry/size.h"
 
-namespace gfx {
-
-struct GpuMemoryBufferHandle;
-
-}  // namespace gfx
-
 namespace media {
 
 class VideoFrame;
 
 namespace test {
+
+class Image;
 
 // The video frame processor defines an abstract interface for classes that are
 // interested in processing video frames (e.g. FrameValidator,...).
@@ -54,22 +50,27 @@ bool ConvertVideoFrame(const VideoFrame* src_frame, VideoFrame* dst_frame);
 scoped_refptr<VideoFrame> ConvertVideoFrame(const VideoFrame* src_frame,
                                             VideoPixelFormat dst_pixel_format);
 
-// Create a platform-specific DMA-buffer-backed video frame with specified
-// |pixel_format|, |size| and |buffer_usage|.
-scoped_refptr<VideoFrame> CreatePlatformVideoFrame(
-    VideoPixelFormat pixel_format,
-    const gfx::Size& size,
-    gfx::BufferUsage buffer_usage = gfx::BufferUsage::SCANOUT_VDA_WRITE);
+// Copy |src_frame| into a new VideoFrame with |dst_layout|. This doesn't
+// convert pixel format. That is, |dst_layout|'s format must be the same as
+// |src_frame|'s format. This function supports all formats. The created
+// VideoFrame's content is the same as |src_frame|. The created VideoFrame owns
+// the buffer. Returns nullptr on failure.
+scoped_refptr<VideoFrame> CloneVideoFrameWithLayout(
+    const VideoFrame* const src_frame,
+    const VideoFrameLayout& dst_layout);
 
-// Create a shared GPU memory handle to the |video_frame|'s data.
-gfx::GpuMemoryBufferHandle CreateGpuMemoryBufferHandle(
-    scoped_refptr<VideoFrame> video_frame);
+// Get VideoFrame that contains Load()ed data. The returned VideoFrame doesn't
+// own the data and thus must not be changed.
+scoped_refptr<const VideoFrame> CreateVideoFrameFromImage(const Image& image);
 
-// Create a video frame layout for the specified |pixel_format| and |size|. The
-// created layout will have a separate buffer for each plane in the format.
+// Create a video frame layout for the specified |pixel_format| and
+// |coded_size|. If |single_buffer| is true, the created VideoFrameLayout
+// represents all the planes are stored in the same buffer. Otherwise, it
+// represents each plane is stored in separated planes.
 base::Optional<VideoFrameLayout> CreateVideoFrameLayout(
     VideoPixelFormat pixel_format,
-    const gfx::Size& size);
+    const gfx::Size& size,
+    bool single_buffer);
 
 }  // namespace test
 }  // namespace media

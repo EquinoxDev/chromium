@@ -45,6 +45,7 @@
 #include "chrome/browser/prefs/pref_service_syncable_util.h"
 #include "chrome/browser/prerender/prerender_manager.h"
 #include "chrome/browser/profiles/chrome_browser_main_extra_parts_profiles.h"
+#include "chrome/browser/profiles/profile_key.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/profiles/storage_partition_descriptor.h"
 #include "chrome/browser/search_engines/template_url_fetcher_factory.h"
@@ -53,6 +54,7 @@
 #include "chrome/browser/signin/signin_util.h"
 #include "chrome/browser/sync/bookmark_sync_service_factory.h"
 #include "chrome/browser/sync/glue/sync_start_util.h"
+#include "chrome/browser/transition_manager/full_browser_transition_manager.h"
 #include "chrome/browser/ui/zoom/chrome_zoom_level_prefs.h"
 #include "chrome/browser/web_data_service_factory.h"
 #include "chrome/common/buildflags.h"
@@ -77,6 +79,8 @@
 #include "components/history/core/test/history_service_test_util.h"
 #include "components/keyed_service/content/browser_context_dependency_manager.h"
 #include "components/keyed_service/core/refcounted_keyed_service.h"
+#include "components/keyed_service/core/simple_dependency_manager.h"
+#include "components/keyed_service/core/simple_factory_key.h"
 #include "components/offline_pages/buildflags/buildflags.h"
 #include "components/omnibox/browser/autocomplete_classifier.h"
 #include "components/omnibox/browser/history_index_restore_observer.h"
@@ -112,6 +116,7 @@
 #include "net/url_request/url_request_test_util.h"
 #include "services/identity/public/cpp/identity_test_utils.h"
 #include "services/network/public/cpp/features.h"
+#include "services/service_manager/public/cpp/service.h"
 #include "testing/gmock/include/gmock/gmock.h"
 
 #if BUILDFLAG(ENABLE_EXTENSIONS)
@@ -129,12 +134,17 @@
 #include "extensions/browser/extension_system.h"
 #endif
 
+#if !defined(OS_ANDROID)
+#include "chrome/services/app_service/app_service.h"
+#include "chrome/services/app_service/public/mojom/constants.mojom.h"
+#endif
+
 #if defined(OS_CHROMEOS)
 #include "chrome/browser/chromeos/arc/arc_service_launcher.h"
 #include "chrome/browser/chromeos/net/delay_network_call.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
-#include "chromeos/account_manager/account_manager.h"
-#include "chromeos/account_manager/account_manager_factory.h"
+#include "chromeos/components/account_manager/account_manager.h"
+#include "chromeos/components/account_manager/account_manager_factory.h"
 #endif
 
 #if BUILDFLAG(ENABLE_SUPERVISED_USERS)
@@ -213,8 +223,7 @@ std::unique_ptr<KeyedService> BuildWebDataService(
 }
 
 #if BUILDFLAG(ENABLE_OFFLINE_PAGES)
-std::unique_ptr<KeyedService> BuildOfflinePageModel(
-    content::BrowserContext* context) {
+std::unique_ptr<KeyedService> BuildOfflinePageModel(SimpleFactoryKey* key) {
   return std::make_unique<offline_pages::StubOfflinePageModel>();
 }
 #endif
@@ -247,8 +256,10 @@ TestingProfile::TestingProfile(const base::FilePath& path, Delegate* delegate)
       testing_prefs_(nullptr),
       original_profile_(nullptr),
       guest_session_(false),
+      allows_browser_windows_(true),
       last_session_exited_cleanly_(true),
       profile_path_(path),
+      simple_dependency_manager_(SimpleDependencyManager::GetInstance()),
       browser_context_dependency_manager_(
           BrowserContextDependencyManager::GetInstance()),
       resource_context_(nullptr),
@@ -277,6 +288,7 @@ TestingProfile::TestingProfile(
     std::unique_ptr<sync_preferences::PrefServiceSyncable> prefs,
     TestingProfile* parent,
     bool guest_session,
+    bool allows_browser_windows,
     base::Optional<bool> is_new_profile,
     const std::string& supervised_user_id,
     std::unique_ptr<policy::PolicyService> policy_service,
@@ -287,6 +299,7 @@ TestingProfile::TestingProfile(
       testing_prefs_(nullptr),
       original_profile_(parent),
       guest_session_(guest_session),
+      allows_browser_windows_(allows_browser_windows),
       is_new_profile_(std::move(is_new_profile)),
       supervised_user_id_(supervised_user_id),
       last_session_exited_cleanly_(true),
@@ -294,6 +307,7 @@ TestingProfile::TestingProfile(
       extension_special_storage_policy_(extension_policy),
 #endif
       profile_path_(path),
+      simple_dependency_manager_(SimpleDependencyManager::GetInstance()),
       browser_context_dependency_manager_(
           BrowserContextDependencyManager::GetInstance()),
       resource_context_(nullptr),
@@ -410,6 +424,14 @@ void TestingProfile::Init() {
   else
     CreateTestingPrefService();
 
+  if (IsOffTheRecord()) {
+    key_ =
+        std::make_unique<ProfileKey>(original_profile_->GetPath(), prefs_.get(),
+                                     original_profile_->GetProfileKey());
+  } else {
+    key_ = std::make_unique<ProfileKey>(profile_path_, prefs_.get());
+  }
+
   if (!base::PathExists(profile_path_))
     base::CreateDirectory(profile_path_);
 
@@ -423,7 +445,8 @@ void TestingProfile::Init() {
       profile_path_, GetURLLoaderFactory(),
       base::BindRepeating(&chromeos::DelayNetworkCall,
                           base::TimeDelta::FromMilliseconds(
-                              chromeos::kDefaultNetworkRetryDelayMS)));
+                              chromeos::kDefaultNetworkRetryDelayMS)),
+      GetPrefs());
   if (!chromeos::CrosSettings::IsInitialized()) {
     scoped_cros_settings_test_helper_.reset(
         new chromeos::ScopedCrosSettingsTestHelper);
@@ -469,15 +492,20 @@ void TestingProfile::Init() {
 
   // Prefs for incognito profiles are set in CreateIncognitoPrefService() by
   // simulating ProfileImpl::GetOffTheRecordPrefs().
+  SimpleFactoryKey* key = GetProfileKey();
   if (!IsOffTheRecord()) {
     DCHECK(!original_profile_);
     user_prefs::PrefRegistrySyncable* pref_registry =
         static_cast<user_prefs::PrefRegistrySyncable*>(
             prefs_->DeprecatedGetPrefRegistry());
-    browser_context_dependency_manager_->
-        RegisterProfilePrefsForServices(this, pref_registry);
+    simple_dependency_manager_->RegisterProfilePrefsForServices(pref_registry);
+    browser_context_dependency_manager_->RegisterProfilePrefsForServices(
+        pref_registry);
   }
 
+  FullBrowserTransitionManager::Get()->OnProfileCreated(this);
+
+  simple_dependency_manager_->CreateServicesForTest(key);
   browser_context_dependency_manager_->CreateBrowserContextServicesForTest(
       this);
 }
@@ -513,7 +541,15 @@ TestingProfile::~TestingProfile() {
 
   MaybeSendDestroyedNotification();
 
-  browser_context_dependency_manager_->DestroyBrowserContextServices(this);
+  FullBrowserTransitionManager::Get()->OnProfileDestroyed(this);
+
+  // The SimpleDependencyManager should always be passed after the
+  // BrowserContextDependencyManager. This is because the KeyedService instances
+  // in the BrowserContextDependencyManager's dependency graph can depend on the
+  // ones in the SimpleDependencyManager's graph.
+  DependencyManager::PerformInterlockedTwoPhaseShutdown(
+      browser_context_dependency_manager_, this, simple_dependency_manager_,
+      key_.get());
 
   if (host_content_settings_map_.get())
     host_content_settings_map_->ShutdownOnUIThread();
@@ -579,7 +615,7 @@ void TestingProfile::CreateBookmarkModel(bool delete_file) {
   }
 #if BUILDFLAG(ENABLE_OFFLINE_PAGES)
   offline_pages::OfflinePageModelFactory::GetInstance()->SetTestingFactory(
-      this, base::BindRepeating(&BuildOfflinePageModel));
+      GetProfileKey(), base::BindRepeating(&BuildOfflinePageModel));
 #endif
   ManagedBookmarkServiceFactory::GetInstance()->SetTestingFactory(
       this, ManagedBookmarkServiceFactory::GetDefaultFactory());
@@ -716,6 +752,10 @@ bool TestingProfile::IsChild() const {
 
 bool TestingProfile::IsLegacySupervised() const {
   return IsSupervised() && !IsChild();
+}
+
+bool TestingProfile::AllowsBrowserWindows() const {
+  return allows_browser_windows_;
 }
 
 #if BUILDFLAG(ENABLE_EXTENSIONS)
@@ -873,6 +913,11 @@ base::Time TestingProfile::GetStartTime() const {
   return start_time_;
 }
 
+ProfileKey* TestingProfile::GetProfileKey() const {
+  DCHECK(key_);
+  return key_.get();
+}
+
 base::FilePath TestingProfile::last_selected_directory() {
   return last_selected_directory_;
 }
@@ -985,6 +1030,18 @@ void TestingProfile::SetCorsOriginAccessListForOrigin(
   base::ThreadTaskRunnerHandle::Get()->PostTask(FROM_HERE, std::move(closure));
 }
 
+std::unique_ptr<service_manager::Service> TestingProfile::HandleServiceRequest(
+    const std::string& service_name,
+    service_manager::mojom::ServiceRequest request) {
+#if !defined(OS_ANDROID)
+  if (service_name == apps::mojom::kServiceName) {
+    return std::make_unique<apps::AppService>(std::move(request));
+  }
+#endif  // !defined(OS_ANDROID)
+
+  return nullptr;
+}
+
 net::URLRequestContextGetter*
 TestingProfile::CreateMediaRequestContextForStoragePartition(
     const base::FilePath& partition_path,
@@ -1025,6 +1082,7 @@ TestingProfile::Builder::Builder()
     : build_called_(false),
       delegate_(nullptr),
       guest_session_(false),
+      allows_browser_windows_(true),
       profile_name_(kTestingProfile) {}
 
 TestingProfile::Builder::~Builder() {
@@ -1052,6 +1110,10 @@ void TestingProfile::Builder::SetPrefService(
 
 void TestingProfile::Builder::SetGuestSession() {
   guest_session_ = true;
+}
+
+void TestingProfile::Builder::DisallowBrowserWindows() {
+  allows_browser_windows_ = false;
 }
 
 void TestingProfile::Builder::OverrideIsNewProfile(bool is_new_profile) {
@@ -1088,8 +1150,8 @@ std::unique_ptr<TestingProfile> TestingProfile::Builder::Build() {
                          extension_policy_,
 #endif
                          std::move(pref_service_), nullptr, guest_session_,
-                         std::move(is_new_profile_), supervised_user_id_,
-                         std::move(policy_service_),
+                         allows_browser_windows_, std::move(is_new_profile_),
+                         supervised_user_id_, std::move(policy_service_),
                          std::move(testing_factories_), profile_name_));
 }
 
@@ -1100,12 +1162,12 @@ TestingProfile* TestingProfile::Builder::BuildIncognito(
   build_called_ = true;
 
   // Note: Owned by |original_profile|.
-  return new TestingProfile(path_, delegate_,
+  return new TestingProfile(
+      path_, delegate_,
 #if BUILDFLAG(ENABLE_EXTENSIONS)
-                            extension_policy_,
+      extension_policy_,
 #endif
-                            std::move(pref_service_), original_profile,
-                            guest_session_, std::move(is_new_profile_),
-                            supervised_user_id_, std::move(policy_service_),
-                            std::move(testing_factories_), profile_name_);
+      std::move(pref_service_), original_profile, guest_session_,
+      allows_browser_windows_, std::move(is_new_profile_), supervised_user_id_,
+      std::move(policy_service_), std::move(testing_factories_), profile_name_);
 }

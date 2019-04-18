@@ -7,8 +7,10 @@ cr.define('print_preview', function() {
    * Test version of the cloud print interface.
    * @implements {cloudprint.CloudPrintInterface}
    */
-  class CloudPrintInterfaceStub {
+  class CloudPrintInterfaceStub extends TestBrowserProxy {
     constructor() {
+      super(['submit']);
+
       /** @private {!cr.EventTarget} */
       this.eventTarget_ = new cr.EventTarget();
 
@@ -95,7 +97,7 @@ cr.define('print_preview', function() {
           this.initialized_ = true;
         }
       }
-      if (!!printer) {
+      if (printer) {
         printer.capabilities =
             print_preview_test_utils.getCddTemplate(printerId);
         this.eventTarget_.dispatchEvent(new CustomEvent(
@@ -112,6 +114,15 @@ cr.define('print_preview', function() {
               },
             }));
       }
+    }
+
+    submit(destination, printTicket, documentTitle, data) {
+      this.methodCalled('submit', {
+        destination: destination,
+        printTicket: printTicket,
+        documentTitle: documentTitle,
+        data: data
+      });
     }
   }
 

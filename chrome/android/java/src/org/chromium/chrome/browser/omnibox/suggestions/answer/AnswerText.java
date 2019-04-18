@@ -26,6 +26,18 @@ abstract class AnswerText {
     /** Content of the line of text in omnibox suggestion. */
     SpannableStringBuilder mText;
     /**
+     * Accessibility description - used to announce the details of the answer.
+     * This carries text to be read out loud to the user when talkback mode is enabled.
+     * Content of the Accessibility Description may be different from the content of
+     * presented string:
+     * - visually we want to highlight the answer part of AiS suggestion,
+     * - audibly we want to make sure the AiS suggestion is clear to understand.
+     * This frequently means we are presenting answers in different order than we're announcing
+     * them.
+     */
+    String mAccessibilityDescription;
+
+    /**
      * Height of the mText.
      * Each AnswerText can be a combination of multiple text styles (both sizes and colors).
      * This height holds either
@@ -49,6 +61,8 @@ abstract class AnswerText {
     AnswerText(Context context) {
         mContext = context;
         mDensity = context.getResources().getDisplayMetrics().density;
+        mText = new SpannableStringBuilder();
+        mMaxLines = 1;
     }
 
     /**
@@ -58,16 +72,14 @@ abstract class AnswerText {
      * @param delegate Callback converting AnswerTextType to an array of TextAppearanceSpan objects.
      */
     protected void build(SuggestionAnswer.ImageLine line) {
-        mText = new SpannableStringBuilder();
-        mMaxLines = 1;
-
         // This method also computes height of the entire text span.
         // Ensure we're not rebuilding or appending once AnswerText has been constructed.
         assert mHeightSp == 0;
 
         List<SuggestionAnswer.TextField> textFields = line.getTextFields();
         for (int i = 0; i < textFields.size(); i++) {
-            appendAndStyleText(textFields.get(i));
+            appendAndStyleText(
+                    textFields.get(i).getText(), getAppearanceForText(textFields.get(i).getType()));
             if (textFields.get(i).hasNumLines()) {
                 mMaxLines = Math.max(mMaxLines, Math.min(3, textFields.get(i).getNumLines()));
             }
@@ -75,22 +87,30 @@ abstract class AnswerText {
 
         if (line.hasAdditionalText()) {
             mText.append("  ");
-            appendAndStyleText(line.getAdditionalText());
+            appendAndStyleText(line.getAdditionalText().getText(),
+                    getAppearanceForText(line.getAdditionalText().getType()));
         }
         if (line.hasStatusText()) {
             mText.append("  ");
-            appendAndStyleText(line.getStatusText());
+            appendAndStyleText(line.getStatusText().getText(),
+                    getAppearanceForText(line.getStatusText().getType()));
         }
+
+        mAccessibilityDescription = mText.toString();
     }
 
     /**
      * Append the styled text in textField to the supplied builder.
      *
-     * @param textField The text field (with text and type) to append.
+     * @param text Text to be appended.
+     * @param styles Styles to be applied to appended text.
      */
     @SuppressWarnings("deprecation") // Update usage of Html.fromHtml when API min is 24
-    private void appendAndStyleText(SuggestionAnswer.TextField textField) {
-        MetricAffectingSpan[] styles = getAppearanceForText(textField.getType());
+    protected void appendAndStyleText(String text, MetricAffectingSpan[] styles) {
+        // Unescape HTML entities (e.g. "&quot;", "&gt;").
+        text = Html.fromHtml(text).toString();
+        text = processAnswerText(text);
+
         // Determine the maximum height of the TextAppearanceSpans that are applied for this field.
         for (MetricAffectingSpan style : styles) {
             if (!(style instanceof TextAppearanceSpan)) continue;
@@ -99,12 +119,9 @@ abstract class AnswerText {
             if (mHeightSp < textHeightSp) mHeightSp = textHeightSp;
         }
 
-        // Unescape HTML entities (e.g. "&quot;", "&gt;").
-        String text = Html.fromHtml(textField.getText()).toString();
-
         // Append as HTML (answer responses contain simple markup).
         int start = mText.length();
-        mText.append(Html.fromHtml(text));
+        mText.append(text);
         int end = mText.length();
 
         for (MetricAffectingSpan style : styles) {
@@ -119,4 +136,14 @@ abstract class AnswerText {
      * @return TextAppearanceSpan array specifying styles to be used to present text field.
      */
     protected abstract MetricAffectingSpan[] getAppearanceForText(@AnswerTextType int type);
+
+    /**
+     * Process (if desired) content of the answer text.
+     *
+     * @param text Source text.
+     * @return Either original or modified text.
+     */
+    protected String processAnswerText(String text) {
+        return text;
+    }
 }

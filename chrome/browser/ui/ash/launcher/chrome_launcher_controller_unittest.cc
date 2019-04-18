@@ -338,6 +338,18 @@ class TestShelfController : public ash::mojom::ShelfController {
                             ash::mojom::ShelfItemDelegatePtr) override {
     set_delegate_count_++;
   }
+  void GetAutoHideBehaviorForTesting(
+      int64_t display_id,
+      GetAutoHideBehaviorForTestingCallback callback) override {
+    std::move(callback).Run(auto_hide_behavior_);
+  }
+  void SetAutoHideBehaviorForTesting(
+      int64_t display_id,
+      ash::ShelfAutoHideBehavior behavior,
+      SetAutoHideBehaviorForTestingCallback callback) override {
+    auto_hide_behavior_ = behavior;
+    std::move(callback).Run();
+  }
 
   // Helper that waits for idle and extracts the non-default bitmap from the
   // last updated item in shelf controller.
@@ -376,6 +388,8 @@ class TestShelfController : public ash::mojom::ShelfController {
   base::OnceClosure updated_callback_;
   size_t set_delegate_count_ = 0;
   ash::ShelfItem last_item_;
+  ash::ShelfAutoHideBehavior auto_hide_behavior_ =
+      ash::ShelfAutoHideBehavior::SHELF_AUTO_HIDE_BEHAVIOR_ALWAYS;
 
   ash::mojom::ShelfObserverAssociatedPtr observer_;
   mojo::Binding<ash::mojom::ShelfController> binding_;
@@ -496,9 +510,10 @@ class ChromeLauncherControllerTest : public BrowserWithTestWindowTest {
     extension_system->ready().Post(FROM_HERE, run_loop.QuitClosure());
     run_loop.Run();
 
-    app_service_ =
+    app_list_syncable_service_ =
         app_list::AppListSyncableServiceFactory::GetForProfile(profile());
-    StartAppSyncService(app_service_->GetAllSyncData(syncer::APP_LIST));
+    StartAppSyncService(
+        app_list_syncable_service_->GetAllSyncData(syncer::APP_LIST));
 
     std::string error;
     extension_chrome_ = Extension::Create(base::FilePath(), Manifest::UNPACKED,
@@ -672,14 +687,17 @@ class ChromeLauncherControllerTest : public BrowserWithTestWindowTest {
   }
 
   void StartAppSyncService(const syncer::SyncDataList& init_sync_list) {
-    app_service_->MergeDataAndStartSyncing(
+    app_list_syncable_service_->MergeDataAndStartSyncing(
         syncer::APP_LIST, init_sync_list,
         std::make_unique<syncer::FakeSyncChangeProcessor>(),
         std::make_unique<syncer::SyncErrorFactoryMock>());
-    EXPECT_EQ(init_sync_list.size(), app_service_->sync_items().size());
+    EXPECT_EQ(init_sync_list.size(),
+              app_list_syncable_service_->sync_items().size());
   }
 
-  void StopAppSyncService() { app_service_->StopSyncing(syncer::APP_LIST); }
+  void StopAppSyncService() {
+    app_list_syncable_service_->StopSyncing(syncer::APP_LIST);
+  }
 
   sync_preferences::PrefModelAssociator* GetPrefSyncService() {
     sync_preferences::PrefServiceSyncable* pref_sync =
@@ -725,7 +743,7 @@ class ChromeLauncherControllerTest : public BrowserWithTestWindowTest {
   }
 
   void InsertRemoveAllPinsChange(syncer::SyncChangeList* list) {
-    for (const auto& sync_peer : app_service_->sync_items()) {
+    for (const auto& sync_peer : app_list_syncable_service_->sync_items()) {
       sync_pb::EntitySpecifics specifics;
       sync_pb::AppListSpecifics* app_list_specifics =
           specifics.mutable_app_list();
@@ -797,26 +815,28 @@ class ChromeLauncherControllerTest : public BrowserWithTestWindowTest {
     syncer::SyncChangeList sync_list;
     InsertRemoveAllPinsChange(&sync_list);
     InsertAddPinChange(&sync_list, 0, kDummyAppId);
-    app_service_->ProcessSyncChanges(FROM_HERE, sync_list);
+    app_list_syncable_service_->ProcessSyncChanges(FROM_HERE, sync_list);
   }
 
   void SendPinChanges(const syncer::SyncChangeList& sync_list,
                       bool reset_pin_model) {
     if (!reset_pin_model) {
-      app_service_->ProcessSyncChanges(FROM_HERE, sync_list);
+      app_list_syncable_service_->ProcessSyncChanges(FROM_HERE, sync_list);
     } else {
       syncer::SyncChangeList combined_sync_list;
       InsertRemoveAllPinsChange(&combined_sync_list);
       combined_sync_list.insert(combined_sync_list.end(), sync_list.begin(),
                                 sync_list.end());
-      app_service_->ProcessSyncChanges(FROM_HERE, combined_sync_list);
+      app_list_syncable_service_->ProcessSyncChanges(FROM_HERE,
+                                                     combined_sync_list);
     }
   }
 
   // Set the index at which the chrome icon should be.
   void SetShelfChromeIconIndex(int index) {
     DCHECK(
-        app_service_->GetPinPosition(extension_misc::kChromeAppId).IsValid());
+        app_list_syncable_service_->GetPinPosition(extension_misc::kChromeAppId)
+            .IsValid());
     syncer::StringOrdinal chrome_position;
     chrome_position = index == 0 ? GeneratePinPosition(0).CreateBefore()
                                  : GeneratePinPosition(index - 1).CreateBetween(
@@ -833,7 +853,7 @@ class ChromeLauncherControllerTest : public BrowserWithTestWindowTest {
         extension_misc::kChromeAppId, "Test", specifics);
     sync_list.push_back(syncer::SyncChange(
         FROM_HERE, syncer::SyncChange::ACTION_UPDATE, sync_data));
-    app_service_->ProcessSyncChanges(FROM_HERE, sync_list);
+    app_list_syncable_service_->ProcessSyncChanges(FROM_HERE, sync_list);
   }
 
   // Gets the IDs of the currently pinned app items.
@@ -959,7 +979,6 @@ class ChromeLauncherControllerTest : public BrowserWithTestWindowTest {
   }
 
   void SendListOfArcApps() {
-    arc_test_.app_instance()->RefreshAppList();
     arc_test_.app_instance()->SendRefreshAppList(arc_test_.fake_apps());
   }
 
@@ -968,7 +987,6 @@ class ChromeLauncherControllerTest : public BrowserWithTestWindowTest {
   }
 
   void UninstallArcApps() {
-    arc_test_.app_instance()->RefreshAppList();
     arc_test_.app_instance()->SendRefreshAppList(
         std::vector<arc::mojom::AppInfo>());
   }
@@ -1087,7 +1105,7 @@ class ChromeLauncherControllerTest : public BrowserWithTestWindowTest {
 
   extensions::ExtensionService* extension_service_ = nullptr;
 
-  app_list::AppListSyncableService* app_service_ = nullptr;
+  app_list::AppListSyncableService* app_list_syncable_service_ = nullptr;
 
  private:
   TestBrowserWindow* CreateTestBrowserWindowAura() {
@@ -1424,12 +1442,12 @@ TEST_F(ChromeLauncherControllerWithArcTest, ArcAppPinCrossPlatformWorkflow) {
   // Persist pin state, we don't have active pin for ARC apps yet, but pin
   // model should have it.
   syncer::SyncDataList copy_sync_list =
-      app_service_->GetAllSyncData(syncer::APP_LIST);
+      app_list_syncable_service_->GetAllSyncData(syncer::APP_LIST);
 
   ResetLauncherController();
   SendPinChanges(syncer::SyncChangeList(), true);
   StopAppSyncService();
-  EXPECT_EQ(0U, app_service_->sync_items().size());
+  EXPECT_EQ(0U, app_list_syncable_service_->sync_items().size());
 
   // Move to ARC enabled platform, restart syncing with stored data.
   StartAppSyncService(copy_sync_list);
@@ -1455,14 +1473,14 @@ TEST_F(ChromeLauncherControllerWithArcTest, ArcAppPinCrossPlatformWorkflow) {
   EXPECT_EQ("Back, AppList, App2, Fake App 1, Chrome, App1, Fake App 0, Gmail",
             GetPinnedAppStatus());
 
-  copy_sync_list = app_service_->GetAllSyncData(syncer::APP_LIST);
+  copy_sync_list = app_list_syncable_service_->GetAllSyncData(syncer::APP_LIST);
 
   ResetLauncherController();
   ResetPinModel();
 
   SendPinChanges(syncer::SyncChangeList(), true);
   StopAppSyncService();
-  EXPECT_EQ(0U, app_service_->sync_items().size());
+  EXPECT_EQ(0U, app_list_syncable_service_->sync_items().size());
 
   // Move back to ARC disabled platform.
   EnablePlayStore(false);
@@ -2029,7 +2047,6 @@ TEST_F(ChromeLauncherControllerWithArcTest, ArcDeferredLaunchForSuspendedApp) {
   const std::string app_id = ArcAppTest::GetAppId(app);
 
   // Register app first.
-  arc_test_.app_instance()->RefreshAppList();
   arc_test_.app_instance()->SendRefreshAppList({app});
   arc_test_.StopArcInstance();
 
@@ -2044,7 +2061,6 @@ TEST_F(ChromeLauncherControllerWithArcTest, ArcDeferredLaunchForSuspendedApp) {
 
   // Send app with suspended state.
   app.suspended = true;
-  arc_test_.app_instance()->RefreshAppList();
   arc_test_.app_instance()->SendRefreshAppList({app});
 
   // Controler automatically closed.
@@ -4261,13 +4277,13 @@ TEST_F(ChromeLauncherControllerTest, CheckPositionConflict) {
   EXPECT_EQ("Back, AppList, Chrome, App1, App2, Gmail", GetPinnedAppStatus());
 
   const syncer::StringOrdinal position_chrome =
-      app_service_->GetPinPosition(extension_misc::kChromeAppId);
+      app_list_syncable_service_->GetPinPosition(extension_misc::kChromeAppId);
   const syncer::StringOrdinal position_1 =
-      app_service_->GetPinPosition(extension1_->id());
+      app_list_syncable_service_->GetPinPosition(extension1_->id());
   const syncer::StringOrdinal position_2 =
-      app_service_->GetPinPosition(extension2_->id());
+      app_list_syncable_service_->GetPinPosition(extension2_->id());
   const syncer::StringOrdinal position_3 =
-      app_service_->GetPinPosition(extensionGmailApp_->id());
+      app_list_syncable_service_->GetPinPosition(extensionGmailApp_->id());
   EXPECT_TRUE(position_chrome.LessThan(position_1));
   EXPECT_TRUE(position_1.Equals(position_2));
   EXPECT_TRUE(position_2.Equals(position_3));
@@ -4280,16 +4296,16 @@ TEST_F(ChromeLauncherControllerTest, CheckPositionConflict) {
 
   // Expect sync positions for only Chrome is updated and its resolution is
   // after all duplicated ordinals.
-  EXPECT_TRUE(position_3.LessThan(
-      app_service_->GetPinPosition(extension_misc::kChromeAppId)));
-  EXPECT_TRUE(
-      position_1.Equals(app_service_->GetPinPosition(extension1_->id())));
-  EXPECT_TRUE(
-      position_1.Equals(app_service_->GetPinPosition(extension1_->id())));
-  EXPECT_TRUE(
-      position_2.Equals(app_service_->GetPinPosition(extension2_->id())));
+  EXPECT_TRUE(position_3.LessThan(app_list_syncable_service_->GetPinPosition(
+      extension_misc::kChromeAppId)));
+  EXPECT_TRUE(position_1.Equals(
+      app_list_syncable_service_->GetPinPosition(extension1_->id())));
+  EXPECT_TRUE(position_1.Equals(
+      app_list_syncable_service_->GetPinPosition(extension1_->id())));
+  EXPECT_TRUE(position_2.Equals(
+      app_list_syncable_service_->GetPinPosition(extension2_->id())));
   EXPECT_TRUE(position_3.Equals(
-      app_service_->GetPinPosition(extensionGmailApp_->id())));
+      app_list_syncable_service_->GetPinPosition(extensionGmailApp_->id())));
 }
 
 // Test the case when sync app is turned off and we need to use local copy to
@@ -4309,9 +4325,9 @@ TEST_F(ChromeLauncherControllerTest, SyncOffLocalUpdate) {
   EXPECT_EQ("Back, AppList, Chrome, App1, App2", GetPinnedAppStatus());
 
   syncer::SyncDataList copy_sync_list =
-      app_service_->GetAllSyncData(syncer::APP_LIST);
+      app_list_syncable_service_->GetAllSyncData(syncer::APP_LIST);
 
-  app_service_->StopSyncing(syncer::APP_LIST);
+  app_list_syncable_service_->StopSyncing(syncer::APP_LIST);
   RecreateLauncherController()->Init();
 
   // Pinned state should not change.
@@ -4694,4 +4710,37 @@ TEST_F(ChromeLauncherControllerTest, CrostiniTerminalPinUnpin) {
   // Pin Terminal again.
   launcher_controller_->PinAppWithID(crostini::kCrostiniTerminalId);
   EXPECT_EQ("Back, AppList, Chrome, Terminal", GetPinnedAppStatus());
+}
+
+// TODO(crbug.com/846546) Recognising app id from the browser app_name is only
+// necessary because the crostini terminal is a little hacky. Pending a better
+// terminal implementation we should remove this test.
+TEST_F(ChromeLauncherControllerTest, CrostiniBrowserWindowsRecogniseShelfItem) {
+  InitLauncherController();
+  crostini::CrostiniTestHelper helper(profile());
+
+  // We want to match this shelf item.
+  ash::ShelfItem item;
+  item.id = ash::ShelfID("blah");
+  item.type = ash::ShelfItemType::TYPE_APP;
+  model_->Add(item);
+
+  // We manually create a browser window with the correct app_name, as this is
+  // how the app_id is communicated.
+  Browser::CreateParams params = Browser::CreateParams::CreateForApp(
+      crostini::AppNameFromCrostiniAppId(item.id.app_id),
+      true /* trusted_srouce */, browser()->window()->GetBounds(), profile(),
+      true /* user_gesture */);
+  params.window = browser()->window();
+  params.type = Browser::TYPE_TABBED;
+  Browser* b = new Browser(params);
+  set_browser(b);
+  chrome::NewTab(browser());
+  browser()->window()->Show();
+
+  EXPECT_EQ(launcher_controller_
+                ->GetShelfIDForWebContents(
+                    browser()->tab_strip_model()->GetActiveWebContents())
+                .app_id,
+            item.id.app_id);
 }

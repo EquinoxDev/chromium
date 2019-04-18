@@ -30,16 +30,36 @@ BUCKET = 'gs://chromium-webxr-test'
 LINK_OMAHAPROXY = ('https://storage.googleapis.com/'
                    'chromium-find-releases-static/index.html#%s')
 LINK_CRREV = 'https://crrev.com/%s'
+LINK_CHROMIUMDASH = 'https://chromiumdash.appspot.com/commit/%s'
 
 CR_POSITION_RE = re.compile(r'^Cr-Commit-Position:.*\#(\d+)')
 BUCKET_COPY_RE = re.compile(r'^r(\d+)')
 
+WINDOWS_EXES = {
+  'git': 'git.bat',
+  'gsutil.py': 'gsutil.py.bat',
+}
+
 g_flags = None
+
+def binary_name(cmd):
+  """Finds the platform-appropriate name for an executable command."""
+
+  # On Windows, the "subprocess" execution requires a name with extension.
+  # Since we just need a couple of commands, use a simple replacement that
+  # work for Chromium build environments. This isn't a general solution.
+  if sys.platform != 'win32':
+    return cmd
+  if cmd in WINDOWS_EXES:
+    return WINDOWS_EXES[cmd]
+  raise Exeption('No known Windows executable for command "%s"' % cmd)
 
 def run_command(*args):
   """Runs a shell command and returns output."""
-  logging.debug('Executing: %s', args)
-  return subprocess.check_output(args)
+  platform_args = list(args)
+  platform_args[0] = binary_name(platform_args[0])
+  logging.debug('Executing: %s', platform_args)
+  return subprocess.check_output(platform_args)
 
 def run_readonly(*args):
   """Runs command expected to have no side effects, safe for dry runs."""
@@ -67,10 +87,26 @@ def get_cr_positions():
     cr_positions.append(cr_position)
   return cr_positions
 
+def get_commit_from_cr_position(position):
+  """Given the Cr-Commit-Position, returns a string with commit hash.
+
+  The function works on a best-effort basis. If commit hash cannot be found,
+  it will return an empty string.
+
+  Args:
+    position: String containing Cr-Commit-Position number."""
+  try:
+    git_hash = run_readonly('git', 'crrev-parse', position).strip()
+    logging.debug('`git crrev-parse %s` returned hash %s', position, git_hash)
+    return git_hash
+  except subprocess.CalledProcessError:
+    logging.debug('`git crrev-parse %s` returned an error', position)
+    return ''
+
 def get_bucket_copies():
   """Retrieves list of test subdirectories from Cloud Storage"""
   copies = []
-  dirs = run_readonly('gsutil', 'ls', '-d', BUCKET)
+  dirs = run_readonly('gsutil.py', 'ls', '-d', BUCKET)
   strip_len = len(BUCKET) + 1
   for rev in dirs.splitlines():
     pos = rev[strip_len:]
@@ -87,7 +123,7 @@ def is_working_dir_clean():
 def write_to_bucket(cr_position):
   """Copies the test directory to Cloud Storage"""
   destination = BUCKET + '/r' + cr_position
-  run_modify('gsutil', '-m', 'rsync', '-x', 'media', '-r', './' + TEST_SUBDIR,
+  run_modify('gsutil.py', '-m', 'rsync', '-x', 'media', '-r', './' + TEST_SUBDIR,
           destination)
 
 def write_index():
@@ -107,16 +143,24 @@ def write_index():
                   'anchor': '[crrev]'})
     links.append({'href': LINK_OMAHAPROXY % rev,
                   'anchor': '[find in releases]'})
+    commit_hash = get_commit_from_cr_position(pos)
+    if commit_hash:
+      links.append({'href': LINK_CHROMIUMDASH % commit_hash,
+                    'anchor' : '[chromium dash]'})
     items.append({'text': rev, 'links': links})
 
   template = jinja2.Template(open(INDEX_TEMPLATE).read())
   content = template.render({'items': items})
   logging.debug('index.html content:\n%s', content)
 
-  with tempfile.NamedTemporaryFile(suffix='.html') as temp:
-    temp.write(content)
-    temp.seek(0)
-    run_modify('gsutil', 'cp', temp.name, BUCKET + '/index.html')
+  with tempfile.NamedTemporaryFile(suffix='.html', delete=False) as temp:
+    try:
+      temp.write(content)
+      temp.seek(0)
+      temp.close()
+      run_modify('gsutil.py', 'cp', temp.name, BUCKET + '/index.html')
+    finally:
+      os.unlink(temp.name)
 
 def update_test_copies():
   """Uploads a new test copy if available"""

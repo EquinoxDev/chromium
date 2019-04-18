@@ -128,7 +128,7 @@ class AURA_EXPORT Window : public ui::LayerDelegate,
     kMaxValue = HIDDEN,
   };
 
-  typedef std::vector<Window*> Windows;
+  using Windows = std::vector<Window*>;
 
   explicit Window(WindowDelegate* delegate,
                   client::WindowType type = client::WINDOW_TYPE_UNKNOWN,
@@ -255,6 +255,9 @@ class AURA_EXPORT Window : public ui::LayerDelegate,
   // Returns the target bounds of the window. If the window's layer is
   // not animating, it simply returns the current bounds.
   gfx::Rect GetTargetBounds() const;
+
+  // Forwards directly to the layer. See Layer::ScheduleDraw() for details.
+  void ScheduleDraw();
 
   // Marks the a portion of window as needing to be painted.
   void SchedulePaintInRect(const gfx::Rect& rect);
@@ -390,6 +393,7 @@ class AURA_EXPORT Window : public ui::LayerDelegate,
   // Overridden from ui::LayerDelegate:
   void OnDeviceScaleFactorChanged(float old_device_scale_factor,
                                   float new_device_scale_factor) override;
+  void UpdateVisualState() override;
 
   // Overridden from ui::LayerOwner:
   std::unique_ptr<ui::Layer> RecreateLayer() override;
@@ -454,6 +458,10 @@ class AURA_EXPORT Window : public ui::LayerDelegate,
   Env* env() { return env_; }
   const Env* env() const { return env_; }
 
+  // Notifies observers of the state of a resize loop.
+  void NotifyResizeLoopStarted();
+  void NotifyResizeLoopEnded();
+
 #if DCHECK_IS_ON()
   // If passed a non-null value then a non-null aura::Env must be supplied to
   // the constructor. |error_string| is the string supplied to the DCHECK
@@ -464,14 +472,18 @@ class AURA_EXPORT Window : public ui::LayerDelegate,
   // ui::GestureConsumer:
   bool RequiresDoubleTapGestureEvents() const override;
 
+  // Returns |state| as a string. This is generally only useful for debugging.
+  static const char* OcclusionStateToString(OcclusionState state);
+
  protected:
   // Deletes (or removes if not owned by parent) all child windows. Intended for
   // use from the destructor.
   void RemoveOrDestroyChildren();
 
   // Overrides from ui::PropertyHandler
-  std::unique_ptr<ui::PropertyData> BeforePropertyChange(const void* key)
-      override;
+  std::unique_ptr<ui::PropertyData> BeforePropertyChange(
+      const void* key,
+      bool is_value_changing) override;
   void AfterPropertyChange(const void* key,
                            int64_t old_value,
                            std::unique_ptr<ui::PropertyData> data) override;
@@ -653,6 +665,9 @@ class AURA_EXPORT Window : public ui::LayerDelegate,
 
   // Whether layer is initialized as non-opaque. Defaults to false.
   bool transparent_;
+
+  // Whether it's in a process of CleanupGestureState() or not.
+  bool cleaning_up_gesture_state_ = false;
 
   std::unique_ptr<LayoutManager> layout_manager_;
   std::unique_ptr<WindowTargeter> targeter_;

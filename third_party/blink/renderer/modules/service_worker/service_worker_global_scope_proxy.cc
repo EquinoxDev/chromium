@@ -147,7 +147,8 @@ struct TypeConverter<blink::mojom::blink::NotificationDataPtr,
         input.title, input.direction, input.lang, input.body, input.tag,
         input.image, input.icon, input.badge, std::move(vibration_pattern),
         input.timestamp, input.renotify, input.silent,
-        input.require_interaction, std::move(data), std::move(actions));
+        input.require_interaction, std::move(data), std::move(actions),
+        input.show_trigger_timestamp);
   }
 };
 
@@ -193,7 +194,7 @@ void ServiceWorkerGlobalScopeProxy::ReadyToEvaluateScript() {
 
 void ServiceWorkerGlobalScopeProxy::DispatchBackgroundFetchAbortEvent(
     int event_id,
-    const WebBackgroundFetchRegistration& registration) {
+    WebBackgroundFetchRegistration registration) {
   DCHECK_CALLED_ON_VALID_THREAD(worker_thread_checker_);
   WaitUntilObserver* observer = WaitUntilObserver::Create(
       WorkerGlobalScope(), WaitUntilObserver::kBackgroundFetchAbort, event_id);
@@ -208,7 +209,7 @@ void ServiceWorkerGlobalScopeProxy::DispatchBackgroundFetchAbortEvent(
   BackgroundFetchEventInit* init = BackgroundFetchEventInit::Create();
   init->setRegistration(MakeGarbageCollected<BackgroundFetchRegistration>(
       WorkerGlobalScope()->registration() /* service_worker_registration */,
-      registration));
+      std::move(registration)));
 
   BackgroundFetchEvent* event = BackgroundFetchEvent::Create(
       event_type_names::kBackgroundfetchabort, init, observer);
@@ -218,7 +219,7 @@ void ServiceWorkerGlobalScopeProxy::DispatchBackgroundFetchAbortEvent(
 
 void ServiceWorkerGlobalScopeProxy::DispatchBackgroundFetchClickEvent(
     int event_id,
-    const WebBackgroundFetchRegistration& registration) {
+    WebBackgroundFetchRegistration registration) {
   DCHECK_CALLED_ON_VALID_THREAD(worker_thread_checker_);
   WaitUntilObserver* observer = WaitUntilObserver::Create(
       WorkerGlobalScope(), WaitUntilObserver::kBackgroundFetchClick, event_id);
@@ -226,7 +227,7 @@ void ServiceWorkerGlobalScopeProxy::DispatchBackgroundFetchClickEvent(
   BackgroundFetchEventInit* init = BackgroundFetchEventInit::Create();
   init->setRegistration(MakeGarbageCollected<BackgroundFetchRegistration>(
       WorkerGlobalScope()->registration() /* service_worker_registration */,
-      registration));
+      std::move(registration)));
 
   BackgroundFetchEvent* event = BackgroundFetchEvent::Create(
       event_type_names::kBackgroundfetchclick, init, observer);
@@ -236,7 +237,7 @@ void ServiceWorkerGlobalScopeProxy::DispatchBackgroundFetchClickEvent(
 
 void ServiceWorkerGlobalScopeProxy::DispatchBackgroundFetchFailEvent(
     int event_id,
-    const WebBackgroundFetchRegistration& registration) {
+    WebBackgroundFetchRegistration registration) {
   DCHECK_CALLED_ON_VALID_THREAD(worker_thread_checker_);
   WaitUntilObserver* observer = WaitUntilObserver::Create(
       WorkerGlobalScope(), WaitUntilObserver::kBackgroundFetchFail, event_id);
@@ -251,7 +252,7 @@ void ServiceWorkerGlobalScopeProxy::DispatchBackgroundFetchFailEvent(
   BackgroundFetchEventInit* init = BackgroundFetchEventInit::Create();
   init->setRegistration(MakeGarbageCollected<BackgroundFetchRegistration>(
       WorkerGlobalScope()->registration() /* service_worker_registration */,
-      registration));
+      std::move(registration)));
 
   BackgroundFetchUpdateUIEvent* event = BackgroundFetchUpdateUIEvent::Create(
       event_type_names::kBackgroundfetchfail, init, observer,
@@ -262,7 +263,7 @@ void ServiceWorkerGlobalScopeProxy::DispatchBackgroundFetchFailEvent(
 
 void ServiceWorkerGlobalScopeProxy::DispatchBackgroundFetchSuccessEvent(
     int event_id,
-    const WebBackgroundFetchRegistration& registration) {
+    WebBackgroundFetchRegistration registration) {
   DCHECK_CALLED_ON_VALID_THREAD(worker_thread_checker_);
   WaitUntilObserver* observer = WaitUntilObserver::Create(
       WorkerGlobalScope(), WaitUntilObserver::kBackgroundFetchSuccess,
@@ -278,7 +279,7 @@ void ServiceWorkerGlobalScopeProxy::DispatchBackgroundFetchSuccessEvent(
   BackgroundFetchEventInit* init = BackgroundFetchEventInit::Create();
   init->setRegistration(MakeGarbageCollected<BackgroundFetchRegistration>(
       WorkerGlobalScope()->registration() /* service_worker_registration */,
-      registration));
+      std::move(registration)));
 
   BackgroundFetchUpdateUIEvent* event = BackgroundFetchUpdateUIEvent::Create(
       event_type_names::kBackgroundfetchsuccess, init, observer,
@@ -433,8 +434,8 @@ void ServiceWorkerGlobalScopeProxy::OnNavigationPreloadError(
                                        : error->unsanitized_message;
   if (!error_message.IsEmpty()) {
     WorkerGlobalScope()->AddConsoleMessage(ConsoleMessage::Create(
-        kWorkerMessageSource, blink::MessageLevel::kErrorMessageLevel,
-        error_message));
+        mojom::ConsoleMessageSource::kWorker,
+        mojom::ConsoleMessageLevel::kError, error_message));
   }
   // Reject the preloadResponse promise.
   fetch_event->OnNavigationPreloadError(
@@ -612,8 +613,8 @@ void ServiceWorkerGlobalScopeProxy::ReportException(
 }
 
 void ServiceWorkerGlobalScopeProxy::ReportConsoleMessage(
-    MessageSource source,
-    MessageLevel level,
+    mojom::ConsoleMessageSource source,
+    mojom::ConsoleMessageLevel level,
     const String& message,
     SourceLocation* location) {
   DCHECK_CALLED_ON_VALID_THREAD(worker_thread_checker_);
@@ -634,7 +635,14 @@ void ServiceWorkerGlobalScopeProxy::DidCreateWorkerGlobalScope(
   DCHECK(!worker_global_scope_);
   worker_global_scope_ =
       static_cast<ServiceWorkerGlobalScope*>(worker_global_scope);
-  Client().WorkerContextStarted(this);
+  // ServiceWorkerContextClient uses this task runner to bind its Mojo
+  // interface, so use kInternalIPC type.
+  // TODO(falken): Consider adding task types for "the handle fetch task source"
+  // and "handle functional event task source" defined in the service worker
+  // spec and use them when dispatching events.
+  scoped_refptr<base::SequencedTaskRunner> worker_task_runner =
+      worker_global_scope->GetThread()->GetTaskRunner(TaskType::kInternalIPC);
+  Client().WorkerContextStarted(this, std::move(worker_task_runner));
 }
 
 void ServiceWorkerGlobalScopeProxy::DidInitializeWorkerContext() {
@@ -655,17 +663,27 @@ void ServiceWorkerGlobalScopeProxy::DidFailToInitializeWorkerContext() {
       this, "success", false);
 }
 
-void ServiceWorkerGlobalScopeProxy::DidLoadInstalledScript() {
+void ServiceWorkerGlobalScopeProxy::DidLoadClassicScript() {
   DCHECK_CALLED_ON_VALID_THREAD(worker_thread_checker_);
-  Client().InstalledWorkerScriptLoaded();
+  Client().WorkerScriptLoadedOnWorkerThread();
 }
 
-void ServiceWorkerGlobalScopeProxy::DidFailToLoadInstalledClassicScript() {
+void ServiceWorkerGlobalScopeProxy::DidFailToLoadClassicScript() {
   DCHECK_CALLED_ON_VALID_THREAD(worker_thread_checker_);
   // Tell ServiceWorkerContextClient about the failure. The generic
   // WorkerContextFailedToStart() wouldn't make sense because
   // WorkerContextStarted() was already called.
-  Client().FailedToLoadInstalledClassicScript();
+  Client().FailedToLoadClassicScript();
+}
+
+void ServiceWorkerGlobalScopeProxy::DidFetchScript() {
+  DCHECK_CALLED_ON_VALID_THREAD(worker_thread_checker_);
+  Client().WorkerScriptLoadedOnWorkerThread();
+}
+
+void ServiceWorkerGlobalScopeProxy::DidFailToFetchClassicScript() {
+  DCHECK_CALLED_ON_VALID_THREAD(worker_thread_checker_);
+  Client().FailedToLoadClassicScript();
 }
 
 void ServiceWorkerGlobalScopeProxy::DidFailToFetchModuleScript() {

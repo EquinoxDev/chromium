@@ -20,11 +20,22 @@ AgentImpl::ComponentStateBase::ComponentStateBase(
 
   // Tear down this instance when the client disconnects from the directory.
   service_provider_->SetOnLastClientDisconnectedClosure(base::BindOnce(
-      &ComponentStateBase::OnComponentDisconnected, base::Unretained(this)));
+      &ComponentStateBase::TeardownIfUnused, base::Unretained(this)));
 }
 
-void AgentImpl::ComponentStateBase::OnComponentDisconnected() {
+void AgentImpl::ComponentStateBase::TeardownIfUnused() {
   DCHECK(agent_impl_);
+
+  // Don't teardown if the ServiceProvider has client(s).
+  if (service_provider_->has_clients())
+    return;
+
+  // Don't teardown if caller-specified bindings still have clients.
+  for (auto& keepalive_callback : keepalive_callbacks_) {
+    if (keepalive_callback.Run())
+      return;
+  }
+
   agent_impl_->DeleteComponentState(component_id_);
   // Do not touch |this|, since it is already gone.
 }
@@ -35,8 +46,6 @@ AgentImpl::AgentImpl(
     : create_component_state_callback_(
           std::move(create_component_state_callback)),
       agent_binding_(service_directory, this) {
-  agent_binding_.SetOnLastClientCallback(base::BindOnce(
-      &AgentImpl::MaybeRunOnLastClientCallback, base::Unretained(this)));
 }
 
 AgentImpl::~AgentImpl() {
@@ -64,20 +73,12 @@ void AgentImpl::Connect(
 
 void AgentImpl::RunTask(std::string task_id, RunTaskCallback callback) {
   NOTIMPLEMENTED();
+  callback();
 }
 
 void AgentImpl::DeleteComponentState(base::StringPiece component_id) {
   size_t removed_components = active_components_.erase(component_id);
   DCHECK_EQ(removed_components, 1u);
-  MaybeRunOnLastClientCallback();
-}
-
-void AgentImpl::MaybeRunOnLastClientCallback() {
-  if (!on_last_client_callback_)
-    return;
-  if (!active_components_.empty() || agent_binding_.has_clients())
-    return;
-  std::move(on_last_client_callback_).Run();
 }
 
 }  // namespace cr_fuchsia

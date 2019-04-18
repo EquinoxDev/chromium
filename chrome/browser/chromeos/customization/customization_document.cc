@@ -158,7 +158,8 @@ void CheckWallpaperCacheExists(const base::FilePath& path, bool* exists) {
 }
 
 std::string ReadFileInBackground(const base::FilePath& file) {
-  base::ScopedBlockingCall scoped_blocking_call(base::BlockingType::MAY_BLOCK);
+  base::ScopedBlockingCall scoped_blocking_call(FROM_HERE,
+                                                base::BlockingType::MAY_BLOCK);
 
   std::string manifest;
   if (!base::ReadFileToString(file, &manifest)) {
@@ -642,8 +643,8 @@ void ServicesCustomizationDocument::OnSimpleLoaderComplete(
       num_retries_++;
       base::PostDelayedTaskWithTraits(
           FROM_HERE, {content::BrowserThread::UI},
-          base::Bind(&ServicesCustomizationDocument::StartFileFetch,
-                     weak_ptr_factory_.GetWeakPtr()),
+          base::BindOnce(&ServicesCustomizationDocument::StartFileFetch,
+                         weak_ptr_factory_.GetWeakPtr()),
           base::TimeDelta::FromSeconds(kRetriesDelayInSec));
       return;
     }

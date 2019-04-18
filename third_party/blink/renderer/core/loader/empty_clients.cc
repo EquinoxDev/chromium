@@ -46,7 +46,7 @@ namespace blink {
 
 void FillWithEmptyClients(Page::PageClients& page_clients) {
   DEFINE_STATIC_LOCAL(Persistent<ChromeClient>, dummy_chrome_client,
-                      (EmptyChromeClient::Create()));
+                      (MakeGarbageCollected<EmptyChromeClient>()));
   page_clients.chrome_client = dummy_chrome_client;
 }
 
@@ -96,6 +96,7 @@ String EmptyChromeClient::AcceptLanguages() {
 
 void EmptyLocalFrameClient::BeginNavigation(
     const ResourceRequest&,
+    network::mojom::RequestContextFrameType,
     Document* origin_document,
     DocumentLoader*,
     WebNavigationType,
@@ -126,8 +127,24 @@ DocumentLoader* EmptyLocalFrameClient::CreateDocumentLoader(
 
 mojom::blink::DocumentInterfaceBroker*
 EmptyLocalFrameClient::GetDocumentInterfaceBroker() {
-  mojo::MakeRequest(&document_interface_broker_);
+  if (!document_interface_broker_.is_bound())
+    mojo::MakeRequest(&document_interface_broker_);
   return document_interface_broker_.get();
+}
+
+mojo::ScopedMessagePipeHandle
+EmptyLocalFrameClient::SetDocumentInterfaceBrokerForTesting(
+    mojo::ScopedMessagePipeHandle blink_handle) {
+  mojom::blink::DocumentInterfaceBrokerPtr test_broker(
+      mojom::blink::DocumentInterfaceBrokerPtrInfo(
+          std::move(blink_handle),
+          mojom::blink::DocumentInterfaceBroker::Version_));
+
+  mojo::ScopedMessagePipeHandle real_handle =
+      document_interface_broker_.PassInterface().PassHandle();
+  document_interface_broker_ = std::move(test_broker);
+
+  return real_handle;
 }
 
 LocalFrame* EmptyLocalFrameClient::CreateFrame(const AtomicString&,
@@ -137,9 +154,13 @@ LocalFrame* EmptyLocalFrameClient::CreateFrame(const AtomicString&,
 
 std::pair<RemoteFrame*, base::UnguessableToken>
 EmptyLocalFrameClient::CreatePortal(HTMLPortalElement*,
-                                    mojom::blink::PortalRequest) {
+                                    mojom::blink::PortalAssociatedRequest) {
   return std::pair<RemoteFrame*, base::UnguessableToken>(
       nullptr, base::UnguessableToken());
+}
+
+RemoteFrame* EmptyLocalFrameClient::AdoptPortal(HTMLPortalElement*) {
+  return nullptr;
 }
 
 WebPluginContainerImpl* EmptyLocalFrameClient::CreatePlugin(
@@ -178,12 +199,6 @@ Frame* EmptyLocalFrameClient::FindFrame(const AtomicString& name) const {
   return nullptr;
 }
 
-const FeaturePolicy::FeatureState&
-EmptyLocalFrameClient::GetOpenerFeatureState() const {
-  DEFINE_STATIC_LOCAL(FeaturePolicy::FeatureState, g_empty_feature_state, ());
-  return g_empty_feature_state;
-}
-
 std::unique_ptr<WebServiceWorkerProvider>
 EmptyLocalFrameClient::CreateServiceWorkerProvider() {
   return nullptr;
@@ -191,6 +206,7 @@ EmptyLocalFrameClient::CreateServiceWorkerProvider() {
 
 std::unique_ptr<WebApplicationCacheHost>
 EmptyLocalFrameClient::CreateApplicationCacheHost(
+    DocumentLoader*,
     WebApplicationCacheHostClient*) {
   return nullptr;
 }

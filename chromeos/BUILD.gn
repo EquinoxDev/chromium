@@ -26,23 +26,20 @@ component("chromeos") {
     "//build/config/linux/nss:system_nss_no_ssl_config",
   ]
   public_deps = [
-    ":chromeos_constants",
+    "//chromeos/constants",
   ]
   deps = [
-    ":account_manager_proto",
     ":chromeos_export",
     "//base",
     "//base:i18n",
+    "//chromeos/dbus",
+    "//chromeos/dbus/constants",
     "//components/policy/proto",
     "//google_apis",
     "//services/network/public/cpp:cpp",
     "//third_party/protobuf:protobuf_lite",
   ]
   sources = [
-    "account_manager/account_manager.cc",
-    "account_manager/account_manager.h",
-    "account_manager/account_manager_factory.cc",
-    "account_manager/account_manager_factory.h",
     "app_mode/kiosk_oem_manifest_parser.cc",
     "app_mode/kiosk_oem_manifest_parser.h",
     "hugepage_text/hugepage_text.cc",
@@ -102,31 +99,6 @@ source_set("chromeos_export") {
   ]
 }
 
-source_set("chromeos_constants") {
-  configs += [ ":chromeos_implementation" ]
-  deps = [
-    ":chromeos_export",
-    "//base",
-    "//base:i18n",
-    "//chromeos/dbus:constants",
-    "//third_party/icu",
-  ]
-  sources = [
-    "constants/chromeos_constants.cc",
-    "constants/chromeos_constants.h",
-    "constants/chromeos_features.cc",
-    "constants/chromeos_features.h",
-    "constants/chromeos_paths.cc",
-    "constants/chromeos_paths.h",
-    "constants/chromeos_pref_names.cc",
-    "constants/chromeos_pref_names.h",
-    "constants/chromeos_switches.cc",
-    "constants/chromeos_switches.h",
-    "constants/devicetype.cc",
-    "constants/devicetype.h",
-  ]
-}
-
 # This must be a static library instead of a source set because some of the
 # files pull in things with dependencies that aren't linked in all cases.
 #
@@ -153,6 +125,7 @@ source_set("test_support_source_set") {
     "//chromeos/login/auth:test_support",
     "//chromeos/login/login_state:test_support",
     "//chromeos/network:test_support",
+    "//chromeos/tpm:test_support",
     "//google_apis",
     "//net:test_support",
     "//services/network:test_support",
@@ -214,7 +187,6 @@ test("chromeos_unittests") {
     "//url",
   ]
   sources = [
-    "account_manager/account_manager_unittest.cc",
     "app_mode/kiosk_oem_manifest_parser_unittest.cc",
     "policy/weekly_time/time_utils_unittest.cc",
     "policy/weekly_time/weekly_time_interval_unittest.cc",
@@ -285,6 +257,7 @@ if (is_cros_chrome_sdk) {
     tast_disabled_tests = [
       # Disabled due to misleading USE flags on full boards. crbug.com/916367
       "arc.Boot",
+      "arc.BuildProperties",
       "security.NetworkListenersARC",
       "video.WebRTCPeerConnCameraVP8",  # crbug.com/923061
     ]
@@ -309,12 +282,4 @@ if (is_cros_chrome_sdk) {
       "$root_out_dir/resources/chromeos/",
     ]
   }
-}
-
-proto_library("account_manager_proto") {
-  sources = [
-    "account_manager/tokens.proto",
-  ]
-
-  proto_out_dir = "chromeos/account_manager"
 }

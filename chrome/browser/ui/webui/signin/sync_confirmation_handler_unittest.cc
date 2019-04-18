@@ -105,7 +105,6 @@ class SyncConfirmationHandlerTest : public BrowserWithTestWindowTest,
     web_ui_.reset();
     identity_test_env_adaptor_.reset();
     BrowserWithTestWindowTest::TearDown();
-    profile_.reset();
 
     EXPECT_EQ(did_user_explicitly_interact ? 0 : 1,
               user_action_tester()->GetActionCount("Signin_Abort_Signin"));
@@ -130,21 +129,17 @@ class SyncConfirmationHandlerTest : public BrowserWithTestWindowTest,
     return identity_test_env_adaptor_->identity_test_env();
   }
 
-  // BrowserWithTestWindowTest:
-  TestingProfile* CreateProfile() override {
-    profile_ = IdentityTestEnvironmentProfileAdaptor::
-        CreateProfileForIdentityTestEnvironment(GetTestingFactories());
-    return profile_.get();
-  }
-
   BrowserWindow* CreateBrowserWindow() override {
     return new DialogTestBrowserWindow;
   }
 
   TestingProfile::TestingFactories GetTestingFactories() override {
-    return {
+    TestingProfile::TestingFactories factories = {
         {ConsentAuditorFactory::GetInstance(),
          base::BindRepeating(&BuildFakeConsentAuditor)}};
+    IdentityTestEnvironmentProfileAdaptor::
+        AppendIdentityTestEnvironmentFactories(&factories);
+    return factories;
   }
 
   const std::unordered_map<std::string, int>& GetStringToGrdIdMap() {
@@ -172,10 +167,14 @@ class SyncConfirmationHandlerTest : public BrowserWithTestWindowTest,
     ASSERT_TRUE(call_data.arg1()->GetAsString(&event));
     EXPECT_EQ("account-image-changed", event);
 
+    identity::IdentityManager* identity_manager =
+        IdentityManagerFactory::GetForProfile(profile());
+    base::Optional<AccountInfo> primary_account =
+        identity_manager->FindExtendedAccountInfoForAccount(
+            identity_manager->GetPrimaryAccountInfo());
+
     std::string original_picture_url =
-        IdentityManagerFactory::GetForProfile(profile())
-            ->GetPrimaryAccountInfo()
-            .picture_url;
+        primary_account ? primary_account->picture_url : std::string();
     std::string expected_picture_url =
         original_picture_url.empty()
             ? profiles::GetPlaceholderAvatarIconUrl()
@@ -205,11 +204,23 @@ class SyncConfirmationHandlerTest : public BrowserWithTestWindowTest,
   ScopedObserver<LoginUIService, LoginUIService::Observer>
       login_ui_service_observer_;
   base::HistogramTester histogram_tester_;
-  std::unique_ptr<TestingProfile> profile_;
   std::unique_ptr<IdentityTestEnvironmentProfileAdaptor>
       identity_test_env_adaptor_;
 
   DISALLOW_COPY_AND_ASSIGN(SyncConfirmationHandlerTest);
+};
+
+class SyncConfirmationHandlerTest_UnifiedConsentEnabled
+    : public SyncConfirmationHandlerTest {
+ public:
+  SyncConfirmationHandlerTest_UnifiedConsentEnabled()
+      : scoped_unified_consent_(
+            unified_consent::UnifiedConsentFeatureState::kEnabled) {}
+
+ private:
+  unified_consent::ScopedUnifiedConsent scoped_unified_consent_;
+
+  DISALLOW_COPY_AND_ASSIGN(SyncConfirmationHandlerTest_UnifiedConsentEnabled);
 };
 
 const char SyncConfirmationHandlerTest::kConsentText1[] = "consentText1";
@@ -241,21 +252,21 @@ TEST_F(SyncConfirmationHandlerTest, TestSetImageIfPrimaryAccountReady) {
   EXPECT_EQ("sync.confirmation.clearFocus",
             web_ui()->call_data()[1]->function_name());
 
+  identity::IdentityManager* identity_manager =
+      IdentityManagerFactory::GetForProfile(profile());
+  base::Optional<AccountInfo> primary_account_info =
+      identity_manager->FindExtendedAccountInfoForAccount(
+          identity_manager->GetPrimaryAccountInfo());
   std::string original_picture_url =
-      IdentityManagerFactory::GetForProfile(profile())
-          ->GetPrimaryAccountInfo()
-          .picture_url;
+      primary_account_info ? primary_account_info->picture_url : std::string();
   GURL picture_url_with_size = signin::GetAvatarImageURLWithOptions(
       GURL(original_picture_url), kExpectedProfileImageSize,
       false /* no_silhouette */);
   EXPECT_EQ(picture_url_with_size.spec(), passed_picture_url);
 }
 
-TEST_F(SyncConfirmationHandlerTest,
-       TestSetImageIfPrimaryAccountReady_UnifiedConsent) {
-  unified_consent::ScopedUnifiedConsent scoped_unified_consent(
-      unified_consent::UnifiedConsentFeatureState::kEnabled);
-
+TEST_F(SyncConfirmationHandlerTest_UnifiedConsentEnabled,
+       TestSetImageIfPrimaryAccountReady) {
   identity_test_env()->SimulateSuccessfulFetchOfAccountInfo(
       account_info_.account_id, account_info_.email, account_info_.gaia, "",
       "full_name", "given_name", "locale",
@@ -304,21 +315,22 @@ TEST_F(SyncConfirmationHandlerTest, TestSetImageIfPrimaryAccountReadyLater) {
   EXPECT_TRUE(
       web_ui()->call_data()[2]->arg1()->GetAsString(&passed_picture_url));
 
+  identity::IdentityManager* identity_manager =
+      IdentityManagerFactory::GetForProfile(profile());
+  base::Optional<AccountInfo> primary_account_info =
+      identity_manager->FindExtendedAccountInfoForAccount(
+          identity_manager->GetPrimaryAccountInfo());
+
   std::string original_picture_url =
-      IdentityManagerFactory::GetForProfile(profile())
-          ->GetPrimaryAccountInfo()
-          .picture_url;
+      primary_account_info ? primary_account_info->picture_url : std::string();
   GURL picture_url_with_size = signin::GetAvatarImageURLWithOptions(
       GURL(original_picture_url), kExpectedProfileImageSize,
       false /* no_silhouette */);
   EXPECT_EQ(picture_url_with_size.spec(), passed_picture_url);
 }
 
-TEST_F(SyncConfirmationHandlerTest,
-       TestSetImageIfPrimaryAccountReadyLater_UnifiedConsent) {
-  unified_consent::ScopedUnifiedConsent scoped_unified_consent(
-      unified_consent::UnifiedConsentFeatureState::kEnabled);
-
+TEST_F(SyncConfirmationHandlerTest_UnifiedConsentEnabled,
+       TestSetImageIfPrimaryAccountReadyLater) {
   base::ListValue args;
   args.Set(0, std::make_unique<base::Value>(kDefaultDialogHeight));
   handler()->HandleInitializedWithSize(&args);

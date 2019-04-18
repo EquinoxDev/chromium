@@ -19,53 +19,8 @@
 #include "third_party/metrics_proto/omnibox_event.pb.h"
 
 namespace base {
-struct Feature;
 class TimeDelta;
 }
-
-namespace omnibox {
-
-extern const base::Feature kHideFileUrlScheme;
-extern const base::Feature kHideSteadyStateUrlScheme;
-extern const base::Feature kHideSteadyStateUrlTrivialSubdomains;
-extern const base::Feature kHideSteadyStateUrlPathQueryAndRef;
-extern const base::Feature kOneClickUnelide;
-extern const base::Feature kSimplifyHttpsIndicator;
-extern const base::Feature kOmniboxRichEntitySuggestions;
-extern const base::Feature kOmniboxNewAnswerLayout;
-extern const base::Feature kOmniboxReverseAnswers;
-extern const base::Feature kOmniboxTailSuggestions;
-extern const base::Feature kOmniboxTabSwitchSuggestions;
-extern const base::Feature kOmniboxReverseTabSwitchLogic;
-extern const base::Feature kExperimentalKeywordMode;
-extern const base::Feature kOmniboxPedalSuggestions;
-extern const base::Feature kOmniboxContextMenuForSuggestions;
-extern const base::Feature kEnableClipboardProvider;
-extern const base::Feature kEnableClipboardProviderTextSuggestions;
-extern const base::Feature kEnableClipboardProviderImageSuggestions;
-extern const base::Feature kSearchProviderWarmUpOnFocus;
-extern const base::Feature kZeroSuggestRedirectToChrome;
-extern const base::Feature kDisplayTitleForCurrentUrl;
-extern const base::Feature kQueryInOmnibox;
-extern const base::Feature kUIExperimentMaxAutocompleteMatches;
-extern const base::Feature kUIExperimentShowSuggestionFavicons;
-extern const base::Feature kUIExperimentSwapTitleAndUrl;
-extern const base::Feature kUIExperimentVerticalMargin;
-extern const base::Feature kUIExperimentBlueSearchLoopAndSearchQuery;
-extern const base::Feature kUIExperimentBlueTitlesAndGrayUrlsOnPageSuggestions;
-extern const base::Feature kUIExperimentBlueTitlesOnPageSuggestions;
-extern const base::Feature kUIExperimentShowSuffixOnAllSearchSuggestions;
-extern const base::Feature kUIExperimentBoldUserTextOnSearchSuggestions;
-extern const base::Feature kUIExperimentWhiteBackgroundOnBlur;
-extern const base::Feature kUIExperimentUseGenericSearchEngineIcon;
-extern const base::Feature kUIExperimentUnboldSuggestionText;
-extern const base::Feature kSpeculativeServiceWorkerStartOnQueryInput;
-extern const base::Feature kDocumentProvider;
-extern const base::Feature kDedupeGoogleDriveURLs;
-extern const base::Feature kOmniboxPopupShortcutIconsInZeroState;
-extern const base::Feature kOmniboxMaterialDesignWeatherIcons;
-
-}  // namespace omnibox
 
 // The set of parameters customizing the HUP scoring.
 struct HUPScoringParams {
@@ -312,9 +267,6 @@ bool HQPAllowMatchInSchemeValue();
 // ---------------------------------------------------------
 // For SearchProvider related experiments.
 
-// Returns true if the search provider should not be caching results.
-bool DisableResultsCaching();
-
 // Returns how the search provider should poll Suggest. Currently, we support
 // measuring polling delay from the last keystroke or last suggest request.
 void GetSuggestPollingStrategy(bool* from_last_keystroke,
@@ -430,12 +382,10 @@ EmphasizeTitlesCondition GetEmphasizeTitlesConditionForInput(
 // Returns true if the rich entities flag is enabled.
 bool IsRichEntitySuggestionsEnabled();
 
-// Returns true if either the reverse answers flag or the
-// #upcoming-ui-features flag is enabled.
+// Returns true if the reverse answers flag is enabled.
 bool IsReverseAnswersEnabled();
 
-// Returns true if either the tab switch suggestions flag or the
-// #upcoming-ui-features flag is enabled.
+// Returns true if either the tab switch suggestions flag is enabled.
 bool IsTabSwitchSuggestionsEnabled();
 
 // Returns true if the feature of reversing the tab switch logic is enabled.
@@ -444,12 +394,11 @@ bool IsTabSwitchLogicReversed();
 // Returns true if the #omnibox-pedal-suggestions feature is enabled.
 bool IsPedalSuggestionsEnabled();
 
-// Returns true if either the steady-state elision flag for scheme or the
-// #upcoming-ui-features flag is enabled.
+// Returns true if either the steady-state elision flag for scheme is enabled.
 bool IsHideSteadyStateUrlSchemeEnabled();
 
 // Returns true if either the steady-state elision flag for trivial
-// subdomains or the #upcoming-ui-features flag is enabled.
+// subdomains is enabled.
 bool IsHideSteadyStateUrlTrivialSubdomainsEnabled();
 
 // Returns the size of the vertical margin that should be used in the
@@ -483,7 +432,6 @@ extern const char kHQPTypedValueRule[];
 extern const char kHQPAllowMatchInTLDRule[];
 extern const char kHQPAllowMatchInSchemeRule[];
 extern const char kZeroSuggestVariantRule[];
-extern const char kDisableResultsCachingRule[];
 extern const char kMeasureSuggestPollingDelayFromLastKeystrokeRule[];
 extern const char kSuggestPollingDelayMsRule[];
 extern const char kHQPMaxVisitsToScoreRule[];

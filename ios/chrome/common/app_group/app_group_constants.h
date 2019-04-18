@@ -52,6 +52,9 @@ extern const char kChromeAppGroupOpenURLCommand[];
 // The command to search some text. Parameter must contain the text.
 extern const char kChromeAppGroupSearchTextCommand[];
 
+// The command to search an image. Data parameter must contain the image.
+extern const char kChromeAppGroupSearchImageCommand[];
+
 // The command to trigger a voice search.
 extern const char kChromeAppGroupVoiceSearchCommand[];
 
@@ -75,9 +78,17 @@ extern const char kChromeAppGroupCommandTimePreference[];
 // command if it requires one. This could be a URL, a string, etc.
 extern const char kChromeAppGroupCommandTextPreference[];
 
+// The key in kChromeAppGroupCommandPreference containing the data to use for
+// the command if it requires one. This could be an image, etc.
+extern const char kChromeAppGroupCommandDataPreference[];
+
 // The key in kChromeAppGroupCommandPreference containing the index to open for
 // if the command requires one.
 extern const char kChromeAppGroupCommandIndexPreference[];
+
+// The key of a preference containing whether the current default search engine
+// supports Search by Image.
+extern const char kChromeAppGroupSupportsSearchByImage[];
 
 // The key of a preference containing Chrome client ID reported in the metrics
 // client ID. If the user does not opt in, this value must be cleared from the

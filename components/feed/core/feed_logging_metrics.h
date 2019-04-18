@@ -80,9 +80,26 @@ class FeedLoggingMetrics {
 
   void OnNotInterestedInTopic(int position, bool committed);
 
-  void OnSpinnerShown(base::TimeDelta shown_time);
+  void OnSpinnerStarted(int spinner_type);
+
+  void OnSpinnerFinished(base::TimeDelta shown_time, int spinner_type);
+
+  void OnSpinnerDestroyedWithoutCompleting(base::TimeDelta shown_time,
+                                           int spinner_type);
 
   void OnPietFrameRenderingEvent(std::vector<int> piet_error_codes);
+
+  void OnInternalError(int internal_error);
+
+  void OnTokenCompleted(bool was_synthetic, int content_count, int token_count);
+
+  void OnTokenFailedToComplete(bool was_synthetic, int failure_count);
+
+  void OnServerRequest(int request_reason);
+
+  void OnZeroStateShown(int zero_state_show_reason);
+
+  void OnZeroStateRefreshCompleted(int new_content_count, int new_token_count);
 
   void ReportScrolledAfterOpen();
 

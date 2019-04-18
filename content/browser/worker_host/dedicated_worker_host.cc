@@ -15,7 +15,6 @@
 #include "content/browser/storage_partition_impl.h"
 #include "content/browser/websockets/websocket_manager.h"
 #include "content/browser/worker_host/worker_script_fetch_initiator.h"
-#include "content/common/navigation_subresource_loader_params.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/render_process_host.h"
@@ -64,7 +63,7 @@ class DedicatedWorkerHost : public service_manager::mojom::InterfaceProvider {
   }
 
   // PlzDedicatedWorker:
-  void LoadDedicatedWorker(
+  void StartScriptLoad(
       const GURL& script_url,
       const url::Origin& request_initiator_origin,
       blink::mojom::BlobURLTokenPtr blob_url_token,
@@ -74,22 +73,25 @@ class DedicatedWorkerHost : public service_manager::mojom::InterfaceProvider {
 
     auto* render_process_host = RenderProcessHost::FromID(process_id_);
     if (!render_process_host) {
-      client->OnScriptLoadFailed();
+      client->OnScriptLoadStartFailed();
       return;
     }
     auto* storage_partition_impl = static_cast<StoragePartitionImpl*>(
         render_process_host->GetStoragePartition());
 
     scoped_refptr<network::SharedURLLoaderFactory> blob_url_loader_factory;
-    if (blob_url_token) {
-      if (!script_url.SchemeIsBlob()) {
-        mojo::ReportBadMessage("DWH_NOT_BLOB_URL");
+    if (script_url.SchemeIsBlob()) {
+      if (!blob_url_token) {
+        mojo::ReportBadMessage("DWH_NO_BLOB_URL_TOKEN");
         return;
       }
       blob_url_loader_factory =
           ChromeBlobStorageContext::URLLoaderFactoryForToken(
               storage_partition_impl->browser_context(),
               std::move(blob_url_token));
+    } else if (blob_url_token) {
+      mojo::ReportBadMessage("DWH_NOT_BLOB_URL");
+      return;
     }
 
     appcache_handle_ = std::make_unique<AppCacheNavigationHandle>(
@@ -100,7 +102,7 @@ class DedicatedWorkerHost : public service_manager::mojom::InterfaceProvider {
         storage_partition_impl->GetServiceWorkerContext(),
         appcache_handle_->core(), std::move(blob_url_loader_factory),
         storage_partition_impl,
-        base::BindOnce(&DedicatedWorkerHost::DidLoadDedicatedWorker,
+        base::BindOnce(&DedicatedWorkerHost::DidStartScriptLoad,
                        weak_factory_.GetWeakPtr(), std::move(client)));
   }
 
@@ -115,7 +117,28 @@ class DedicatedWorkerHost : public service_manager::mojom::InterfaceProvider {
         &DedicatedWorkerHost::CreateDedicatedWorker, base::Unretained(this)));
   }
 
-  void DidLoadDedicatedWorker(
+  // Called from WorkerScriptFetchInitiator. Continues starting the dedicated
+  // worker in the renderer process.
+  //
+  // |service_worker_provider_info| is sent to the renderer process and contains
+  // information about its ServiceWorkerProviderHost, the browser-side host for
+  // supporting the dedicated worker as a service worker client.
+  //
+  // |main_script_loader_factory| is not used when NetworkService is enabled.
+  //
+  // |main_script_load_params| is sent to the renderer process and to be used to
+  // load the dedicated worker main script pre-requested by the browser process.
+  //
+  // |subresource_loader_factories| is sent to the renderer process and is to be
+  // used to request subresources where applicable. For example, this allows the
+  // dedicated worker to load chrome-extension:// URLs which the renderer's
+  // default loader factory can't load.
+  //
+  // NetworkService (PlzWorker):
+  // |controller| contains information about the service worker controller. Once
+  // a ServiceWorker object about the controller is prepared, it is registered
+  // to |controller_service_worker_object_host|.
+  void DidStartScriptLoad(
       blink::mojom::DedicatedWorkerHostFactoryClientPtr client,
       blink::mojom::ServiceWorkerProviderInfoForWorkerPtr
           service_worker_provider_info,
@@ -124,7 +147,9 @@ class DedicatedWorkerHost : public service_manager::mojom::InterfaceProvider {
       std::unique_ptr<blink::URLLoaderFactoryBundleInfo>
           subresource_loader_factories,
       blink::mojom::WorkerMainScriptLoadParamsPtr main_script_load_params,
-      base::Optional<SubresourceLoaderParams> subresource_loader_params,
+      blink::mojom::ControllerServiceWorkerInfoPtr controller,
+      base::WeakPtr<ServiceWorkerObjectHost>
+          controller_service_worker_object_host,
       bool success) {
     DCHECK_CURRENTLY_ON(BrowserThread::UI);
     DCHECK(blink::features::IsPlzDedicatedWorkerEnabled());
@@ -132,80 +157,60 @@ class DedicatedWorkerHost : public service_manager::mojom::InterfaceProvider {
     DCHECK(!main_script_loader_factory);
 
     if (!success) {
-      client->OnScriptLoadFailed();
+      client->OnScriptLoadStartFailed();
       return;
     }
 
     auto* render_process_host = RenderProcessHost::FromID(process_id_);
     if (!render_process_host) {
-      client->OnScriptLoadFailed();
+      client->OnScriptLoadStartFailed();
       return;
     }
-    auto* storage_partition_impl = static_cast<StoragePartitionImpl*>(
-        render_process_host->GetStoragePartition());
 
     // Set up the default network loader factory.
     network::mojom::URLLoaderFactoryPtrInfo default_factory_info;
     CreateNetworkFactory(mojo::MakeRequest(&default_factory_info),
-                         storage_partition_impl->GetNetworkContext());
+                         render_process_host);
     subresource_loader_factories->default_factory_info() =
         std::move(default_factory_info);
 
     // Prepare the controller service worker info to pass to the renderer.
-    blink::mojom::ControllerServiceWorkerInfoPtr controller;
+    // |object_info| can be nullptr when the service worker context or the
+    // service worker version is gone during dedicated worker startup.
     blink::mojom::ServiceWorkerObjectAssociatedPtrInfo
         service_worker_remote_object;
     blink::mojom::ServiceWorkerState service_worker_state;
-    if (subresource_loader_params &&
-        subresource_loader_params->controller_service_worker_info) {
-      controller =
-          std::move(subresource_loader_params->controller_service_worker_info);
-      // |object_info| can be nullptr when the service worker context or the
-      // service worker version is gone during dedicated worker startup.
-      if (controller->object_info) {
-        controller->object_info->request =
-            mojo::MakeRequest(&service_worker_remote_object);
-        service_worker_state = controller->object_info->state;
-      }
+    if (controller && controller->object_info) {
+      controller->object_info->request =
+          mojo::MakeRequest(&service_worker_remote_object);
+      service_worker_state = controller->object_info->state;
     }
 
-    client->OnScriptLoaded(std::move(service_worker_provider_info),
-                           std::move(main_script_load_params),
-                           std::move(subresource_loader_factories),
-                           std::move(controller));
+    client->OnScriptLoadStarted(std::move(service_worker_provider_info),
+                                std::move(main_script_load_params),
+                                std::move(subresource_loader_factories),
+                                std::move(controller));
 
     // |service_worker_remote_object| is an associated interface ptr, so calls
     // can't be made on it until its request endpoint is sent. Now that the
     // request endpoint was sent, it can be used, so add it to
     // ServiceWorkerObjectHost.
-    if (service_worker_remote_object.is_valid()) {
+    if (service_worker_remote_object) {
       base::PostTaskWithTraits(
           FROM_HERE, {BrowserThread::IO},
           base::BindOnce(
               &ServiceWorkerObjectHost::AddRemoteObjectPtrAndUpdateState,
-              subresource_loader_params->controller_service_worker_object_host,
+              controller_service_worker_object_host,
               std::move(service_worker_remote_object), service_worker_state));
     }
   }
 
-  // This is similar to
-  // RenderFrameHostImpl::CreateNetworkServiceDefaultFactoryAndObserve, but this
-  // host doesn't observe network service crashes. Instead, the renderer detects
-  // the connection error and terminates the worker.
-  // TODO(nhiroki): Implement this mechanism. See EmbeddedSharedWorkerStub's
-  // |default_factory_connection_error_handler_holder_| for reference.
-  // (https://crbug.com/906991)
   void CreateNetworkFactory(network::mojom::URLLoaderFactoryRequest request,
-                            network::mojom::NetworkContext* network_context) {
+                            RenderProcessHost* process) {
     DCHECK_CURRENTLY_ON(BrowserThread::UI);
-    network::mojom::URLLoaderFactoryParamsPtr params =
-        network::mojom::URLLoaderFactoryParams::New();
-    params->process_id = process_id_;
-    // TODO(lukasza): https://crbug.com/792546: Start using CORB.
-    params->is_corb_enabled = false;
-
-    network_context->CreateURLLoaderFactory(std::move(request),
-                                            std::move(params));
+    network::mojom::TrustedURLLoaderHeaderClientPtrInfo no_header_client;
+    process->CreateURLLoaderFactory(origin_, std::move(no_header_client),
+                                    std::move(request));
   }
 
   void CreateWebUsbService(blink::mojom::WebUsbServiceRequest request) {
@@ -229,12 +234,14 @@ class DedicatedWorkerHost : public service_manager::mojom::InterfaceProvider {
       return;
     }
 
-    GetContentClient()->browser()->WillCreateWebSocket(frame, &request,
-                                                       &auth_handler);
+    uint32_t options = network::mojom::kWebSocketOptionNone;
+    network::mojom::TrustedHeaderClientPtr header_client;
+    GetContentClient()->browser()->WillCreateWebSocket(
+        frame, &request, &auth_handler, &header_client, &options);
 
-    WebSocketManager::CreateWebSocket(process_id_, ancestor_render_frame_id_,
-                                      origin_, std::move(auth_handler),
-                                      std::move(request));
+    WebSocketManager::CreateWebSocket(
+        process_id_, ancestor_render_frame_id_, origin_, options,
+        std::move(auth_handler), std::move(header_client), std::move(request));
   }
 
   void CreateDedicatedWorker(
@@ -275,7 +282,7 @@ class DedicatedWorkerHostFactoryImpl
   }
 
   // blink::mojom::DedicatedWorkerHostFactory:
-  void CreateDedicatedWorker(
+  void CreateWorkerHost(
       const url::Origin& origin,
       service_manager::mojom::InterfaceProviderRequest request) override {
     DCHECK_CURRENTLY_ON(BrowserThread::UI);
@@ -296,7 +303,7 @@ class DedicatedWorkerHostFactoryImpl
   }
 
   // PlzDedicatedWorker:
-  void CreateAndStartLoad(
+  void CreateWorkerHostAndStartScriptLoad(
       const GURL& script_url,
       const url::Origin& request_initiator_origin,
       blink::mojom::BlobURLTokenPtr blob_url_token,
@@ -321,8 +328,8 @@ class DedicatedWorkerHostFactoryImpl
             blink::mojom::kNavigation_DedicatedWorkerSpec, process_id_,
             mojo::MakeRequest(&interface_provider)));
     client->OnWorkerHostCreated(std::move(interface_provider));
-    host_raw->LoadDedicatedWorker(script_url, request_initiator_origin,
-                                  std::move(blob_url_token), std::move(client));
+    host_raw->StartScriptLoad(script_url, request_initiator_origin,
+                              std::move(blob_url_token), std::move(client));
   }
 
  private:

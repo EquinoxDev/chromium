@@ -201,7 +201,7 @@ bool AwContentRendererClient::ShouldSuppressErrorPage(
   if (render_frame_ext == nullptr)
     return false;
 
-  return render_frame_ext->GetShouldSuppressErrorPage();
+  return render_frame_ext->GetWillSuppressErrorPage();
 }
 
 void AwContentRendererClient::PrepareErrorPage(
@@ -278,13 +278,12 @@ void AwContentRendererClient::PrepareErrorPage(
       replacements, nullptr);
 }
 
-unsigned long long AwContentRendererClient::VisitedLinkHash(
-    const char* canonical_url,
-    size_t length) {
+uint64_t AwContentRendererClient::VisitedLinkHash(const char* canonical_url,
+                                                  size_t length) {
   return visited_link_slave_->ComputeURLFingerprint(canonical_url, length);
 }
 
-bool AwContentRendererClient::IsLinkVisited(unsigned long long link_hash) {
+bool AwContentRendererClient::IsLinkVisited(uint64_t link_hash) {
   return visited_link_slave_->IsVisited(link_hash);
 }
 

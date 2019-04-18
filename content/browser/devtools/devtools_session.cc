@@ -4,10 +4,11 @@
 
 #include "content/browser/devtools/devtools_session.h"
 
+#include <vector>
+
 #include "base/bind.h"
-#include "base/json/json_reader.h"
-#include "base/strings/stringprintf.h"
 #include "content/browser/devtools/devtools_manager.h"
+#include "content/browser/devtools/devtools_session_encoding.h"
 #include "content/browser/devtools/protocol/devtools_domain_handler.h"
 #include "content/browser/devtools/protocol/protocol.h"
 #include "content/browser/devtools/render_frame_devtools_agent_host.h"
@@ -34,7 +35,6 @@ bool ShouldSendOnIO(const std::string& method) {
 static const char kMethod[] = "method";
 static const char kResumeMethod[] = "Runtime.runIfWaitingForDebugger";
 static const char kSessionId[] = "sessionId";
-
 }  // namespace
 
 DevToolsSession::DevToolsSession(DevToolsAgentHostClient* client)
@@ -71,6 +71,11 @@ void DevToolsSession::Dispose() {
 
 DevToolsSession* DevToolsSession::GetRootSession() {
   return root_session_ ? root_session_ : this;
+}
+
+bool DevToolsSession::UsesBinaryProtocol() const {
+  return client_->UsesBinaryProtocol() ||
+         EnableInternalDevToolsBinaryProtocol();
 }
 
 void DevToolsSession::AddHandler(
@@ -133,27 +138,51 @@ void DevToolsSession::MojoConnectionDestroyed() {
   io_session_ptr_.reset();
 }
 
+// The client of the devtools session will call this method to send a message
+// to handlers / agents that the session is connected with.
 bool DevToolsSession::DispatchProtocolMessage(const std::string& message) {
+  // If the session is in proxy mode, then |message| will be sent to
+  // an external session, so it needs to be sent as JSON.
+  // TODO(dgozman): revisit the proxy delegate.
   if (proxy_delegate_) {
-    // Note: we assume that child sessions are not forwarding.
+    if (client_->UsesBinaryProtocol()) {
+      DCHECK(IsCBOR(message));
+      proxy_delegate_->SendMessageToBackend(this, ConvertCBORToJSON(message));
+      return true;
+    }
     proxy_delegate_->SendMessageToBackend(this, message);
     return true;
   }
-
-  std::unique_ptr<protocol::DictionaryValue> value =
-      protocol::DictionaryValue::cast(protocol::StringUtil::parseMessage(
-          message, client_->UsesBinaryProtocol()));
+  std::string converted_cbor_message;
+  const std::string* message_to_send = &message;
+  std::unique_ptr<protocol::DictionaryValue> value;
+  if (!EnableInternalDevToolsBinaryProtocol()) {
+    value = protocol::DictionaryValue::cast(protocol::StringUtil::parseMessage(
+        message, client_->UsesBinaryProtocol()));
+  } else {
+    if (client_->UsesBinaryProtocol()) {
+      // If the client uses the binary protocol, then |message| is already
+      // CBOR (it comes from the client).
+      DCHECK(IsCBOR(message));
+    } else {
+      converted_cbor_message = ConvertJSONToCBOR(message);
+      message_to_send = &converted_cbor_message;
+    }
+    value = protocol::DictionaryValue::cast(
+        protocol::StringUtil::parseMessage(*message_to_send, true));
+  }
 
   std::string session_id;
   if (!value || !value->getString(kSessionId, &session_id))
-    return DispatchProtocolMessageInternal(message, std::move(value));
+    return DispatchProtocolMessageInternal(*message_to_send, std::move(value));
 
   auto it = child_sessions_.find(session_id);
   if (it == child_sessions_.end())
     return false;
   DevToolsSession* session = it->second;
   DCHECK(!session->proxy_delegate_);
-  return session->DispatchProtocolMessageInternal(message, std::move(value));
+  return session->DispatchProtocolMessageInternal(*message_to_send,
+                                                  std::move(value));
 }
 
 bool DevToolsSession::DispatchProtocolMessageInternal(
@@ -242,22 +271,63 @@ void DevToolsSession::ResumeSendingMessagesToAgent() {
   suspended_messages_.clear();
 }
 
+// The following methods handle responses or notifications coming from
+// the browser to the client.
+static void SendProtocolResponseOrNotification(
+    DevToolsAgentHostClient* client,
+    DevToolsAgentHostImpl* agent_host,
+    std::unique_ptr<protocol::Serializable> message) {
+  if (!EnableInternalDevToolsBinaryProtocol()) {
+    bool binary = client->UsesBinaryProtocol();
+    client->DispatchProtocolMessage(agent_host, message->serialize(binary));
+    return;
+  }
+  std::string cbor = message->serialize(/*binary=*/true);
+  DCHECK(IsCBOR(cbor));
+  client->DispatchProtocolMessage(agent_host, client->UsesBinaryProtocol()
+                                                  ? cbor
+                                                  : ConvertCBORToJSON(cbor));
+}
+
 void DevToolsSession::sendProtocolResponse(
     int call_id,
     std::unique_ptr<protocol::Serializable> message) {
-  bool binary = client_->UsesBinaryProtocol();
-  client_->DispatchProtocolMessage(agent_host_, message->serialize(binary));
+  SendProtocolResponseOrNotification(client_, agent_host_, std::move(message));
   // |this| may be deleted at this point.
 }
 
 void DevToolsSession::sendProtocolNotification(
     std::unique_ptr<protocol::Serializable> message) {
-  bool binary = client_->UsesBinaryProtocol();
-  client_->DispatchProtocolMessage(agent_host_, message->serialize(binary));
+  SendProtocolResponseOrNotification(client_, agent_host_, std::move(message));
   // |this| may be deleted at this point.
 }
 
 void DevToolsSession::flushProtocolNotifications() {
+}
+
+// The following methods handle responses or notifications coming from
+// the renderer (blink) to the client.
+static void DispatchProtocolResponseOrNotification(
+    DevToolsAgentHostClient* client,
+    DevToolsAgentHostImpl* agent_host,
+    blink::mojom::DevToolsMessagePtr message) {
+  // TODO(johannes): When eliminating the
+  // --enable-internal-devtools-binary-protocol flag, reconsider the similarity
+  // with SendProtocolResponseOrNotification above and either merge the methods
+  // or inline them again.
+  if (!EnableInternalDevToolsBinaryProtocol()) {
+    client->DispatchProtocolMessage(
+        agent_host,
+        std::string(reinterpret_cast<const char*>(message->data.data()),
+                    message->data.size()));
+    return;
+  }
+  std::string cbor(reinterpret_cast<const char*>(message->data.data()),
+                   message->data.size());
+  DCHECK(IsCBOR(cbor));
+  client->DispatchProtocolMessage(agent_host, client->UsesBinaryProtocol()
+                                                  ? cbor
+                                                  : ConvertCBORToJSON(cbor));
 }
 
 void DevToolsSession::DispatchProtocolResponse(
@@ -266,10 +336,8 @@ void DevToolsSession::DispatchProtocolResponse(
     blink::mojom::DevToolsSessionStatePtr updates) {
   ApplySessionStateUpdates(std::move(updates));
   waiting_for_response_messages_.erase(call_id);
-  client_->DispatchProtocolMessage(
-      agent_host_,
-      std::string(reinterpret_cast<const char*>(message->data.data()),
-                  message->data.size()));
+  DispatchProtocolResponseOrNotification(client_, agent_host_,
+                                         std::move(message));
   // |this| may be deleted at this point.
 }
 
@@ -277,15 +345,26 @@ void DevToolsSession::DispatchProtocolNotification(
     blink::mojom::DevToolsMessagePtr message,
     blink::mojom::DevToolsSessionStatePtr updates) {
   ApplySessionStateUpdates(std::move(updates));
-  client_->DispatchProtocolMessage(
-      agent_host_,
-      std::string(reinterpret_cast<const char*>(message->data.data()),
-                  message->data.size()));
+  DispatchProtocolResponseOrNotification(client_, agent_host_,
+                                         std::move(message));
   // |this| may be deleted at this point.
 }
 
 void DevToolsSession::DispatchOnClientHost(const std::string& message) {
-  client_->DispatchProtocolMessage(agent_host_, message);
+  if (!EnableInternalDevToolsBinaryProtocol()) {
+    client_->DispatchProtocolMessage(agent_host_, message);
+    return;
+  }
+  // |message| either comes from a web socket, in which case it's JSON.
+  // Or it comes from another devtools_session, in which case it may be CBOR
+  // already. We auto-detect and convert to what the client wants as needed.
+  if (client_->UsesBinaryProtocol()) {
+    client_->DispatchProtocolMessage(
+        agent_host_, IsCBOR(message) ? message : ConvertJSONToCBOR(message));
+  } else {
+    client_->DispatchProtocolMessage(
+        agent_host_, !IsCBOR(message) ? message : ConvertCBORToJSON(message));
+  }
   // |this| may be deleted at this point.
 }
 

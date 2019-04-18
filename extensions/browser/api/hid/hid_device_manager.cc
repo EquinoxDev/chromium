@@ -6,6 +6,7 @@
 
 #include <stdint.h>
 
+#include <functional>
 #include <limits>
 #include <string>
 #include <utility>
@@ -57,7 +58,9 @@ void PopulateHidDeviceInfo(hid::HidDeviceInfo* output,
     api_collection.usage_page = collection->usage->usage_page;
     api_collection.usage = collection->usage->usage;
 
-    api_collection.report_ids = collection->report_ids;
+    api_collection.report_ids.insert(api_collection.report_ids.begin(),
+                                     collection->report_ids.begin(),
+                                     collection->report_ids.end());
 
     output->collections.push_back(std::move(api_collection));
   }
@@ -168,7 +171,7 @@ void HidDeviceManager::Connect(const std::string& device_guid,
                                ConnectCallback callback) {
   DCHECK(initialized_);
 
-  hid_manager_->Connect(device_guid,
+  hid_manager_->Connect(device_guid, /*connection_client=*/nullptr,
                         mojo::WrapCallbackWithDefaultInvokeIfNotRun(
                             std::move(callback), nullptr));
 }
@@ -277,22 +280,22 @@ void HidDeviceManager::LazyInitialize() {
   if (initialized_) {
     return;
   }
+  // |hid_manager_| may already be initialized in tests.
+  if (!hid_manager_) {
+    // |hid_manager_| is initialized and safe to use whether or not the
+    // connection is successful.
+    device::mojom::HidManagerRequest request = mojo::MakeRequest(&hid_manager_);
 
-  DCHECK(!hid_manager_);
-
-  // |hid_manager_| is initialized and safe to use whether or not the
-  // connection is successful.
-  device::mojom::HidManagerRequest request = mojo::MakeRequest(&hid_manager_);
+    DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+    DCHECK(content::ServiceManagerConnection::GetForProcess());
+    auto* connector =
+        content::ServiceManagerConnection::GetForProcess()->GetConnector();
+    connector->BindInterface(device::mojom::kServiceName, std::move(request));
+  }
+  // Enumerate HID devices and set client.
+  std::vector<device::mojom::HidDeviceInfoPtr> empty_devices;
   device::mojom::HidManagerClientAssociatedPtrInfo client;
   binding_.Bind(mojo::MakeRequest(&client));
-
-  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
-  DCHECK(content::ServiceManagerConnection::GetForProcess());
-  auto* connector =
-      content::ServiceManagerConnection::GetForProcess()->GetConnector();
-  connector->BindInterface(device::mojom::kServiceName, std::move(request));
-
-  std::vector<device::mojom::HidDeviceInfoPtr> empty_devices;
   hid_manager_->GetDevicesAndSetClient(
       std::move(client),
       mojo::WrapCallbackWithDefaultInvokeIfNotRun(
@@ -303,6 +306,13 @@ void HidDeviceManager::LazyInitialize() {
   initialized_ = true;
 }
 
+void HidDeviceManager::SetFakeHidManagerForTesting(
+    device::mojom::HidManagerPtr fake_hid_manager) {
+  DCHECK(!hid_manager_);
+  DCHECK(fake_hid_manager);
+  hid_manager_ = std::move(fake_hid_manager);
+  LazyInitialize();
+}
 std::unique_ptr<base::ListValue> HidDeviceManager::CreateApiDeviceList(
     const Extension* extension,
     const std::vector<HidDeviceFilter>& filters) {
@@ -362,7 +372,7 @@ void HidDeviceManager::DispatchEvent(
   // safe to pass |device_info| by reference.
   event->will_dispatch_callback =
       base::BindRepeating(&WillDispatchDeviceEvent, weak_factory_.GetWeakPtr(),
-                          base::ConstRef(device_info));
+                          std::cref(device_info));
   event_router_->BroadcastEvent(std::move(event));
 }
 

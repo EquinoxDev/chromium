@@ -30,6 +30,7 @@
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
 #include "base/logging.h"
+#include "base/metrics/histogram_functions.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/numerics/safe_conversions.h"
 #include "base/stl_util.h"
@@ -93,6 +94,43 @@ void RemoveLegacyIExecuteCommandKey(const InstallerState& installer_state) {
                             success);
     }
   }
+}
+
+// Remove the registration of profile statistics. This used to be reported to
+// Omaha, but no more.
+void RemoveProfileStatistics(const InstallerState& installer_state) {
+  const HKEY root = installer_state.root_key();
+  bool found = false;
+  bool deleted = true;
+  if (installer_state.system_install()) {
+    for (base::string16 key : {L"_NumAccounts", L"_NumSignedIn"}) {
+      base::string16 path(install_static::GetClientStateMediumKeyPath() +
+                          L"\\" + key);
+      if (base::win::RegKey(root, path.c_str(),
+                            KEY_QUERY_VALUE | KEY_WOW64_32KEY)
+              .Valid()) {
+        found = true;
+        if (!InstallUtil::DeleteRegistryKey(root, path, KEY_WOW64_32KEY))
+          deleted = false;
+      }
+    }
+  } else {
+    base::win::RegKey client_state;
+    if (client_state.Open(root, install_static::GetClientStateKeyPath().c_str(),
+                          KEY_QUERY_VALUE | KEY_SET_VALUE | KEY_WOW64_32KEY) ==
+        ERROR_SUCCESS) {
+      for (const base::char16* value : {STRING16_LITERAL("_NumAccounts"),
+                                        STRING16_LITERAL("_NumSignedIn"})) {
+          if (!client_state.HasValue(value))
+            continue;
+          found = true;
+          if (client_state.DeleteValue(value) != ERROR_SUCCESS)
+            deleted = false;
+        }
+    }
+  }
+  if (found)
+    UMA_HISTOGRAM_BOOLEAN("Setup.Install.RemoveProfileStatistics", deleted);
 }
 
 // "The binaries" once referred to the on-disk footprint of Chrome and/or Chrome
@@ -243,8 +281,9 @@ void RemoveLegacyChromeAppCommands(const InstallerState& installer_state) {
 
 }  // namespace
 
-const char kUnPackStatusMetricsName[] = "Setup.Install.LzmaUnPackStatus";
 const char kUnPackNTSTATUSMetricsName[] = "Setup.Install.LzmaUnPackNTSTATUS";
+const char kUnPackResultMetricsName[] = "Setup.Install.LzmaUnPackResult";
+const char kUnPackStatusMetricsName[] = "Setup.Install.LzmaUnPackStatus";
 
 int CourgettePatchFiles(const base::FilePath& src,
                         const base::FilePath& patch,
@@ -662,6 +701,7 @@ int GetInstallAge(const InstallerState& installer_state) {
 
 void RecordUnPackMetrics(UnPackStatus unpack_status,
                          int32_t status,
+                         DWORD lzma_result,
                          UnPackConsumer consumer) {
   std::string consumer_name = "";
 
@@ -680,16 +720,15 @@ void RecordUnPackMetrics(UnPackStatus unpack_status,
       break;
   }
 
-  base::LinearHistogram::FactoryGet(
-      std::string(kUnPackStatusMetricsName) + "_" + consumer_name, 1,
-      UNPACK_STATUS_COUNT, UNPACK_STATUS_COUNT + 1,
-      base::HistogramBase::kUmaTargetedHistogramFlag)
-      ->Add(unpack_status);
+  base::UmaHistogramExactLinear(
+      std::string(std::string(kUnPackStatusMetricsName) + "_" + consumer_name),
+      unpack_status, UNPACK_STATUS_COUNT);
 
-  base::SparseHistogram::FactoryGet(
-      std::string(kUnPackNTSTATUSMetricsName) + "_" + consumer_name,
-      base::HistogramBase::kUmaTargetedHistogramFlag)
-      ->Add(status);
+  base::UmaHistogramSparse(
+      std::string(kUnPackResultMetricsName) + "_" + consumer_name, lzma_result);
+
+  base::UmaHistogramSparse(
+      std::string(kUnPackNTSTATUSMetricsName) + "_" + consumer_name, status);
 }
 
 void RegisterEventLogProvider(const base::FilePath& install_directory,
@@ -767,6 +806,7 @@ void DoLegacyCleanups(const InstallerState& installer_state,
 
   // Cleanups that apply to any install mode.
   RemoveLegacyIExecuteCommandKey(installer_state);
+  RemoveProfileStatistics(installer_state);
 
   // The cleanups below only apply to normal Chrome, not side-by-side (canary).
   if (!install_static::InstallDetails::Get().is_primary_mode())

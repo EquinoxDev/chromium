@@ -69,13 +69,20 @@ Polymer({
 
   /** @private */
   showRipple_: function() {
-    if (!this.noink) {
+    if (!this.noink && !this.disabled) {
       this.getRipple().holdDown = true;
     }
   },
 
-  /** @private */
-  disabledChanged_: function() {
+  /**
+   * @param {boolean} newValue
+   * @param {boolean} oldValue
+   * @private
+   */
+  disabledChanged_: function(newValue, oldValue) {
+    if (!newValue && oldValue == undefined) {
+      return;
+    }
     if (this.disabled) {
       this.blur();
     }

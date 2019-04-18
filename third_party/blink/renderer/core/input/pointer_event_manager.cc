@@ -21,6 +21,7 @@
 #include "third_party/blink/renderer/core/input/mouse_event_manager.h"
 #include "third_party/blink/renderer/core/input/touch_action_util.h"
 #include "third_party/blink/renderer/core/layout/hit_test_canvas_result.h"
+#include "third_party/blink/renderer/core/layout/layout_object.h"
 #include "third_party/blink/renderer/core/page/chrome_client.h"
 #include "third_party/blink/renderer/core/page/page.h"
 #include "third_party/blink/renderer/core/page/pointer_lock_controller.h"
@@ -172,9 +173,11 @@ WebInputEventResult PointerEventManager::DispatchPointerEvent(
   }
 
   if (!check_for_listener || target->HasEventListeners(event_type)) {
-    UseCounter::Count(frame_, WebFeature::kPointerEventDispatch);
-    if (event_type == event_type_names::kPointerdown)
-      UseCounter::Count(frame_, WebFeature::kPointerEventDispatchPointerDown);
+    UseCounter::Count(frame_->GetDocument(), WebFeature::kPointerEventDispatch);
+    if (event_type == event_type_names::kPointerdown) {
+      UseCounter::Count(frame_->GetDocument(),
+                        WebFeature::kPointerEventDispatchPointerDown);
+    }
 
     DCHECK(!dispatching_pointer_id_);
     base::AutoReset<PointerId> dispatch_holder(&dispatching_pointer_id_,
@@ -743,9 +746,20 @@ WebInputEventResult PointerEventManager::SendMousePointerEvent(
     // Send got/lostpointercapture rightaway if necessary.
     if (pointer_event->type() == event_type_names::kPointerup) {
       // If pointerup releases the capture we also send boundary events
-      // rightaway when the pointer that supports hover. The following function
-      // does nothing when there was no capture to begin with in the first
-      // place.
+      // rightaway when the pointer that supports hover. Perform a hit
+      // test to find the new target.
+      if (RuntimeEnabledFeatures::UnifiedPointerCaptureInBlinkEnabled()) {
+        if (pointer_capture_target_.find(pointer_event->pointerId()) !=
+            pointer_capture_target_.end()) {
+          HitTestRequest::HitTestRequestType hit_type =
+              HitTestRequest::kRelease;
+          HitTestRequest request(hit_type);
+          MouseEventWithHitTestResults mev =
+              event_handling_util::PerformMouseEventHitTest(frame_, request,
+                                                            mouse_event);
+          target = mev.InnerElement();
+        }
+      }
       ProcessCaptureAndPositionOfPointerEvent(pointer_event, target,
                                               canvas_region_id, &mouse_event);
     } else {
@@ -890,19 +904,21 @@ void PointerEventManager::ElementRemoved(Element* target) {
                                           target);
 }
 
-void PointerEventManager::SetPointerCapture(PointerId pointer_id,
+bool PointerEventManager::SetPointerCapture(PointerId pointer_id,
                                             Element* target) {
-  UseCounter::Count(frame_, WebFeature::kPointerEventSetCapture);
+  UseCounter::Count(frame_->GetDocument(), WebFeature::kPointerEventSetCapture);
   if (pointer_event_factory_.IsActiveButtonsState(pointer_id)) {
     if (pointer_id != dispatching_pointer_id_) {
-      UseCounter::Count(frame_,
+      UseCounter::Count(frame_->GetDocument(),
                         WebFeature::kPointerEventSetCaptureOutsideDispatch);
     }
     pending_pointer_capture_target_.Set(pointer_id, target);
+    return true;
   }
+  return false;
 }
 
-void PointerEventManager::ReleasePointerCapture(PointerId pointer_id,
+bool PointerEventManager::ReleasePointerCapture(PointerId pointer_id,
                                                 Element* target) {
   // Only the element that is going to get the next pointer event can release
   // the capture. Note that this might be different from
@@ -911,8 +927,11 @@ void PointerEventManager::ReleasePointerCapture(PointerId pointer_id,
   // but |m_pendingPointerCaptureTarget| indicated the element that gets the
   // very next pointer event. They will be the same if there was no change in
   // capturing of a particular |pointerId|. See crbug.com/614481.
-  if (pending_pointer_capture_target_.at(pointer_id) == target)
+  if (pending_pointer_capture_target_.at(pointer_id) == target) {
     ReleasePointerCapture(pointer_id);
+    return true;
+  }
+  return false;
 }
 
 void PointerEventManager::ReleaseMousePointerCapture() {
@@ -926,6 +945,12 @@ bool PointerEventManager::HasPointerCapture(PointerId pointer_id,
 
 void PointerEventManager::ReleasePointerCapture(PointerId pointer_id) {
   pending_pointer_capture_target_.erase(pointer_id);
+}
+
+Element* PointerEventManager::GetMouseCaptureTarget() {
+  if (pending_pointer_capture_target_.Contains(PointerEventFactory::kMouseId))
+    return pending_pointer_capture_target_.at(PointerEventFactory::kMouseId);
+  return nullptr;
 }
 
 bool PointerEventManager::IsActive(const PointerId pointer_id) const {

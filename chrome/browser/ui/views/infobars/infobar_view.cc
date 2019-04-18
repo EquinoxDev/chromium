@@ -38,7 +38,7 @@
 #include "ui/views/controls/label.h"
 #include "ui/views/controls/link.h"
 #include "ui/views/controls/menu/menu_runner.h"
-#include "ui/views/view_properties.h"
+#include "ui/views/view_class_properties.h"
 #include "ui/views/widget/widget.h"
 #include "ui/views/window/non_client_view.h"
 
@@ -163,13 +163,12 @@ void InfoBarView::Layout() {
       OffsetY(close_button_)));
 
   // For accessibility reasons, the close button should come last.
-  DCHECK_EQ(close_button_->parent()->child_count() - 1,
-            close_button_->parent()->GetIndexOf(close_button_));
+  DCHECK_EQ(close_button_, close_button_->parent()->children().back());
 }
 
 void InfoBarView::GetAccessibleNodeData(ui::AXNodeData* node_data) {
   node_data->SetName(l10n_util::GetStringUTF8(IDS_ACCNAME_INFOBAR));
-  node_data->role = ax::mojom::Role::kAlert;
+  node_data->role = ax::mojom::Role::kAlertDialog;
   node_data->AddStringAttribute(ax::mojom::StringAttribute::kKeyShortcuts,
                                 "Alt+Shift+A");
 }
@@ -191,7 +190,7 @@ gfx::Size InfoBarView::CalculatePreferredSize() const {
 }
 
 void InfoBarView::ViewHierarchyChanged(
-    const ViewHierarchyChangedDetails& details) {
+    const views::ViewHierarchyChangedDetails& details) {
   View::ViewHierarchyChanged(details);
 
   // Anything that needs to happen once after all subclasses add their children.
@@ -206,7 +205,7 @@ void InfoBarView::OnPaint(gfx::Canvas* canvas) {
 
   if (ShouldDrawSeparator()) {
     const SkColor color =
-        GetColor(ThemeProperties::COLOR_DETACHED_BOOKMARK_BAR_SEPARATOR);
+        GetColor(ThemeProperties::COLOR_TOOLBAR_CONTENT_AREA_SEPARATOR);
     BrowserView::Paint1pxHorizontalLine(canvas, color, GetLocalBounds(), false);
   }
 }
@@ -360,7 +359,7 @@ bool InfoBarView::ShouldDrawSeparator() const {
   // There will be no parent when this infobar is not in a container, e.g. if
   // it's in a background tab.  It's still possible to reach here in that case,
   // e.g. if ElevationIconSetter triggers a Layout().
-  return parent() && parent()->GetIndexOf(this) != 0;
+  return parent() && parent()->child_at(0) != this;
 }
 
 int InfoBarView::GetSeparatorHeightDip() const {

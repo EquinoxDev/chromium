@@ -7,7 +7,7 @@
 #include <fcntl.h>
 #include <stddef.h>
 #include <xf86drm.h>
-
+#include <memory>
 #include <utility>
 
 #include "base/bind.h"
@@ -20,11 +20,11 @@
 #include "ui/display/types/display_snapshot.h"
 #include "ui/events/ozone/device/device_event.h"
 #include "ui/events/ozone/device/device_manager.h"
+#include "ui/ozone/platform/drm/common/drm_overlay_manager.h"
 #include "ui/ozone/platform/drm/common/drm_util.h"
 #include "ui/ozone/platform/drm/host/drm_device_handle.h"
 #include "ui/ozone/platform/drm/host/drm_display_host.h"
 #include "ui/ozone/platform/drm/host/drm_native_display_delegate.h"
-#include "ui/ozone/platform/drm/host/drm_overlay_manager_host.h"
 #include "ui/ozone/platform/drm/host/gpu_thread_adapter.h"
 
 namespace ui {
@@ -111,7 +111,8 @@ class FindDrmDisplayHostById {
 DrmDisplayHostManager::DrmDisplayHostManager(
     GpuThreadAdapter* proxy,
     DeviceManager* device_manager,
-    DrmOverlayManagerHost* overlay_manager,
+    OzonePlatform::InitializedHostProperties* host_properties,
+    DrmOverlayManager* overlay_manager,
     InputControllerEvdev* input_controller)
     : proxy_(proxy),
       device_manager_(device_manager),
@@ -134,8 +135,8 @@ DrmDisplayHostManager::DrmDisplayHostManager(
       LOG(FATAL) << "Failed to open primary graphics card";
       return;
     }
-    overlay_manager->set_supports_overlays(
-        primary_drm_device_handle_->has_atomic_capabilities());
+    host_properties->supports_overlays =
+        primary_drm_device_handle_->has_atomic_capabilities();
     drm_devices_[primary_graphics_card_path_] =
         primary_graphics_card_path_sysfs;
   }
@@ -402,7 +403,9 @@ void DrmDisplayHostManager::GpuConfiguredDisplay(int64_t display_id,
   DrmDisplayHost* display = GetDisplay(display_id);
   if (display) {
     display->OnDisplayConfigured(status);
-    overlay_manager_->ResetCache();
+
+    if (overlay_manager_)
+      overlay_manager_->ResetCache();
   } else {
     LOG(ERROR) << "Couldn't find display with id=" << display_id;
   }

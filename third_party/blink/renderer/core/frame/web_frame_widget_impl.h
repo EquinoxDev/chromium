@@ -43,11 +43,11 @@
 #include "third_party/blink/renderer/core/frame/web_frame_widget_base.h"
 #include "third_party/blink/renderer/core/frame/web_local_frame_impl.h"
 #include "third_party/blink/renderer/core/page/page_widget_delegate.h"
+#include "third_party/blink/renderer/core/scroll/scroll_types.h"
 #include "third_party/blink/renderer/platform/graphics/apply_viewport_changes.h"
 #include "third_party/blink/renderer/platform/graphics/graphics_layer.h"
 #include "third_party/blink/renderer/platform/heap/member.h"
 #include "third_party/blink/renderer/platform/heap/self_keep_alive.h"
-#include "third_party/blink/renderer/platform/scroll/scroll_types.h"
 #include "third_party/blink/renderer/platform/wtf/hash_set.h"
 
 namespace cc {
@@ -55,7 +55,6 @@ class Layer;
 }
 
 namespace blink {
-class AnimationWorkletMutatorDispatcherImpl;
 class Frame;
 class Element;
 class HTMLPlugInElement;
@@ -70,8 +69,6 @@ class WebFrameWidgetImpl;
 class WebFrameWidgetImpl final : public WebFrameWidgetBase,
                                  public PageWidgetEventHandler {
  public:
-  static WebFrameWidgetImpl* Create(WebWidgetClient&);
-
   explicit WebFrameWidgetImpl(WebWidgetClient&);
   ~WebFrameWidgetImpl() override;
 
@@ -85,27 +82,32 @@ class WebFrameWidgetImpl final : public WebFrameWidgetBase,
   void SetSuppressFrameRequestsWorkaroundFor704763Only(bool) final;
   void BeginFrame(base::TimeTicks last_frame_time,
                   bool record_main_frame_metrics) override;
+  void DidBeginFrame() override;
   void BeginRafAlignedInput() override;
   void EndRafAlignedInput() override;
+  void BeginUpdateLayers() override;
+  void EndUpdateLayers() override;
+  void BeginCommitCompositorFrame() override;
+  void EndCommitCompositorFrame() override;
   void RecordStartOfFrameMetrics() override;
   void RecordEndOfFrameMetrics(base::TimeTicks) override;
   void UpdateLifecycle(LifecycleUpdate requested_update,
                        LifecycleUpdateReason reason) override;
   void PaintContent(cc::PaintCanvas*, const WebRect&) override;
-  void CompositeAndReadbackAsync(
-      base::OnceCallback<void(const SkBitmap&)> callback) override;
   void ThemeChanged() override;
   WebHitTestResult HitTestResultAt(const gfx::Point&) override;
   WebInputEventResult DispatchBufferedTouchEvents() override;
   WebInputEventResult HandleInputEvent(const WebCoalescedInputEvent&) override;
   void SetCursorVisibilityState(bool is_visible) override;
+  void OnFallbackCursorModeToggled(bool is_on) override;
 
   void ApplyViewportChanges(const ApplyViewportChangesArgs&) override;
   void MouseCaptureLost() override;
   void SetFocus(bool enable) override;
   bool SelectionBounds(WebRect& anchor, WebRect& focus) const override;
   bool IsAcceleratedCompositingActive() const override;
-  void SetRemoteViewportIntersection(const WebRect&, bool) override;
+  void SetRemoteViewportIntersection(const WebRect&,
+                                     FrameOcclusionState) override;
   void SetIsInert(bool) override;
   void SetInheritedEffectiveTouchAction(TouchAction) override;
   void UpdateRenderThrottlingStatus(bool is_throttled,
@@ -122,12 +124,6 @@ class WebFrameWidgetImpl final : public WebFrameWidgetBase,
   Element* FocusedElement() const;
 
   PaintLayerCompositor* Compositor() const;
-  // Create or return cached mutation distributor.  This usually requires a
-  // round trip to the compositor.  The output task runner is the one to use
-  // for sending mutations using the WeakPtr.
-  base::WeakPtr<AnimationWorkletMutatorDispatcherImpl>
-  EnsureCompositorMutatorDispatcher(scoped_refptr<base::SingleThreadTaskRunner>*
-                                        mutator_task_runner) override;
 
   // WebFrameWidgetBase overrides:
   void SetLayerTreeView(WebLayerTreeView*, cc::AnimationHost*) override;
@@ -141,9 +137,6 @@ class WebFrameWidgetImpl final : public WebFrameWidgetBase,
   cc::AnimationHost* AnimationHost() const override;
   HitTestResult CoreHitTestResultAt(const gfx::Point&) override;
   void ZoomToFindInPageRect(const WebRect& rect_in_root_frame) override;
-
-  // Exposed for the purpose of overriding device metrics.
-  void SendResizeEventAndRepaint();
 
   void UpdateMainFrameLayoutSize();
 
@@ -195,17 +188,16 @@ class WebFrameWidgetImpl final : public WebFrameWidgetBase,
   Member<HTMLPlugInElement> mouse_capture_element_;
   scoped_refptr<UserGestureToken> mouse_capture_gesture_token_;
 
-  // This is owned by the LayerTreeHostImpl, and should only be used on the
-  // compositor thread, so we keep the TaskRunner where you post tasks to
-  // make that happen.
-  base::WeakPtr<AnimationWorkletMutatorDispatcherImpl> mutator_dispatcher_;
-  scoped_refptr<base::SingleThreadTaskRunner> mutator_task_runner_;
-
   WebLayerTreeView* layer_tree_view_ = nullptr;
   cc::AnimationHost* animation_host_ = nullptr;
   scoped_refptr<cc::Layer> root_layer_;
   GraphicsLayer* root_graphics_layer_ = nullptr;
-  base::TimeTicks raf_aligned_input_start_time_;
+
+  // Metrics gathering timing information
+  base::Optional<base::TimeTicks> raf_aligned_input_start_time_;
+  base::Optional<base::TimeTicks> update_layers_start_time_;
+  base::Optional<base::TimeTicks> commit_compositor_frame_start_time_;
+
   bool is_accelerated_compositing_active_ = false;
 
   bool suppress_next_keypress_event_ = false;
@@ -219,12 +211,6 @@ class WebFrameWidgetImpl final : public WebFrameWidgetBase,
 
   SelfKeepAlive<WebFrameWidgetImpl> self_keep_alive_;
 };
-
-DEFINE_TYPE_CASTS(WebFrameWidgetImpl,
-                  WebFrameWidgetBase,
-                  widget,
-                  widget->ForSubframe(),
-                  widget.ForSubframe());
 
 }  // namespace blink
 

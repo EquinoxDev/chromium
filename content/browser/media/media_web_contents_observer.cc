@@ -45,7 +45,7 @@ void CheckFullscreenDetectionEnabled(WebContents* web_contents) {
 
 // Returns true if |player_id| exists in |player_map|.
 bool MediaPlayerEntryExists(
-    const WebContentsObserver::MediaPlayerId& player_id,
+    const MediaPlayerId& player_id,
     const MediaWebContentsObserver::ActiveMediaPlayerMap& player_map) {
   const auto& players = player_map.find(player_id.render_frame_host);
   if (players == player_map.end())
@@ -72,7 +72,12 @@ MediaWebContentsObserver::MediaWebContentsObserver(WebContents* web_contents)
 MediaWebContentsObserver::~MediaWebContentsObserver() = default;
 
 void MediaWebContentsObserver::WebContentsDestroyed() {
-  audible_metrics_->WebContentsDestroyed(web_contents());
+  AudioStreamMonitor* audio_stream_monitor =
+      web_contents_impl()->audio_stream_monitor();
+
+  audible_metrics_->WebContentsDestroyed(
+      web_contents(), audio_stream_monitor->WasRecentlyAudible() &&
+                          !web_contents()->IsAudioMuted());
 }
 
 void MediaWebContentsObserver::RenderFrameDeleted(
@@ -117,7 +122,7 @@ bool MediaWebContentsObserver::IsPictureInPictureAllowedForFullscreenVideo()
   return *picture_in_picture_allowed_in_fullscreen_;
 }
 
-const base::Optional<WebContentsObserver::MediaPlayerId>&
+const base::Optional<MediaPlayerId>&
 MediaWebContentsObserver::GetFullscreenVideoMediaPlayerId() const {
   CheckFullscreenDetectionEnabled(web_contents_impl());
   return fullscreen_player_;

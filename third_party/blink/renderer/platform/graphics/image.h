@@ -30,6 +30,7 @@
 #include "base/macros.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/memory/weak_ptr.h"
+#include "third_party/blink/renderer/platform/geometry/float_size.h"
 #include "third_party/blink/renderer/platform/geometry/int_rect.h"
 #include "third_party/blink/renderer/platform/graphics/canvas_color_params.h"
 #include "third_party/blink/renderer/platform/graphics/graphics_types.h"
@@ -58,7 +59,6 @@ namespace blink {
 
 class FloatPoint;
 class FloatRect;
-class FloatSize;
 class GraphicsContext;
 class Image;
 class KURL;
@@ -80,6 +80,13 @@ class PLATFORM_EXPORT Image : public ThreadSafeRefCounted<Image> {
 
   static scoped_refptr<Image> LoadPlatformResource(const char* name);
 
+  static PaintImage ResizeAndOrientImage(
+      const PaintImage&,
+      ImageOrientation,
+      FloatSize image_scale = FloatSize(1, 1),
+      float opacity = 1.0,
+      InterpolationQuality = kInterpolationNone);
+
   virtual bool IsSVGImage() const { return false; }
   virtual bool IsBitmapImage() const { return false; }
   virtual bool IsStaticBitmapImage() const { return false; }
@@ -99,8 +106,7 @@ class PLATFORM_EXPORT Image : public ThreadSafeRefCounted<Image> {
   static Image* NullImage();
   bool IsNull() const { return Size().IsEmpty(); }
 
-  virtual bool UsesContainerSize() const { return false; }
-  virtual bool HasRelativeSize() const { return false; }
+  virtual bool HasIntrinsicSize() const { return true; }
 
   virtual IntSize Size() const = 0;
   IntRect Rect() const { return IntRect(IntPoint(), Size()); }
@@ -230,16 +236,20 @@ class PLATFORM_EXPORT Image : public ThreadSafeRefCounted<Image> {
     return nullptr;
   }
 
-  HighContrastClassification GetHighContrastClassification() {
-    return high_contrast_classification_;
+  void SetShouldCacheDarkModeClassification(bool should_cache_result) {
+    should_cache_dark_mode_classification_ = should_cache_result;
   }
 
-  // High contrast classification result is cached to be consistent and have
-  // higher performance for future paints.
-  void SetHighContrastClassification(
-      const HighContrastClassification high_contrast_classification) {
-    high_contrast_classification_ = high_contrast_classification;
+  bool ShouldCacheDarkModeClassification() {
+    return should_cache_dark_mode_classification_;
   }
+
+  // Decides if a dark mode filter should be applied to the image or not.
+  // |src_rect| is needed in case of image sprites for the location and
+  // size of the smaller images that the sprite holds.
+  // For images that come from sprites the |src_rect.X| and |src_rect.Y|
+  // can be non-zero. But for other images they are both zero.
+  bool ShouldApplyDarkModeFilter(const FloatRect& src_rect);
 
   PaintImage::Id paint_image_id() const { return stable_image_id_; }
 
@@ -264,7 +274,24 @@ class PLATFORM_EXPORT Image : public ThreadSafeRefCounted<Image> {
   // Whether or not size is available yet.
   virtual bool IsSizeAvailable() { return true; }
 
+  DarkModeClassification GetDarkModeClassification(const FloatRect& src_rect);
+
+  // Dark mode classification result is cached to be consistent and have
+  // higher performance for future paints.
+  void AddDarkModeClassification(
+      const FloatRect& src_rect,
+      const DarkModeClassification dark_mode_classification);
+
+  typedef std::pair<float, float> ClassificationKey;
+  std::map<ClassificationKey, DarkModeClassification>
+      dark_mode_classifications_;
+
  private:
+  virtual DarkModeClassification ClassifyImageForDarkMode(
+      const FloatRect& src_rect) {
+    return DarkModeClassification::kDoNotApplyDarkModeFilter;
+  }
+
   bool image_observer_disabled_;
   scoped_refptr<SharedBuffer> encoded_image_data_;
   // TODO(Oilpan): consider having Image on the Oilpan heap and
@@ -277,8 +304,7 @@ class PLATFORM_EXPORT Image : public ThreadSafeRefCounted<Image> {
   WeakPersistent<ImageObserver> image_observer_;
   PaintImage::Id stable_image_id_;
   const bool is_multipart_;
-  HighContrastClassification high_contrast_classification_;
-
+  bool should_cache_dark_mode_classification_ = true;
   DISALLOW_COPY_AND_ASSIGN(Image);
 };
 

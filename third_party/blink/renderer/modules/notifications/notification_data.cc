@@ -4,11 +4,13 @@
 
 #include "third_party/blink/renderer/modules/notifications/notification_data.h"
 
+#include "third_party/blink/public/common/notifications/notification_constants.h"
 #include "third_party/blink/renderer/bindings/core/v8/serialization/serialized_script_value.h"
 #include "third_party/blink/renderer/bindings/core/v8/serialization/serialized_script_value_factory.h"
 #include "third_party/blink/renderer/core/execution_context/execution_context.h"
 #include "third_party/blink/renderer/modules/notifications/notification.h"
 #include "third_party/blink/renderer/modules/notifications/notification_options.h"
+#include "third_party/blink/renderer/modules/notifications/timestamp_trigger.h"
 #include "third_party/blink/renderer/modules/vibration/vibration_controller.h"
 #include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/wtf/std_lib_extras.h"
@@ -139,6 +141,19 @@ mojom::blink::NotificationDataPtr CreateNotificationData(
   }
 
   notification_data->actions = std::move(actions);
+
+  if (options->hasShowTrigger()) {
+    auto* timestamp_trigger = options->showTrigger();
+    auto timestamp = base::Time::FromJsTime(timestamp_trigger->timestamp());
+
+    if (timestamp - base::Time::Now() > kMaxNotificationShowTriggerDelay) {
+      exception_state.ThrowTypeError(
+          "Notification trigger timestamp too far ahead in the future.");
+      return nullptr;
+    }
+
+    notification_data->show_trigger_timestamp = timestamp;
+  }
 
   return notification_data;
 }

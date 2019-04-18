@@ -162,12 +162,8 @@ ios_web_view_sources = [
   "internal/pref_names.mm",
   "internal/signin/ios_web_view_signin_client.h",
   "internal/signin/ios_web_view_signin_client.mm",
-  "internal/signin/web_view_account_fetcher_service_factory.h",
-  "internal/signin/web_view_account_fetcher_service_factory.mm",
   "internal/signin/web_view_account_tracker_service_factory.h",
   "internal/signin/web_view_account_tracker_service_factory.mm",
-  "internal/signin/web_view_gaia_cookie_manager_service_factory.h",
-  "internal/signin/web_view_gaia_cookie_manager_service_factory.mm",
   "internal/signin/web_view_identity_manager_factory.h",
   "internal/signin/web_view_identity_manager_factory.mm",
   "internal/signin/web_view_oauth2_token_service_factory.h",
@@ -178,8 +174,6 @@ ios_web_view_sources = [
   "internal/signin/web_view_signin_client_factory.mm",
   "internal/signin/web_view_signin_error_controller_factory.h",
   "internal/signin/web_view_signin_error_controller_factory.mm",
-  "internal/signin/web_view_signin_manager_factory.h",
-  "internal/signin/web_view_signin_manager_factory.mm",
   "internal/sync/web_view_device_info_sync_service_factory.h",
   "internal/sync/web_view_device_info_sync_service_factory.mm",
   "internal/sync/web_view_model_type_store_service_factory.h",
@@ -298,10 +292,14 @@ ios_web_view_deps = [
   "//components/signin/ios/browser:active_state_manager",
   "//components/strings:components_strings_grit",
   "//components/sync",
+  "//components/sync:device_info",
+  "//components/sync:user_events",
+  "//components/language/ios/browser",
   "//components/sync_sessions",
   "//components/translate/core/browser",
   "//components/translate/core/common",
   "//components/translate/ios/browser",
+  "//components/variations/net",
   "//components/version_info",
   "//components/version_info:version_string",
   "//components/web_resource",
@@ -477,9 +475,13 @@ js_compile_bundle("web_view_bundle") {
 
 repack_locales("repack_locales") {
   visibility = [ ":web_view_resources" ]
-  source_patterns = [ "${root_gen_dir}/components/strings/components_strings_" ]
+  source_patterns = [
+    "${root_gen_dir}/components/strings/components_strings_",
+    "${root_gen_dir}/components/strings/components_locale_settings_",
+  ]
 
   deps = [
+    "//components/strings:components_locale_settings",
     "//components/strings:components_strings",
   ]
   input_locales = ios_packed_locales

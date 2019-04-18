@@ -35,6 +35,7 @@
 #include "content/renderer/render_view_impl.h"
 #include "content/test/fake_compositor_dependencies.h"
 #include "content/test/frame_host_test_interface.mojom.h"
+#include "content/test/test_document_interface_broker.h"
 #include "content/test/test_render_frame.h"
 #include "services/service_manager/public/cpp/interface_provider.h"
 #include "services/service_manager/public/mojom/interface_provider.mojom.h"
@@ -66,6 +67,8 @@ constexpr int32_t kEmbeddedSubframeRouteId = 23;
 const char kParentFrameHTML[] = "Parent frame <iframe name='frame'></iframe>";
 
 const char kAutoplayTestOrigin[] = "https://www.google.com";
+
+constexpr char kGetNameTestResponse[] = "TestName";
 
 }  // namespace
 
@@ -225,8 +228,9 @@ TEST_F(RenderFrameImplTest, FrameResize) {
 TEST_F(RenderFrameImplTest, FrameWasShown) {
   RenderFrameTestObserver observer(frame());
 
-  WidgetMsg_WasShown was_shown_message(0, base::TimeTicks(),
-                                       false /* was_evicted */);
+  WidgetMsg_WasShown was_shown_message(
+      0, base::TimeTicks(), false /* was_evicted */,
+      base::TimeTicks() /* tab_switch_start_time */);
   frame_widget()->OnMessageReceived(was_shown_message);
 
   EXPECT_FALSE(frame_widget()->is_hidden());
@@ -263,26 +267,13 @@ TEST_F(RenderFrameImplTest, LocalChildFrameWasShown) {
 
   RenderFrameTestObserver observer(grandchild);
 
-  WidgetMsg_WasShown was_shown_message(0, base::TimeTicks(),
-                                       false /* was_evicted */);
+  WidgetMsg_WasShown was_shown_message(
+      0, base::TimeTicks(), false /* was_evicted */,
+      base::TimeTicks() /* tab_switch_start_time */);
   frame_widget()->OnMessageReceived(was_shown_message);
 
   EXPECT_FALSE(frame_widget()->is_hidden());
   EXPECT_TRUE(observer.visible());
-}
-
-// Ensure that a RenderFrameImpl does not crash if the RenderView receives
-// a WasShown message after the frame's widget has been closed.
-TEST_F(RenderFrameImplTest, FrameWasShownAfterWidgetClose) {
-  WidgetMsg_Close close_message(0);
-  frame_widget()->OnMessageReceived(close_message);
-
-  WidgetMsg_WasShown was_shown_message(0, base::TimeTicks(),
-                                       false /* was_evicted */);
-  // Test passes if this does not crash.
-  RenderWidget* render_widget =
-      static_cast<RenderViewImpl*>(view_)->GetWidget();
-  render_widget->OnMessageReceived(was_shown_message);
 }
 
 // Test that LoFi state only updates for new main frame documents. Subframes
@@ -701,6 +692,87 @@ TEST_F(RenderFrameImplTest, FileUrlPathAlias) {
   }
 }
 
+// Used to annotate the source of an interface request.
+struct SourceAnnotation {
+  // The URL of the active document in the frame, at the time the interface was
+  // requested by the RenderFrame.
+  GURL document_url;
+
+  // The RenderFrameObserver event in response to which the interface is
+  // requested by the RenderFrame.
+  std::string render_frame_event;
+
+  bool operator==(const SourceAnnotation& rhs) const {
+    return document_url == rhs.document_url &&
+           render_frame_event == rhs.render_frame_event;
+  }
+};
+
+// TODO(crbug.com/718652): this is a blink version of the FrameHostTestInterface
+// implementation. The non-blink one will be removed when all clients are
+// converted to use DocumentInterfaceBroker.
+class BlinkFrameHostTestInterfaceImpl
+    : public blink::mojom::FrameHostTestInterface {
+ public:
+  BlinkFrameHostTestInterfaceImpl() : binding_(this) {}
+  ~BlinkFrameHostTestInterfaceImpl() override {}
+
+  void BindAndFlush(blink::mojom::FrameHostTestInterfaceRequest request) {
+    binding_.Bind(std::move(request));
+    binding_.WaitForIncomingMethodCall();
+  }
+
+  const base::Optional<SourceAnnotation>& ping_source() const {
+    return ping_source_;
+  }
+
+ protected:
+  // blink::mojom::FrameHostTestInterface
+  void Ping(const GURL& url, const std::string& event) override {
+    ping_source_ = SourceAnnotation{url, event};
+  }
+  void GetName(GetNameCallback callback) override {
+    std::move(callback).Run(kGetNameTestResponse);
+  }
+
+ private:
+  mojo::Binding<blink::mojom::FrameHostTestInterface> binding_;
+  base::Optional<SourceAnnotation> ping_source_;
+
+  DISALLOW_COPY_AND_ASSIGN(BlinkFrameHostTestInterfaceImpl);
+};
+
+class FrameHostTestDocumentInterfaceBroker
+    : public TestDocumentInterfaceBroker {
+ public:
+  FrameHostTestDocumentInterfaceBroker(
+      blink::mojom::DocumentInterfaceBroker* document_interface_broker,
+      blink::mojom::DocumentInterfaceBrokerRequest request)
+      : TestDocumentInterfaceBroker(document_interface_broker,
+                                    std::move(request)) {}
+
+  void GetFrameHostTestInterface(
+      blink::mojom::FrameHostTestInterfaceRequest request) override {
+    BlinkFrameHostTestInterfaceImpl impl;
+    impl.BindAndFlush(std::move(request));
+  }
+};
+
+TEST_F(RenderFrameImplTest, TestDocumentInterfaceBrokerOverride) {
+  blink::mojom::DocumentInterfaceBrokerPtr doc;
+  FrameHostTestDocumentInterfaceBroker frame_interface_broker(
+      frame()->GetDocumentInterfaceBroker(), mojo::MakeRequest(&doc));
+  frame()->SetDocumentInterfaceBrokerForTesting(std::move(doc));
+
+  blink::mojom::FrameHostTestInterfacePtr frame_test;
+  frame()->GetDocumentInterfaceBroker()->GetFrameHostTestInterface(
+      mojo::MakeRequest(&frame_test));
+  frame_test->GetName(base::BindOnce([](const std::string& result) {
+    EXPECT_EQ(result, kGetNameTestResponse);
+  }));
+  frame_interface_broker.Flush();
+}
+
 // RenderFrameRemoteInterfacesTest ------------------------------------
 
 namespace {
@@ -714,8 +786,8 @@ constexpr char kFrameEventDidCreateNewFrame[] = "did-create-new-frame";
 constexpr char kFrameEventDidCreateNewDocument[] = "did-create-new-document";
 constexpr char kFrameEventDidCreateDocumentElement[] =
     "did-create-document-element";
-constexpr char kFrameEventWillCommitProvisionalLoad[] =
-    "will-commit-provisional-load";
+constexpr char kFrameEventReadyToCommitNavigation[] =
+    "ready-to-commit-navigation";
 constexpr char kFrameEventDidCommitProvisionalLoad[] =
     "did-commit-provisional-load";
 constexpr char kFrameEventDidCommitSameDocumentLoad[] =
@@ -781,32 +853,20 @@ class TestSimpleDocumentInterfaceBrokerImpl
       blink::mojom::FrameHostTestInterfaceRequest request) override {
     binder_callback_.Run(std::move(request));
   }
+  void GetAudioContextManager(
+      blink::mojom::AudioContextManagerRequest) override {}
+  void GetCredentialManager(
+      blink::mojom::CredentialManagerRequest request) override {}
+  void GetAuthenticator(blink::mojom::AuthenticatorRequest request) override {}
+  void GetVirtualAuthenticatorManager(
+      blink::test::mojom::VirtualAuthenticatorManagerRequest request) override {
+  }
 
   mojo::Binding<blink::mojom::DocumentInterfaceBroker> binding_;
   BinderCallback binder_callback_;
 
   DISALLOW_COPY_AND_ASSIGN(TestSimpleDocumentInterfaceBrokerImpl);
 };
-
-// Used to annotate the source of an interface request.
-struct SourceAnnotation {
-  // The URL of the active document in the frame, at the time the interface was
-  // requested by the RenderFrame.
-  GURL document_url;
-
-  // The RenderFrameObserver event in response to which the interface is
-  // requested by the RenderFrame.
-  std::string render_frame_event;
-
-  bool operator==(const SourceAnnotation& rhs) const {
-    return document_url == rhs.document_url &&
-           render_frame_event == rhs.render_frame_event;
-  }
-};
-
-std::ostream& operator<<(std::ostream& os, const SourceAnnotation& a) {
-  return os << "[" << a.document_url << ", " << a.render_frame_event << "]";
-}
 
 class FrameHostTestInterfaceImpl : public mojom::FrameHostTestInterface {
  public:
@@ -832,38 +892,6 @@ class FrameHostTestInterfaceImpl : public mojom::FrameHostTestInterface {
   base::Optional<SourceAnnotation> ping_source_;
 
   DISALLOW_COPY_AND_ASSIGN(FrameHostTestInterfaceImpl);
-};
-
-// TODO(crbug.com/718652): this is a blink version of the FrameHostTestInterface
-// implementation. The non-blink one will be removed when all clients are
-// converted to use DocumentInterfaceBroker.
-class BlinkFrameHostTestInterfaceImpl
-    : public blink::mojom::FrameHostTestInterface {
- public:
-  BlinkFrameHostTestInterfaceImpl() : binding_(this) {}
-  ~BlinkFrameHostTestInterfaceImpl() override {}
-
-  void BindAndFlush(blink::mojom::FrameHostTestInterfaceRequest request) {
-    binding_.Bind(std::move(request));
-    binding_.WaitForIncomingMethodCall();
-  }
-
-  const base::Optional<SourceAnnotation>& ping_source() const {
-    return ping_source_;
-  }
-
- protected:
-  // blink::mojom::FrameHostTestInterface
-  void Ping(const GURL& url, const std::string& event) override {
-    ping_source_ = SourceAnnotation{url, event};
-  }
-  void GetName(GetNameCallback callback) override {}
-
- private:
-  mojo::Binding<blink::mojom::FrameHostTestInterface> binding_;
-  base::Optional<SourceAnnotation> ping_source_;
-
-  DISALLOW_COPY_AND_ASSIGN(BlinkFrameHostTestInterfaceImpl);
 };
 
 // RenderFrameObserver that issues FrameHostTestInterface interface requests
@@ -907,14 +935,9 @@ class FrameHostTestInterfaceRequestIssuer : public RenderFrameObserver {
     RequestTestInterfaceOnFrameEvent(kFrameEventDidCreateNewDocument);
   }
 
-  void WillCommitProvisionalLoad() override {
-    RequestTestInterfaceOnFrameEvent(kFrameEventWillCommitProvisionalLoad);
+  void ReadyToCommitNavigation(blink::WebDocumentLoader* loader) override {
+    RequestTestInterfaceOnFrameEvent(kFrameEventReadyToCommitNavigation);
   }
-
-  void DidStartProvisionalLoad(blink::WebDocumentLoader* document_loader,
-                               bool is_content_initiated) override {}
-
-  void DidFailProvisionalLoad(const blink::WebURLError& error) override {}
 
   void DidCommitProvisionalLoad(bool is_same_document_navigation,
                                 ui::PageTransition transition) override {
@@ -1207,7 +1230,7 @@ TEST_F(RenderFrameRemoteInterfacesTest, ChildFrameAtFirstCommittedLoad) {
         {{GURL(kNoDocumentMarkerURL), kFrameEventDidCreateNewFrame},
          {initial_empty_url, kFrameEventDidCreateNewDocument},
          {initial_empty_url, kFrameEventDidCreateDocumentElement},
-         {initial_empty_url, kFrameEventWillCommitProvisionalLoad},
+         {initial_empty_url, kFrameEventReadyToCommitNavigation},
          // TODO(https://crbug.com/555773): It seems strange that the new
          // document is created and DidCreateNewDocument is invoked *before* the
          // provisional load would have even committed.
@@ -1272,7 +1295,7 @@ TEST_F(RenderFrameRemoteInterfacesTest,
         main_frame_exerciser
             .document_interface_broker_request_for_initial_empty_document(),
         {{initial_empty_url, kFrameEventDidCreateNewFrame},
-         {initial_empty_url, kFrameEventWillCommitProvisionalLoad},
+         {initial_empty_url, kFrameEventReadyToCommitNavigation},
          {new_window_url, kFrameEventDidCreateNewDocument}});
     ExpectPendingInterfaceRequestsFromSources(
         main_frame_exerciser.interface_request_for_first_document(),
@@ -1330,7 +1353,7 @@ TEST_F(RenderFrameRemoteInterfacesTest,
       {{GURL(kNoDocumentMarkerURL), kFrameEventDidCreateNewFrame},
        {initial_empty_url, kFrameEventDidCreateNewDocument},
        {initial_empty_url, kFrameEventDidCreateDocumentElement},
-       {initial_empty_url, kFrameEventWillCommitProvisionalLoad},
+       {initial_empty_url, kFrameEventReadyToCommitNavigation},
        {child_frame_url, kFrameEventDidCreateNewDocument},
        {child_frame_url, kFrameEventDidCommitProvisionalLoad},
        {child_frame_url, kFrameEventDidCreateDocumentElement}});
@@ -1376,7 +1399,7 @@ TEST_F(RenderFrameRemoteInterfacesTest, ReplacedOnNonSameDocumentNavigation) {
       std::move(interface_provider_request_for_first_document),
       std::move(document_interface_broker_request_for_first_document),
       {{GURL(kTestFirstURL), kFrameEventAfterCommit},
-       {GURL(kTestFirstURL), kFrameEventWillCommitProvisionalLoad},
+       {GURL(kTestFirstURL), kFrameEventReadyToCommitNavigation},
        {GURL(kTestSecondURL), kFrameEventDidCreateNewDocument}});
 
   ASSERT_TRUE(interface_provider_request_for_second_document.is_pending());

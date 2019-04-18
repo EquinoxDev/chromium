@@ -23,7 +23,7 @@
 #include "ui/events/platform/platform_event_dispatcher.h"
 #include "ui/gfx/animation/throb_animation.h"
 #include "ui/views/controls/button/menu_button.h"
-#include "ui/views/controls/button/menu_button_event_handler.h"
+#include "ui/views/controls/button/menu_button_controller.h"
 #include "ui/views/controls/menu/menu_config.h"
 #include "ui/views/controls/menu/menu_delegate.h"
 #include "ui/views/widget/widget_observer.h"
@@ -84,6 +84,13 @@ class VIEWS_EXPORT MenuController
     EXIT_DESTROYED
   };
 
+  // Types of comboboxes.
+  enum ComboboxType {
+    kNotACombobox,
+    kEditableCombobox,
+    kReadonlyCombobox,
+  };
+
   // If a menu is currently active, this returns the controller for it.
   static MenuController* GetActiveInstance();
 
@@ -141,8 +148,13 @@ class VIEWS_EXPORT MenuController
   // Returns the time from the event which closed the menu - or 0.
   base::TimeTicks closing_event_time() const { return closing_event_time_; }
 
-  void set_is_combobox(bool is_combobox) { is_combobox_ = is_combobox; }
-  bool is_combobox() const { return is_combobox_; }
+  // Set/Get combobox type.
+  void set_combobox_type(ComboboxType combobox_type) {
+    combobox_type_ = combobox_type;
+  }
+  bool IsCombobox() const;
+  bool IsEditableCombobox() const;
+  bool IsReadonlyCombobox() const;
 
   bool IsContextMenu() const;
 
@@ -160,7 +172,7 @@ class VIEWS_EXPORT MenuController
   void OnTouchEvent(SubmenuView* source, ui::TouchEvent* event);
   View* GetTooltipHandlerForPoint(SubmenuView* source, const gfx::Point& point);
   void ViewHierarchyChanged(SubmenuView* source,
-                            const View::ViewHierarchyChangedDetails& details);
+                            const ViewHierarchyChangedDetails& details);
 
   bool GetDropFormats(SubmenuView* source,
                       int* formats,
@@ -269,20 +281,20 @@ class VIEWS_EXPORT MenuController
     ~State();
 
     // The selected menu item.
-    MenuItemView* item;
+    MenuItemView* item = nullptr;
 
     // Used to capture a hot tracked child button when a nested menu is opened
     // and to restore the hot tracked state when exiting a nested menu.
-    Button* hot_button;
+    Button* hot_button = nullptr;
 
     // If item has a submenu this indicates if the submenu is showing.
-    bool submenu_open;
+    bool submenu_open = false;
 
     // Bounds passed to the run menu. Used for positioning the first menu.
     gfx::Rect initial_bounds;
 
     // Position of the initial menu.
-    MenuAnchorPosition anchor;
+    MenuAnchorPosition anchor = MenuAnchorPosition::kTopLeft;
 
     // The direction child menus have opened in.
     std::list<bool> open_leading;
@@ -291,7 +303,7 @@ class VIEWS_EXPORT MenuController
     gfx::Rect monitor_bounds;
 
     // Is the current menu a context menu.
-    bool context_menu;
+    bool context_menu = false;
   };
 
   // Used by GetMenuPart to indicate the menu part at a particular location.
@@ -349,9 +361,6 @@ class VIEWS_EXPORT MenuController
   MenuController(bool for_drop, internal::MenuControllerDelegate* delegate);
 
   ~MenuController() override;
-
-  // Runs the platform specific bits of the message loop.
-  void RunMessageLoop();
 
   // Invokes AcceleratorPressed() on the hot tracked view if there is one.
   // Returns true if AcceleratorPressed() was invoked.
@@ -597,6 +606,11 @@ class VIEWS_EXPORT MenuController
   void SetInitialHotTrackedView(MenuItemView* item,
                                 SelectionIncrementDirectionType direction);
 
+  // Sets hot-tracked state to the next focusable element after |item| in
+  // |direction|.
+  void SetNextHotTrackedView(MenuItemView* item,
+                             SelectionIncrementDirectionType direction);
+
   // Updates the current |hot_button_| and its hot tracked state.
   void SetHotTrackedButton(Button* hot_button);
 
@@ -647,7 +661,7 @@ class VIEWS_EXPORT MenuController
   // Run, the current state (state_) is pushed onto menu_stack_. This allows
   // MenuController to restore the state when the nested run returns.
   using NestedState =
-      std::pair<State, std::unique_ptr<MenuButtonEventHandler::PressedLock>>;
+      std::pair<State, std::unique_ptr<MenuButtonController::PressedLock>>;
   std::list<NestedState> menu_stack_;
 
   // When Run is invoked during an active Run, it may be called from a separate
@@ -701,7 +715,7 @@ class VIEWS_EXPORT MenuController
   std::unique_ptr<MenuScrollTask> scroll_task_;
 
   // The lock to keep the menu button pressed while a menu is visible.
-  std::unique_ptr<MenuButtonEventHandler::PressedLock> pressed_lock_;
+  std::unique_ptr<MenuButtonController::PressedLock> pressed_lock_;
 
   // ViewTracker used to store the View mouse drag events are forwarded to. See
   // UpdateActiveMouseView() for details.
@@ -730,7 +744,7 @@ class VIEWS_EXPORT MenuController
 
   // Controls behavior differences between a combobox and other types of menu
   // (like a context menu).
-  bool is_combobox_ = false;
+  ComboboxType combobox_type_ = kNotACombobox;
 
   // Whether the menu |owner_| needs gesture events. When set to true, the menu
   // will preserve the gesture events of the |owner_| and MenuController will

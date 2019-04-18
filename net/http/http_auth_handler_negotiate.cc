@@ -17,6 +17,7 @@
 #include "net/base/host_port_pair.h"
 #include "net/base/net_errors.h"
 #include "net/cert/x509_util.h"
+#include "net/dns/host_resolver.h"
 #include "net/http/http_auth_filter.h"
 #include "net/http/http_auth_preferences.h"
 #include "net/log/net_log_capture_mode.h"
@@ -25,6 +26,8 @@
 #include "net/ssl/ssl_info.h"
 
 namespace net {
+
+using DelegationType = HttpAuth::DelegationType;
 
 namespace {
 
@@ -74,11 +77,6 @@ HttpAuthHandlerNegotiate::Factory::Factory(
 
 HttpAuthHandlerNegotiate::Factory::~Factory() = default;
 
-void HttpAuthHandlerNegotiate::Factory::set_host_resolver(
-    HostResolver* resolver) {
-  resolver_ = resolver;
-}
-
 #if !defined(OS_ANDROID) && defined(OS_POSIX)
 const std::string& HttpAuthHandlerNegotiate::Factory::GetLibraryNameForTesting()
     const {
@@ -94,6 +92,7 @@ int HttpAuthHandlerNegotiate::Factory::CreateAuthHandler(
     CreateReason reason,
     int digest_nonce_count,
     const NetLogWithSource& net_log,
+    HostResolver* host_resolver,
     std::unique_ptr<HttpAuthHandler>* handler) {
 #if defined(OS_WIN)
   if (is_unsupported_ || reason == CREATE_PREEMPTIVE)
@@ -111,7 +110,7 @@ int HttpAuthHandlerNegotiate::Factory::CreateAuthHandler(
   std::unique_ptr<HttpAuthHandler> tmp_handler(new HttpAuthHandlerNegotiate(
       CreateAuthSystem(auth_library_.get(), max_token_length_,
                        http_auth_preferences(), negotiate_auth_system_factory_),
-      http_auth_preferences(), resolver_));
+      http_auth_preferences(), host_resolver));
 #elif defined(OS_ANDROID)
   if (is_unsupported_ || !http_auth_preferences() ||
       http_auth_preferences()->AuthAndroidNegotiateAccountType().empty() ||
@@ -121,7 +120,7 @@ int HttpAuthHandlerNegotiate::Factory::CreateAuthHandler(
   //                 method and only constructing when valid.
   std::unique_ptr<HttpAuthHandler> tmp_handler(new HttpAuthHandlerNegotiate(
       CreateAuthSystem(http_auth_preferences(), negotiate_auth_system_factory_),
-      http_auth_preferences(), resolver_));
+      http_auth_preferences(), host_resolver));
 #elif defined(OS_POSIX)
   if (is_unsupported_ || !allow_gssapi_library_load_)
     return ERR_UNSUPPORTED_AUTH_SCHEME;
@@ -134,7 +133,7 @@ int HttpAuthHandlerNegotiate::Factory::CreateAuthHandler(
   std::unique_ptr<HttpAuthHandler> tmp_handler(new HttpAuthHandlerNegotiate(
       CreateAuthSystem(auth_library_.get(), http_auth_preferences(),
                        negotiate_auth_system_factory_),
-      http_auth_preferences(), resolver_));
+      http_auth_preferences(), host_resolver));
 #endif
   if (!tmp_handler->InitFromChallenge(challenge, target, ssl_info, origin,
                                       net_log))
@@ -151,7 +150,7 @@ HttpAuthHandlerNegotiate::HttpAuthHandlerNegotiate(
       resolver_(resolver),
       already_called_(false),
       has_credentials_(false),
-      auth_token_(NULL),
+      auth_token_(nullptr),
       next_state_(STATE_NONE),
       http_auth_preferences_(prefs) {}
 
@@ -195,8 +194,7 @@ bool HttpAuthHandlerNegotiate::Init(HttpAuthChallengeTokenizer* challenge,
   if (!AllowsDefaultCredentials())
     return false;
 #endif
-  if (CanDelegate())
-    auth_system_->Delegate();
+  auth_system_->SetDelegation(GetDelegationType());
   auth_scheme_ = HttpAuth::AUTH_SCHEME_NEGOTIATE;
   score_ = 4;
   properties_ = ENCRYPTS_IDENTITY | IS_CONNECTION_BASED;
@@ -223,10 +221,10 @@ int HttpAuthHandlerNegotiate::GenerateAuthTokenImpl(
     CompletionOnceCallback callback,
     std::string* auth_token) {
   DCHECK(callback_.is_null());
-  DCHECK(auth_token_ == NULL);
+  DCHECK(auth_token_ == nullptr);
   auth_token_ = auth_token;
   if (already_called_) {
-    DCHECK((!has_credentials_ && credentials == NULL) ||
+    DCHECK((!has_credentials_ && credentials == nullptr) ||
            (has_credentials_ && credentials->Equals(credentials_)));
     next_state_ = STATE_GENERATE_AUTH_TOKEN;
   } else {
@@ -377,7 +375,7 @@ int HttpAuthHandlerNegotiate::DoResolveCanonicalNameComplete(int rv) {
 
 int HttpAuthHandlerNegotiate::DoGenerateAuthToken() {
   next_state_ = STATE_GENERATE_AUTH_TOKEN_COMPLETE;
-  AuthCredentials* credentials = has_credentials_ ? &credentials_ : NULL;
+  AuthCredentials* credentials = has_credentials_ ? &credentials_ : nullptr;
   return auth_system_->GenerateAuthToken(
       credentials, spn_, channel_bindings_, auth_token_,
       base::BindOnce(&HttpAuthHandlerNegotiate::OnIOComplete,
@@ -386,17 +384,19 @@ int HttpAuthHandlerNegotiate::DoGenerateAuthToken() {
 
 int HttpAuthHandlerNegotiate::DoGenerateAuthTokenComplete(int rv) {
   DCHECK_NE(ERR_IO_PENDING, rv);
-  auth_token_ = NULL;
+  auth_token_ = nullptr;
   return rv;
 }
 
-bool HttpAuthHandlerNegotiate::CanDelegate() const {
+DelegationType HttpAuthHandlerNegotiate::GetDelegationType() const {
+  if (!http_auth_preferences_)
+    return DelegationType::kNone;
+
   // TODO(cbentzel): Should delegation be allowed on proxies?
   if (target_ == HttpAuth::AUTH_PROXY)
-    return false;
-  if (!http_auth_preferences_)
-    return false;
-  return http_auth_preferences_->CanDelegate(origin_);
+    return DelegationType::kNone;
+
+  return http_auth_preferences_->GetDelegationType(origin_);
 }
 
 }  // namespace net

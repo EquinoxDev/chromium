@@ -54,6 +54,11 @@ struct BLINK_EXPORT WebNavigationInfo {
   // The main resource request.
   WebURLRequest url_request;
 
+  // The frame type. This must not be kNone. See RequestContextFrameType.
+  // TODO(dgozman): enforce this is not kNone.
+  network::mojom::RequestContextFrameType frame_type =
+      network::mojom::RequestContextFrameType::kNone;
+
   // The navigation type. See WebNavigationType.
   WebNavigationType navigation_type = kWebNavigationTypeOther;
 
@@ -73,6 +78,13 @@ struct BLINK_EXPORT WebNavigationInfo {
 
   // Whether the navigation is a result of client redirect.
   bool is_client_redirect = false;
+
+  // Whether the navigation initiator frame has the
+  // |WebSandboxFlags::kDownloads| bit set in its sandbox flags set.
+  bool initiator_frame_has_download_sandbox_flag = false;
+
+  // Whether the navigation initiator frame is an ad frame.
+  bool initiator_frame_is_ad = false;
 
   // Whether this is a navigation in the opener frame initiated
   // by the window.open'd frame.
@@ -152,7 +164,8 @@ struct BLINK_EXPORT WebNavigationParams {
       WebDocumentLoader* failed_document_loader,
       base::span<const char> html,
       const WebURL& base_url,
-      const WebURL& unreachable_url);
+      const WebURL& unreachable_url,
+      int error_code);
 
 #if INSIDE_BLINK
   // Shortcut for loading html with "text/html" mime type and "UTF8" encoding.
@@ -199,6 +212,10 @@ struct BLINK_EXPORT WebNavigationParams {
   // history item will contain this URL instead of request's URL.
   // This URL can be retrieved through WebDocumentLoader::UnreachableURL.
   WebURL unreachable_url;
+
+  // The net error code for failed navigation. Must be non-zero when
+  // |unreachable_url| is non-null.
+  int error_code = 0;
 
   // This block defines the document content. The alternatives in the order
   // of precedence are:

@@ -3,8 +3,8 @@
 // found in the LICENSE file.
 
 #include "content/browser/indexed_db/indexed_db_database.h"
-#include <math.h>
 
+#include <math.h>
 #include <algorithm>
 #include <limits>
 #include <set>
@@ -14,6 +14,7 @@
 #include "base/bind.h"
 #include "base/logging.h"
 #include "base/macros.h"
+#include "base/memory/weak_ptr.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/numerics/safe_conversions.h"
 #include "base/stl_util.h"
@@ -32,6 +33,9 @@
 #include "content/browser/indexed_db/indexed_db_tracing.h"
 #include "content/browser/indexed_db/indexed_db_transaction.h"
 #include "content/browser/indexed_db/indexed_db_value.h"
+#include "content/browser/indexed_db/scopes/scope_lock.h"
+#include "content/browser/indexed_db/scopes/scopes_lock_manager.h"
+#include "content/browser/indexed_db/transaction_impl.h"
 #include "content/public/common/content_switches.h"
 #include "ipc/ipc_channel.h"
 #include "storage/browser/blob/blob_data_handle.h"
@@ -124,7 +128,9 @@ class IndexedDBDatabase::OpenRequest
  public:
   OpenRequest(scoped_refptr<IndexedDBDatabase> db,
               std::unique_ptr<IndexedDBPendingConnection> pending_connection)
-      : ConnectionRequest(db), pending_(std::move(pending_connection)) {}
+      : ConnectionRequest(db),
+        pending_(std::move(pending_connection)),
+        weak_factory_(this) {}
 
   void Perform() override {
     if (db_->metadata_.id == kInvalidId) {
@@ -200,7 +206,13 @@ class IndexedDBDatabase::OpenRequest
     DCHECK_GT(new_version, old_version);
 
     if (db_->connections_.empty()) {
-      StartUpgrade();
+      std::vector<ScopesLockManager::ScopeLockRequest> lock_requests = {
+          {kDatabaseRangeLockLevel, GetDatabaseLockRange(db_->metadata_.id),
+           ScopesLockManager::LockType::kExclusive}};
+      db_->lock_manager_->AcquireLocks(
+          std::move(lock_requests),
+          base::BindOnce(&IndexedDBDatabase::OpenRequest::StartUpgrade,
+                         weak_factory_.GetWeakPtr()));
       return;
     }
 
@@ -234,13 +246,19 @@ class IndexedDBDatabase::OpenRequest
     if (!db_->connections_.empty())
       return;
 
-    StartUpgrade();
+    std::vector<ScopesLockManager::ScopeLockRequest> lock_requests = {
+        {kDatabaseRangeLockLevel, GetDatabaseLockRange(db_->metadata_.id),
+         ScopesLockManager::LockType::kExclusive}};
+    db_->lock_manager_->AcquireLocks(
+        std::move(lock_requests),
+        base::BindOnce(&IndexedDBDatabase::OpenRequest::StartUpgrade,
+                       weak_factory_.GetWeakPtr()));
   }
 
   // Initiate the upgrade. The bulk of the work actually happens in
   // IndexedDBDatabase::VersionChangeOperation in order to kick the
   // transaction into the correct state.
-  void StartUpgrade() {
+  void StartUpgrade(std::vector<ScopeLock> locks) {
     connection_ = db_->CreateConnection(pending_->database_callbacks,
                                         pending_->child_process_id);
     DCHECK_EQ(db_->connections_.count(connection_.get()), 1UL);
@@ -252,11 +270,15 @@ class IndexedDBDatabase::OpenRequest
         std::set<int64_t>(object_store_ids.begin(), object_store_ids.end()),
         blink::mojom::IDBTransactionMode::VersionChange,
         new IndexedDBBackingStore::Transaction(db_->backing_store()));
-    db_->RegisterAndScheduleTransaction(transaction);
+
+    // Create transaction binding.
+    std::move(pending_->create_transaction_callback)
+        .Run(transaction->AsWeakPtr());
 
     transaction->ScheduleTask(
         base::BindOnce(&IndexedDBDatabase::VersionChangeOperation, db_,
                        pending_->version, pending_->callbacks));
+    transaction->Start(std::move(locks));
   }
 
   // Called when the upgrade transaction has started executing.
@@ -296,6 +318,7 @@ class IndexedDBDatabase::OpenRequest
   // transferred to the IndexedDBDispatcherHost via OnUpgradeNeeded.
   std::unique_ptr<IndexedDBConnection> connection_;
 
+  base::WeakPtrFactory<OpenRequest> weak_factory_;
   DISALLOW_COPY_AND_ASSIGN(OpenRequest);
 };
 
@@ -304,7 +327,7 @@ class IndexedDBDatabase::DeleteRequest
  public:
   DeleteRequest(scoped_refptr<IndexedDBDatabase> db,
                 scoped_refptr<IndexedDBCallbacks> callbacks)
-      : ConnectionRequest(db), callbacks_(callbacks) {}
+      : ConnectionRequest(db), callbacks_(callbacks), weak_factory_(this) {}
 
   void Perform() override {
     if (db_->connections_.empty()) {
@@ -328,6 +351,7 @@ class IndexedDBDatabase::DeleteRequest
   void OnConnectionClosed(IndexedDBConnection* connection) override {
     if (!db_->connections_.empty())
       return;
+
     DoDelete();
   }
 
@@ -374,6 +398,7 @@ class IndexedDBDatabase::DeleteRequest
  private:
   scoped_refptr<IndexedDBCallbacks> callbacks_;
 
+  base::WeakPtrFactory<DeleteRequest> weak_factory_;
   DISALLOW_COPY_AND_ASSIGN(DeleteRequest);
 };
 
@@ -1806,18 +1831,28 @@ Status IndexedDBDatabase::VersionChangeOperation(
   return Status::OK();
 }
 
-void IndexedDBDatabase::TransactionFinished(IndexedDBTransaction* transaction,
-                                            bool committed) {
-  IDB_TRACE1("IndexedDBTransaction::TransactionFinished", "txn.id",
-             transaction->id());
+void IndexedDBDatabase::TransactionCreated() {
+  UMA_HISTOGRAM_COUNTS_1000(
+      "WebCore.IndexedDB.Database.OutstandingTransactionCount",
+      transaction_count_);
+  ++transaction_count_;
+}
+
+void IndexedDBDatabase::TransactionFinished(
+    blink::mojom::IDBTransactionMode mode,
+    bool committed) {
   --transaction_count_;
   DCHECK_GE(transaction_count_, 0);
+
+  // TODO(dmurph): To help remove this integration with IndexedDBDatabase, make
+  // a 'committed' listener closure on all transactions. Then the request can
+  // just listen for that.
 
   // This may be an unrelated transaction finishing while waiting for
   // connections to close, or the actual upgrade transaction from an active
   // request. Notify the active request if it's the latter.
   if (active_request_ &&
-      transaction->mode() == blink::mojom::IDBTransactionMode::VersionChange) {
+      mode == blink::mojom::IDBTransactionMode::VersionChange) {
     active_request_->UpgradeTransactionFinished(committed);
   }
 }
@@ -1832,7 +1867,12 @@ void IndexedDBDatabase::AppendRequest(
 
 void IndexedDBDatabase::RequestComplete(ConnectionRequest* request) {
   DCHECK_EQ(request, active_request_.get());
+  scoped_refptr<IndexedDBDatabase> protect(this);
   active_request_.reset();
+
+  // Exit early if |active_request_| held the last reference to |this|.
+  if (protect->HasOneRef())
+    return;
 
   if (!pending_requests_.empty())
     ProcessRequestQueue();
@@ -1861,11 +1901,6 @@ void IndexedDBDatabase::RegisterAndScheduleTransaction(
     IndexedDBTransaction* transaction) {
   IDB_TRACE1("IndexedDBDatabase::RegisterAndScheduleTransaction", "txn.id",
              transaction->id());
-
-  UMA_HISTOGRAM_COUNTS_1000(
-      "WebCore.IndexedDB.Database.OutstandingTransactionCount",
-      transaction_count_);
-  transaction_count_++;
   std::vector<ScopesLockManager::ScopeLockRequest> lock_requests;
   lock_requests.reserve(1 + transaction->scope().size());
   lock_requests.emplace_back(
@@ -1913,10 +1948,10 @@ void IndexedDBDatabase::ForceClose() {
     request->AbortForForceClose();
   }
 
-  auto it = connections_.begin();
-  while (it != connections_.end()) {
-    IndexedDBConnection* connection = *it++;
+  while (!connections_.empty()) {
+    IndexedDBConnection* connection = *connections_.begin();
     connection->ForceClose();
+    connections_.erase(connection);
   }
   DCHECK(connections_.empty());
   DCHECK(!active_request_);

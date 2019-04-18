@@ -12,7 +12,6 @@
 #include "base/bind.h"
 #include "base/compiler_specific.h"
 #include "base/debug/alias.h"
-#include "base/debug/stack_trace.h"
 #include "base/files/file_path.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/rand_util.h"
@@ -46,7 +45,6 @@
 #include "services/network/public/cpp/resource_request.h"
 #include "services/network/public/cpp/resource_response.h"
 #include "services/network/public/cpp/url_loader_completion_status.h"
-#include "third_party/blink/public/common/service_worker/service_worker_utils.h"
 
 namespace content {
 
@@ -173,9 +171,9 @@ void ResourceDispatcher::OnReceivedResponse(
   if (!GetPendingRequestInfo(request_id))
     return;
 
-  NotifyResourceResponseReceived(request_info->render_frame_id,
-                                 request_info->resource_load_info.get(),
-                                 response_head_copy);
+  NotifyResourceResponseReceived(
+      request_info->render_frame_id, request_info->resource_load_info.get(),
+      response_head_copy, request_info->previews_state);
 }
 
 void ResourceDispatcher::OnReceivedCachedMetadata(
@@ -285,8 +283,7 @@ void ResourceDispatcher::OnRequestComplete(
 
   if (delegate_) {
     std::unique_ptr<RequestPeer> new_peer = delegate_->OnRequestComplete(
-        std::move(request_info->peer), request_info->resource_type,
-        status.error_code);
+        std::move(request_info->peer), status.error_code);
     DCHECK(new_peer);
     request_info->peer = std::move(new_peer);
   }
@@ -532,15 +529,19 @@ int ResourceDispatcher::StartAsync(
       request->render_frame_id, request_id, request->url, request->method,
       request->referrer, pending_request->resource_type);
 
+  pending_request->previews_state = request->previews_state;
+
   if (override_url_loader) {
+    DCHECK(request->resource_type == RESOURCE_TYPE_WORKER ||
+           request->resource_type == RESOURCE_TYPE_SHARED_WORKER)
+        << request->resource_type;
+
     // Redirect checks are handled by NavigationURLLoaderImpl, so it's safe to
     // pass true for |bypass_redirect_checks|.
     pending_request->url_loader_client = std::make_unique<URLLoaderClientImpl>(
         request_id, this, loading_task_runner,
         true /* bypass_redirect_checks */, request->url);
 
-    DCHECK_EQ(RESOURCE_TYPE_SHARED_WORKER, request->resource_type);
-    // TODO(nhiroki): it would be nice to get rid of response override.
     loading_task_runner->PostTask(
         FROM_HERE, base::BindOnce(&ResourceDispatcher::ContinueForNavigation,
                                   weak_factory_.GetWeakPtr(), request_id));
@@ -561,9 +562,8 @@ int ResourceDispatcher::StartAsync(
       static_cast<int>(blink::mojom::RequestContextType::FETCH)) {
     // MIME sniffing should be disabled for a request initiated by fetch().
     options |= network::mojom::kURLLoadOptionSniffMimeType;
-    if (blink::ServiceWorkerUtils::IsServicificationEnabled())
-      throttles.push_back(
-          std::make_unique<MimeSniffingThrottle>(loading_task_runner));
+    throttles.push_back(
+        std::make_unique<MimeSniffingThrottle>(loading_task_runner));
   }
   if (is_sync) {
     options |= network::mojom::kURLLoadOptionSynchronous;

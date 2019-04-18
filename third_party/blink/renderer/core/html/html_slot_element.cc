@@ -122,16 +122,17 @@ HeapVector<Member<Node>> CollectFlattenedAssignedNodes(
     for (auto& child : NodeTraversal::ChildrenOf(slot)) {
       if (!child.IsSlotable())
         continue;
-      if (auto* slot = ToHTMLSlotElementIfSupportsAssignmentOrNull(child))
-        nodes.AppendVector(CollectFlattenedAssignedNodes(*slot));
+      if (auto* child_slot = ToHTMLSlotElementIfSupportsAssignmentOrNull(child))
+        nodes.AppendVector(CollectFlattenedAssignedNodes(*child_slot));
       else
         nodes.push_back(child);
     }
   } else {
     for (auto& node : assigned_nodes) {
       DCHECK(node->IsSlotable());
-      if (auto* slot = ToHTMLSlotElementIfSupportsAssignmentOrNull(*node))
-        nodes.AppendVector(CollectFlattenedAssignedNodes(*slot));
+      if (auto* assigned_node_slot =
+              ToHTMLSlotElementIfSupportsAssignmentOrNull(*node))
+        nodes.AppendVector(CollectFlattenedAssignedNodes(*assigned_node_slot));
       else
         nodes.push_back(node);
     }
@@ -459,7 +460,7 @@ void HTMLSlotElement::NotifySlottedNodesOfFlatTreeChange(
     const HeapVector<Member<Node>>& new_slotted) {
   if (old_slotted == new_slotted)
     return;
-  probe::didPerformSlotDistribution(this);
+  probe::DidPerformSlotDistribution(this);
 
   if (old_slotted.size() + 1 > kLCSTableSizeLimit ||
       new_slotted.size() + 1 > kLCSTableSizeLimit) {

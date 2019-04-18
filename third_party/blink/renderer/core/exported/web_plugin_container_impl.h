@@ -41,7 +41,6 @@
 #include "third_party/blink/renderer/core/execution_context/context_lifecycle_observer.h"
 #include "third_party/blink/renderer/core/frame/embedded_content_view.h"
 #include "third_party/blink/renderer/platform/heap/handle.h"
-#include "third_party/blink/renderer/platform/wtf/compiler.h"
 #include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
 
 namespace cc {
@@ -76,10 +75,6 @@ class CORE_EXPORT WebPluginContainerImpl final
   USING_PRE_FINALIZER(WebPluginContainerImpl, PreFinalize);
 
  public:
-  static WebPluginContainerImpl* Create(HTMLPlugInElement& element,
-                                        WebPlugin* web_plugin) {
-    return MakeGarbageCollected<WebPluginContainerImpl>(element, web_plugin);
-  }
   // Check if plugins support a given command |name|.
   static bool SupportsCommand(const WebString& name);
 
@@ -125,8 +120,8 @@ class CORE_EXPORT WebPluginContainerImpl final
   WebDocument GetDocument() override;
   void DispatchProgressEvent(const WebString& type,
                              bool length_computable,
-                             unsigned long long loaded,
-                             unsigned long long total,
+                             uint64_t loaded,
+                             uint64_t total,
                              const WebString& url) override;
   void EnqueueMessageEvent(const WebDOMMessageEvent&) override;
   void Invalidate() override;

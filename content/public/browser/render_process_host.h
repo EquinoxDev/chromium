@@ -37,7 +37,7 @@
 class GURL;
 
 namespace base {
-class SharedPersistentMemoryAllocator;
+class PersistentMemoryAllocator;
 class TimeDelta;
 class Token;
 }
@@ -276,6 +276,9 @@ class CONTENT_EXPORT RenderProcessHost : public IPC::Sender,
 #if defined(OS_ANDROID)
   // Return the highest importance of all widgets in this process.
   virtual ChildProcessImportance GetEffectiveImportance() = 0;
+
+  // Dumps the stack of this render process without crashing it.
+  virtual void DumpProcessStack() = 0;
 #endif
 
   // Sets a flag indicating that the process can be abnormally terminated.
@@ -341,7 +344,7 @@ class CONTENT_EXPORT RenderProcessHost : public IPC::Sender,
   // between the Renderer and the Browser, the allocator is created when the
   // process is created and later retrieved by the SubprocessMetricsProvider
   // for management.
-  virtual std::unique_ptr<base::SharedPersistentMemoryAllocator>
+  virtual std::unique_ptr<base::PersistentMemoryAllocator>
   TakeMetricsAllocator() = 0;
 
   // PlzNavigate
@@ -397,9 +400,6 @@ class CONTENT_EXPORT RenderProcessHost : public IPC::Sender,
 
   // Returns true if DisableKeepAliveRefCount() was called.
   virtual bool IsKeepAliveRefCountDisabled() = 0;
-
-  // Purges and suspends the renderer process.
-  virtual void PurgeAndSuspend() = 0;
 
   // Resumes the renderer process.
   virtual void Resume() = 0;
@@ -485,6 +485,9 @@ class CONTENT_EXPORT RenderProcessHost : public IPC::Sender,
   // function can only be called on the browser's UI thread (and the |task| will
   // be posted back on the UI thread).
   void PostTaskWhenProcessIsReady(base::OnceClosure task);
+
+  // Forces the renderer process to crash ASAP.
+  virtual void ForceCrash() {}
 
   // Controls whether the destructor of RenderProcessHost*Impl* will end up
   // cleaning the memory used by the exception added via

@@ -266,9 +266,6 @@ class CORE_EXPORT LayoutInline : public LayoutBoxModelObject {
 
   void StyleDidChange(StyleDifference, const ComputedStyle* old_style) override;
 
-  void ComputeSelfHitTestRects(Vector<LayoutRect>& rects,
-                               const LayoutPoint& layer_offset) const override;
-
   void InvalidateDisplayItemClients(PaintInvalidationReason) const override;
 
   void AbsoluteQuadsForSelf(Vector<FloatQuad>& quads,
@@ -342,7 +339,9 @@ class CORE_EXPORT LayoutInline : public LayoutBoxModelObject {
   LayoutUnit OffsetWidth() const final { return LinesBoundingBox().Width(); }
   LayoutUnit OffsetHeight() const final { return LinesBoundingBox().Height(); }
 
-  LayoutRect VisualRectInDocument() const override;
+  LayoutRect VisualRectInDocument(
+      VisualRectFlags = kDefaultVisualRectFlags) const override;
+
   // This method differs from visualOverflowRect in that it doesn't include the
   // rects for culled inline boxes, which aren't necessary for paint
   // invalidation.

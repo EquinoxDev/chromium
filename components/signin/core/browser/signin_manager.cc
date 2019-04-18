@@ -36,11 +36,9 @@ SigninManager::SigninManager(
       account_consistency_(account_consistency),
       weak_pointer_factory_(this) {}
 
-SigninManager::~SigninManager() {}
-
-void SigninManager::HandleAuthError(const GoogleServiceAuthError& error) {
-  for (auto& observer : observer_list_)
-    observer.GoogleSigninFailed(error);
+SigninManager::~SigninManager() {
+  token_service()->RemoveObserver(this);
+  local_state_pref_registrar_.RemoveAll();
 }
 
 void SigninManager::SignOut(
@@ -155,11 +153,9 @@ void SigninManager::FinalizeInitBeforeLoadingRefreshTokens(
                        base::Bind(&SigninManager::OnSigninAllowedPrefChanged,
                                   base::Unretained(this)));
 
-  std::string account_id =
-      signin_client()->GetPrefs()->GetString(prefs::kGoogleServicesAccountId);
-  std::string user = account_id.empty() ? std::string() :
-      account_tracker_service()->GetAccountInfo(account_id).email;
-  if (!account_id.empty() && (!IsAllowedUsername(user) || !IsSigninAllowed())) {
+  AccountInfo account_info = GetAuthenticatedAccountInfo();
+  if (!account_info.account_id.empty() &&
+      (!IsAllowedUsername(account_info.email) || !IsSigninAllowed())) {
     // User is signed in, but the username is invalid or signin is no longer
     // allowed, so the user must be sign out.
     //
@@ -184,12 +180,6 @@ void SigninManager::FinalizeInitBeforeLoadingRefreshTokens(
   // It is important to only load credentials after starting to observe the
   // token service.
   token_service()->AddObserver(this);
-}
-
-void SigninManager::Shutdown() {
-  token_service()->RemoveObserver(this);
-  local_state_pref_registrar_.RemoveAll();
-  SigninManagerBase::Shutdown();
 }
 
 void SigninManager::OnGoogleServicesUsernamePatternChanged() {
@@ -232,19 +222,7 @@ bool SigninManager::IsAllowedUsername(const std::string& username) const {
   return identity::IsUsernameAllowedByPattern(username, pattern);
 }
 
-void SigninManager::MergeSigninCredentialIntoCookieJar() {
-  if (account_consistency_ == signin::AccountConsistencyMethod::kMirror)
-    return;
-
-  if (!IsAuthenticated())
-    return;
-
-  cookie_manager_service_->AddAccountToCookie(
-      GetAuthenticatedAccountId(), gaia::GaiaSource::kSigninManager,
-      GaiaCookieManagerService::AddAccountToCookieCompletedCallback());
-}
-
-void SigninManager::OnExternalSigninCompleted(const std::string& username) {
+void SigninManager::SignIn(const std::string& username) {
   AccountInfo info =
       account_tracker_service()->FindAccountInfoByEmail(username);
   DCHECK(!info.gaia.empty());
@@ -267,13 +245,14 @@ void SigninManager::OnExternalSigninCompleted(const std::string& username) {
 
 void SigninManager::FireGoogleSigninSucceeded() {
   const AccountInfo account_info = GetAuthenticatedAccountInfo();
-  for (auto& observer : observer_list_)
-    observer.GoogleSigninSucceeded(account_info);
+  if (observer_ != nullptr) {
+    observer_->GoogleSigninSucceeded(account_info);
+  }
 }
 
 void SigninManager::FireGoogleSignedOut(const AccountInfo& account_info) {
-  for (auto& observer : observer_list_) {
-    observer.GoogleSignedOut(account_info);
+  if (observer_ != nullptr) {
+    observer_->GoogleSignedOut(account_info);
   }
 }
 

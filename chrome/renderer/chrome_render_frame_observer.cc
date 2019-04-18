@@ -289,8 +289,7 @@ void ChromeRenderFrameObserver::GetWebApplicationInfo(
         blink::mojom::ConsoleMessageLevel::kWarning,
         "<meta name=\"apple-mobile-web-app-capable\" content=\"yes\"> is "
         "deprecated. Please include <meta name=\"mobile-web-app-capable\" "
-        "content=\"yes\"> - "
-        "http://developers.google.com/chrome/mobile/docs/installtohomescreen");
+        "content=\"yes\">");
     frame->AddMessageToConsole(message);
   }
 
@@ -376,9 +375,8 @@ void ChromeRenderFrameObserver::DidCreateNewDocument() {
 #endif
 }
 
-void ChromeRenderFrameObserver::DidStartProvisionalLoad(
-    WebDocumentLoader* document_loader,
-    bool is_content_initiated) {
+void ChromeRenderFrameObserver::ReadyToCommitNavigation(
+    WebDocumentLoader* document_loader) {
   // Let translate_helper do any preparatory work for loading a URL.
   if (!translate_helper_)
     return;

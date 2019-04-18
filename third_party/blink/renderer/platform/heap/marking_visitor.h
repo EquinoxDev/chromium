@@ -33,8 +33,6 @@ class PLATFORM_EXPORT MarkingVisitor : public Visitor {
     kGlobalMarkingWithCompaction,
   };
 
-  static std::unique_ptr<MarkingVisitor> Create(ThreadState*, MarkingMode);
-
   // Write barrier that adds |value| to the set of marked objects. The barrier
   // bails out if marking is off or the object is not yet marked.
   ALWAYS_INLINE static void WriteBarrier(void* value);
@@ -78,44 +76,8 @@ class PLATFORM_EXPORT MarkingVisitor : public Visitor {
       not_fully_constructed_worklist_.Push(object);
       return;
     }
-    // Default mark method of the trait just calls the two-argument mark
-    // method on the visitor. The second argument is the static trace method
-    // of the trait, which by default calls the instance method
-    // trace(Visitor*) on the object.
-    //
-    // If the trait allows it, invoke the trace callback right here on the
-    // not-yet-marked object.
-    if (desc.can_trace_eagerly) {
-      // Protect against too deep trace call chains, and the
-      // unbounded system stack usage they can bring about.
-      //
-      // Assert against deep stacks so as to flush them out,
-      // but test and appropriately handle them should they occur
-      // in release builds.
-      //
-      // If you hit this assert, it means that you're creating an object
-      // graph that causes too many recursions, which might cause a stack
-      // overflow. To break the recursions, you need to add
-      // WILL_NOT_BE_EAGERLY_TRACED_CLASS() to classes that hold pointers
-      // that lead to many recursions.
-      DCHECK(Heap().GetStackFrameDepth().IsAcceptableStackUse());
-      if (LIKELY(Heap().GetStackFrameDepth().IsSafeToRecurse())) {
-        HeapObjectHeader* header =
-            HeapObjectHeader::FromPayload(desc.base_object_payload);
-        if (header->IsInConstruction()) {
-          not_fully_constructed_worklist_.Push(desc.base_object_payload);
-        } else if (MarkHeaderNoTracing(header)) {
-          desc.callback(this, desc.base_object_payload);
-        }
-        return;
-      }
-    }
     MarkHeader(HeapObjectHeader::FromPayload(desc.base_object_payload),
                desc.callback);
-  }
-
-  void VisitWithWrappers(void*, TraceDescriptor) final {
-    // Ignore as the object is also passed to Visit(void*, TraceDescriptor).
   }
 
   void VisitWeak(void* object,
@@ -212,25 +174,21 @@ inline void MarkingVisitor::MarkHeader(HeapObjectHeader* header,
 }
 
 ALWAYS_INLINE void MarkingVisitor::WriteBarrier(void* value) {
-#if BUILDFLAG(BLINK_HEAP_INCREMENTAL_MARKING)
   if (!ThreadState::IsAnyIncrementalMarking())
     return;
 
   // Avoid any further checks and dispatch to a call at this point. Aggressive
   // inlining otherwise pollutes the regular execution paths.
   WriteBarrierSlow(value);
-#endif  // BUILDFLAG(BLINK_HEAP_INCREMENTAL_MARKING)
 }
 
 ALWAYS_INLINE void MarkingVisitor::TraceMarkedBackingStore(void* value) {
-#if BUILDFLAG(BLINK_HEAP_INCREMENTAL_MARKING)
   if (!ThreadState::IsAnyIncrementalMarking())
     return;
 
   // Avoid any further checks and dispatch to a call at this point. Aggressive
   // inlining otherwise pollutes the regular execution paths.
   TraceMarkedBackingStoreSlow(value);
-#endif  // BUILDFLAG(BLINK_HEAP_INCREMENTAL_MARKING)
 }
 
 }  // namespace blink

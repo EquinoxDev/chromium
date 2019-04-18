@@ -39,7 +39,8 @@ namespace {
 
 int64_t ComputeFilesSize(const base::FilePath& directory,
                          const base::FilePath::StringType& pattern) {
-  base::ScopedBlockingCall scoped_blocking_call(base::BlockingType::MAY_BLOCK);
+  base::ScopedBlockingCall scoped_blocking_call(FROM_HERE,
+                                                base::BlockingType::MAY_BLOCK);
   int64_t running_size = 0;
   base::FileEnumerator iter(directory, false, base::FileEnumerator::FILES,
                             pattern);
@@ -195,7 +196,7 @@ void ChromeBrowserStateManagerImpl::DoFinalInit(
       FROM_HERE,
       {base::MayBlock(), base::TaskPriority::BEST_EFFORT,
        base::TaskShutdownBehavior::CONTINUE_ON_SHUTDOWN},
-      base::Bind(&BrowserStateSizeTask, path),
+      base::BindOnce(&BrowserStateSizeTask, path),
       base::TimeDelta::FromSeconds(112));
 
   LogNumberOfBrowserStates(

@@ -699,7 +699,7 @@ ModuleStatement = AttributeSection "module" Identifier ";"
 ImportStatement = "import" StringLiteral ";"
 Definition = Struct Union Interface Enum Const
 
-AttributeSection = "[" AttributeList "]"
+AttributeSection = <empty> | "[" AttributeList "]"
 AttributeList = <empty> | NonEmptyAttributeList
 NonEmptyAttributeList = Attribute
                       | Attribute "," NonEmptyAttributeList
@@ -713,7 +713,7 @@ StructBody = <empty>
            | StructBody Const
            | StructBody Enum
            | StructBody StructField
-StructField = AttributeSection TypeSpec Name Orginal Default ";"
+StructField = AttributeSection TypeSpec Name Ordinal Default ";"
 
 Union = AttributeSection "union" Name "{" UnionBody "}" ";"
 UnionBody = <empty> | UnionBody UnionField

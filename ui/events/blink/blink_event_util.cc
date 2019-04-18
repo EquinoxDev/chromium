@@ -315,17 +315,9 @@ bool HaveConsistentPhase(const WebMouseWheelEvent& event_to_coalesce,
   }
 
   if (event.has_synthetic_phase) {
-    // Synthetic phase information is added based on a timer in
-    // MouseWheelPhaseHandler. This information is for simulating scroll
-    // sequences when the beginning and end of scrolls are not available. It is
-    // alright to coalesce an event with synthetic phaseBegan to its previous
-    // event with synthetic phaseEnded since these phase values don't correspond
-    // with real start and end of the scroll sequences.
-    // It is also alright to coalesce a wheel event with synthetic phaseChanged
-    // to its previous one with synthetic phaseBegan.
-    return (event.phase == WebMouseWheelEvent::kPhaseEnded &&
-            event_to_coalesce.phase == WebMouseWheelEvent::kPhaseBegan) ||
-           (event.phase == WebMouseWheelEvent::kPhaseBegan &&
+    // It is alright to coalesce a wheel event with synthetic phaseChanged to
+    // its previous one with synthetic phaseBegan.
+    return (event.phase == WebMouseWheelEvent::kPhaseBegan &&
             event_to_coalesce.phase == WebMouseWheelEvent::kPhaseChanged);
   }
   return false;
@@ -375,18 +367,11 @@ void Coalesce(const WebMouseWheelEvent& event_to_coalesce,
       MergeDispatchTypes(old_dispatch_type, event_to_coalesce.dispatch_type);
   if (event_to_coalesce.has_synthetic_phase &&
       event_to_coalesce.phase != old_phase) {
-    if (event_to_coalesce.phase == WebMouseWheelEvent::kPhaseBegan) {
-      // Coalesce a wheel event with synthetic phase began with a wheel event
-      // with synthetic phase ended.
-      DCHECK_EQ(WebMouseWheelEvent::kPhaseEnded, old_phase);
-      event->phase = WebMouseWheelEvent::kPhaseChanged;
-    } else {
-      // Coalesce  a wheel event with synthetic phase changed to a wheel event
-      // with synthetic phase began.
-      DCHECK_EQ(WebMouseWheelEvent::kPhaseChanged, event_to_coalesce.phase);
-      DCHECK_EQ(WebMouseWheelEvent::kPhaseBegan, old_phase);
-      event->phase = WebMouseWheelEvent::kPhaseBegan;
-    }
+    // Coalesce  a wheel event with synthetic phase changed to a wheel event
+    // with synthetic phase began.
+    DCHECK_EQ(WebMouseWheelEvent::kPhaseChanged, event_to_coalesce.phase);
+    DCHECK_EQ(WebMouseWheelEvent::kPhaseBegan, old_phase);
+    event->phase = WebMouseWheelEvent::kPhaseBegan;
   }
 }
 
@@ -478,9 +463,6 @@ void Coalesce(const WebGestureEvent& event_to_coalesce,
         event_to_coalesce.data.scroll_update.delta_x;
     event->data.scroll_update.delta_y +=
         event_to_coalesce.data.scroll_update.delta_y;
-    DCHECK_EQ(event->data.scroll_update.previous_update_in_sequence_prevented,
-              event_to_coalesce.data.scroll_update
-                  .previous_update_in_sequence_prevented);
   } else if (event->GetType() == WebInputEvent::kGesturePinchUpdate) {
     event->data.pinch_update.scale *= event_to_coalesce.data.pinch_update.scale;
     // Ensure the scale remains bounded above 0 and below Infinity so that
@@ -813,8 +795,6 @@ WebGestureEvent CreateWebGestureEvent(const GestureEventDetails& details,
       gesture.data.scroll_update.delta_units =
           static_cast<blink::WebGestureEvent::ScrollUnits>(
               details.scroll_update_units());
-      gesture.data.scroll_update.previous_update_in_sequence_prevented =
-          details.previous_scroll_update_in_sequence_prevented();
       break;
     case ET_GESTURE_SCROLL_END:
       gesture.SetType(WebInputEvent::kGestureScrollEnd);

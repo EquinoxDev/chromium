@@ -11,7 +11,7 @@
 #include "base/bind.h"
 #include "base/files/file_enumerator.h"
 #include "base/files/file_util.h"
-#include "base/hash.h"
+#include "base/hash/hash.h"
 #include "base/logging.h"
 #include "base/macros.h"
 #include "base/memory/ref_counted.h"
@@ -399,9 +399,11 @@ class PDFExtensionHitTestTest : public PDFExtensionTest,
   void SetUpCommandLine(base::CommandLine* command_line) override {
     PDFExtensionTest::SetUpCommandLine(command_line);
     if (GetParam()) {
-      feature_list_.InitAndEnableFeature(features::kEnableVizHitTestDrawQuad);
+      std::map<std::string, std::string> parameters{{"provider", "draw_quad"}};
+      feature_list_.InitAndEnableFeatureWithParameters(
+          features::kEnableVizHitTest, parameters);
     } else {
-      feature_list_.InitAndDisableFeature(features::kEnableVizHitTestDrawQuad);
+      feature_list_.InitAndDisableFeature(features::kEnableVizHitTest);
     }
   }
 
@@ -678,7 +680,7 @@ IN_PROC_BROWSER_TEST_F(PDFExtensionTest, Beep) {
 #if defined(OS_CHROMEOS)
 // TODO(https://crbug.com/920684): Test times out.
 #if defined(MEMORY_SANITIZER) || defined(LEAK_SANITIZER) || \
-    defined(ADDRESS_SANITIZER)
+    defined(ADDRESS_SANITIZER) || defined(_DEBUG)
 #define MAYBE_AnnotationsFeatureEnabled DISABLED_AnnotationsFeatureEnabled
 #else
 #define MAYBE_AnnotationsFeatureEnabled AnnotationsFeatureEnabled
@@ -786,6 +788,25 @@ IN_PROC_BROWSER_TEST_F(PDFExtensionTest, EnsurePDFFromLocalFileLoads) {
     ASSERT_TRUE(base::PathService::Get(chrome::DIR_TEST_DATA, &test_data_dir));
     test_data_dir = test_data_dir.Append(FILE_PATH_LITERAL("pdf"));
     base::FilePath test_data_file = test_data_dir.AppendASCII("test.pdf");
+    ASSERT_TRUE(PathExists(test_data_file));
+    test_pdf_url = GURL("file://" + test_data_file.MaybeAsASCII());
+  }
+  WebContents* guest_contents = LoadPdfGetGuestContents(test_pdf_url);
+  ASSERT_TRUE(guest_contents);
+
+  // Did launch a PPAPI process.
+  EXPECT_EQ(1, CountPDFProcesses());
+}
+
+// Tests that PDF with no filename extension can be loaded from local file.
+IN_PROC_BROWSER_TEST_F(PDFExtensionTest, ExtensionlessPDFLocalFileLoads) {
+  GURL test_pdf_url;
+  {
+    base::ScopedAllowBlockingForTesting allow_blocking;
+    base::FilePath test_data_dir;
+    ASSERT_TRUE(base::PathService::Get(chrome::DIR_TEST_DATA, &test_data_dir));
+    test_data_dir = test_data_dir.AppendASCII("pdf");
+    base::FilePath test_data_file = test_data_dir.AppendASCII("imgpdf");
     ASSERT_TRUE(PathExists(test_data_file));
     test_pdf_url = GURL("file://" + test_data_file.MaybeAsASCII());
   }
@@ -1171,40 +1192,8 @@ IN_PROC_BROWSER_TEST_F(PDFExtensionTest, NavigationOnCorrectTab) {
   EXPECT_FALSE(active_web_contents->GetController().GetPendingEntry());
 }
 
-// For both PDFExtensionTest and PDFIsolatedExtensionTest, MultipleDomains case
-// is flaky.
-// https://crbug.com/825038
-// https://crbug.com/851805
-#define MAYBE_MultipleDomains DISABLED_MultipleDomains
-
-IN_PROC_BROWSER_TEST_F(PDFExtensionTest, MAYBE_MultipleDomains) {
-  for (const auto& url :
-       {embedded_test_server()->GetURL("a.com", "/pdf/test.pdf"),
-        embedded_test_server()->GetURL("b.com", "/pdf/test.pdf"),
-        embedded_test_server()->GetURL("c.com", "/pdf/test.pdf"),
-        embedded_test_server()->GetURL("d.com", "/pdf/test.pdf")}) {
-    ASSERT_TRUE(LoadPdfInNewTab(url));
-  }
-  EXPECT_EQ(1, CountPDFProcesses());
-}
-
-class PDFIsolatedExtensionTest : public PDFExtensionTest {
- public:
-  PDFIsolatedExtensionTest() {}
-  ~PDFIsolatedExtensionTest() override {}
-
-  void SetUp() override {
-    features_.InitAndEnableFeature(features::kPdfIsolation);
-    PDFExtensionTest::SetUp();
-  }
-
- private:
-  base::test::ScopedFeatureList features_;
-};
-
-// See MAYBE_MultipleDomains definition, above.
-// https://crbug.com/825038 and https://crbug.com/851805
-IN_PROC_BROWSER_TEST_F(PDFIsolatedExtensionTest, MAYBE_MultipleDomains) {
+// Flaky: https://crbug.com/851805
+IN_PROC_BROWSER_TEST_F(PDFExtensionTest, DISABLED_MultipleDomains) {
   for (const auto& url :
        {embedded_test_server()->GetURL("a.com", "/pdf/test.pdf"),
         embedded_test_server()->GetURL("b.com", "/pdf/test.pdf"),
@@ -2086,7 +2075,14 @@ IN_PROC_BROWSER_TEST_F(PDFExtensionTest, ServiceWorkerInterception) {
   RunServiceWorkerTest("respond_with_fetch_worker.js");
 }
 
-IN_PROC_BROWSER_TEST_F(PDFExtensionTest, EmbeddedPdfGetsFocus) {
+// Flaky on Windows. https://crbug.com/952066
+#if defined(OS_WIN)
+#define MAYBE_EmbeddedPdfGetsFocus DISABLED_EmbeddedPdfGetsFocus
+#else
+#define MAYBE_EmbeddedPdfGetsFocus EmbeddedPdfGetsFocus
+#endif
+
+IN_PROC_BROWSER_TEST_F(PDFExtensionTest, MAYBE_EmbeddedPdfGetsFocus) {
   GURL test_iframe_url(embedded_test_server()->GetURL(
       "/pdf/test-offset-cross-site-iframe.html"));
   ui_test_utils::NavigateToURL(browser(), test_iframe_url);

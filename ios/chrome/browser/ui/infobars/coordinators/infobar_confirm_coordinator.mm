@@ -7,44 +7,47 @@
 #include "base/strings/sys_string_conversions.h"
 #include "components/infobars/core/confirm_infobar_delegate.h"
 #include "ios/chrome/browser/infobars/infobar_controller_delegate.h"
-#import "ios/chrome/browser/ui/infobars/banners/infobar_banner_delegate.h"
 #import "ios/chrome/browser/ui/infobars/banners/infobar_banner_view_controller.h"
+#import "ios/chrome/browser/ui/infobars/coordinators/infobar_coordinator_implementation.h"
+#import "ios/chrome/browser/ui/infobars/modals/infobar_modal_view_controller.h"
 
 #if !defined(__has_feature) || !__has_feature(objc_arc)
 #error "This file requires ARC support."
 #endif
 
-@interface InfobarConfirmCoordinator () <InfobarBannerDelegate>
+@interface InfobarConfirmCoordinator () <InfobarCoordinatorImplementation>
 
 // Delegate that holds the Infobar information and actions.
 @property(nonatomic, readonly) ConfirmInfoBarDelegate* confirmInfobarDelegate;
 // InfobarBannerViewController owned by this Coordinator.
 @property(nonatomic, strong) InfobarBannerViewController* bannerViewController;
+// InfobarModalViewController owned by this Coordinator.
+@property(nonatomic, strong) InfobarModalViewController* modalViewController;
 
 @end
 
 @implementation InfobarConfirmCoordinator
-// Property defined in InfobarCoordinating.
+// Synthesize since readonly property from superclass is changed to readwrite.
 @synthesize bannerViewController = _bannerViewController;
-// Property defined in InfobarUIDelegate.
-@synthesize delegate = _delegate;
-// Property defined in InfobarCoordinating.
-@synthesize started = _started;
+// Synthesize since readonly property from superclass is changed to readwrite.
+@synthesize modalViewController = _modalViewController;
 
 - (instancetype)initWithInfoBarDelegate:
     (ConfirmInfoBarDelegate*)confirmInfoBarDelegate {
-  self = [super initWithBaseViewController:nil browserState:nil];
+  self = [super initWithInfoBarDelegate:confirmInfoBarDelegate];
   if (self) {
     _confirmInfobarDelegate = confirmInfoBarDelegate;
   }
   return self;
 }
 
+#pragma mark - ChromeCoordinator
+
 - (void)start {
   self.started = YES;
   self.bannerViewController =
       [[InfobarBannerViewController alloc] initWithDelegate:self];
-  self.bannerViewController.messageText =
+  self.bannerViewController.titleText =
       base::SysUTF16ToNSString(self.confirmInfobarDelegate->GetMessageText());
   self.bannerViewController.buttonText =
       base::SysUTF16ToNSString(self.confirmInfobarDelegate->GetButtonLabel(
@@ -54,33 +57,33 @@
 - (void)stop {
   if (self.started) {
     self.started = NO;
-    [self.bannerViewController dismissViewControllerAnimated:YES
-                                                  completion:nil];
     // RemoveInfoBar() will delete the InfobarIOS that owns this Coordinator
     // from memory.
     self.delegate->RemoveInfoBar();
   }
 }
 
-#pragma mark - InfobarUIDelegate
+#pragma mark - InfobarCoordinatorImplementation
 
-- (void)removeView {
-  [self stop];
+- (void)configureModalViewController {
+  self.modalViewController =
+      [[InfobarModalViewController alloc] initWithModalDelegate:self];
+  self.modalViewController.title =
+      base::SysUTF16ToNSString(self.confirmInfobarDelegate->GetMessageText());
 }
 
-- (void)detachView {
-  [self stop];
+- (void)dismissBannerWhenInteractionIsFinished {
+  [self.bannerViewController dismissWhenInteractionIsFinished];
 }
 
-#pragma mark - InfobarBannerDelegate
-
-- (void)bannerInfobarButtonWasPressed:(id)sender {
+- (void)performInfobarAction {
   self.confirmInfobarDelegate->Accept();
-  [self dismissInfobarBanner:self.bannerViewController];
 }
 
-- (void)dismissInfobarBanner:(id)sender {
-  [self stop];
+- (void)infobarWasDismissed {
+  // Release these strong ViewControllers at the time of infobar dismissal.
+  self.bannerViewController = nil;
+  self.modalViewController = nil;
 }
 
 @end

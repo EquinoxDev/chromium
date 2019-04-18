@@ -61,17 +61,6 @@ bool FakeSyncService::HasObserver(const SyncServiceObserver* observer) const {
   return false;
 }
 
-void FakeSyncService::AddPreferenceProvider(
-    SyncTypePreferenceProvider* provider) {}
-
-void FakeSyncService::RemovePreferenceProvider(
-    SyncTypePreferenceProvider* provider) {}
-
-bool FakeSyncService::HasPreferenceProvider(
-    SyncTypePreferenceProvider* provider) const {
-  return false;
-}
-
 void FakeSyncService::StopAndClear() {}
 
 void FakeSyncService::OnDataTypeRequestsSyncStartup(ModelType type) {}
@@ -97,15 +86,21 @@ bool FakeSyncService::IsSetupInProgress() const {
   return false;
 }
 
-const GoogleServiceAuthError& FakeSyncService::GetAuthError() const {
-  return error_;
+GoogleServiceAuthError FakeSyncService::GetAuthError() const {
+  return GoogleServiceAuthError();
+}
+
+base::Time FakeSyncService::GetAuthErrorTime() const {
+  return base::Time();
+}
+
+bool FakeSyncService::RequiresClientUpgrade() const {
+  return false;
 }
 
 UserShare* FakeSyncService::GetUserShare() const {
   return user_share_.get();
 }
-
-void FakeSyncService::ReenableDatatype(ModelType type) {}
 
 void FakeSyncService::ReadyForStartChanged(ModelType type) {}
 
@@ -113,7 +108,8 @@ syncer::SyncTokenStatus FakeSyncService::GetSyncTokenStatus() const {
   return syncer::SyncTokenStatus();
 }
 
-bool FakeSyncService::QueryDetailedSyncStatus(SyncStatus* result) const {
+bool FakeSyncService::QueryDetailedSyncStatusForDebugging(
+    SyncStatus* result) const {
   return false;
 }
 
@@ -125,7 +121,7 @@ SyncCycleSnapshot FakeSyncService::GetLastCycleSnapshot() const {
   return SyncCycleSnapshot();
 }
 
-std::unique_ptr<base::Value> FakeSyncService::GetTypeStatusMap() {
+std::unique_ptr<base::Value> FakeSyncService::GetTypeStatusMapForDebugging() {
   return nullptr;
 }
 

@@ -20,6 +20,7 @@
 #include "components/viz/common/gpu/context_lost_observer.h"
 #include "components/viz/common/gpu/context_lost_reason.h"
 #include "components/viz/common/resources/platform_color.h"
+#include "components/viz/common/viz_utils.h"
 #include "gpu/GLES2/gl2extchromium.h"
 #include "gpu/command_buffer/client/gles2_cmd_helper.h"
 #include "gpu/command_buffer/client/gles2_implementation.h"
@@ -73,8 +74,7 @@ gpu::ContextCreationAttribs CreateAttributes(
     NOTREACHED();
   }
 
-  if (!requires_alpha_channel &&
-      base::SysInfo::AmountOfPhysicalMemoryMB() <= 512) {
+  if (!requires_alpha_channel && PreferRGB565ResourcesForDisplay()) {
     // See compositor_impl_android.cc for more information about this.
     // It is inside GetCompositorContextAttributes().
     attributes.alpha_size = 0;
@@ -115,7 +115,7 @@ gpu::SharedMemoryLimits SharedMemoryLimitsForRendererSettings(
 }  // namespace
 
 VizProcessContextProvider::VizProcessContextProvider(
-    scoped_refptr<gpu::CommandBufferTaskExecutor> task_executor,
+    gpu::CommandBufferTaskExecutor* task_executor,
     gpu::SurfaceHandle surface_handle,
     gpu::GpuMemoryBufferManager* gpu_memory_buffer_manager,
     gpu::ImageFactory* image_factory,
@@ -231,7 +231,7 @@ uint32_t VizProcessContextProvider::GetCopyTextureInternalFormat() {
 }
 
 void VizProcessContextProvider::InitializeContext(
-    scoped_refptr<gpu::CommandBufferTaskExecutor> task_executor,
+    gpu::CommandBufferTaskExecutor* task_executor,
     gpu::SurfaceHandle surface_handle,
     gpu::GpuMemoryBufferManager* gpu_memory_buffer_manager,
     gpu::ImageFactory* image_factory,
@@ -239,8 +239,9 @@ void VizProcessContextProvider::InitializeContext(
     const gpu::SharedMemoryLimits& mem_limits) {
   const bool is_offscreen = surface_handle == gpu::kNullSurfaceHandle;
 
-  command_buffer_ =
-      std::make_unique<gpu::InProcessCommandBuffer>(std::move(task_executor));
+  command_buffer_ = std::make_unique<gpu::InProcessCommandBuffer>(
+      task_executor,
+      GURL("chrome://gpu/VizProcessContextProvider::InitializeContext"));
   context_result_ = command_buffer_->Initialize(
       /*surface=*/nullptr, is_offscreen, surface_handle, attributes_,
       /*share_command_buffer=*/nullptr, gpu_memory_buffer_manager,

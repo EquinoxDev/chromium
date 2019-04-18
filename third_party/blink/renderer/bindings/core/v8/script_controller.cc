@@ -133,9 +133,9 @@ v8::Local<v8::Value> ScriptController::ExecuteScriptAndReturnValue(
     v8::MaybeLocal<v8::Value> maybe_result;
     maybe_result = V8ScriptRunner::RunCompiledScript(GetIsolate(), script,
                                                      GetFrame()->GetDocument());
-    probe::produceCompilationCache(frame_, source, script);
+    probe::ProduceCompilationCache(frame_, source, script);
     V8CodeCache::ProduceCache(GetIsolate(), script, source,
-                              produce_cache_options, compile_options);
+                              produce_cache_options);
 
     if (!maybe_result.ToLocal(&result)) {
       return result;
@@ -231,21 +231,16 @@ bool ScriptController::ExecuteScriptIfJavaScriptURL(
       ContentSecurityPolicy::ShouldBypassMainWorld(GetFrame()->GetDocument());
   if (!GetFrame()->GetPage() ||
       (!should_bypass_main_world_content_security_policy &&
-       !GetFrame()
-            ->GetDocument()
-            ->GetContentSecurityPolicy()
-            ->AllowJavaScriptURLs(element, script_source,
-                                  GetFrame()->GetDocument()->Url(),
-                                  EventHandlerPosition().line_))) {
+       !GetFrame()->GetDocument()->GetContentSecurityPolicy()->AllowInline(
+           ContentSecurityPolicy::InlineType::kNavigation, element,
+           script_source, String() /* nonce */,
+           GetFrame()->GetDocument()->Url(), EventHandlerPosition().line_))) {
     return true;
   }
 
   script_source = script_source.Substring(kJavascriptSchemeLength);
 
   Document* owner_document = GetFrame()->GetDocument();
-
-  bool location_change_before =
-      GetFrame()->GetNavigationScheduler().LocationChangePending();
 
   v8::HandleScope handle_scope(GetIsolate());
 
@@ -271,13 +266,6 @@ bool ScriptController::ExecuteScriptIfJavaScriptURL(
   if (result.IsEmpty() || !result->IsString())
     return true;
   String script_result = ToCoreString(v8::Local<v8::String>::Cast(result));
-
-  // We're still in a frame, so there should be a DocumentLoader.
-  DCHECK(GetFrame()->GetDocument()->Loader());
-  if (!location_change_before &&
-      GetFrame()->GetNavigationScheduler().LocationChangePending())
-    return true;
-
   GetFrame()->Loader().ReplaceDocumentWhileExecutingJavaScriptURL(
       script_result, owner_document);
   return true;

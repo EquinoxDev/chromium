@@ -18,6 +18,7 @@
 #include "ash/app_list/views/search_result_list_view.h"
 #include "ash/app_list/views/search_result_tile_item_list_view.h"
 #include "ash/public/cpp/app_list/app_list_config.h"
+#include "base/memory/ptr_util.h"
 #include "ui/chromeos/search_box/search_box_constants.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/color_palette.h"
@@ -31,7 +32,6 @@
 #include "ui/views/focus/focus_manager.h"
 #include "ui/views/layout/box_layout.h"
 #include "ui/views/layout/fill_layout.h"
-#include "ui/views/shadow_border.h"
 
 namespace app_list {
 
@@ -175,7 +175,7 @@ SearchResultPageView::SearchResultPageView() : contents_view_(new views::View) {
   scroller->SetBorder(views::CreateEmptyBorder(
       gfx::Insets(kSearchBoxHeight + kSeparatorThickness, 0, 0, 0)));
   scroller->set_draw_overflow_indicator(false);
-  scroller->SetContents(contents_view_);
+  scroller->SetContents(base::WrapUnique(contents_view_));
   // Setting clip height is necessary to make ScrollView take into account its
   // contents' size. Using zeroes doesn't prevent it from scrolling and sizing
   // correctly.
@@ -204,6 +204,10 @@ void SearchResultPageView::AddSearchResultContainerView(
 }
 
 bool SearchResultPageView::IsFirstResultTile() const {
+  // In the event that the result does not exist, it is not a tile.
+  if (!first_result_view_ || !first_result_view_->result())
+    return false;
+
   // |kRecommendation| result type refers to tiles in Zero State.
   return first_result_view_->result()->display_type() ==
              ash::SearchResultDisplayType::kTile ||
@@ -332,6 +336,9 @@ void SearchResultPageView::OnSearchResultContainerResultsChanged() {
 
 void SearchResultPageView::OnSearchResultContainerResultFocused(
     SearchResultBaseView* focused_result_view) {
+  if (!focused_result_view->result())
+    return;
+
   views::Textfield* search_box =
       AppListPage::contents_view()->GetSearchBoxView()->search_box();
   if (focused_result_view->result()->result_type() ==
@@ -346,7 +353,18 @@ void SearchResultPageView::OnSearchResultContainerResultFocused(
 void SearchResultPageView::OnHidden() {
   // Hide the search results page when it is behind search box to avoid focus
   // being moved onto suggested apps when zero state is enabled.
+  AppListPage::OnHidden();
   SetVisible(false);
+  for (auto* container_view : result_container_views_) {
+    container_view->SetShown(false);
+  }
+}
+
+void SearchResultPageView::OnShown() {
+  AppListPage::OnShown();
+  for (auto* container_view : result_container_views_) {
+    container_view->SetShown(true);
+  }
 }
 
 gfx::Rect SearchResultPageView::GetPageBoundsForState(

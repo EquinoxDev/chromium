@@ -110,9 +110,7 @@ void OffscreenBrowserCompositorOutputSurface::DiscardBackbuffer() {
 }
 
 void OffscreenBrowserCompositorOutputSurface::SetDrawRectangle(
-    const gfx::Rect& draw_rectangle) {
-  NOTREACHED();
-}
+    const gfx::Rect& draw_rectangle) {}
 
 void OffscreenBrowserCompositorOutputSurface::Reshape(
     const gfx::Size& size,
@@ -196,14 +194,6 @@ void OffscreenBrowserCompositorOutputSurface::OnSwapBuffersComplete(
   client_->DidReceiveSwapBuffersAck();
   client_->DidReceivePresentationFeedback(gfx::PresentationFeedback());
 }
-
-#if BUILDFLAG(ENABLE_VULKAN)
-gpu::VulkanSurface*
-OffscreenBrowserCompositorOutputSurface::GetVulkanSurface() {
-  NOTIMPLEMENTED();
-  return nullptr;
-}
-#endif
 
 unsigned OffscreenBrowserCompositorOutputSurface::UpdateGpuFence() {
   return 0;

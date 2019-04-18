@@ -52,6 +52,10 @@ class FakeCredentialProviderUserArray : public ICredentialProviderUserArray {
     users_.emplace_back(sid, username);
   }
 
+  void SetAccountOptions(CREDENTIAL_PROVIDER_ACCOUNT_OPTIONS cpao) {
+    cpao_ = cpao;
+  }
+
  private:
   // ICredentialProviderUserArray
   IFACEMETHODIMP QueryInterface(REFIID riid, void** ppv) override;
@@ -59,12 +63,12 @@ class FakeCredentialProviderUserArray : public ICredentialProviderUserArray {
   ULONG STDMETHODCALLTYPE Release(void) override;
   IFACEMETHODIMP SetProviderFilter(REFGUID guidProviderToFilterTo) override;
   IFACEMETHODIMP GetAccountOptions(
-      CREDENTIAL_PROVIDER_ACCOUNT_OPTIONS* credentialProviderAccountOptions)
-      override;
+      CREDENTIAL_PROVIDER_ACCOUNT_OPTIONS* cpao) override;
   IFACEMETHODIMP GetCount(DWORD* userCount) override;
   IFACEMETHODIMP GetAt(DWORD index, ICredentialProviderUser** user) override;
 
   std::vector<FakeCredentialProviderUser> users_;
+  CREDENTIAL_PROVIDER_ACCOUNT_OPTIONS cpao_ = CPAO_NONE;
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -88,8 +92,7 @@ class FakeCredentialProviderEvents : public ICredentialProviderEvents {
 ///////////////////////////////////////////////////////////////////////////////
 
 // Fake the GaiaCredentialProvider COM object.
-class FakeGaiaCredentialProvider : public IGaiaCredentialProvider,
-                                   public IGaiaCredentialProviderForTesting {
+class FakeGaiaCredentialProvider : public IGaiaCredentialProvider {
  public:
   FakeGaiaCredentialProvider();
   virtual ~FakeGaiaCredentialProvider();
@@ -99,6 +102,9 @@ class FakeGaiaCredentialProvider : public IGaiaCredentialProvider,
   const CComBSTR& sid() const { return sid_; }
   bool credentials_changed_fired() const { return credentials_changed_fired_; }
   void ResetCredentialsChangedFired() { credentials_changed_fired_ = FALSE; }
+  void SetUsageScenario(CREDENTIAL_PROVIDER_USAGE_SCENARIO cpus) {
+    cpus_ = cpus;
+  }
 
   // IGaiaCredentialProvider
   IFACEMETHODIMP GetUsageScenario(DWORD* cpus) override;
@@ -110,18 +116,13 @@ class FakeGaiaCredentialProvider : public IGaiaCredentialProvider,
                                      BSTR password,
                                      BSTR sid,
                                      BOOL fire_credentials_changed) override;
-  IFACEMETHODIMP HasInternetConnection() override;
-
-  // IGaiaCredentialProviderForTesting
-  IFACEMETHODIMP SetHasInternetConnection(
-      HasInternetConnectionCheckType has_internet_connection) override;
 
  private:
   CComBSTR username_;
   CComBSTR password_;
   CComBSTR sid_;
   BOOL credentials_changed_fired_ = FALSE;
-  HasInternetConnectionCheckType has_internet_connection_ = kHicForceYes;
+  CREDENTIAL_PROVIDER_USAGE_SCENARIO cpus_ = CPUS_LOGON;
 };
 
 }  // namespace credential_provider

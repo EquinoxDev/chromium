@@ -31,6 +31,7 @@
 #include "ui/base/ime/chromeos/input_method_util.h"
 #include "ui/base/ime/ime_bridge.h"
 #include "ui/base/ime/input_method_observer.h"
+#include "ui/keyboard/public/keyboard_switches.h"
 
 namespace arc {
 
@@ -111,7 +112,9 @@ class ArcInputMethodManagerService::InputMethodEngineObserver
 
   // input_method::InputMethodEngineBase::Observer overrides:
   void OnActivate(const std::string& engine_id) override {
-    owner_->OnArcImeActivated();
+    owner_->is_arc_ime_active_ = true;
+    // TODO(yhanada): Remove this line after we migrate to SPM completely.
+    owner_->OnInputContextHandlerChanged();
   }
   void OnFocus(
       const ui::IMEEngineHandlerInterface::InputContext& context) override {
@@ -133,7 +136,9 @@ class ArcInputMethodManagerService::InputMethodEngineObserver
   }
   void OnReset(const std::string& engine_id) override {}
   void OnDeactivated(const std::string& engine_id) override {
-    owner_->OnArcImeDeactivated();
+    owner_->is_arc_ime_active_ = false;
+    // TODO(yhanada): Remove this line after we migrate to SPM completely.
+    owner_->OnInputContextHandlerChanged();
   }
   void OnCompositionBoundsChanged(
       const std::vector<gfx::Rect>& bounds) override {}
@@ -175,7 +180,9 @@ class ArcInputMethodManagerService::InputMethodObserver
   void OnBlur() override {}
   void OnCaretBoundsChanged(const ui::TextInputClient* client) override {}
   void OnTextInputStateChanged(const ui::TextInputClient* client) override {}
-  void OnInputMethodDestroyed(const ui::InputMethod* input_method) override {}
+  void OnInputMethodDestroyed(const ui::InputMethod* input_method) override {
+    owner_->input_method_ = nullptr;
+  }
   void OnShowVirtualKeyboardIfEnabled() override {
     owner_->SendShowVirtualKeyboard();
   }
@@ -262,6 +269,9 @@ ArcInputMethodManagerService::ArcInputMethodManagerService(
             &ArcInputMethodManagerService::OnAccessibilityStatusChanged,
             base::Unretained(this)));
   }
+
+  DCHECK(ui::IMEBridge::Get());
+  ui::IMEBridge::Get()->AddObserver(this);
 }
 
 ArcInputMethodManagerService::~ArcInputMethodManagerService() = default;
@@ -285,6 +295,14 @@ void ArcInputMethodManagerService::Shutdown() {
   // that will be restored after Arc container starts next time.
   RemoveArcIMEFromPrefs();
   profile_->GetPrefs()->CommitPendingWrite();
+
+  if (input_method_) {
+    input_method_->RemoveObserver(input_method_observer_.get());
+    input_method_ = nullptr;
+  }
+
+  if (ui::IMEBridge::Get())
+    ui::IMEBridge::Get()->RemoveObserver(this);
 
   if (TabletModeClient::Get())
     TabletModeClient::Get()->RemoveObserver(tablet_mode_observer_.get());
@@ -481,6 +499,22 @@ void ArcInputMethodManagerService::InputMethodChanged(
   }
 }
 
+void ArcInputMethodManagerService::OnInputContextHandlerChanged() {
+  if (ui::IMEBridge::Get()->GetInputContextHandler() == nullptr) {
+    if (input_method_)
+      input_method_->RemoveObserver(input_method_observer_.get());
+    input_method_ = nullptr;
+    return;
+  }
+
+  if (input_method_)
+    input_method_->RemoveObserver(input_method_observer_.get());
+  input_method_ =
+      ui::IMEBridge::Get()->GetInputContextHandler()->GetInputMethod();
+  if (input_method_)
+    input_method_->AddObserver(input_method_observer_.get());
+}
+
 void ArcInputMethodManagerService::OnAccessibilityStatusChanged(
     const chromeos::AccessibilityStatusEventDetails& event_details) {
   if (event_details.notification_type !=
@@ -527,6 +561,9 @@ void ArcInputMethodManagerService::SwitchImeTo(const std::string& ime_id) {
 }
 
 void ArcInputMethodManagerService::Focus(int context_id) {
+  if (!is_arc_ime_active_)
+    return;
+
   DCHECK(!active_connection_);
   active_connection_ = std::make_unique<InputConnectionImpl>(
       proxy_ime_engine_.get(), imm_bridge_.get(), context_id);
@@ -543,7 +580,7 @@ void ArcInputMethodManagerService::Blur() {
 }
 
 void ArcInputMethodManagerService::UpdateTextInputState() {
-  if (!active_connection_)
+  if (!is_arc_ime_active_ || !active_connection_)
     return;
   active_connection_->UpdateTextInputState(
       false /* is_input_state_update_requested */);
@@ -673,9 +710,14 @@ void ArcInputMethodManagerService::UpdateArcIMEAllowed() {
 }
 
 bool ArcInputMethodManagerService::ShouldArcIMEAllowed() const {
-  return !profile_->GetPrefs()->GetBoolean(
-             ash::prefs::kAccessibilityVirtualKeyboardEnabled) &&
-         TabletModeClient::Get()->tablet_mode_enabled();
+  const bool is_command_line_flag_enabled =
+      base::CommandLine::ForCurrentProcess()->HasSwitch(
+          keyboard::switches::kEnableVirtualKeyboard);
+  const bool is_normal_vk_enabled =
+      !profile_->GetPrefs()->GetBoolean(
+          ash::prefs::kAccessibilityVirtualKeyboardEnabled) &&
+      TabletModeClient::Get()->tablet_mode_enabled();
+  return is_command_line_flag_enabled || is_normal_vk_enabled;
 }
 
 void ArcInputMethodManagerService::NotifyInputMethodManagerObservers(
@@ -697,25 +739,14 @@ void ArcInputMethodManagerService::NotifyInputMethodManagerObservers(
     manager->NotifyInputMethodExtensionAdded(proxy_ime_extension_id_);
 }
 
-void ArcInputMethodManagerService::OnArcImeActivated() {
-  ui::InputMethod* input_method =
-      ui::IMEBridge::Get()->GetInputContextHandler()->GetInputMethod();
-  if (input_method)
-    input_method->AddObserver(input_method_observer_.get());
-}
-
-void ArcInputMethodManagerService::OnArcImeDeactivated() {
-  ui::InputMethod* input_method =
-      ui::IMEBridge::Get()->GetInputContextHandler()->GetInputMethod();
-  if (input_method)
-    input_method->RemoveObserver(input_method_observer_.get());
-}
-
 bool ArcInputMethodManagerService::IsVirtualKeyboardShown() const {
   return is_virtual_keyboard_shown_;
 }
 
 void ArcInputMethodManagerService::SendShowVirtualKeyboard() {
+  if (!is_arc_ime_active_)
+    return;
+
   imm_bridge_->SendShowVirtualKeyboard();
   // TODO(yhanada): Should observe IME window size changes.
   is_virtual_keyboard_shown_ = true;
@@ -724,6 +755,9 @@ void ArcInputMethodManagerService::SendShowVirtualKeyboard() {
 }
 
 void ArcInputMethodManagerService::SendHideVirtualKeyboard() {
+  if (!is_arc_ime_active_)
+    return;
+
   imm_bridge_->SendHideVirtualKeyboard();
   // TODO(yhanada): Should observe IME window size changes.
   is_virtual_keyboard_shown_ = false;

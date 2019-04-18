@@ -77,16 +77,21 @@ class SyncPrefs : public CryptoSyncPrefs,
   // types.
   void ClearPreferences();
 
+  // Clears only the subset of preferences that are redundant with the sync
+  // directory and used only for verifying consistency with prefs.
+  // TODO(crbug.com/923285): Remove this function and instead rely solely on
+  // ClearPreferences() once investigations are finalized are we understand the
+  // source of discrepancies for UMA Sync.DirectoryVsPrefsConsistency.
+  void ClearDirectoryConsistencyPreferences();
+
   // Getters and setters for global sync prefs.
 
   bool IsFirstSetupComplete() const;
   void SetFirstSetupComplete();
 
-  bool SyncHasAuthError() const;
-  void SetSyncAuthError(bool error);
-
   bool IsSyncRequested() const;
   void SetSyncRequested(bool is_requested);
+  void SetSyncRequestedIfNotSetExplicitly();
 
   base::Time GetLastSyncedTime() const;
   void SetLastSyncedTime(base::Time time);
@@ -94,33 +99,28 @@ class SyncPrefs : public CryptoSyncPrefs,
   base::Time GetLastPollTime() const;
   void SetLastPollTime(base::Time time);
 
-  base::TimeDelta GetShortPollInterval() const;
-  void SetShortPollInterval(base::TimeDelta interval);
-
-  base::TimeDelta GetLongPollInterval() const;
-  void SetLongPollInterval(base::TimeDelta interval);
+  base::TimeDelta GetPollInterval() const;
+  void SetPollInterval(base::TimeDelta interval);
 
   bool HasKeepEverythingSynced() const;
 
-  // The returned set is guaranteed to be a subset of |registered_types|.
-  // Returns |registered_types| directly if HasKeepEverythingSynced() is true.
-  // Preferred types are derived from chosen types by resolving pref groups.
-  ModelTypeSet GetPreferredDataTypes(ModelTypeSet registered_types) const;
+  // The result set is guaranteed to be a subset of UserSelectableTypes().
+  // Returns all UserSelectableTypes() if HasKeepEverythingSynced() is true.
+  ModelTypeSet GetChosenDataTypes() const;
 
-  // Sets the desired configuration for all data types, including the "keep
-  // everything synced" flag and the "preferred" state for each individual data
-  // type.
+  // Sets the desired configuration for all UserSelectableTypes(), including
+  // the "keep everything synced" flag and the "chosen" state for each
+  // individual type.
   // |keep_everything_synced| indicates that all current and future data types
-  // should be synced. If this is set to true, then GetPreferredDataTypes() will
-  // always return all available data types, even if not all of them are
+  // should be synced. If this is set to true, then GetChosenDataTypes() will
+  // always return all UserSelectableTypes(), even if not all of them are
   // individually marked as preferred.
-  // The |chosen_types| must be a subset of the |registered_types| and
-  // UserSelectableTypes().
-  // Changes are still made to the individual data type prefs even if
-  // |keep_everything_synced| is true, but won't be visible until it's set to
-  // false.
+  // |choosable_types| and |chosen_types| must be a subset of
+  // UserSelectableTypes(). Changes are still made to the individual data type
+  // prefs even if |keep_everything_synced| is true, but won't be visible until
+  // it's set to false. Changes are made only to |choosable_types|.
   void SetDataTypesConfiguration(bool keep_everything_synced,
-                                 ModelTypeSet registered_types,
+                                 ModelTypeSet choosable_types,
                                  ModelTypeSet chosen_types);
 
   // Whether Sync is forced off by enterprise policy. Note that this only covers
@@ -140,13 +140,6 @@ class SyncPrefs : public CryptoSyncPrefs,
   // Maps |type| to its corresponding preference name.
   static const char* GetPrefNameForDataType(ModelType type);
 
-#if defined(OS_CHROMEOS)
-  // Use this spare bootstrap token only when setting up sync for the first
-  // time.
-  std::string GetSpareBootstrapToken() const;
-  void SetSpareBootstrapToken(const std::string& token);
-#endif
-
   // Copy of various fields historically owned and persisted by the Directory.
   // This is a future-proof approach to ultimately replace the Directory once
   // most users have populated prefs and the Directory is about to be removed.
@@ -157,12 +150,6 @@ class SyncPrefs : public CryptoSyncPrefs,
   std::string GetBirthday() const;
   void SetBagOfChips(const std::string& bag_of_chips);
   std::string GetBagOfChips() const;
-
-  // Get/set/clear first sync time of current user. Used to roll back browsing
-  // data later when user signs out.
-  base::Time GetFirstSyncTime() const;
-  void SetFirstSyncTime(base::Time time);
-  void ClearFirstSyncTime();
 
   // Out of band sync passphrase prompt getter/setter.
   bool IsPassphrasePrompted() const;
@@ -196,11 +183,6 @@ class SyncPrefs : public CryptoSyncPrefs,
 
   // Gets the local sync backend enabled state.
   bool IsLocalSyncEnabled() const;
-
-  // Returns a ModelTypeSet based on |types| expanded to include pref groups
-  // (see |pref_groups_|).
-  // Exposed for testing.
-  static ModelTypeSet ResolvePrefGroups(ModelTypeSet types);
 
  private:
   static void RegisterDataTypePreferredPref(
@@ -239,6 +221,12 @@ class SyncPrefs : public CryptoSyncPrefs,
 void MigrateSessionsToProxyTabsPrefs(PrefService* pref_service);
 void ClearObsoleteUserTypePrefs(PrefService* pref_service);
 void ClearObsoleteClearServerDataPrefs(PrefService* pref_service);
+void ClearObsoleteAuthErrorPrefs(PrefService* pref_service);
+void ClearObsoleteFirstSyncTime(PrefService* pref_service);
+void ClearObsoleteSyncLongPollIntervalSeconds(PrefService* pref_service);
+#if defined(OS_CHROMEOS)
+void ClearObsoleteSyncSpareBootstrapToken(PrefService* pref_service);
+#endif  // defined(OS_CHROMEOS)
 
 }  // namespace syncer
 

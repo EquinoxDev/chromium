@@ -37,7 +37,6 @@
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/crash_keys.h"
 #include "chrome/common/logging_chrome.h"
-#include "chrome/common/trace_event_args_whitelist.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/gpu/chrome_content_gpu_client.h"
 #include "chrome/renderer/chrome_content_renderer_client.h"
@@ -110,6 +109,8 @@
 #if defined(OS_CHROMEOS)
 #include "base/system/sys_info.h"
 #include "chrome/browser/chromeos/boot_times_recorder.h"
+#include "chrome/browser/chromeos/dbus/dbus_helper.h"
+#include "chrome/browser/chromeos/startup_settings_cache.h"
 #include "chromeos/constants/chromeos_paths.h"
 #include "chromeos/constants/chromeos_switches.h"
 #include "chromeos/hugepage_text/hugepage_text.h"
@@ -118,7 +119,7 @@
 #if defined(OS_ANDROID)
 #include "base/android/java_exception_reporter.h"
 #include "chrome/browser/android/crash/pure_java_exception_handler.h"
-#include "chrome/common/descriptors_android.h"
+#include "chrome/common/chrome_descriptors.h"
 #else
 // Diagnostics is only available on non-android platforms.
 #include "chrome/browser/diagnostics/diagnostics_controller.h"
@@ -517,6 +518,12 @@ void ChromeMainDelegate::PostEarlyInitialization(bool is_running_tests) {
   // a ChromeNetworkDelegate attached that selectively allows cookies again.
   net::URLRequest::SetDefaultCookiePolicyToBlock();
 
+#if defined(OS_CHROMEOS)
+  // The feature list depends on BrowserPolicyConnectorChromeOS which depends
+  // on DBus, so initialize it here.
+  chromeos::InitializeDBus();
+#endif
+
   DCHECK(chrome_feature_list_creator_);
   chrome_feature_list_creator_->CreateFeatureList();
   PostFieldTrialInitialization();
@@ -525,6 +532,7 @@ void ChromeMainDelegate::PostEarlyInitialization(bool is_running_tests) {
   std::string actual_locale =
       LoadLocalState(chrome_feature_list_creator_.get(), is_running_tests);
   chrome_feature_list_creator_->SetApplicationLocale(actual_locale);
+  chrome_feature_list_creator_->OverrideCachedUIStrings();
 }
 
 bool ChromeMainDelegate::ShouldCreateFeatureList() {
@@ -538,7 +546,12 @@ void ChromeMainDelegate::PostFieldTrialInitialization() {
   version_info::Channel channel = chrome::GetChannel();
   bool is_canary_dev = (channel == version_info::Channel::CANARY ||
                         channel == version_info::Channel::DEV);
-  gwp_asan::EnableForMalloc(is_canary_dev);
+  const base::CommandLine& command_line =
+      *base::CommandLine::ForCurrentProcess();
+  std::string process_type =
+      command_line.GetSwitchValueASCII(switches::kProcessType);
+  bool is_browser_process = process_type.empty();
+  gwp_asan::EnableForMalloc(is_canary_dev, is_browser_process);
 #endif
 }
 
@@ -585,9 +598,6 @@ bool ChromeMainDelegate::BasicStartupComplete(int* exit_code) {
 #endif
 
   content::Profiling::ProcessStarted();
-
-  base::trace_event::TraceLog::GetInstance()->SetArgumentFilterPredicate(
-      base::Bind(&IsTraceEventArgsWhitelisted));
 
   // Setup tracing sampler profiler as early as possible at startup if needed.
   tracing_sampler_profiler_ =
@@ -890,8 +900,14 @@ void ChromeMainDelegate::PreSandboxStartup() {
     // via the preference prefs::kApplicationLocale. The browser process uses
     // the --lang flag to pass the value of the PrefService in here. Maybe
     // this value could be passed in a different way.
-    const std::string locale =
-        command_line.GetSwitchValueASCII(switches::kLang);
+    std::string locale = command_line.GetSwitchValueASCII(switches::kLang);
+#if defined(OS_CHROMEOS)
+    if (process_type == service_manager::switches::kZygoteProcess) {
+      DCHECK(locale.empty());
+      // See comment at ReadAppLocale() for why we do this.
+      locale = chromeos::startup_settings_cache::ReadAppLocale();
+    }
+#endif
 #if defined(OS_ANDROID)
     // The renderer sandbox prevents us from accessing our .pak files directly.
     // Therefore file descriptors to the .pak files that we need are passed in

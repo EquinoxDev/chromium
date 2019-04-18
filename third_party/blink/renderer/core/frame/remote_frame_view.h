@@ -6,6 +6,7 @@
 #define THIRD_PARTY_BLINK_RENDERER_CORE_FRAME_REMOTE_FRAME_VIEW_H_
 
 #include "cc/paint/paint_canvas.h"
+#include "third_party/blink/public/common/frame/occlusion_state.h"
 #include "third_party/blink/public/mojom/frame/lifecycle.mojom-blink.h"
 #include "third_party/blink/renderer/core/dom/document_lifecycle.h"
 #include "third_party/blink/renderer/core/frame/frame_view.h"
@@ -19,8 +20,9 @@ class PaintCanvas;
 
 namespace blink {
 class CullRect;
-class ElementVisibilityObserver;
 class GraphicsContext;
+class IntersectionObserver;
+class IntersectionObserverEntry;
 class LocalFrameView;
 class RemoteFrame;
 
@@ -58,7 +60,9 @@ class RemoteFrameView final : public GarbageCollectedFinalized<RemoteFrameView>,
   void Show() override;
   void SetParentVisible(bool) override;
 
-  void UpdateViewportIntersectionsForSubtree() override;
+  bool UpdateViewportIntersectionsForSubtree(unsigned parent_flags) override;
+  void SetNeedsOcclusionTracking(bool);
+  bool NeedsOcclusionTracking() const { return needs_occlusion_tracking_; }
 
   bool GetIntrinsicSizingInfo(IntrinsicSizingInfo&) const override;
 
@@ -83,9 +87,10 @@ class RemoteFrameView final : public GarbageCollectedFinalized<RemoteFrameView>,
   // owner.
   LocalFrameView* ParentLocalRootFrameView() const;
 
+  void OnViewportIntersectionChanged(
+      const HeapVector<Member<IntersectionObserverEntry>>& entries);
   void UpdateRenderThrottlingStatus(bool hidden, bool subtree_throttled);
   bool CanThrottleRendering() const;
-  void SetupRenderThrottling();
   void UpdateVisibility(bool scroll_visible);
 
   // The properties and handling of the cycle between RemoteFrame
@@ -95,7 +100,7 @@ class RemoteFrameView final : public GarbageCollectedFinalized<RemoteFrameView>,
   Member<RemoteFrame> remote_frame_;
   bool is_attached_;
   IntRect last_viewport_intersection_;
-  bool last_occluded_or_obscured_ = false;
+  FrameOcclusionState last_occlusion_state_ = FrameOcclusionState::kUnknown;
   IntRect frame_rect_;
   bool self_visible_;
   bool parent_visible_;
@@ -103,11 +108,12 @@ class RemoteFrameView final : public GarbageCollectedFinalized<RemoteFrameView>,
   blink::mojom::FrameVisibility visibility_ =
       blink::mojom::FrameVisibility::kRenderedInViewport;
 
-  Member<ElementVisibilityObserver> visibility_observer_;
+  Member<IntersectionObserver> visibility_observer_;
   bool subtree_throttled_ = false;
   bool hidden_for_throttling_ = false;
   IntrinsicSizingInfo intrinsic_sizing_info_;
   bool has_intrinsic_sizing_info_ = false;
+  bool needs_occlusion_tracking_ = false;
 };
 
 }  // namespace blink

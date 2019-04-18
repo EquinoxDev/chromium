@@ -121,7 +121,7 @@ public class CustomTabIntentDataProvider extends BrowserSessionDataProvider {
     /**
      * Indicates the source where the Custom Tab is launched. This is only used for
      * WebApp/WebAPK/TrustedWebActivity. The value is defined as
-     * {@link WebappActivity.ActivityType#WebappActivity}.
+     * {@link LaunchSourceType}.
      */
     public static final String EXTRA_BROWSER_LAUNCH_SOURCE =
             "org.chromium.chrome.browser.customtabs.EXTRA_BROWSER_LAUNCH_SOURCE";
@@ -141,9 +141,9 @@ public class CustomTabIntentDataProvider extends BrowserSessionDataProvider {
     public static final String EXTRA_MODULE_PACKAGE_NAME =
             "org.chromium.chrome.browser.customtabs.EXTRA_MODULE_PACKAGE_NAME";
 
-    /** The resource ID of the dex file that contains the module code. */
-    private static final String EXTRA_MODULE_DEX_RESOURCE_ID =
-            "org.chromium.chrome.browser.customtabs.EXTRA_MODULE_DEX_RESOURCE_ID";
+    /** The asset name of the dex file that contains the module code. */
+    private static final String EXTRA_MODULE_DEX_ASSET_NAME =
+            "org.chromium.chrome.browser.customtabs.EXTRA_MODULE_DEX_ASSET_NAME";
 
     /** The class name of the module entry point. */
     @VisibleForTesting
@@ -159,6 +159,14 @@ public class CustomTabIntentDataProvider extends BrowserSessionDataProvider {
     @VisibleForTesting
     public static final String EXTRA_HIDE_CCT_HEADER_ON_MODULE_MANAGED_URLS =
             "org.chromium.chrome.browser.customtabs.EXTRA_HIDE_CCT_HEADER_ON_MODULE_MANAGED_URLS";
+
+    // TODO(amalova): Move this to CustomTabsIntent.
+    /**
+     * Extra that, if set, specifies Translate UI should be triggered with
+     * specified target language.
+     */
+    private static final String EXTRA_TRANSLATE_LANGUAGE =
+            "androidx.browser.customtabs.extra.TRANSLATE_LANGUAGE";
 
     private static final int MAX_CUSTOM_MENU_ITEMS = 5;
 
@@ -188,7 +196,8 @@ public class CustomTabIntentDataProvider extends BrowserSessionDataProvider {
     @Nullable
     private final String mModuleManagedUrlsHeaderValue;
     private final boolean mHideCctHeaderOnModuleManagedUrls;
-    private final int mModuleDexResourceId;
+    @Nullable
+    private final String mModuleDexAssetName;
     private final boolean mIsIncognito;
     @Nullable
     private final List<String> mTrustedWebActivityAdditionalOrigins;
@@ -212,6 +221,10 @@ public class CustomTabIntentDataProvider extends BrowserSessionDataProvider {
 
     /** Whether this CustomTabActivity was explicitly started by another Chrome Activity. */
     private final boolean mIsOpenedByChrome;
+
+    /** ISO 639 language code */
+    @Nullable
+    private final String mTranslateLanguage;
 
     /**
      * Add extras to customize menu items for opening payment request UI custom tab from Chrome.
@@ -315,12 +328,15 @@ public class CustomTabIntentDataProvider extends BrowserSessionDataProvider {
         mIsOpenedByWebApk =
                 IntentUtils.safeGetBooleanExtra(intent, EXTRA_IS_OPENED_BY_WEBAPK, false);
 
+        mTranslateLanguage = IntentUtils.safeGetStringExtra(intent, EXTRA_TRANSLATE_LANGUAGE);
+
         String modulePackageName =
                 IntentUtils.safeGetStringExtra(intent, EXTRA_MODULE_PACKAGE_NAME);
         String moduleClassName = IntentUtils.safeGetStringExtra(intent, EXTRA_MODULE_CLASS_NAME);
         if (modulePackageName != null && moduleClassName != null) {
             mModuleComponentName = new ComponentName(modulePackageName, moduleClassName);
-            mModuleDexResourceId = intent.getIntExtra(EXTRA_MODULE_DEX_RESOURCE_ID, -1);
+            mModuleDexAssetName =
+                    IntentUtils.safeGetStringExtra(intent, EXTRA_MODULE_DEX_ASSET_NAME);
             String moduleManagedUrlsRegex =
                     IntentUtils.safeGetStringExtra(intent, EXTRA_MODULE_MANAGED_URLS_REGEX);
             mModuleManagedUrlsPattern = (moduleManagedUrlsRegex != null)
@@ -335,7 +351,7 @@ public class CustomTabIntentDataProvider extends BrowserSessionDataProvider {
             mModuleManagedUrlsPattern = null;
             mModuleManagedUrlsHeaderValue = null;
             mHideCctHeaderOnModuleManagedUrls = false;
-            mModuleDexResourceId = 0;
+            mModuleDexAssetName = null;
         }
     }
 
@@ -741,7 +757,7 @@ public class CustomTabIntentDataProvider extends BrowserSessionDataProvider {
      * @return If the Custom Tab is an info page.
      * See {@link #EXTRA_UI_TYPE}.
      */
-    boolean isInfoPage() {
+    public boolean isInfoPage() {
         return mUiType == CustomTabsUiType.INFO_PAGE;
     }
 
@@ -838,8 +854,9 @@ public class CustomTabIntentDataProvider extends BrowserSessionDataProvider {
      * @return The resource identifier for the dex that contains module code. {@code 0} if no dex
      * resource is provided.
      */
-    public int getModuleDexResourceId() {
-        return mModuleDexResourceId;
+    @Nullable
+    public String getModuleDexAssetName() {
+        return mModuleDexAssetName;
     }
 
     /**
@@ -884,4 +901,14 @@ public class CustomTabIntentDataProvider extends BrowserSessionDataProvider {
         return mTrustedWebActivityAdditionalOrigins;
     }
 
+    /**
+     * @return ISO 639 code of target language the page should be translated to.
+     * This method requires native.
+     */
+    @Nullable
+    public String getTranslateLanguage() {
+        boolean isEnabled =
+                ChromeFeatureList.isEnabled(ChromeFeatureList.CCT_TARGET_TRANSLATE_LANGUAGE);
+        return isEnabled ? mTranslateLanguage : null;
+    }
 }

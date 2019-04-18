@@ -51,6 +51,8 @@ void ProtoDatabaseSelector::InitWithDatabase(
   if (!db_)
     db_ = std::make_unique<UniqueProtoDatabase>(task_runner_);
 
+  unique_database_dir_ = database_dir;
+
   db_->InitWithDatabase(
       database, database_dir, options, false,
       base::BindOnce(&RunInitCallbackOnTaskRunner, std::move(callback),
@@ -61,22 +63,34 @@ void ProtoDatabaseSelector::InitWithDatabase(
 void ProtoDatabaseSelector::InitUniqueOrShared(
     const std::string& client_name,
     base::FilePath db_dir,
-    const leveldb_env::Options& options,
+    const leveldb_env::Options& unique_db_options,
     bool use_shared_db,
     scoped_refptr<base::SequencedTaskRunner> callback_task_runner,
     Callbacks::InitStatusCallback callback) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   init_status_ = InitStatus::IN_PROGRESS;
-  auto unique_db =
-      std::make_unique<UniqueProtoDatabase>(db_dir, options, task_runner_);
+  unique_database_dir_ = db_dir;
+  client_name_ = client_name;
+
+  auto unique_options = unique_db_options;
+  // There are two Init methods, one that receives Options for its unique DB and
+  // another that uses CreateSimpleOptions() to open the unique DB. In case a
+  // shared DB needs to be used then we don't need to create a new unique DB if
+  // it doesn't exist. In case a unique DB needs to be used then we don't change
+  // the create_if_missing parameter, because it may have been set by a client.
+  if (use_shared_db) {
+    unique_options.create_if_missing = false;
+  }
+
+  auto unique_db = std::make_unique<UniqueProtoDatabase>(db_dir, unique_options,
+                                                         task_runner_);
   auto* unique_db_ptr = unique_db.get();
   unique_db_ptr->Init(
-      client_name.c_str(),
-      base::BindOnce(
-          &ProtoDatabaseSelector::OnInitUniqueDB, this, std::move(unique_db),
-          use_shared_db,
-          base::BindOnce(&RunInitCallbackOnTaskRunner, std::move(callback),
-                         callback_task_runner)));
+      client_name, base::BindOnce(&ProtoDatabaseSelector::OnInitUniqueDB, this,
+                                  std::move(unique_db), use_shared_db,
+                                  base::BindOnce(&RunInitCallbackOnTaskRunner,
+                                                 std::move(callback),
+                                                 callback_task_runner)));
 }
 
 void ProtoDatabaseSelector::OnInitUniqueDB(
@@ -520,7 +534,6 @@ void ProtoDatabaseSelector::UpdateEntries(
 void ProtoDatabaseSelector::UpdateEntriesWithRemoveFilter(
     std::unique_ptr<KeyValueVector> entries_to_save,
     const KeyFilter& delete_key_filter,
-    const std::string& target_prefix,
     Callbacks::UpdateCallback callback) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   if (!db_) {
@@ -528,8 +541,7 @@ void ProtoDatabaseSelector::UpdateEntriesWithRemoveFilter(
     return;
   }
   db_->UpdateEntriesWithRemoveFilter(std::move(entries_to_save),
-                                     delete_key_filter, target_prefix,
-                                     std::move(callback));
+                                     delete_key_filter, std::move(callback));
 }
 
 void ProtoDatabaseSelector::LoadEntries(
@@ -592,14 +604,13 @@ void ProtoDatabaseSelector::LoadKeysAndEntriesInRange(
   db_->LoadKeysAndEntriesInRange(start, end, std::move(callback));
 }
 
-void ProtoDatabaseSelector::LoadKeys(const std::string& target_prefix,
-                                     Callbacks::LoadKeysCallback callback) {
+void ProtoDatabaseSelector::LoadKeys(Callbacks::LoadKeysCallback callback) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   if (!db_) {
     std::move(callback).Run(false, nullptr);
     return;
   }
-  db_->LoadKeys(target_prefix, std::move(callback));
+  db_->LoadKeys(std::move(callback));
 }
 
 void ProtoDatabaseSelector::GetEntry(const std::string& key,
@@ -615,9 +626,16 @@ void ProtoDatabaseSelector::GetEntry(const std::string& key,
 void ProtoDatabaseSelector::Destroy(Callbacks::DestroyCallback callback) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   if (!db_) {
+    if (!unique_database_dir_.empty()) {
+      ProtoLevelDBWrapper::Destroy(unique_database_dir_, client_name_,
+                                   task_runner_, std::move(callback));
+      return;
+    }
+
     std::move(callback).Run(false);
     return;
   }
+
   db_->Destroy(std::move(callback));
 }
 

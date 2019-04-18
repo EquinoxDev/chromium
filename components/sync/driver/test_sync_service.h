@@ -9,6 +9,7 @@
 #include <string>
 
 #include "base/macros.h"
+#include "base/observer_list.h"
 #include "components/signin/core/browser/account_info.h"
 #include "components/sync/driver/sync_service.h"
 #include "components/sync/driver/test_sync_user_settings.h"
@@ -46,6 +47,8 @@ class TestSyncService : public SyncService {
   void SetPassphraseRequiredForDecryption(bool required);
   void SetIsUsingSecondaryPassphrase(bool enabled);
 
+  void FireStateChanged();
+
   // SyncService implementation.
   syncer::SyncUserSettings* GetUserSettings() override;
   const syncer::SyncUserSettings* GetUserSettings() const override;
@@ -54,7 +57,9 @@ class TestSyncService : public SyncService {
   bool IsLocalSyncEnabled() const override;
   CoreAccountInfo GetAuthenticatedAccountInfo() const override;
   bool IsAuthenticatedAccountPrimary() const override;
-  const GoogleServiceAuthError& GetAuthError() const override;
+  GoogleServiceAuthError GetAuthError() const override;
+  base::Time GetAuthErrorTime() const override;
+  bool RequiresClientUpgrade() const override;
 
   std::unique_ptr<SyncSetupInProgressHandle> GetSetupInProgressHandle()
       override;
@@ -68,25 +73,19 @@ class TestSyncService : public SyncService {
   void StopAndClear() override;
   void OnDataTypeRequestsSyncStartup(ModelType type) override;
   void TriggerRefresh(const ModelTypeSet& types) override;
-  void ReenableDatatype(ModelType type) override;
   void ReadyForStartChanged(syncer::ModelType type) override;
 
   void AddObserver(SyncServiceObserver* observer) override;
   void RemoveObserver(SyncServiceObserver* observer) override;
   bool HasObserver(const SyncServiceObserver* observer) const override;
 
-  void AddPreferenceProvider(SyncTypePreferenceProvider* provider) override;
-  void RemovePreferenceProvider(SyncTypePreferenceProvider* provider) override;
-  bool HasPreferenceProvider(
-      SyncTypePreferenceProvider* provider) const override;
-
   UserShare* GetUserShare() const override;
 
   SyncTokenStatus GetSyncTokenStatus() const override;
-  bool QueryDetailedSyncStatus(SyncStatus* result) const override;
+  bool QueryDetailedSyncStatusForDebugging(SyncStatus* result) const override;
   base::Time GetLastSyncedTime() const override;
   SyncCycleSnapshot GetLastCycleSnapshot() const override;
-  std::unique_ptr<base::Value> GetTypeStatusMap() override;
+  std::unique_ptr<base::Value> GetTypeStatusMapForDebugging() override;
   const GURL& sync_service_url() const override;
   std::string unrecoverable_error_message() const override;
   base::Location unrecoverable_error_location() const override;
@@ -120,6 +119,8 @@ class TestSyncService : public SyncService {
   SyncStatus detailed_sync_status_;
 
   SyncCycleSnapshot last_cycle_snapshot_;
+
+  base::ObserverList<syncer::SyncServiceObserver>::Unchecked observers_;
 
   GURL sync_service_url_;
 

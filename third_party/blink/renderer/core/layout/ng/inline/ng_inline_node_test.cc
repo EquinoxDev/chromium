@@ -45,7 +45,7 @@ class NGInlineNodeForTest : public NGInlineNode {
               LayoutObject* layout_object = nullptr) {
     NGInlineNodeData* data = MutableData();
     unsigned start = data->text_content.length();
-    data->text_content.append(text);
+    data->text_content = data->text_content + text;
     data->items.push_back(NGInlineItem(NGInlineItem::kText, start,
                                        start + text.length(), style,
                                        layout_object));
@@ -54,7 +54,7 @@ class NGInlineNodeForTest : public NGInlineNode {
 
   void Append(UChar character) {
     NGInlineNodeData* data = MutableData();
-    data->text_content.append(character);
+    data->text_content = data->text_content + character;
     unsigned end = data->text_content.length();
     data->items.push_back(
         NGInlineItem(NGInlineItem::kBidiControl, end - 1, end, nullptr));
@@ -134,10 +134,10 @@ class NGInlineNodeTest : public NGLayoutTest {
                                 nullptr /* break_token */, &context)
             .Layout();
 
-    const NGPhysicalLineBoxFragment* line =
-        ToNGPhysicalLineBoxFragment(result->PhysicalFragment());
+    const auto* line =
+        To<NGPhysicalLineBoxFragment>(result->PhysicalFragment());
     for (const auto& child : line->Children()) {
-      fragments_out->push_back(ToNGPhysicalTextFragment(child.get()));
+      fragments_out->push_back(To<NGPhysicalTextFragment>(child.get()));
     }
   }
 
@@ -536,6 +536,23 @@ TEST_F(NGInlineNodeTest, AssociatedItemsWithControlItem) {
   TEST_ITEM_TYPE_OFFSET((*items[2]), kControl, 4u, 5u);
   TEST_ITEM_TYPE_OFFSET((*items[3]), kBidiControl, 5u, 6u);
   TEST_ITEM_TYPE_OFFSET((*items[4]), kText, 6u, 8u);
+}
+
+TEST_F(NGInlineNodeTest, NeedsCollectInlinesOnForceLayout) {
+  SetBodyInnerHTML(R"HTML(
+    <div id="container">
+      <span id="target">
+        <span id="child" style="position: absolute">X</span>
+      </span>
+    </div>
+  )HTML");
+
+  LayoutObject* container = GetLayoutObjectByElementId("container");
+  LayoutObject* target = GetLayoutObjectByElementId("target");
+  LayoutObject* child = GetLayoutObjectByElementId("child");
+  child->ForceLayout();
+  EXPECT_FALSE(container->NeedsCollectInlines());
+  EXPECT_FALSE(target->NeedsCollectInlines());
 }
 
 TEST_F(NGInlineNodeTest, InvalidateAddSpan) {
@@ -972,7 +989,7 @@ TEST_F(NGInlineNodeTest, RemoveInlineNodeDataIfBlockObtainsBlockChild) {
   ASSERT_TRUE(layout_block_flow_->HasNGInlineNodeData());
 
   GetElementById("blockify")
-      ->SetInlineStyleProperty(CSSPropertyDisplay, CSSValueBlock);
+      ->SetInlineStyleProperty(CSSPropertyID::kDisplay, CSSValueID::kBlock);
   UpdateAllLifecyclePhasesForTest();
 
   EXPECT_FALSE(layout_block_flow_->HasNGInlineNodeData());

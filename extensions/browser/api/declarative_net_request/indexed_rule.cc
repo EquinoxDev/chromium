@@ -23,6 +23,10 @@ namespace {
 namespace flat_rule = url_pattern_index::flat;
 namespace dnr_api = extensions::api::declarative_net_request;
 
+constexpr char kAnchorCharacter = '|';
+constexpr char kSeparatorCharacter = '^';
+constexpr char kWildcardCharacter = '*';
+
 // Returns true if bitmask |sub| is a subset of |super|.
 constexpr bool IsSubset(unsigned sub, unsigned super) {
   return (super | sub) == super;
@@ -107,10 +111,6 @@ class UrlFilterParser {
   bool IsAtAnchor() const {
     return IsAtValidIndex() && url_filter_[index_] == kAnchorCharacter;
   }
-
-  static constexpr char kAnchorCharacter = '|';
-  static constexpr char kSeparatorCharacter = '^';
-  static constexpr char kWildcardCharacter = '*';
 
   const std::string url_filter_;
   const size_t url_filter_len_;
@@ -301,6 +301,7 @@ ParseResult IndexedRule::CreateIndexedRule(dnr_api::Rule parsed_rule,
       return ParseResult::ERROR_NON_ASCII_URL_FILTER;
   }
 
+  indexed_rule->action_type = parsed_rule.action.type;
   indexed_rule->id = base::checked_cast<uint32_t>(parsed_rule.id);
   indexed_rule->priority = base::checked_cast<uint32_t>(
       is_redirect_rule ? *parsed_rule.priority : kDefaultPriority);
@@ -332,9 +333,28 @@ ParseResult IndexedRule::CreateIndexedRule(dnr_api::Rule parsed_rule,
   UrlFilterParser::Parse(std::move(parsed_rule.condition.url_filter),
                          indexed_rule);
 
+  // url_pattern_index doesn't support patterns starting with a domain anchor
+  // followed by a wildcard, e.g. ||*xyz.
+  if (indexed_rule->anchor_left == flat_rule::AnchorType_SUBDOMAIN &&
+      !indexed_rule->url_pattern.empty() &&
+      indexed_rule->url_pattern.front() == kWildcardCharacter) {
+    return ParseResult::ERROR_INVALID_URL_FILTER;
+  }
+
   // Lower-case case-insensitive patterns as required by url pattern index.
   if (indexed_rule->options & flat_rule::OptionFlag_IS_CASE_INSENSITIVE)
     indexed_rule->url_pattern = base::ToLowerASCII(indexed_rule->url_pattern);
+
+  if (parsed_rule.action.type == dnr_api::RULE_ACTION_TYPE_REMOVEHEADERS) {
+    if (!parsed_rule.action.remove_headers_list ||
+        parsed_rule.action.remove_headers_list->empty()) {
+      return ParseResult::ERROR_EMPTY_REMOVE_HEADERS_LIST;
+    }
+
+    indexed_rule->remove_headers_set.insert(
+        parsed_rule.action.remove_headers_list->begin(),
+        parsed_rule.action.remove_headers_list->end());
+  }
 
   // Some sanity checks to ensure we return a valid IndexedRule.
   DCHECK_GE(indexed_rule->id, static_cast<uint32_t>(kMinValidID));

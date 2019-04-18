@@ -6,6 +6,7 @@
 #include "ash/public/cpp/login_constants.h"
 #include "ash/shell.h"
 #include "ash/wallpaper/wallpaper_controller.h"
+#include "components/account_id/account_id.h"
 #include "ui/views/background.h"
 #include "ui/views/layout/fill_layout.h"
 
@@ -81,14 +82,18 @@ void LoginBigUserView::ShowParentAccessView() {
   DCHECK(OnlyOneSet(public_account_, auth_user_));
   DCHECK(auth_user_);
 
-  if (!auth_user_)
+  // Do not show parent access if LoginBigUserView does not host regular user
+  // view or if ParentAccessView is already shown.
+  if (!auth_user_ || parent_access_)
     return;
 
   DCHECK(IsChildAccountUser(auth_user_->current_user()));
-  parent_access_ = new ParentAccessView(parent_access_callbacks_);
+  parent_access_ = new ParentAccessView(
+      auth_user_->current_user()->basic_user_info->account_id,
+      parent_access_callbacks_);
   RemoveChildView(auth_user_);
   AddChildView(parent_access_);
-  parent_access_->RequestFocus();
+  RequestFocus();
 }
 
 void LoginBigUserView::HideParentAccessView() {
@@ -104,6 +109,7 @@ void LoginBigUserView::HideParentAccessView() {
   delete parent_access_;
   parent_access_ = nullptr;
   AddChildView(auth_user_);
+  RequestFocus();
 }
 
 const mojom::LoginUserInfoPtr& LoginBigUserView::GetCurrentUser() const {
@@ -144,6 +150,10 @@ void LoginBigUserView::RequestFocus() {
     return parent_access_->RequestFocus();
   }
   return auth_user_->RequestFocus();
+}
+
+void LoginBigUserView::ChildPreferredSizeChanged(views::View* child) {
+  parent()->Layout();
 }
 
 void LoginBigUserView::OnWallpaperBlurChanged() {

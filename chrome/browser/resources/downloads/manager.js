@@ -60,11 +60,18 @@ cr.define('downloads', function() {
       'itemsChanged_(items_.*)',
     ],
 
+    listeners: {
+      'restore-focus-after-remove': 'onRestoreFocusAfterRemove_',
+    },
+
     /** @private {downloads.mojom.PageCallbackRouter} */
     mojoEventTarget_: null,
 
     /** @private {downloads.mojom.PageHandlerInterface} */
     mojoHandler_: null,
+
+    /** @private {boolean} */
+    restoreFocusAfterRemove_: false,
 
     /** @private {?downloads.SearchService} */
     searchService_: null,
@@ -205,6 +212,7 @@ cr.define('downloads', function() {
       if (e.command.id == 'clear-all-command') {
         this.mojoHandler_.clearAll();
       } else if (e.command.id == 'undo-command') {
+        cr.toastManager.getInstance().hide();
         this.mojoHandler_.undo();
       }
     },
@@ -245,6 +253,7 @@ cr.define('downloads', function() {
      */
     removeItem_: function(index) {
       const removed = this.items_.splice(index, 1);
+      const removedFileName = removed[0].fileName;
       this.updateHideDates_(index, index);
       this.notifySplices('items_', [{
                            index: index,
@@ -253,7 +262,37 @@ cr.define('downloads', function() {
                            type: 'splice',
                            removed: removed,
                          }]);
+      const pieces = loadTimeData.getSubstitutedStringPieces(
+          loadTimeData.getString('toastRemovedFromList'), removedFileName);
+      pieces.forEach(p => {
+        // Make the file name collapsible.
+        p.collapsible = !!p.arg;
+      });
+      cr.toastManager.getInstance().showForStringPieces(pieces, true);
+      if (this.restoreFocusAfterRemove_) {
+        this.restoreFocusAfterRemove_ = false;
+        if (this.items_.length > 0) {
+          setTimeout(() => {
+            this.$.downloadsList.focusItem(index);
+            const item = getDeepActiveElement();
+            if (item) {
+              item.focusOnRemoveButton();
+            }
+          });
+        }
+      }
       this.onScroll_();
+    },
+
+    /** @private */
+    onRestoreFocusAfterRemove_: function() {
+      this.restoreFocusAfterRemove_ = true;
+    },
+
+    /** @private */
+    onUndoClick_: function() {
+      cr.toastManager.getInstance().hide();
+      this.mojoHandler_.undo();
     },
 
     /**

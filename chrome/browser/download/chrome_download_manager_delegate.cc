@@ -55,6 +55,7 @@
 #include "chrome/grit/generated_resources.h"
 #include "components/download/public/common/download_interrupt_reasons.h"
 #include "components/download/public/common/download_item.h"
+#include "components/offline_pages/buildflags/buildflags.h"
 #include "components/pref_registry/pref_registry_syncable.h"
 #include "components/prefs/pref_member.h"
 #include "components/prefs/pref_service.h"
@@ -77,6 +78,7 @@
 #include "chrome/browser/android/download/download_controller.h"
 #include "chrome/browser/android/download/download_location_dialog_bridge_impl.h"
 #include "chrome/browser/android/download/download_manager_service.h"
+#include "chrome/browser/android/download/download_utils.h"
 #include "chrome/browser/infobars/infobar_service.h"
 #endif
 
@@ -91,6 +93,12 @@
 #include "chrome/browser/extensions/webstore_installer.h"
 #include "extensions/browser/notification_types.h"
 #include "extensions/common/constants.h"
+#endif
+
+#if BUILDFLAG(ENABLE_OFFLINE_PAGES)
+#include "chrome/browser/offline_pages/offline_page_utils.h"
+#include "components/offline_pages/core/client_namespace_constants.h"
+#include "services/network/public/cpp/features.h"
 #endif
 
 using content::BrowserThread;
@@ -234,12 +242,6 @@ using CanDownloadCallback =
     base::OnceCallback<void(bool /* storage permission granted */,
                             bool /*allow*/)>;
 
-// Remove this function once DownloadRequestLimiter::Callback() is declared as a
-// OnceCallback
-void CheckDownloadComplete(CanDownloadCallback can_download_cb, bool allow) {
-  std::move(can_download_cb).Run(true, allow);
-}
-
 void CheckCanDownload(
     const content::ResourceRequestInfo::WebContentsGetter& web_contents_getter,
     const GURL& url,
@@ -248,14 +250,13 @@ void CheckCanDownload(
   DownloadRequestLimiter* limiter =
       g_browser_process->download_request_limiter();
   if (limiter) {
-    DownloadRequestLimiter::Callback cb =
-        base::Bind(&CheckDownloadComplete, base::Passed(&can_download_cb));
-    limiter->CanDownload(web_contents_getter, url, request_method, cb);
+    limiter->CanDownload(web_contents_getter, url, request_method,
+                         base::BindOnce(std::move(can_download_cb), true));
   }
 }
 
 #if defined(OS_ANDROID)
-// TODOD(qinmin): reuse the similar function defined in
+// TODO(qinmin): reuse the similar function defined in
 // DownloadResourceThrottle.
 void OnDownloadAcquireFileAccessPermissionDone(
     const content::ResourceRequestInfo::WebContentsGetter& web_contents_getter,
@@ -292,8 +293,7 @@ void OnDownloadLocationDetermined(
       break;
   }
 }
-
-#endif
+#endif  // defined(OS_ANDROID)
 
 }  // namespace
 
@@ -344,12 +344,12 @@ void ChromeDownloadManagerDelegate::SetDownloadLocationDialogBridgeForTesting(
     DownloadLocationDialogBridge* bridge) {
   location_dialog_bridge_.reset(bridge);
 }
-#endif
+#endif  // defined(OS_ANDROID)
 
 void ChromeDownloadManagerDelegate::Shutdown() {
   download_prefs_.reset();
   weak_ptr_factory_.InvalidateWeakPtrs();
-  download_manager_ = NULL;
+  download_manager_ = nullptr;
 }
 
 content::DownloadIdCallback
@@ -579,6 +579,19 @@ bool ChromeDownloadManagerDelegate::InterceptDownloadIfApplicable(
     const std::string& request_origin,
     int64_t content_length,
     content::WebContents* web_contents) {
+#if BUILDFLAG(ENABLE_OFFLINE_PAGES)
+  if (base::FeatureList::IsEnabled(network::features::kNetworkService)) {
+    DCHECK_CURRENTLY_ON(BrowserThread::UI);
+    if (offline_pages::OfflinePageUtils::CanDownloadAsOfflinePage(url,
+                                                                  mime_type)) {
+      offline_pages::OfflinePageUtils::ScheduleDownload(
+          web_contents, offline_pages::kDownloadNamespace, url,
+          offline_pages::OfflinePageUtils::DownloadUIActionFlags::ALL,
+          request_origin);
+      return true;
+    }
+  }
+#endif
   return false;
 }
 
@@ -654,11 +667,7 @@ void ChromeDownloadManagerDelegate::OpenDownload(DownloadItem* download) {
                                          false /* show_download_in_folder */);
 
 #if defined(OS_ANDROID)
-  // TODO(shaktisahu@): Pull out to static helper method once
-  // DownloadManagerService goes away.  Put the helper method in the download
-  // component.
-  DownloadManagerService::GetInstance()->OpenDownload(download,
-                                                      0 /* download source */);
+  DownloadUtils::OpenDownload(download, 0 /* download source */);
   return;
 #endif
 
@@ -672,7 +681,7 @@ void ChromeDownloadManagerDelegate::OpenDownload(DownloadItem* download) {
   content::WebContents* web_contents =
       content::DownloadItemUtils::GetWebContents(download);
   Browser* browser =
-      web_contents ? chrome::FindBrowserWithWebContents(web_contents) : NULL;
+      web_contents ? chrome::FindBrowserWithWebContents(web_contents) : nullptr;
   std::unique_ptr<chrome::ScopedTabbedBrowserDisplayer> browser_displayer;
   if (!browser ||
       !browser->CanSupportWindowFeature(Browser::FEATURE_TABSTRIP)) {
@@ -690,10 +699,10 @@ void ChromeDownloadManagerDelegate::OpenDownload(DownloadItem* download) {
     browser->OpenURL(params);
 
   RecordDownloadOpenMethod(DOWNLOAD_OPEN_METHOD_DEFAULT_BROWSER);
-#else
+#else   // OS_ANDROID
   // ShouldPreferOpeningInBrowser() should never be true on Android.
   NOTREACHED();
-#endif
+#endif  // OS_ANDROID
 }
 
 bool ChromeDownloadManagerDelegate::IsMostRecentDownloadItemAtFilePath(
@@ -779,7 +788,7 @@ DownloadProtectionService*
     return sb_service->download_protection_service();
   }
 #endif
-  return NULL;
+  return nullptr;
 }
 
 void ChromeDownloadManagerDelegate::NotifyExtensions(
@@ -1058,7 +1067,7 @@ void ChromeDownloadManagerDelegate::OnDownloadCanceled(
     DownloadController::DownloadCancelReason reason) {
   DownloadManagerService::OnDownloadCanceled(download, reason);
 }
-#endif
+#endif  // defined(OS_ANDROID)
 
 void ChromeDownloadManagerDelegate::DetermineLocalPath(
     DownloadItem* download,
@@ -1206,7 +1215,7 @@ void ChromeDownloadManagerDelegate::Observe(
 }
 
 void ChromeDownloadManagerDelegate::OnDownloadTargetDetermined(
-    int32_t download_id,
+    uint32_t download_id,
     const content::DownloadTargetCallback& callback,
     std::unique_ptr<DownloadTargetInfo> target_info) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
@@ -1306,7 +1315,7 @@ bool ChromeDownloadManagerDelegate::ShouldBlockFile(
             content::DownloadItemUtils::GetWebContents(item);
         if (web_contents) {
           web_contents->GetMainFrame()->AddMessageToConsole(
-              content::CONSOLE_MESSAGE_LEVEL_WARNING,
+              blink::mojom::ConsoleMessageLevel::kWarning,
               base::StringPrintf(
                   "The download of %s has been blocked. Either the final "
                   "download origin or one of the origins in the redirect "

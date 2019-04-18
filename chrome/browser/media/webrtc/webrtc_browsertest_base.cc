@@ -168,6 +168,7 @@ WebRtcTestBase::WebRtcTestBase(): detect_errors_in_javascript_(false) {
   hit_javascript_errors_.Get() = false;
 
   EnablePixelOutput();
+  EnableAudioOutput();
 }
 
 WebRtcTestBase::~WebRtcTestBase() {
@@ -582,10 +583,10 @@ double WebRtcTestBase::MeasureGetStatsPerformance(
   return ms;
 }
 
-std::vector<std::string> WebRtcTestBase::GetWhitelistedStatsTypes(
+std::vector<std::string> WebRtcTestBase::GetMandatoryStatsTypes(
     content::WebContents* tab) const {
   return JsonArrayToVectorOfStrings(
-      ExecuteJavascript("getWhitelistedStatsTypes()", tab));
+      ExecuteJavascript("getMandatoryStatsTypes()", tab));
 }
 
 void WebRtcTestBase::SetDefaultAudioCodec(

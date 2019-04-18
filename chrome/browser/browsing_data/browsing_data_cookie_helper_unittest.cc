@@ -111,38 +111,34 @@ class BrowsingDataCookieHelperTest : public testing::Test {
   }
 
   void CreateCookiesForTest() {
-    auto cookie1 =
-        net::CanonicalCookie::Create(GURL("http://www.google.com"), "A=1",
-                                     base::Time::Now(), net::CookieOptions());
+    net::CookieOptions options;
+    auto cookie1 = net::CanonicalCookie::Create(
+        GURL("https://www.google.com"), "A=1", base::Time::Now(), options);
     auto cookie2 =
-        net::CanonicalCookie::Create(GURL("http://www.gmail.google.com"), "B=1",
-                                     base::Time::Now(), net::CookieOptions());
+        net::CanonicalCookie::Create(GURL("https://www.gmail.google.com"),
+                                     "B=1", base::Time::Now(), options);
 
     network::mojom::CookieManager* cookie_manager =
         storage_partition()->GetCookieManagerForBrowserProcess();
-    cookie_manager->SetCanonicalCookie(*cookie1, true /* secure_source */,
-                                       false /* modify_http_only */,
+    cookie_manager->SetCanonicalCookie(*cookie1, "https", options,
                                        base::DoNothing());
-    cookie_manager->SetCanonicalCookie(*cookie2, true /* secure_source */,
-                                       false /* modify_http_only */,
+    cookie_manager->SetCanonicalCookie(*cookie2, "https", options,
                                        base::DoNothing());
   }
 
   void CreateCookiesForDomainCookieTest() {
-    auto cookie1 =
-        net::CanonicalCookie::Create(GURL("http://www.google.com"), "A=1",
-                                     base::Time::Now(), net::CookieOptions());
-    auto cookie2 = net::CanonicalCookie::Create(
-        GURL("http://www.google.com"), "A=2; Domain=.www.google.com ",
-        base::Time::Now(), net::CookieOptions());
+    net::CookieOptions options;
+    auto cookie1 = net::CanonicalCookie::Create(
+        GURL("https://www.google.com"), "A=1", base::Time::Now(), options);
+    auto cookie2 = net::CanonicalCookie::Create(GURL("https://www.google.com"),
+                                                "A=2; Domain=.www.google.com ",
+                                                base::Time::Now(), options);
 
     network::mojom::CookieManager* cookie_manager =
         storage_partition()->GetCookieManagerForBrowserProcess();
-    cookie_manager->SetCanonicalCookie(*cookie1, true /* secure_source */,
-                                       false /* modify_http_only */,
+    cookie_manager->SetCanonicalCookie(*cookie1, "https", options,
                                        base::DoNothing());
-    cookie_manager->SetCanonicalCookie(*cookie2, true /* secure_source */,
-                                       false /* modify_http_only */,
+    cookie_manager->SetCanonicalCookie(*cookie2, "https", options,
                                        base::DoNothing());
   }
 

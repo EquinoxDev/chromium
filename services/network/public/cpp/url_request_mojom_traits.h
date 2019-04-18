@@ -118,10 +118,6 @@ struct COMPONENT_EXPORT(NETWORK_CPP_BASE)
       const network::ResourceRequest& request) {
     return request.cors_preflight_policy;
   }
-  static int32_t service_worker_provider_id(
-      const network::ResourceRequest& request) {
-    return request.service_worker_provider_id;
-  }
   static bool originated_from_service_worker(
       const network::ResourceRequest& request) {
     return request.originated_from_service_worker;
@@ -219,6 +215,10 @@ struct COMPONENT_EXPORT(NETWORK_CPP_BASE)
   static const base::Optional<base::UnguessableToken>& fetch_window_id(
       const network::ResourceRequest& request) {
     return request.fetch_window_id;
+  }
+  static const base::Optional<std::string>& devtools_request_id(
+      const network::ResourceRequest& request) {
+    return request.devtools_request_id;
   }
 
   static bool Read(network::mojom::URLRequestDataView data,

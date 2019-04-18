@@ -10,9 +10,11 @@ import org.chromium.chrome.browser.ChromeActivity;
 import org.chromium.chrome.browser.infobar.InfoBarIdentifier;
 import org.chromium.chrome.browser.infobar.SimpleConfirmInfoBarBuilder;
 import org.chromium.chrome.browser.lifecycle.Destroyable;
+import org.chromium.chrome.browser.omaha.UpdateStatusProvider.UpdateInteractionSource;
 import org.chromium.chrome.browser.omaha.UpdateStatusProvider.UpdateState;
 import org.chromium.chrome.browser.omaha.UpdateStatusProvider.UpdateStatus;
 import org.chromium.chrome.browser.tab.Tab;
+import org.chromium.ui.widget.Toast;
 
 /** Helper class that creates infobars based on {@link UpdateState} changes. */
 public class UpdateInfoBarController implements Destroyable {
@@ -52,22 +54,26 @@ public class UpdateInfoBarController implements Destroyable {
             case UpdateState.INLINE_UPDATE_FAILED:
                 showFailedInfobar();
                 break;
+            case UpdateState.INLINE_UPDATE_DOWNLOADING:
+                showDownloadingToast();
+                break;
         }
     }
 
     private void restartChrome() {
-        UpdateStatusProvider.getInstance().finishInlineUpdate();
+        UpdateStatusProvider.getInstance().finishInlineUpdate(UpdateInteractionSource.FROM_INFOBAR);
     }
 
     private void retryUpdate() {
         if (mActivity == null) return;
-        UpdateStatusProvider.getInstance().startInlineUpdate(mActivity);
+        UpdateStatusProvider.getInstance().retryInlineUpdate(
+                UpdateInteractionSource.FROM_INFOBAR, mActivity);
     }
 
     private void showRestartInfobar() {
         if (mActivity == null) return;
 
-        Tab tab = mActivity.getActivityTabProvider().getActivityTab();
+        Tab tab = mActivity.getActivityTabProvider().get();
         if (tab == null) return;
 
         SimpleConfirmInfoBarBuilder.create(tab,
@@ -97,7 +103,7 @@ public class UpdateInfoBarController implements Destroyable {
     private void showFailedInfobar() {
         if (mActivity == null) return;
 
-        Tab tab = mActivity.getActivityTabProvider().getActivityTab();
+        Tab tab = mActivity.getActivityTabProvider().get();
         if (tab == null) return;
 
         SimpleConfirmInfoBarBuilder.create(tab,
@@ -122,5 +128,14 @@ public class UpdateInfoBarController implements Destroyable {
                 mActivity.getString(R.string.try_again) /* primaryText */,
                 mActivity.getString(R.string.cancel) /* secondaryText */, null /* linkText */,
                 false /* autoExpire */);
+    }
+
+    private void showDownloadingToast() {
+        if (mActivity == null) return;
+
+        Toast.makeText(mActivity,
+                     mActivity.getString(R.string.inline_update_toast_downloading_message),
+                     Toast.LENGTH_LONG)
+                .show();
     }
 }

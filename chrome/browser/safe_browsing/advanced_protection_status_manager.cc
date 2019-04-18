@@ -12,6 +12,7 @@
 #include "chrome/browser/signin/identity_manager_factory.h"
 #include "components/prefs/pref_service.h"
 #include "components/safe_browsing/common/safe_browsing_prefs.h"
+#include "components/safe_browsing/features.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_thread.h"
 #include "google_apis/gaia/gaia_constants.h"
@@ -56,11 +57,11 @@ void AdvancedProtectionStatusManager::Initialize() {
 
 void AdvancedProtectionStatusManager::MaybeRefreshOnStartUp() {
   // Retrieves advanced protection service status from primary account's info.
-  AccountInfo info = identity_manager_->GetPrimaryAccountInfo();
-  if (info.account_id.empty())
+  CoreAccountInfo core_info = identity_manager_->GetPrimaryAccountInfo();
+  if (core_info.account_id.empty())
     return;
 
-  is_under_advanced_protection_ = info.is_under_advanced_protection;
+  is_under_advanced_protection_ = core_info.is_under_advanced_protection;
 
   if (profile_->GetPrefs()->HasPrefPath(
           prefs::kAdvancedProtectionLastRefreshInUs)) {
@@ -242,6 +243,28 @@ bool AdvancedProtectionStatusManager::IsUnderAdvancedProtection(
              ->GetForBrowserContext(
                  static_cast<content::BrowserContext*>(original_profile))
              ->is_under_advanced_protection();
+}
+
+// static
+bool AdvancedProtectionStatusManager::RequestsAdvancedProtectionVerdicts(
+    Profile* profile) {
+  Profile* original_profile =
+      profile->IsOffTheRecord() ? profile->GetOriginalProfile() : profile;
+
+  if (!original_profile)
+    return false;
+
+  bool is_under_advanced_protection =
+      AdvancedProtectionStatusManagerFactory::GetInstance()
+          ->GetForBrowserContext(
+              static_cast<content::BrowserContext*>(original_profile))
+          ->is_under_advanced_protection();
+
+  static bool force_enabled =
+      base::FeatureList::IsEnabled(kForceUseAPDownloadProtection);
+  static bool enabled = base::FeatureList::IsEnabled(kUseAPDownloadProtection);
+
+  return force_enabled || (is_under_advanced_protection && enabled);
 }
 
 bool AdvancedProtectionStatusManager::IsPrimaryAccount(

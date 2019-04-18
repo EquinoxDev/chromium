@@ -371,7 +371,7 @@ MockTransportClientSocketFactory::MockTransportClientSocketFactory(
     : net_log_(net_log),
       allocation_count_(0),
       client_socket_type_(MOCK_CLIENT_SOCKET),
-      client_socket_types_(NULL),
+      client_socket_types_(nullptr),
       client_socket_index_(0),
       client_socket_index_max_(0),
       delay_(base::TimeDelta::FromMilliseconds(
@@ -444,39 +444,12 @@ MockTransportClientSocketFactory::CreateTransportClientSocket(
 
 std::unique_ptr<SSLClientSocket>
 MockTransportClientSocketFactory::CreateSSLClientSocket(
-    std::unique_ptr<ClientSocketHandle> transport_socket,
+    std::unique_ptr<StreamSocket> stream_socket,
     const HostPortPair& host_and_port,
     const SSLConfig& ssl_config,
     const SSLClientSocketContext& context) {
   NOTIMPLEMENTED();
   return std::unique_ptr<SSLClientSocket>();
-}
-
-std::unique_ptr<SSLClientSocket>
-MockTransportClientSocketFactory::CreateSSLClientSocket(
-    std::unique_ptr<StreamSocket> nested_socket,
-    const HostPortPair& host_and_port,
-    const SSLConfig& ssl_config,
-    const SSLClientSocketContext& context) {
-  NOTIMPLEMENTED();
-  return std::unique_ptr<SSLClientSocket>();
-}
-
-std::unique_ptr<ProxyClientSocket>
-MockTransportClientSocketFactory::CreateProxyClientSocket(
-    std::unique_ptr<ClientSocketHandle> transport_socket,
-    const std::string& user_agent,
-    const HostPortPair& endpoint,
-    const ProxyServer& proxy_server,
-    HttpAuthController* http_auth_controller,
-    bool tunnel,
-    bool using_spdy,
-    NextProto negotiated_protocol,
-    ProxyDelegate* proxy_delegate,
-    bool is_https_proxy,
-    const NetworkTrafficAnnotationTag& traffic_annotation) {
-  NOTIMPLEMENTED();
-  return nullptr;
 }
 
 std::unique_ptr<ProxyClientSocket>

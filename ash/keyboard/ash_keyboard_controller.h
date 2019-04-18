@@ -45,13 +45,6 @@ class ASH_EXPORT AshKeyboardController
   // Called from RegisterInterfaces to bind this to the Ash service.
   void BindRequest(mojom::KeyboardControllerRequest request);
 
-  // Enables the keyboard controller if enabling has been requested. If already
-  // enabled, the keyboard is disabled and re-enabled.
-  void EnableKeyboard();
-
-  // Disables the keyboard.
-  void DisableKeyboard();
-
   // Create or destroy the virtual keyboard. Called from Shell. TODO(stevenjb):
   // Fix dependencies so that the virtual keyboard can be created with the
   // keyboard controller.
@@ -60,7 +53,7 @@ class ASH_EXPORT AshKeyboardController
   void DestroyVirtualKeyboard();
 
   // Forwards events to mojo observers.
-  void SendOnKeyboardVisibleBoundsChanged(const gfx::Rect& bounds);
+  void SendOnKeyboardVisibleBoundsChanged(const gfx::Rect& screen_bounds);
   void SendOnLoadKeyboardContentsRequested();
   void SendOnKeyboardUIDestroyed();
 
@@ -106,25 +99,18 @@ class ASH_EXPORT AshKeyboardController
   void OnRootWindowClosing(aura::Window* root_window);
 
  private:
-  // Called whenever the enable flags may have changed the enabled state from
-  // |was_enabled|. If changed, enables or disables the keyboard.
-  void UpdateEnableFlag(bool was_enabled);
-
   // keyboard::KeyboardControllerObserver
   void OnKeyboardConfigChanged() override;
   void OnKeyboardVisibilityStateChanged(bool is_visible) override;
-  void OnKeyboardVisibleBoundsChanged(const gfx::Rect& bounds) override;
+  void OnKeyboardVisibleBoundsChanged(const gfx::Rect& screen_bounds) override;
   void OnKeyboardWorkspaceOccludedBoundsChanged(
-      const gfx::Rect& bounds) override;
+      const gfx::Rect& screen_bounds) override;
   void OnKeyboardEnableFlagsChanged(
       std::set<keyboard::mojom::KeyboardEnableFlag>& keyboard_enable_flags)
       override;
   void OnKeyboardEnabledChanged(bool is_enabled) override;
 
-  gfx::Rect BoundsToScreen(const gfx::Rect& bounds);
-
   SessionController* session_controller_;  // unowned
-  std::unique_ptr<keyboard::KeyboardUIFactory> keyboard_ui_factory_;
   std::unique_ptr<keyboard::KeyboardController> keyboard_controller_;
   std::unique_ptr<VirtualKeyboardController> virtual_keyboard_controller_;
   mojo::BindingSet<mojom::KeyboardController> bindings_;

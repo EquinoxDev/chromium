@@ -332,9 +332,9 @@ bool ScrollAnchor::FindAnchorRecursive(LayoutObject* candidate) {
 
   // Make a separate pass to catch positioned descendants with a static DOM
   // parent that we skipped over (crbug.com/692701).
-  if (candidate->IsLayoutBlock()) {
+  if (auto* layouy_block = DynamicTo<LayoutBlock>(candidate)) {
     if (TrackedLayoutBoxListHashSet* positioned_descendants =
-            ToLayoutBlock(candidate)->PositionedObjects()) {
+            layouy_block->PositionedObjects()) {
       for (LayoutBox* descendant : *positioned_descendants) {
         if (descendant->Parent() != candidate) {
           if (FindAnchorRecursive(descendant))
@@ -398,10 +398,10 @@ void ScrollAnchor::NotifyBeforeLayout() {
       ComputeScrollAnchorDisablingStyleChanged();
 
   LocalFrameView* frame_view = ScrollerLayoutBox(scroller_)->GetFrameView();
-  ScrollableArea* owning_scroller =
-      scroller_->IsRootFrameViewport()
-          ? &ToRootFrameViewport(scroller_)->LayoutViewport()
-          : scroller_.Get();
+  auto* root_frame_viewport = DynamicTo<RootFrameViewport>(scroller_.Get());
+  ScrollableArea* owning_scroller = root_frame_viewport
+                                        ? &root_frame_viewport->LayoutViewport()
+                                        : scroller_.Get();
   frame_view->EnqueueScrollAnchoringAdjustment(owning_scroller);
   queued_ = true;
 }
@@ -585,10 +585,10 @@ void ScrollAnchor::ClearSelf() {
 void ScrollAnchor::Dispose() {
   if (scroller_) {
     LocalFrameView* frame_view = ScrollerLayoutBox(scroller_)->GetFrameView();
+    auto* root_frame_viewport = DynamicTo<RootFrameViewport>(scroller_.Get());
     ScrollableArea* owning_scroller =
-        scroller_->IsRootFrameViewport()
-            ? &ToRootFrameViewport(scroller_)->LayoutViewport()
-            : scroller_.Get();
+        root_frame_viewport ? &root_frame_viewport->LayoutViewport()
+                            : scroller_.Get();
     frame_view->DequeueScrollAnchoringAdjustment(owning_scroller);
     scroller_.Clear();
   }

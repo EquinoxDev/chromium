@@ -118,6 +118,7 @@ test("device_unittests") {
   }
 
   deps = [
+    "//base",
     "//base/test:test_support",
     "//base/third_party/dynamic_annotations:dynamic_annotations",
     "//components/apdu",
@@ -142,7 +143,13 @@ test("device_unittests") {
     "//testing/gtest",
     "//third_party/blink/public:blink_headers",
     "//tools/usb_gadget",
+    "//ui/base",
     "//url",
+  ]
+
+  data_deps = [
+    "bluetooth/strings:bluetooth_test_strings",
+    "//ui/resources:ui_test_pak_data",
   ]
 
   # U2F:
@@ -209,6 +216,11 @@ test("device_unittests") {
       ":bluetooth_test_jni_headers",
       "//device/usb:java",
     ]
+  }
+
+  if (is_chromeos) {
+    sources += [ "bluetooth/chromeos/bluetooth_utils_unittest.cc" ]
+    deps += [ "//chromeos/constants" ]
   }
 
   if ((is_chromeos || is_linux) && use_dbus) {
@@ -341,6 +353,8 @@ test("device_unittests") {
     sources += [
       "vr/orientation/orientation_device_provider_unittest.cc",
       "vr/orientation/orientation_device_unittest.cc",
+      "vr/util/fps_meter_unittest.cc",
+      "vr/util/sliding_average_unittest.cc",
       "vr/vr_device_base_unittest.cc",
       "vr/vr_display_impl_unittest.cc",
     ]
@@ -358,6 +372,18 @@ test("device_unittests") {
       "//services/device/public/cpp/generic_sensor",
       "//ui/display",
       "//ui/display:test_support",
+    ]
+  }
+
+  # Some gamepad tests require the HID service. Only build these tests on
+  # platforms where the HID service is enabled.
+  if (!is_android && !is_fuchsia) {
+    sources += [ "gamepad/nintendo_data_fetcher_unittest.cc" ]
+
+    deps += [
+      "//services/device:test_support",
+      "//services/device/hid",
+      "//services/device/hid:mocks",
     ]
   }
 }
@@ -394,8 +420,8 @@ if (is_android) {
       "//base:base_java",
       "//components/location/android:location_java",
       "//device/bluetooth:java",
-      "//third_party/android_deps:android_support_annotations_java",
-      "//third_party/android_tools:android_test_mock_java",
+      "//third_party/android_deps:com_android_support_support_annotations_java",
+      "//third_party/android_sdk:android_test_mock_java",
     ]
 
     srcjar_deps = [ ":bluetooth_test_javagen" ]
@@ -412,7 +438,7 @@ if (is_android) {
       "//base:base_junit_test_support",
       "//device/gamepad:java",
       "//mojo/public/java:bindings_java",
-      "//third_party/android_deps:android_support_annotations_java",
+      "//third_party/android_deps:com_android_support_support_annotations_java",
     ]
     srcjar_deps = [ "//device/gamepad:java_enums_srcjar" ]
   }

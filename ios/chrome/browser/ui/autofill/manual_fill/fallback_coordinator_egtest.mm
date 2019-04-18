@@ -27,7 +27,6 @@
 #import "ios/chrome/test/earl_grey/chrome_earl_grey_ui.h"
 #import "ios/chrome/test/earl_grey/chrome_matchers.h"
 #import "ios/chrome/test/earl_grey/chrome_test_case.h"
-#include "ios/web/public/features.h"
 #import "ios/web/public/test/earl_grey/web_view_matchers.h"
 #include "ios/web/public/test/element_selector.h"
 #import "ios/web/public/test/web_view_interaction_test_util.h"
@@ -582,9 +581,9 @@ void DockKeyboard() {
 
   // Open a tab in incognito.
   [ChromeEarlGrey openNewIncognitoTab];
-  [ChromeEarlGreyUI focusOmnibox];  // To simulate a user navigating.
   const GURL URL = self.testServer->GetURL(kFormHTMLFile);
-  [ChromeEarlGrey loadURL:URL];
+  NSString* omniboxText = base::SysUTF8ToNSString(URL.spec() + "\n");
+  [ChromeEarlGreyUI focusOmniboxAndType:omniboxText];
   [ChromeEarlGrey waitForWebViewContainingText:"Profile form"];
 
   // Bring up the keyboard by tapping the city, which is the element before the
@@ -593,6 +592,73 @@ void DockKeyboard() {
       performAction:chrome_test_util::TapWebElement(kFormElementCity)];
 
   // Verify the profiles icon is visible.
+  [[EarlGrey selectElementWithMatcher:ProfilesIconMatcher()]
+      assertWithMatcher:grey_sufficientlyVisible()];
+}
+
+// Tests the mediator stops observing objects when the incognito BVC is
+// destroyed. Waiting for dealloc was causing a race condition with the
+// autorelease pool, and some times a DCHECK will be hit.
+- (void)testOpeningIncognitoTabsDoNotLeak {
+  const GURL URL = self.testServer->GetURL(kFormHTMLFile);
+  NSString* omniboxText = base::SysUTF8ToNSString(URL.spec() + "\n");
+  std::string webViewText("Profile form");
+  AddAutofillProfile(_personalDataManager);
+
+  [[EarlGrey selectElementWithMatcher:chrome_test_util::WebViewMatcher()]
+      performAction:chrome_test_util::TapWebElement(kFormElementCity)];
+
+  // Verify the profiles icon is visible.
+  [[EarlGrey selectElementWithMatcher:ProfilesIconMatcher()]
+      assertWithMatcher:grey_sufficientlyVisible()];
+
+  // Open a tab in incognito.
+  [ChromeEarlGrey openNewIncognitoTab];
+  [ChromeEarlGreyUI focusOmniboxAndType:omniboxText];
+  [ChromeEarlGrey waitForWebViewContainingText:webViewText];
+
+  [[EarlGrey selectElementWithMatcher:chrome_test_util::WebViewMatcher()]
+      performAction:chrome_test_util::TapWebElement(kFormElementCity)];
+
+  // Verify the profiles icon is visible.
+  [[EarlGrey selectElementWithMatcher:ProfilesIconMatcher()]
+      assertWithMatcher:grey_sufficientlyVisible()];
+
+  [ChromeEarlGrey closeCurrentTab];
+  [ChromeEarlGrey openNewTab];
+  [ChromeEarlGrey loadURL:URL];
+  [ChromeEarlGrey waitForWebViewContainingText:webViewText];
+
+  // Bring up the keyboard by tapping the city, which is the element before the
+  // picker.
+  [[EarlGrey selectElementWithMatcher:chrome_test_util::WebViewMatcher()]
+      performAction:chrome_test_util::TapWebElement(kFormElementCity)];
+
+  // Verify the profiles icon is visible.
+  [[EarlGrey selectElementWithMatcher:ProfilesIconMatcher()]
+      assertWithMatcher:grey_sufficientlyVisible()];
+
+  // Open a tab in incognito.
+  [ChromeEarlGrey openNewIncognitoTab];
+  [ChromeEarlGreyUI focusOmniboxAndType:omniboxText];
+  [ChromeEarlGrey waitForWebViewContainingText:webViewText];
+
+  // Bring up the keyboard by tapping the city, which is the element before the
+  // picker.
+  [[EarlGrey selectElementWithMatcher:chrome_test_util::WebViewMatcher()]
+      performAction:chrome_test_util::TapWebElement(kFormElementCity)];
+
+  // Open a  regular tab.
+  [ChromeEarlGrey openNewTab];
+  [ChromeEarlGrey loadURL:URL];
+  [ChromeEarlGrey waitForWebViewContainingText:webViewText];
+
+  // Bring up the keyboard by tapping the city, which is the element before the
+  // picker.
+  [[EarlGrey selectElementWithMatcher:chrome_test_util::WebViewMatcher()]
+      performAction:chrome_test_util::TapWebElement(kFormElementCity)];
+
+  // This will fail if there is more than one profiles icon in the hierarchy.
   [[EarlGrey selectElementWithMatcher:ProfilesIconMatcher()]
       assertWithMatcher:grey_sufficientlyVisible()];
 }
@@ -613,9 +679,9 @@ void DockKeyboard() {
 
   // Open a tab in incognito.
   [ChromeEarlGrey openNewIncognitoTab];
-  [ChromeEarlGreyUI focusOmnibox];  // To simulate a user navigating.
   const GURL URL = self.testServer->GetURL(kFormHTMLFile);
-  [ChromeEarlGrey loadURL:URL];
+  NSString* omniboxText = base::SysUTF8ToNSString(URL.spec() + "\n");
+  [ChromeEarlGreyUI focusOmniboxAndType:omniboxText];
   [ChromeEarlGrey waitForWebViewContainingText:"Profile form"];
 
   // Bring up the keyboard by tapping the city, which is the element before the

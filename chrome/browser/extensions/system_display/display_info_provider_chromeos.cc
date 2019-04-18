@@ -134,6 +134,7 @@ system_display::DisplayMode GetDisplayModeFromMojo(
   result.device_scale_factor = mode.device_scale_factor;
   result.refresh_rate = mode.refresh_rate;
   result.is_native = mode.is_native;
+  result.is_interlaced = mode.is_interlaced;
   return result;
 }
 
@@ -368,11 +369,13 @@ void DisplayInfoProviderChromeOS::SetDisplayProperties(
         api_display_mode.device_scale_factor;
     mojo_display_mode->refresh_rate = api_display_mode.refresh_rate;
     mojo_display_mode->is_native = api_display_mode.is_native;
+    mojo_display_mode->is_interlaced = api_display_mode.is_interlaced;
     config_properties->display_mode = std::move(mojo_display_mode);
   }
 
   cros_display_config_->SetDisplayProperties(
       display_id_str, std::move(config_properties),
+      ash::mojom::DisplayConfigSource::kUser,
       base::BindOnce(
           [](ErrorCallback callback, ash::mojom::DisplayConfigResult result) {
             std::move(callback).Run(GetStringResult(result));

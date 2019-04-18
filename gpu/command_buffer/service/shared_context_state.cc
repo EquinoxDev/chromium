@@ -65,6 +65,8 @@ SharedContextState::SharedContextState(
 SharedContextState::~SharedContextState() {
   if (gr_context_)
     gr_context_->abandonContext();
+  if (context_->IsCurrent(nullptr))
+    context_->ReleaseCurrent(nullptr);
   base::trace_event::MemoryDumpManager::GetInstance()->UnregisterDumpProvider(
       this);
 }
@@ -74,6 +76,8 @@ void SharedContextState::InitializeGrContext(
     GrContextOptions::PersistentCache* cache,
     GpuProcessActivityFlags* activity_flags,
     gl::ProgressReporter* progress_reporter) {
+  progress_reporter_ = progress_reporter;
+
   if (!use_vulkan_gr_context_) {
     DCHECK(context_->IsCurrent(nullptr));
     sk_sp<GrGLInterface> interface(gl::init::CreateGrGLInterface(
@@ -141,10 +145,16 @@ bool SharedContextState::InitializeGL(
 
   DCHECK(context_->IsCurrent(nullptr));
 
+  bool use_passthrough_cmd_decoder =
+      gpu_preferences.use_passthrough_cmd_decoder &&
+      gles2::PassthroughCommandDecoderSupported();
+  // Virtualized contexts don't work with passthrough command decoder.
+  // See https://crbug.com/914976
+  DCHECK(!use_passthrough_cmd_decoder || !use_virtualized_gl_contexts_);
+
   feature_info_ = std::move(feature_info);
   feature_info_->Initialize(gpu::CONTEXT_TYPE_OPENGLES2,
-                            gpu_preferences.use_passthrough_cmd_decoder &&
-                                gles2::PassthroughCommandDecoderSupported(),
+                            use_passthrough_cmd_decoder,
                             gles2::DisallowedFeatures());
 
   auto* api = gl::g_current_gl_context;
@@ -199,6 +209,7 @@ bool SharedContextState::MakeCurrent(gl::GLSurface* surface) {
 
 void SharedContextState::MarkContextLost() {
   if (!context_lost_) {
+    scoped_refptr<SharedContextState> prevent_last_ref_drop = this;
     context_lost_ = true;
     // context_state_ could be nullptr for some unittests.
     if (context_state_)
@@ -206,6 +217,8 @@ void SharedContextState::MarkContextLost() {
     if (gr_context_)
       gr_context_->abandonContext();
     std::move(context_lost_callback_).Run();
+    for (auto& observer : context_lost_observers_)
+      observer.OnContextLost();
   }
 }
 
@@ -221,6 +234,14 @@ bool SharedContextState::OnMemoryDump(
   if (gr_context_)
     raster::DumpGrMemoryStatistics(gr_context_, pmd, base::nullopt);
   return true;
+}
+
+void SharedContextState::AddContextLostObserver(ContextLostObserver* obs) {
+  context_lost_observers_.AddObserver(obs);
+}
+
+void SharedContextState::RemoveContextLostObserver(ContextLostObserver* obs) {
+  context_lost_observers_.RemoveObserver(obs);
 }
 
 void SharedContextState::PurgeMemory(

@@ -165,8 +165,13 @@ bool IsValidClassicScriptTypeAndLanguage(
   return false;
 }
 
-// Returns true on success.
-bool ParseAndRegisterImportMap(ScriptElementBase& element) {
+enum class ShouldFireErrorEvent {
+  kDoNotFire,
+  kShouldFire,
+};
+
+ShouldFireErrorEvent ParseAndRegisterImportMap(ScriptElementBase& element,
+                                               const TextPosition& position) {
   Document& element_document = element.GetDocument();
   Document* context_document = element_document.ContextDocument();
   DCHECK(context_document);
@@ -174,30 +179,47 @@ bool ParseAndRegisterImportMap(ScriptElementBase& element) {
       Modulator::From(ToScriptStateForMainWorld(context_document->GetFrame()));
   DCHECK(modulator);
 
+  // If import maps are not enabled, we do nothing and return here, and also
+  // do not fire error events.
+  if (!modulator->BuiltInModuleInfraEnabled())
+    return ShouldFireErrorEvent::kDoNotFire;
+
   if (!modulator->IsAcquiringImportMaps()) {
     element_document.AddConsoleMessage(ConsoleMessage::Create(
-        kJSMessageSource, kErrorMessageLevel,
+        mojom::ConsoleMessageSource::kJavaScript,
+        mojom::ConsoleMessageLevel::kError,
         "An import map is added after module script load was triggered."));
-    return false;
+    return ShouldFireErrorEvent::kShouldFire;
   }
 
   // TODO(crbug.com/922212): Implemenet external import maps.
   if (element.HasSourceAttribute()) {
     element_document.AddConsoleMessage(
-        ConsoleMessage::Create(kJSMessageSource, kErrorMessageLevel,
+        ConsoleMessage::Create(mojom::ConsoleMessageSource::kJavaScript,
+                               mojom::ConsoleMessageLevel::kError,
                                "External import maps are not yet supported."));
-    return false;
+    return ShouldFireErrorEvent::kShouldFire;
   }
 
+  UseCounter::Count(*context_document, WebFeature::kImportMap);
+
   KURL base_url = element_document.BaseURL();
-  ImportMap* import_map =
-      ImportMap::Create(element.TextFromChildren(), base_url, element_document);
+  const String import_map_text = element.TextFromChildren();
+  ImportMap* import_map = ImportMap::Create(*modulator, import_map_text,
+                                            base_url, element_document);
 
   if (!import_map)
-    return false;
+    return ShouldFireErrorEvent::kShouldFire;
+
+  // https://github.com/WICG/import-maps/issues/105
+  if (!ContentSecurityPolicy::ShouldBypassMainWorld(&element_document) &&
+      !element.AllowInlineScriptForCSP(element.GetNonceForElement(),
+                                       position.line_, import_map_text)) {
+    return ShouldFireErrorEvent::kShouldFire;
+  }
 
   modulator->RegisterImportMap(import_map);
-  return true;
+  return ShouldFireErrorEvent::kDoNotFire;
 }
 
 }  // namespace
@@ -233,7 +255,7 @@ bool ScriptLoader::IsValidScriptTypeAndLanguage(
     return true;
   }
 
-  if (RuntimeEnabledFeatures::LayeredAPIEnabled() && type == "importmap") {
+  if (type == "importmap") {
     if (out_is_import_map)
       *out_is_import_map = true;
     return true;
@@ -379,13 +401,27 @@ bool ScriptLoader::PrepareScript(const TextPosition& script_start_position,
   if (BlockForNoModule(script_type_, element_->NomoduleAttributeValue()))
     return false;
 
+  // TODO(csharrison): This logic only works if the tokenizer/parser was not
+  // blocked waiting for scripts when the element was inserted. This usually
+  // fails for instance, on second document.write if a script writes twice
+  // in a row. To fix this, the parser might have to keep track of raw
+  // string position.
+  //
+  // Also PendingScript's contructor has the same code.
+  const bool is_in_document_write = element_document.IsInDocumentWrite();
+
+  // Reset line numbering for nested writes.
+  TextPosition position =
+      is_in_document_write ? TextPosition() : script_start_position;
+
   // 13.
   if (!IsScriptForEventSupported())
     return false;
 
   // Process the import map.
   if (is_import_map) {
-    if (!ParseAndRegisterImportMap(*element_)) {
+    if (ParseAndRegisterImportMap(*element_, position) ==
+        ShouldFireErrorEvent::kShouldFire) {
       element_document.GetTaskRunner(TaskType::kDOMManipulation)
           ->PostTask(FROM_HERE,
                      WTF::Bind(&ScriptElementBase::DispatchErrorEvent,
@@ -398,7 +434,8 @@ bool ScriptLoader::PrepareScript(const TextPosition& script_start_position,
   if (ShouldBlockSyncScriptForFeaturePolicy(element_.Get(), GetScriptType(),
                                             parser_inserted_)) {
     element_document.AddConsoleMessage(ConsoleMessage::Create(
-        kJSMessageSource, kErrorMessageLevel,
+        mojom::ConsoleMessageSource::kJavaScript,
+        mojom::ConsoleMessageLevel::kError,
         "Synchronous script execution is disabled by Feature Policy"));
     return false;
   }
@@ -462,19 +499,6 @@ bool ScriptLoader::PrepareScript(const TextPosition& script_start_position,
     UseCounter::Count(*context_document, WebFeature::kPrepareModuleScript);
 
   DCHECK(!prepared_pending_script_);
-
-  // TODO(csharrison): This logic only works if the tokenizer/parser was not
-  // blocked waiting for scripts when the element was inserted. This usually
-  // fails for instance, on second document.write if a script writes twice
-  // in a row. To fix this, the parser might have to keep track of raw
-  // string position.
-  //
-  // Also PendingScript's contructor has the same code.
-  const bool is_in_document_write = element_document.IsInDocumentWrite();
-
-  // Reset line numbering for nested writes.
-  TextPosition position =
-      is_in_document_write ? TextPosition() : script_start_position;
 
   // <spec step="22">Let options be a script fetch options whose cryptographic
   // nonce is cryptographic nonce, integrity metadata is integrity metadata,
@@ -648,11 +672,12 @@ bool ScriptLoader::PrepareScript(const TextPosition& script_start_position,
         // script, given settings object and the destination "script". When this
         // asynchronously completes, set the script's script to the result. At
         // that time, the script is ready.</spec>
-        auto* module_tree_client = ModulePendingScriptTreeClient::Create();
+        auto* module_tree_client =
+            MakeGarbageCollected<ModulePendingScriptTreeClient>();
         modulator->FetchDescendantsForInlineScript(
             module_script, fetch_client_settings_object_fetcher,
             mojom::RequestContextType::SCRIPT, module_tree_client);
-        prepared_pending_script_ = ModulePendingScript::Create(
+        prepared_pending_script_ = MakeGarbageCollected<ModulePendingScript>(
             element_, module_tree_client, is_external_script_);
         break;
       }
@@ -838,11 +863,12 @@ void ScriptLoader::FetchModuleScriptTree(
   //
   // Fetch a module script graph given url, settings object, "script", and
   // options.</spec>
-  auto* module_tree_client = ModulePendingScriptTreeClient::Create();
+  auto* module_tree_client =
+      MakeGarbageCollected<ModulePendingScriptTreeClient>();
   modulator->FetchTree(url, fetch_client_settings_object_fetcher,
                        mojom::RequestContextType::SCRIPT, options,
                        ModuleScriptCustomFetchType::kNone, module_tree_client);
-  prepared_pending_script_ = ModulePendingScript::Create(
+  prepared_pending_script_ = MakeGarbageCollected<ModulePendingScript>(
       element_, module_tree_client, is_external_script_);
 }
 

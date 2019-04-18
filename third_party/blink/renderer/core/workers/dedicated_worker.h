@@ -60,7 +60,7 @@ class WorkerClients;
 //      kNetworkService)
 //  - DedicatedWorker::Start()
 //    - (Start script loading in the browser)
-//      - DedicatedWorker::OnScriptLoaded()
+//      - DedicatedWorker::OnScriptLoadStarted()
 //        - DedicatedWorker::ContinueStart()
 //          - (Async script loading on the worker thread)
 class CORE_EXPORT DedicatedWorker final
@@ -106,13 +106,10 @@ class CORE_EXPORT DedicatedWorker final
   // Called only when PlzDedicatedWorker is enabled.
   void OnWorkerHostCreated(
       mojo::ScopedMessagePipeHandle interface_provider) override;
-  void OnScriptLoaded() override;
-  void OnScriptLoadFailed() override;
+  void OnScriptLoadStarted() override;
+  void OnScriptLoadStartFailed() override;
 
   void DispatchErrorEventForScriptFetchFailure();
-
-  // Returns the name specified by WorkerOptions.
-  const String Name() const;
 
   DEFINE_ATTRIBUTE_EVENT_LISTENER(message, kMessage)
 
@@ -129,7 +126,7 @@ class CORE_EXPORT DedicatedWorker final
       const KURL& script_url,
       OffMainThreadWorkerScriptFetchOption,
       network::mojom::ReferrerPolicy);
-
+  scoped_refptr<WebWorkerFetchContext> CreateWebWorkerFetchContext();
   WorkerClients* CreateWorkerClients();
 
   // Callbacks for |classic_script_loader_|.

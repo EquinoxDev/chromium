@@ -101,7 +101,8 @@ class WebRtcAudioProcessorTest : public ::testing::Test {
     const base::TimeDelta input_capture_delay =
         base::TimeDelta::FromMilliseconds(20);
     for (int i = 0; i < kNumberOfPacketsForTest; ++i) {
-      data_bus->FromInterleaved(data_ptr, data_bus->frames(), 2);
+      data_bus->FromInterleaved<SignedInt16SampleTypeTraits>(
+          data_ptr, data_bus->frames());
       // |audio_processor| does nothing when the audio processing is off in
       // the processor.
       webrtc::AudioProcessing* ap = audio_processor->audio_processing_.get();
@@ -144,7 +145,7 @@ class WebRtcAudioProcessorTest : public ::testing::Test {
 
   AudioProcessingSettings GetEnabledAudioProcessingSettings() const {
     AudioProcessingSettings settings;
-    settings.echo_cancellation = EchoCancellationType::kAec2;
+    settings.echo_cancellation = EchoCancellationType::kAec3;
     settings.noise_suppression = NoiseSuppressionType::kExperimental;
     settings.automatic_gain_control = AutomaticGainControlType::kExperimental;
     settings.high_pass_filter = true;

@@ -182,6 +182,21 @@ void LoginScreenController::AuthenticateUserWithEasyUnlock(
   login_screen_client_->AuthenticateUserWithEasyUnlock(account_id);
 }
 
+void LoginScreenController::ValidateParentAccessCode(
+    const AccountId& account_id,
+    const std::string& code,
+    OnParentAccessValidation callback) {
+  if (!login_screen_client_) {
+    std::move(callback).Run(base::nullopt);
+    return;
+  }
+
+  login_screen_client_->ValidateParentAccessCode(
+      account_id, code,
+      base::BindOnce(&LoginScreenController::OnParentAccessValidationComplete,
+                     weak_factory_.GetWeakPtr(), std::move(callback)));
+}
+
 void LoginScreenController::HardlockPod(const AccountId& account_id) {
   if (!login_screen_client_)
     return;
@@ -402,13 +417,17 @@ void LoginScreenController::SetAvatarForUser(const AccountId& account_id,
     observer.SetAvatarForUser(account_id, avatar);
 }
 
-void LoginScreenController::SetAuthEnabledForUser(
+void LoginScreenController::EnableAuthForUser(const AccountId& account_id) {
+  if (DataDispatcher())
+    DataDispatcher()->EnableAuthForUser(account_id);
+}
+
+void LoginScreenController::DisableAuthForUser(
     const AccountId& account_id,
-    bool is_enabled,
-    base::Optional<base::Time> auth_reenabled_time) {
+    ash::mojom::AuthDisabledDataPtr auth_disabled_data) {
   if (DataDispatcher()) {
-    DataDispatcher()->SetAuthEnabledForUser(account_id, is_enabled,
-                                            auth_reenabled_time);
+    DataDispatcher()->DisableAuthForUser(account_id,
+                                         std::move(auth_disabled_data));
   }
 }
 
@@ -470,11 +489,13 @@ void LoginScreenController::SetPublicSessionShowFullManagementDisclosure(
 }
 
 void LoginScreenController::SetKioskApps(
-    std::vector<mojom::KioskAppInfoPtr> kiosk_apps) {
+    std::vector<mojom::KioskAppInfoPtr> kiosk_apps,
+    SetKioskAppsCallback callback) {
   Shelf::ForWindow(Shell::Get()->GetPrimaryRootWindow())
       ->shelf_widget()
       ->login_shelf_view()
       ->SetKioskApps(std::move(kiosk_apps));
+  std::move(callback).Run(true);
 }
 
 void LoginScreenController::ShowKioskAppError(const std::string& message) {
@@ -565,6 +586,8 @@ void LoginScreenController::ShowAccountAccessHelpApp() {
 }
 
 void LoginScreenController::FocusOobeDialog() {
+  if (!login_screen_client_)
+    return;
   login_screen_client_->FocusOobeDialog();
 }
 
@@ -578,6 +601,12 @@ void LoginScreenController::OnAuthenticateComplete(
   authentication_stage_ = AuthenticationStage::kUserCallback;
   std::move(callback).Run(base::make_optional<bool>(success));
   authentication_stage_ = AuthenticationStage::kIdle;
+}
+
+void LoginScreenController::OnParentAccessValidationComplete(
+    OnParentAccessValidation callback,
+    bool success) {
+  std::move(callback).Run(base::make_optional<bool>(success));
 }
 
 LoginDataDispatcher* LoginScreenController::DataDispatcher() const {

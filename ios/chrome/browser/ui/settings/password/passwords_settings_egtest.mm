@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#import <EarlGrey/EarlGrey.h>
 #include <TargetConditionals.h>
 
 #include <utility>
@@ -63,7 +64,6 @@ using chrome_test_util::SettingsMenuBackButton;
 using chrome_test_util::SetUpAndReturnMockReauthenticationModule;
 using chrome_test_util::SetUpAndReturnMockReauthenticationModuleForExport;
 using chrome_test_util::TurnSettingsSwitchOn;
-using web::test::ElementSelector;
 
 namespace {
 
@@ -288,17 +288,11 @@ class TestStoreConsumer : public password_manager::PasswordStoreConsumer {
   const std::vector<autofill::PasswordForm>& GetStoreResults() {
     results_.clear();
     ResetObtained();
-    GetPasswordStore()->GetAutofillableLogins(this);
-    bool responded = base::test::ios::WaitUntilConditionOrTimeout(1.0, ^bool {
+    GetPasswordStore()->GetAllLogins(this);
+    bool responded = base::test::ios::WaitUntilConditionOrTimeout(2.0, ^bool {
       return !AreObtainedReset();
     });
     GREYAssert(responded, @"Obtaining fillable items took too long.");
-    AppendObtainedToResults();
-    GetPasswordStore()->GetBlacklistLogins(this);
-    responded = base::test::ios::WaitUntilConditionOrTimeout(2.0, ^bool {
-      return !AreObtainedReset();
-    });
-    GREYAssert(responded, @"Obtaining blacklisted items took too long.");
     AppendObtainedToResults();
     return results_;
   }
@@ -1105,12 +1099,15 @@ PasswordForm CreateSampleFormWithIndex(int index) {
   [GetInteractionForPasswordDetailItem(CopyUsernameButton())
       assertWithMatcher:grey_layout(@[ Below() ], usernameCell)];
 
-  [GetInteractionForPasswordDetailItem(PasswordHeader())
+  id<GREYMatcher> passwordHeader =
+      grey_allOf(PasswordHeader(),
+                 grey_kindOfClass([UITableViewHeaderFooterView class]), nil);
+  [GetInteractionForPasswordDetailItem(passwordHeader)
       assertWithMatcher:grey_layout(@[ Below() ], CopyUsernameButton())];
   id<GREYMatcher> passwordCell = grey_accessibilityLabel(
       l10n_util::GetNSString(IDS_IOS_SETTINGS_PASSWORD_HIDDEN_LABEL));
   [GetInteractionForPasswordDetailItem(passwordCell)
-      assertWithMatcher:grey_layout(@[ Below() ], PasswordHeader())];
+      assertWithMatcher:grey_layout(@[ Below() ], passwordHeader)];
   [GetInteractionForPasswordDetailItem(CopyPasswordButton())
       assertWithMatcher:grey_layout(@[ Below() ], passwordCell)];
   [GetInteractionForPasswordDetailItem(ShowPasswordButton())
@@ -1253,6 +1250,13 @@ PasswordForm CreateSampleFormWithIndex(int index) {
                                    @"savePasswordsItem_switch", expected_state),
                                kGREYDirectionUp)
         performAction:TurnSettingsSwitchOn(!expected_state)];
+
+    // Check that the switch has been modified.
+    [GetInteractionForListItem(
+        chrome_test_util::SettingsSwitchCell(@"savePasswordsItem_switch",
+                                             !expected_state),
+        kGREYDirectionUp) assertWithMatcher:grey_sufficientlyVisible()];
+
     // Check the stored items. Scroll down if needed.
     [GetInteractionForPasswordEntry(@"example.com, concrete username")
         assertWithMatcher:grey_notNil()];
@@ -1501,7 +1505,7 @@ PasswordForm CreateSampleFormWithIndex(int index) {
                                    chrome_test_util::GetCurrentWebState())]
       performAction:web::WebViewTapElement(
                         chrome_test_util::GetCurrentWebState(),
-                        ElementSelector::ElementSelectorId("password"))];
+                        [ElementSelector selectorWithElementID:"password"])];
 
   // Wait until the keyboard shows up before tapping.
   id<GREYMatcher> showAll = grey_allOf(

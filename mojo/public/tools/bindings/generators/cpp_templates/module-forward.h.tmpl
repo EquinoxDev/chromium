@@ -30,6 +30,12 @@ namespace {{variant}} {
 {%-   endfor %}
 {%- endmacro %}
 
+{%- macro kythe_annotation(name) %}
+{%- if enable_kythe_annotations %}
+// @generated_from: {{name}}
+{%- endif %}
+{%- endmacro %}
+
 #ifndef {{header_guard}}
 #define {{header_guard}}
 
@@ -42,11 +48,10 @@ namespace {{variant}} {
 #include "mojo/public/cpp/bindings/interface_ptr.h"
 #include "mojo/public/cpp/bindings/interface_request.h"
 #include "mojo/public/cpp/bindings/lib/control_message_handler.h"
+#include "mojo/public/cpp/bindings/pending_receiver.h"
+#include "mojo/public/cpp/bindings/pending_remote.h"
 #include "mojo/public/cpp/bindings/raw_ptr_impl_ref_traits.h"
 #include "mojo/public/cpp/bindings/thread_safe_interface_ptr.h"
-{%-   if for_blink %}
-#include "third_party/blink/renderer/platform/mojo/revocable_interface_ptr.h"
-{%-   endif %}
 {%- endif %}
 
 {% if not disallow_native_types %}
@@ -56,6 +61,31 @@ namespace {{variant}} {
 
 {%- if export_header %}
 #include "{{export_header}}"
+{%- endif %}
+
+{% if enable_kythe_annotations -%}
+#ifdef KYTHE_IS_RUNNING
+#pragma kythe_inline_metadata "Metadata comment"
+#endif
+{%- endif %}
+
+{%- if variant %}
+{%-   for namespace in namespaces_as_array %}
+namespace {{namespace}} {
+{%-   endfor %}
+
+{%- from "enum_macros.tmpl" import enum_forward%}
+{%- for enum in all_enums %}
+{%-   if enum|is_native_only_kind %}
+using {{enum|get_name_for_kind(flatten_nested_kind=True)}} = mojo::NativeEnum;
+{%-   else %}
+{{enum_forward(enum)}}
+{%-   endif %}
+{%- endfor %}
+
+{%-   for namespace in namespaces_as_array %}
+}  // namespace {{namespace}}
+{%-   endfor %}
 {%- endif %}
 
 {#--- WTF enum hashing #}
@@ -73,6 +103,8 @@ namespace {{variant}} {
 {%- endif %}
 
 {{namespace_begin()}}
+
+{%- set module_prefix = "%s"|format(namespaces_as_array|join(".")) %}
 
 {#- These are non-variant header only. #}
 {%- if not variant %}
@@ -112,6 +144,7 @@ using {{enum.name}} = {{enum.name}};  // Alias for definition in the parent name
 
 {#--- Constants #}
 {%- for constant in module.constants %}
+{{ kythe_annotation("%s.%s"|format(module_prefix, constant.name)) }}
 {{constant|format_constant_declaration}};
 {%- endfor %}
 
@@ -145,9 +178,6 @@ typedef mojo::StructPtr<{{union.name}}> {{union.name}}Ptr;
 {%  for interface in interfaces %}
 class {{interface.name}};
 using {{interface.name}}Ptr = mojo::InterfacePtr<{{interface.name}}>;
-{%-   if for_blink %}
-using Revocable{{interface.name}}Ptr = ::blink::RevocableInterfacePtr<{{interface.name}}>;
-{%-   endif %}
 using {{interface.name}}PtrInfo = mojo::InterfacePtrInfo<{{interface.name}}>;
 using ThreadSafe{{interface.name}}Ptr =
     mojo::ThreadSafeInterfacePtr<{{interface.name}}>;

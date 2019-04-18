@@ -118,7 +118,6 @@ AddressTrackerLinux::AddressTrackerLinux()
       address_callback_(base::DoNothing()),
       link_callback_(base::DoNothing()),
       tunnel_callback_(base::DoNothing()),
-      watcher_(FROM_HERE),
       ignored_interfaces_(),
       connection_type_initialized_(false),
       connection_type_initialized_cv_(&connection_type_lock_),
@@ -135,7 +134,6 @@ AddressTrackerLinux::AddressTrackerLinux(
       address_callback_(address_callback),
       link_callback_(link_callback),
       tunnel_callback_(tunnel_callback),
-      watcher_(FROM_HERE),
       ignored_interfaces_(ignored_interfaces),
       connection_type_initialized_(false),
       connection_type_initialized_cv_(&connection_type_lock_),
@@ -146,9 +144,7 @@ AddressTrackerLinux::AddressTrackerLinux(
   DCHECK(!link_callback.is_null());
 }
 
-AddressTrackerLinux::~AddressTrackerLinux() {
-  watcher_.StopWatchingFileDescriptor();
-}
+AddressTrackerLinux::~AddressTrackerLinux() = default;
 
 void AddressTrackerLinux::Init() {
   netlink_fd_.reset(socket(AF_NETLINK, SOCK_RAW, NETLINK_ROUTE));
@@ -230,19 +226,15 @@ void AddressTrackerLinux::Init() {
   }
 
   if (tracking_) {
-    rv = base::MessageLoopCurrentForIO::Get()->WatchFileDescriptor(
-        netlink_fd_.get(), true, base::MessagePumpForIO::WATCH_READ, &watcher_,
-        this);
-    if (rv < 0) {
-      PLOG(ERROR) << "Could not watch NETLINK socket";
-      AbortAndForceOnline();
-      return;
-    }
+    watcher_ = base::FileDescriptorWatcher::WatchReadable(
+        netlink_fd_.get(),
+        base::BindRepeating(&AddressTrackerLinux::OnFileCanReadWithoutBlocking,
+                            base::Unretained(this)));
   }
 }
 
 void AddressTrackerLinux::AbortAndForceOnline() {
-  watcher_.StopWatchingFileDescriptor();
+  watcher_.reset();
   netlink_fd_.reset();
   AddressTrackerAutoLock lock(*this, connection_type_lock_);
   current_connection_type_ = NetworkChangeNotifier::CONNECTION_UNKNOWN;
@@ -296,7 +288,7 @@ void AddressTrackerLinux::ReadMessages(bool* address_changed,
     if (tracking_) {
       // If the loop below takes a long time to run, a new thread should added
       // to the current thread pool to ensure forward progress of all tasks.
-      blocking_call.emplace(base::BlockingType::MAY_BLOCK);
+      blocking_call.emplace(FROM_HERE, base::BlockingType::MAY_BLOCK);
     }
 
     for (;;) {
@@ -424,8 +416,7 @@ void AddressTrackerLinux::HandleMessage(char* buffer,
   }
 }
 
-void AddressTrackerLinux::OnFileCanReadWithoutBlocking(int fd) {
-  DCHECK_EQ(netlink_fd_.get(), fd);
+void AddressTrackerLinux::OnFileCanReadWithoutBlocking() {
   bool address_changed;
   bool link_changed;
   bool tunnel_changed;
@@ -437,8 +428,6 @@ void AddressTrackerLinux::OnFileCanReadWithoutBlocking(int fd) {
   if (tunnel_changed)
     tunnel_callback_.Run();
 }
-
-void AddressTrackerLinux::OnFileCanWriteWithoutBlocking(int /* fd */) {}
 
 bool AddressTrackerLinux::IsTunnelInterface(int interface_index) const {
   char buf[IFNAMSIZ] = {0};

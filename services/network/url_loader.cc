@@ -4,6 +4,7 @@
 
 #include "services/network/url_loader.h"
 
+#include <algorithm>
 #include <limits>
 #include <string>
 #include <utility>
@@ -24,6 +25,7 @@
 #include "net/base/elements_upload_data_stream.h"
 #include "net/base/ip_endpoint.h"
 #include "net/base/mime_sniffer.h"
+#include "net/base/static_cookie_policy.h"
 #include "net/base/upload_bytes_element_reader.h"
 #include "net/base/upload_file_element_reader.h"
 #include "net/ssl/client_cert_store.h"
@@ -333,6 +335,7 @@ URLLoader::URLLoader(
                                   base::SequencedTaskRunnerHandle::Get()),
       want_raw_headers_(request.report_raw_headers),
       report_raw_headers_(false),
+      devtools_request_id_(request.devtools_request_id),
       resource_scheduler_client_(std::move(resource_scheduler_client)),
       keepalive_statistics_recorder_(std::move(keepalive_statistics_recorder)),
       network_usage_accumulator_(std::move(network_usage_accumulator)),
@@ -446,6 +449,109 @@ URLLoader::URLLoader(
   ScheduleStart();
 }
 
+// This class is used to manage the queue of pending file upload operations
+// initiated by the URLLoader::OpenFilesForUpload().
+class URLLoader::FileOpenerForUpload {
+ public:
+  typedef base::OnceCallback<void(int, std::vector<base::File>)>
+      SetUpUploadCallback;
+
+  FileOpenerForUpload(std::vector<base::FilePath> paths,
+                      URLLoader* url_loader,
+                      uint32_t process_id,
+                      mojom::NetworkServiceClient* network_service_client,
+                      SetUpUploadCallback set_up_upload_callback)
+      : paths_(std::move(paths)),
+        url_loader_(url_loader),
+        process_id_(process_id),
+        network_service_client_(network_service_client),
+        set_up_upload_callback_(std::move(set_up_upload_callback)),
+        weak_ptr_factory_(this) {
+    StartOpeningNextBatch();
+  }
+
+  ~FileOpenerForUpload() {
+    if (!opened_files_.empty())
+      PostCloseFiles(std::move(opened_files_));
+  }
+
+ private:
+  static void OnFilesForUploadOpened(
+      base::WeakPtr<FileOpenerForUpload> file_opener,
+      size_t num_files_requested,
+      int error_code,
+      std::vector<base::File> opened_files) {
+    if (!file_opener) {
+      PostCloseFiles(std::move(opened_files));
+      return;
+    }
+
+    if (error_code == net::OK && num_files_requested != opened_files.size())
+      error_code = net::ERR_FAILED;
+
+    if (error_code != net::OK) {
+      PostCloseFiles(std::move(opened_files));
+      file_opener->FilesForUploadOpenedDone(error_code);
+      return;
+    }
+
+    for (base::File& file : opened_files)
+      file_opener->opened_files_.push_back(std::move(file));
+
+    if (file_opener->opened_files_.size() < file_opener->paths_.size()) {
+      file_opener->StartOpeningNextBatch();
+      return;
+    }
+
+    file_opener->FilesForUploadOpenedDone(net::OK);
+  }
+
+  // |opened_files| need to be closed on a blocking task runner, so move
+  // the |opened_files| vector onto a sequence that can block so it gets
+  // destroyed there.
+  static void PostCloseFiles(std::vector<base::File> opened_files) {
+    base::PostTaskWithTraits(
+        FROM_HERE, {base::MayBlock(), base::TaskPriority::USER_BLOCKING},
+        base::BindOnce(base::DoNothing::Once<std::vector<base::File>>(),
+                       std::move(opened_files)));
+  }
+
+  void StartOpeningNextBatch() {
+    size_t num_files_to_request = std::min(paths_.size() - opened_files_.size(),
+                                           kMaxFileUploadRequestsPerBatch);
+    std::vector<base::FilePath> batch_paths(
+        paths_.begin() + opened_files_.size(),
+        paths_.begin() + opened_files_.size() + num_files_to_request);
+
+    network_service_client_->OnFileUploadRequested(
+        process_id_, /*async=*/true, batch_paths,
+        base::BindOnce(&FileOpenerForUpload::OnFilesForUploadOpened,
+                       weak_ptr_factory_.GetWeakPtr(), num_files_to_request));
+  }
+
+  void FilesForUploadOpenedDone(int error_code) {
+    url_loader_->url_request_->LogUnblocked();
+
+    if (error_code == net::OK)
+      std::move(set_up_upload_callback_).Run(net::OK, std::move(opened_files_));
+    else
+      std::move(set_up_upload_callback_).Run(error_code, {});
+  }
+
+  // The paths of files for upload
+  const std::vector<base::FilePath> paths_;
+  URLLoader* const url_loader_;
+  const uint32_t process_id_;
+  mojom::NetworkServiceClient* const network_service_client_;
+  SetUpUploadCallback set_up_upload_callback_;
+  // The files opened so far.
+  std::vector<base::File> opened_files_;
+
+  base::WeakPtrFactory<FileOpenerForUpload> weak_ptr_factory_;
+
+  DISALLOW_COPY_AND_ASSIGN(FileOpenerForUpload);
+};
+
 void URLLoader::OpenFilesForUpload(const ResourceRequest& request) {
   std::vector<base::FilePath> paths;
   for (const auto& element : *request.request_body.get()->elements()) {
@@ -466,28 +572,10 @@ void URLLoader::OpenFilesForUpload(const ResourceRequest& request) {
     return;
   }
   url_request_->LogBlockedBy("Opening Files");
-  network_service_client_->OnFileUploadRequested(
-      factory_params_->process_id, true /* async */, paths,
-      base::BindOnce(&OnFilesForUploadOpened, weak_ptr_factory_.GetWeakPtr(),
-                     request));
-}
-
-// static
-void URLLoader::OnFilesForUploadOpened(base::WeakPtr<URLLoader> self,
-                                       const ResourceRequest& request,
-                                       int error_code,
-                                       std::vector<base::File> opened_files) {
-  // If the URLLoader was already deleted, move the opened_files vector onto a
-  // sequence that can block so it gets destroyed there.
-  if (self) {
-    self->url_request_->LogUnblocked();
-    self->SetUpUpload(request, error_code, std::move(opened_files));
-  } else {
-    base::PostTaskWithTraits(
-        FROM_HERE, {base::MayBlock(), base::TaskPriority::USER_BLOCKING},
-        base::BindOnce(base::DoNothing::Once<std::vector<base::File>>(),
-                       std::move(opened_files)));
-  }
+  file_opener_for_upload_ = std::make_unique<FileOpenerForUpload>(
+      std::move(paths), this, factory_params_->process_id,
+      network_service_client_,
+      base::BindOnce(&URLLoader::SetUpUpload, base::Unretained(this), request));
 }
 
 void URLLoader::SetUpUpload(const ResourceRequest& request,
@@ -495,7 +583,11 @@ void URLLoader::SetUpUpload(const ResourceRequest& request,
                             std::vector<base::File> opened_files) {
   if (error_code != net::OK) {
     DCHECK(opened_files.empty());
-    NotifyCompleted(error_code);
+    // Defer calling NotifyCompleted to make sure the URLLoader finishes
+    // initializing before getting deleted.
+    base::SequencedTaskRunnerHandle::Get()->PostTask(
+        FROM_HERE, base::BindOnce(&URLLoader::NotifyCompleted,
+                                  base::Unretained(this), error_code));
     return;
   }
   scoped_refptr<base::SequencedTaskRunner> task_runner =
@@ -657,7 +749,7 @@ void URLLoader::OnReceivedRedirect(net::URLRequest* url_request,
 }
 
 void URLLoader::OnAuthRequired(net::URLRequest* url_request,
-                               net::AuthChallengeInfo* auth_info) {
+                               const net::AuthChallengeInfo& auth_info) {
   if (!network_service_client_) {
     OnAuthCredentials(base::nullopt);
     return;
@@ -1047,6 +1139,25 @@ void URLLoader::SetAllowReportingRawHeaders(bool allow) {
   report_raw_headers_ = want_raw_headers_ && allow;
 }
 
+uint32_t URLLoader::GetResourceType() const {
+  return resource_type_;
+}
+
+bool URLLoader::AllowCookies(const GURL& url,
+                             const GURL& site_for_cookies) const {
+  net::StaticCookiePolicy::Type policy =
+      net::StaticCookiePolicy::ALLOW_ALL_COOKIES;
+  if (options_ & mojom::kURLLoadOptionBlockAllCookies) {
+    policy = net::StaticCookiePolicy::BLOCK_ALL_COOKIES;
+  } else if (options_ & mojom::kURLLoadOptionBlockThirdPartyCookies) {
+    policy = net::StaticCookiePolicy::BLOCK_ALL_THIRD_PARTY_COOKIES;
+  } else {
+    return true;
+  }
+  return net::StaticCookiePolicy(policy).CanAccessCookies(
+             url, site_for_cookies) == net::OK;
+}
+
 // static
 URLLoader* URLLoader::ForRequest(const net::URLRequest& request) {
   auto* pointer =
@@ -1109,6 +1220,7 @@ void URLLoader::NotifyCompleted(int error_code) {
     status.encoded_data_length = url_request_->GetTotalReceivedBytes();
     status.encoded_body_length = url_request_->GetRawBodyBytes();
     status.decoded_body_length = total_written_bytes_;
+    status.proxy_server = url_request_->proxy_server();
 
     if ((options_ & mojom::kURLLoadOptionSendSSLInfoForCertificateError) &&
         net::IsCertStatusError(url_request_->ssl_info().cert_status) &&

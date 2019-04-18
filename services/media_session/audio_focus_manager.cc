@@ -83,8 +83,9 @@ class AudioFocusManager::StackRow : public mojom::AudioFocusRequestClient {
     std::unique_ptr<StackRow> row = owner_->RemoveFocusEntryIfPresent(id());
     DCHECK(row);
 
-    owner_->RequestAudioFocusInternal(std::move(row), type,
-                                      std::move(callback));
+    owner_->RequestAudioFocusInternal(std::move(row), type);
+
+    std::move(callback).Run();
 
     metrics_helper_.OnRequestAudioFocus(
         AudioFocusManagerMetricsHelper::AudioFocusRequestSource::kUpdate,
@@ -110,10 +111,6 @@ class AudioFocusManager::StackRow : public mojom::AudioFocusRequestClient {
     // re-enforce audio focus.
     if (suspended_change)
       owner_->EnforceAudioFocus();
-  }
-
-  void GetRequestId(GetRequestIdCallback callback) override {
-    std::move(callback).Run(id());
   }
 
   mojom::MediaSession* session() { return session_.get(); }
@@ -152,7 +149,7 @@ class AudioFocusManager::StackRow : public mojom::AudioFocusRequestClient {
   void BindToController(mojom::MediaControllerRequest request) {
     if (!controller_) {
       controller_ = std::make_unique<MediaController>();
-      controller_->SetMediaSession(session_.get());
+      controller_->SetMediaSession(session_.get(), id());
     }
 
     controller_->BindToInterface(std::move(request));
@@ -250,12 +247,16 @@ void AudioFocusManager::RequestGroupedAudioFocus(
     mojom::AudioFocusType type,
     const base::UnguessableToken& group_id,
     RequestGroupedAudioFocusCallback callback) {
+  base::UnguessableToken request_id = base::UnguessableToken::Create();
+
   RequestAudioFocusInternal(
-      std::make_unique<StackRow>(
-          this, std::move(request), std::move(media_session),
-          std::move(session_info), type, base::UnguessableToken::Create(),
-          GetBindingSourceName(), group_id),
-      type, std::move(callback));
+      std::make_unique<StackRow>(this, std::move(request),
+                                 std::move(media_session),
+                                 std::move(session_info), type, request_id,
+                                 GetBindingSourceName(), group_id),
+      type);
+
+  std::move(callback).Run(request_id);
 }
 
 void AudioFocusManager::GetFocusRequests(GetFocusRequestsCallback callback) {
@@ -317,7 +318,7 @@ void AudioFocusManager::AbandonAudioFocusInternal(RequestId id) {
     return;
   }
 
-  EnforceAudioFocusAbandon();
+  EnforceAudioFocus();
   MaybeUpdateActiveSession();
 
   // Notify observers that we lost audio focus.
@@ -394,10 +395,8 @@ void AudioFocusManager::BindToControllerManagerInterface(
   controller_bindings_.AddBinding(this, std::move(request));
 }
 
-void AudioFocusManager::RequestAudioFocusInternal(
-    std::unique_ptr<StackRow> row,
-    mojom::AudioFocusType type,
-    base::OnceCallback<void()> callback) {
+void AudioFocusManager::RequestAudioFocusInternal(std::unique_ptr<StackRow> row,
+                                                  mojom::AudioFocusType type) {
   row->SetAudioFocusType(type);
   audio_focus_stack_.push_back(std::move(row));
 
@@ -410,31 +409,6 @@ void AudioFocusManager::RequestAudioFocusInternal(
   observers_.ForAllPtrs([&session_state](mojom::AudioFocusObserver* observer) {
     observer->OnFocusGained(session_state.Clone());
   });
-
-  // We always grant the audio focus request but this may not always be the case
-  // in the future.
-  std::move(callback).Run();
-}
-
-void AudioFocusManager::EnforceAudioFocusAbandon() {
-  // Allow the top-most MediaSession having force duck to unduck even if
-  // it is not active.
-  if (enforcement_mode_ != mojom::EnforcementMode::kNone) {
-    for (auto iter = audio_focus_stack_.rbegin();
-         iter != audio_focus_stack_.rend(); ++iter) {
-      if (!(*iter)->info()->force_duck)
-        continue;
-
-      // TODO(beccahughes): Replace with std::rotate.
-      auto duck_row = std::move(*iter);
-      duck_row->session()->StopDucking();
-      audio_focus_stack_.erase(std::next(iter).base());
-      audio_focus_stack_.push_back(std::move(duck_row));
-      return;
-    }
-  }
-
-  EnforceAudioFocus();
 }
 
 void AudioFocusManager::EnforceAudioFocus() {
@@ -479,18 +453,11 @@ void AudioFocusManager::MaybeUpdateActiveSession() {
     break;
   }
 
-  if (!active_media_controller_.SetMediaSession(active ? active->session()
-                                                       : nullptr)) {
-    return;
+  if (active) {
+    active_media_controller_.SetMediaSession(active->session(), active->id());
+  } else {
+    active_media_controller_.ClearMediaSession();
   }
-
-  mojom::AudioFocusRequestStatePtr state =
-      active ? active->ToAudioFocusRequestState() : nullptr;
-
-  // Notify observers that the active media session changed.
-  observers_.ForAllPtrs([&state](mojom::AudioFocusObserver* observer) {
-    observer->OnActiveSessionChanged(state.Clone());
-  });
 }
 
 AudioFocusManager::AudioFocusManager()

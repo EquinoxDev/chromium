@@ -69,10 +69,7 @@ WebViewPlugin* WebViewPlugin::Create(content::RenderView* render_view,
   WebViewPlugin* plugin = new WebViewPlugin(render_view, delegate, preferences);
   // Loading may synchronously access |delegate| which could be
   // uninitialized just yet, so load in another task.
-  scoped_refptr<base::SingleThreadTaskRunner> task_runner =
-      plugin->web_view_helper_.main_frame()->GetTaskRunner(
-          blink::TaskType::kInternalDefault);
-  task_runner->PostTask(
+  plugin->GetTaskRunner()->PostTask(
       FROM_HERE,
       base::BindOnce(&WebViewPlugin::LoadHTML,
                      plugin->weak_factory_.GetWeakPtr(), html_data, url));
@@ -199,7 +196,7 @@ void WebViewPlugin::UpdateGeometry(const WebRect& window_rect,
 
   // Plugin updates are forbidden during Blink layout. Therefore,
   // UpdatePluginForNewGeometry must be posted to a task to run asynchronously.
-  base::ThreadTaskRunnerHandle::Get()->PostTask(
+  GetTaskRunner()->PostTask(
       FROM_HERE,
       base::BindOnce(&WebViewPlugin::UpdatePluginForNewGeometry,
                      weak_factory_.GetWeakPtr(), window_rect, unobscured_rect));
@@ -275,6 +272,11 @@ WebViewPlugin::WebViewHelper::WebViewHelper(WebViewPlugin* plugin,
       mojo::MakeRequest(&document_interface_broker).PassMessagePipe(), nullptr);
   // The created WebFrameWidget is owned by the |web_frame|.
   WebFrameWidget::CreateForMainFrame(this, web_frame);
+
+  // The WebFrame created here was already attached to the Page as its
+  // main frame, and the WebFrameWidget has been initialized, so we can call
+  // WebViewImpl's DidAttachLocalMainFrame().
+  web_view_->DidAttachLocalMainFrame(this);
 }
 
 WebViewPlugin::WebViewHelper::~WebViewHelper() {
@@ -368,8 +370,10 @@ void WebViewPlugin::WebViewHelper::DidClearWindowObject() {
   v8::Context::Scope context_scope(context);
   v8::Local<v8::Object> global = context->Global();
 
-  global->Set(gin::StringToV8(isolate, "plugin"),
-              plugin_->delegate_->GetV8Handle(isolate));
+  global
+      ->Set(context, gin::StringToV8(isolate, "plugin"),
+            plugin_->delegate_->GetV8Handle(isolate))
+      .Check();
 }
 
 void WebViewPlugin::WebViewHelper::FrameDetached(DetachType type) {
@@ -405,4 +409,9 @@ void WebViewPlugin::UpdatePluginForNewGeometry(
   // Run the lifecycle now so that it is clean.
   web_view()->MainFrameWidget()->UpdateAllLifecyclePhases(
       blink::WebWidget::LifecycleUpdateReason::kOther);
+}
+
+scoped_refptr<base::SingleThreadTaskRunner> WebViewPlugin::GetTaskRunner() {
+  return web_view_helper_.main_frame()->GetTaskRunner(
+      blink::TaskType::kInternalDefault);
 }

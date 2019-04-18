@@ -20,14 +20,14 @@
 #include "base/scoped_observer.h"
 #include "base/single_thread_task_runner.h"
 #include "base/time/time.h"
-#include "chromeos/dbus/power_manager_client.h"
+#include "chromeos/dbus/power/power_manager_client.h"
 #include "chromeos/services/assistant/public/mojom/assistant.mojom.h"
 #include "chromeos/services/assistant/public/mojom/settings.mojom.h"
 #include "components/account_id/account_id.h"
 #include "mojo/public/cpp/bindings/binding.h"
 #include "mojo/public/cpp/bindings/binding_set.h"
 #include "mojo/public/cpp/bindings/interface_ptr_set.h"
-#include "services/identity/public/mojom/identity_manager.mojom.h"
+#include "services/identity/public/mojom/identity_accessor.mojom.h"
 #include "services/service_manager/public/cpp/binder_registry.h"
 #include "services/service_manager/public/cpp/service.h"
 #include "services/service_manager/public/cpp/service_binding.h"
@@ -95,10 +95,12 @@ class COMPONENT_EXPORT(ASSISTANT_SERVICE) Service
     return main_task_runner_;
   }
 
+  bool is_signed_out_mode() const { return is_signed_out_mode_; }
+
   void RequestAccessToken();
 
-  void SetIdentityManagerForTesting(
-      identity::mojom::IdentityManagerPtr identity_manager);
+  void SetIdentityAccessorForTesting(
+      identity::mojom::IdentityAccessorPtr identity_accessor);
 
   void SetAssistantManagerForTesting(
       std::unique_ptr<AssistantManagerService> assistant_manager_service);
@@ -128,6 +130,7 @@ class COMPONENT_EXPORT(ASSISTANT_SERVICE) Service
   void OnVoiceInteractionHotwordEnabled(bool enabled) override;
   void OnVoiceInteractionHotwordAlwaysOn(bool always_on) override;
   void OnLocaleChanged(const std::string& locale) override;
+  void OnArcPlayStoreEnabledChanged(bool enabled) override;
 
   void UpdateAssistantManagerState();
   void BindAssistantSettingsManager(
@@ -137,7 +140,7 @@ class COMPONENT_EXPORT(ASSISTANT_SERVICE) Service
   void Init(mojom::ClientPtr client,
             mojom::DeviceActionsPtr device_actions) override;
 
-  identity::mojom::IdentityManager* GetIdentityManager();
+  identity::mojom::IdentityAccessor* GetIdentityAccessor();
 
   void GetPrimaryAccountInfoCallback(
       const base::Optional<AccountInfo>& account_info,
@@ -170,7 +173,7 @@ class COMPONENT_EXPORT(ASSISTANT_SERVICE) Service
   mojom::ClientPtr client_;
   mojom::DeviceActionsPtr device_actions_;
 
-  identity::mojom::IdentityManagerPtr identity_manager_;
+  identity::mojom::IdentityAccessorPtr identity_accessor_;
 
   AccountId account_id_;
   std::unique_ptr<AssistantManagerService> assistant_manager_service_;
@@ -187,6 +190,9 @@ class COMPONENT_EXPORT(ASSISTANT_SERVICE) Service
   bool locked_ = false;
   // Whether the power source is connected.
   bool power_source_connected_ = false;
+  // In the signed-out mode, we are going to run Assistant service without
+  // using user's signed in account information.
+  bool is_signed_out_mode_ = false;
 
   base::Optional<std::string> access_token_;
 

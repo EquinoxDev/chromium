@@ -33,6 +33,7 @@
 #include "build/build_config.h"
 #include "third_party/blink/renderer/platform/wtf/assertions.h"
 #include "third_party/blink/renderer/platform/wtf/leak_annotations.h"
+#include "third_party/blink/renderer/platform/wtf/sanitizers.h"
 #include "third_party/blink/renderer/platform/wtf/type_traits.h"
 
 #if DCHECK_IS_ON()
@@ -64,10 +65,6 @@
 // TODO: rename as DEFINE_CROSS_THREAD_STATIC_LOCAL() ?
 #define DEFINE_THREAD_SAFE_STATIC_LOCAL(Type, Name, Arguments) \
   DEFINE_STATIC_LOCAL_IMPL(Type, Name, Arguments, true)
-
-namespace blink {
-
-}  // namespace blink
 
 namespace WTF {
 

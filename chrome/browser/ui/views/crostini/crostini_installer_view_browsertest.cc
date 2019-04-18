@@ -74,6 +74,20 @@ class CrostiniInstallerViewBrowserTest : public CrostiniDialogBrowserTest {
     std::unique_ptr<base::RunLoop> run_loop_;
   };
 
+  class ProgressBarTracker {
+   public:
+    ProgressBarTracker() : progress_bar_position_(0.0) {}
+    void OnProgressBarUpdated(double value) {
+      EXPECT_LE(value, 1);
+      EXPECT_GE(value, progress_bar_position_);
+      EXPECT_GE(value, 0);
+      progress_bar_position_ = value;
+    }
+
+   private:
+    double progress_bar_position_;
+  };
+
   CrostiniInstallerViewBrowserTest()
       : CrostiniDialogBrowserTest(true /*register_termina*/),
         waiting_fake_concierge_client_(new WaitingFakeConciergeClient()),
@@ -148,6 +162,9 @@ IN_PROC_BROWSER_TEST_F(CrostiniInstallerViewBrowserTest, InstallFlow) {
   EXPECT_TRUE(HasAcceptButton());
   EXPECT_TRUE(HasCancelButton());
 
+  EXPECT_TRUE(crostini::CrostiniManager::GetForProfile(browser()->profile())
+                  ->GetInstallerViewStatus());
+
   ActiveView()->GetDialogClientView()->AcceptWindow();
   EXPECT_FALSE(ActiveView()->GetWidget()->IsClosed());
   EXPECT_FALSE(HasAcceptButton());
@@ -160,11 +177,32 @@ IN_PROC_BROWSER_TEST_F(CrostiniInstallerViewBrowserTest, InstallFlow) {
   base::RunLoop().RunUntilIdle();
   EXPECT_EQ(nullptr, ActiveView());
 
+  EXPECT_FALSE(crostini::CrostiniManager::GetForProfile(browser()->profile())
+                   ->GetInstallerViewStatus());
+
   histogram_tester.ExpectUniqueSample(
       "Crostini.SetupResult",
       static_cast<base::HistogramBase::Sample>(
           CrostiniInstallerView::SetupResult::kSuccess),
       1);
+}
+
+IN_PROC_BROWSER_TEST_F(CrostiniInstallerViewBrowserTest,
+                       ProgressBarOnlyMovesForwards) {
+  ShowUi("default");
+  EXPECT_NE(nullptr, ActiveView());
+
+  base::RunLoop run_loop;
+  ActiveView()->SetCloseCallbackForTesting(run_loop.QuitClosure());
+
+  ProgressBarTracker progress_bar_tracker;
+  ActiveView()->SetProgressBarCallbackForTesting(
+      base::BindRepeating(&ProgressBarTracker::OnProgressBarUpdated,
+                          base::Unretained(&progress_bar_tracker)));
+  ActiveView()->GetDialogClientView()->AcceptWindow();
+
+  run_loop.Run();
+  EXPECT_EQ(nullptr, ActiveView());
 }
 
 IN_PROC_BROWSER_TEST_F(CrostiniInstallerViewBrowserTest, InstallFlow_Offline) {
@@ -179,6 +217,9 @@ IN_PROC_BROWSER_TEST_F(CrostiniInstallerViewBrowserTest, InstallFlow_Offline) {
   EXPECT_TRUE(HasAcceptButton());
   EXPECT_TRUE(HasCancelButton());
 
+  EXPECT_TRUE(crostini::CrostiniManager::GetForProfile(browser()->profile())
+                  ->GetInstallerViewStatus());
+
   ActiveView()->GetDialogClientView()->AcceptWindow();
   EXPECT_FALSE(ActiveView()->GetWidget()->IsClosed());
   EXPECT_TRUE(HasAcceptButton());
@@ -190,6 +231,9 @@ IN_PROC_BROWSER_TEST_F(CrostiniInstallerViewBrowserTest, InstallFlow_Offline) {
   EXPECT_TRUE(ActiveView()->GetWidget()->IsClosed());
   base::RunLoop().RunUntilIdle();
   EXPECT_EQ(nullptr, ActiveView());
+
+  EXPECT_FALSE(crostini::CrostiniManager::GetForProfile(browser()->profile())
+                   ->GetInstallerViewStatus());
 
   histogram_tester.ExpectUniqueSample(
       "Crostini.SetupResult",
@@ -203,10 +247,14 @@ IN_PROC_BROWSER_TEST_F(CrostiniInstallerViewBrowserTest, Cancel) {
 
   ShowUi("default");
   EXPECT_NE(nullptr, ActiveView());
+  EXPECT_TRUE(crostini::CrostiniManager::GetForProfile(browser()->profile())
+                  ->GetInstallerViewStatus());
   ActiveView()->GetDialogClientView()->CancelWindow();
   EXPECT_TRUE(ActiveView()->GetWidget()->IsClosed());
   base::RunLoop().RunUntilIdle();
   EXPECT_EQ(nullptr, ActiveView());
+  EXPECT_FALSE(crostini::CrostiniManager::GetForProfile(browser()->profile())
+                   ->GetInstallerViewStatus());
 
   histogram_tester.ExpectUniqueSample(
       "Crostini.SetupResult",
@@ -219,6 +267,8 @@ IN_PROC_BROWSER_TEST_F(CrostiniInstallerViewBrowserTest, ErrorThenCancel) {
   base::HistogramTester histogram_tester;
   ShowUi("default");
   EXPECT_NE(nullptr, ActiveView());
+  EXPECT_TRUE(crostini::CrostiniManager::GetForProfile(browser()->profile())
+                  ->GetInstallerViewStatus());
   vm_tools::concierge::StartVmResponse response;
   response.set_status(vm_tools::concierge::VM_STATUS_FAILURE);
   waiting_fake_concierge_client_->set_start_vm_response(std::move(response));
@@ -229,6 +279,8 @@ IN_PROC_BROWSER_TEST_F(CrostiniInstallerViewBrowserTest, ErrorThenCancel) {
   ActiveView()->GetDialogClientView()->CancelWindow();
   base::RunLoop().RunUntilIdle();
   EXPECT_EQ(nullptr, ActiveView());
+  EXPECT_FALSE(crostini::CrostiniManager::GetForProfile(browser()->profile())
+                   ->GetInstallerViewStatus());
 
   histogram_tester.ExpectUniqueSample(
       "Crostini.SetupResult",

@@ -53,7 +53,7 @@ void SaveToDiskOnWorkerThread(const base::FilePath& predictor_filename,
   bool write_result;
   {
     base::ScopedBlockingCall scoped_blocking_call(
-        base::BlockingType::MAY_BLOCK);
+        FROM_HERE, base::BlockingType::MAY_BLOCK);
     write_result = base::ImportantFileWriter::WriteFileAtomically(
         predictor_filename, proto_str, "AppSearchResultRanker");
   }
@@ -66,7 +66,8 @@ void SaveToDiskOnWorkerThread(const base::FilePath& predictor_filename,
 std::unique_ptr<AppLaunchPredictor> LoadPredictorFromDiskOnWorkerThread(
     const base::FilePath& predictor_filename,
     const std::string predictor_name) {
-  base::ScopedBlockingCall scoped_blocking_call(base::BlockingType::MAY_BLOCK);
+  base::ScopedBlockingCall scoped_blocking_call(FROM_HERE,
+                                                base::BlockingType::MAY_BLOCK);
 
   // Loads proto string from local disk.
   std::string proto_str;
@@ -93,7 +94,7 @@ AppSearchResultRanker::AppSearchResultRanker(const base::FilePath& profile_path,
     : predictor_filename_(
           profile_path.AppendASCII(kAppLaunchPredictorFilename)),
       weak_factory_(this) {
-  if (!app_list_features::IsAppSearchResultRankerEnabled())
+  if (!app_list_features::IsZeroStateAppsRankerEnabled())
     return;
 
   predictor_ =

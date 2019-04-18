@@ -17,9 +17,8 @@
 #include "chrome/common/chrome_paths.h"
 #include "chromeos/constants/chromeos_paths.h"
 #include "chromeos/dbus/constants/dbus_paths.h"
-#include "chromeos/dbus/dbus_thread_manager.h"
-#include "chromeos/dbus/fake_session_manager_client.h"
-#include "chromeos/dbus/util/tpm_util.h"
+#include "chromeos/dbus/cryptohome/tpm_util.h"
+#include "chromeos/dbus/session_manager/fake_session_manager_client.h"
 #include "chromeos/tpm/install_attributes.h"
 #include "crypto/rsa_private_key.h"
 #include "testing/gmock/include/gmock/gmock.h"
@@ -96,16 +95,13 @@ void DevicePolicyCrosBrowserTest::SetUp() {
   std::vector<std::string> state_keys;
   state_keys.push_back("1");
   fake_session_manager_client_->set_server_backed_state_keys(state_keys);
-  InProcessBrowserTest::SetUp();
+  chromeos::MixinBasedInProcessBrowserTest::SetUp();
 }
 
 void DevicePolicyCrosBrowserTest::SetUpInProcessBrowserTestFixture() {
   InstallOwnerKey();
   MarkOwnership();
-  dbus_setter_ = chromeos::DBusThreadManager::GetSetterForTesting();
-  dbus_setter_->SetSessionManagerClient(
-      std::unique_ptr<chromeos::SessionManagerClient>(
-          fake_session_manager_client_));
+  chromeos::MixinBasedInProcessBrowserTest::SetUpInProcessBrowserTestFixture();
 }
 
 void DevicePolicyCrosBrowserTest::MarkOwnership() {

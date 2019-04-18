@@ -83,7 +83,7 @@ void PolicyMap::Entry::AddError(base::StringPiece error) {
 }
 
 void PolicyMap::Entry::AddError(int message_id) {
-  error_message_ids_.push_back(message_id);
+  error_message_ids_.insert(message_id);
 }
 
 void PolicyMap::Entry::AddConflictingPolicy(const Entry& conflict) {
@@ -114,6 +114,15 @@ base::string16 PolicyMap::Entry::GetLocalizedErrors(
   return error_string;
 }
 
+bool PolicyMap::Entry::IsBlocked() const {
+  return error_message_ids_.find(IDS_POLICY_BLOCKED) !=
+         error_message_ids_.end();
+}
+
+void PolicyMap::Entry::SetBlocked() {
+  error_message_ids_.insert(IDS_POLICY_BLOCKED);
+}
+
 PolicyMap::PolicyMap() {}
 
 PolicyMap::~PolicyMap() {
@@ -122,22 +131,69 @@ PolicyMap::~PolicyMap() {
 
 const PolicyMap::Entry* PolicyMap::Get(const std::string& policy) const {
   auto entry = map_.find(policy);
-  return entry == map_.end() ? nullptr : &entry->second;
+  return entry != map_.end() && !entry->second.IsBlocked() ? &entry->second
+                                                           : nullptr;
 }
 
 PolicyMap::Entry* PolicyMap::GetMutable(const std::string& policy) {
   auto entry = map_.find(policy);
-  return entry == map_.end() ? nullptr : &entry->second;
+  return entry != map_.end() && !entry->second.IsBlocked() ? &entry->second
+                                                           : nullptr;
 }
 
 const base::Value* PolicyMap::GetValue(const std::string& policy) const {
   auto entry = map_.find(policy);
-  return entry == map_.end() ? nullptr : entry->second.value.get();
+  return entry != map_.end() && !entry->second.IsBlocked()
+             ? entry->second.value.get()
+             : nullptr;
+}
+
+void PolicyMap::MergeListValues(const std::string& policy) {
+  auto entry = map_.find(policy);
+  if (entry == map_.end() || entry->second.conflicts.empty())
+    return;
+  base::ListValue value;
+  DCHECK(entry->second.value->is_list());
+  bool has_valid_sources = !entry->second.IsBlocked();
+  if (!entry->second.IsBlocked()) {
+    for (const auto& i : entry->second.value->GetList())
+      value.GetList().emplace_back(i.Clone());
+  }
+  for (const auto& source : entry->second.conflicts) {
+    if (!source.IsBlocked() && source.level == entry->second.level) {
+      // SKip user cloud policy because it could be from arbitrary domain.
+      if (source.scope == POLICY_SCOPE_USER &&
+          source.source == POLICY_SOURCE_CLOUD) {
+        continue;
+      }
+      for (const auto& i : source.value->GetList())
+        value.GetList().emplace_back(i.Clone());
+      has_valid_sources = true;
+    }
+  }
+  if (has_valid_sources) {
+    Set(policy, entry->second.level, POLICY_SCOPE_MERGED, POLICY_SOURCE_MERGED,
+        base::Value::ToUniquePtrValue(value.Clone()),
+        std::move(entry->second.external_data_fetcher));
+  }
 }
 
 base::Value* PolicyMap::GetMutableValue(const std::string& policy) {
   auto entry = map_.find(policy);
-  return entry == map_.end() ? nullptr : entry->second.value.get();
+  return entry != map_.end() && !entry->second.IsBlocked()
+             ? entry->second.value.get()
+             : nullptr;
+}
+
+const PolicyMap::Entry* PolicyMap::GetUntrusted(
+    const std::string& policy) const {
+  auto entry = map_.find(policy);
+  return entry != map_.end() ? &entry->second : nullptr;
+}
+
+PolicyMap::Entry* PolicyMap::GetMutableUntrusted(const std::string& policy) {
+  auto entry = map_.find(policy);
+  return entry != map_.end() ? &entry->second : nullptr;
 }
 
 void PolicyMap::Set(
@@ -202,26 +258,33 @@ std::unique_ptr<PolicyMap> PolicyMap::DeepCopy() const {
 
 void PolicyMap::MergeFrom(const PolicyMap& other) {
   for (const auto& it : other) {
-    const Entry* entry = Get(it.first);
-    bool same_value = false;
-    if (!entry) {
-      Set(it.first, it.second.DeepCopy());
-    } else {
-      same_value = entry->value && it.second.value->Equals(entry->value.get());
-      if (it.second.has_higher_priority_than(*entry)) {
-        auto new_policy = it.second.DeepCopy();
-        new_policy.AddConflictingPolicy(*entry);
-        Set(it.first, std::move(new_policy));
-      } else {
-        GetMutable(it.first)->AddConflictingPolicy(it.second);
-      }
+    Entry* current_policy = GetMutableUntrusted(it.first);
+    auto other_policy = it.second.DeepCopy();
+
+    if (!current_policy) {
+      Set(it.first, std::move(other_policy));
+      continue;
     }
 
-    if (entry) {
-      GetMutable(it.first)->AddError(same_value
-                                         ? IDS_POLICY_CONFLICT_SAME_VALUE
-                                         : IDS_POLICY_CONFLICT_DIFF_VALUE);
+    auto& new_policy = other_policy.has_higher_priority_than(*current_policy)
+                           ? other_policy
+                           : *current_policy;
+    auto& conflict =
+        current_policy == &new_policy ? other_policy : *current_policy;
+
+    bool overwriting_default_policy =
+        new_policy.source != conflict.source &&
+        conflict.source == POLICY_SOURCE_ENTERPRISE_DEFAULT;
+    if (!overwriting_default_policy) {
+      new_policy.AddConflictingPolicy(conflict);
+      new_policy.AddError((current_policy->value &&
+                           it.second.value->Equals(current_policy->value.get()))
+                              ? IDS_POLICY_CONFLICT_SAME_VALUE
+                              : IDS_POLICY_CONFLICT_DIFF_VALUE);
     }
+
+    if (current_policy != &new_policy)
+      Set(it.first, std::move(new_policy));
   }
 }
 
@@ -291,7 +354,8 @@ void PolicyMap::Clear() {
 // static
 bool PolicyMap::MapEntryEquals(const PolicyMap::PolicyMapType::value_type& a,
                                const PolicyMap::PolicyMapType::value_type& b) {
-  return a.first == b.first && a.second.Equals(b.second);
+  bool equals = a.first == b.first && a.second.Equals(b.second);
+  return equals;
 }
 
 void PolicyMap::FilterErase(

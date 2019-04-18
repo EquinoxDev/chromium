@@ -20,7 +20,9 @@ import android.preference.PreferenceGroup;
 import android.provider.Settings;
 import android.support.annotation.IntDef;
 import android.support.annotation.Nullable;
+import android.support.v7.app.ActionBar;
 import android.support.v7.app.AlertDialog;
+import android.support.v7.app.AppCompatActivity;
 import android.view.LayoutInflater;
 import android.view.Menu;
 import android.view.MenuInflater;
@@ -31,6 +33,7 @@ import android.view.ViewGroup;
 import org.chromium.base.BuildInfo;
 import org.chromium.base.ContextUtils;
 import org.chromium.base.VisibleForTesting;
+import org.chromium.base.metrics.RecordUserAction;
 import org.chromium.base.task.PostTask;
 import org.chromium.chrome.R;
 import org.chromium.chrome.browser.contextual_suggestions.ContextualSuggestionsEnabledStateUtils;
@@ -51,8 +54,8 @@ import org.chromium.chrome.browser.util.IntentUtils;
 import org.chromium.components.signin.AccountManagerFacade;
 import org.chromium.components.signin.ChromeSigninController;
 import org.chromium.components.sync.AndroidSyncSettings;
-import org.chromium.components.sync.ProtocolErrorClientAction;
 import org.chromium.content_public.browser.UiThreadTaskTraits;
+import org.chromium.ui.UiUtils;
 import org.chromium.ui.widget.ButtonCompat;
 
 import java.lang.annotation.Retention;
@@ -149,6 +152,12 @@ public class SyncAndServicesPreferences extends PreferenceFragment
 
         getActivity().setTitle(R.string.prefs_sync_and_services);
         setHasOptionsMenu(true);
+        if (mIsFromSigninScreen) {
+            ActionBar actionBar = ((AppCompatActivity) getActivity()).getSupportActionBar();
+            assert actionBar != null;
+            actionBar.setHomeActionContentDescription(
+                    R.string.prefs_sync_and_services_content_description);
+        }
 
         PreferenceUtils.addPreferencesFromResource(this, R.xml.sync_and_services_preferences);
 
@@ -157,6 +166,8 @@ public class SyncAndServicesPreferences extends PreferenceFragment
 
         mSyncCategory = (PreferenceCategory) findPreference(PREF_SYNC_CATEGORY);
         mSyncErrorCard = findPreference(PREF_SYNC_ERROR_CARD);
+        mSyncErrorCard.setIcon(UiUtils.getTintedDrawable(
+                getActivity(), R.drawable.ic_sync_error_40dp, R.color.default_red));
         mSyncErrorCard.setOnPreferenceClickListener(
                 SyncPreferenceUtils.toOnClickListener(this, this::onSyncErrorCardClicked));
         mSyncRequested = (ChromeSwitchPreference) findPreference(PREF_SYNC_REQUESTED);
@@ -258,11 +269,6 @@ public class SyncAndServicesPreferences extends PreferenceFragment
         return result;
     }
 
-    private void confirmSettings() {
-        // Settings will be applied when mSyncSetupInProgressHandle is released in onDestroy.
-        getActivity().finish();
-    }
-
     @Override
     public void onStart() {
         super.onStart();
@@ -279,6 +285,11 @@ public class SyncAndServicesPreferences extends PreferenceFragment
         bottomBarShadow.setVisibility(View.GONE);
         View bottomBarButtonContainer = getView().findViewById(R.id.bottom_bar_button_container);
         bottomBarButtonContainer.setVisibility(View.GONE);
+
+        ActionBar actionBar = ((AppCompatActivity) getActivity()).getSupportActionBar();
+        assert actionBar != null;
+        // Content description was overridden in onCreate, reset it to the standard one.
+        actionBar.setHomeActionContentDescription(null);
     }
 
     @Override
@@ -392,8 +403,7 @@ public class SyncAndServicesPreferences extends PreferenceFragment
             return SyncError.AUTH_ERROR;
         }
 
-        if (mProfileSyncService.getProtocolErrorClientAction()
-                == ProtocolErrorClientAction.UPGRADE_CLIENT) {
+        if (mProfileSyncService.requiresClientUpgrade()) {
             return SyncError.CLIENT_OUT_OF_DATE;
         }
 
@@ -562,12 +572,21 @@ public class SyncAndServicesPreferences extends PreferenceFragment
     }
 
     private void showCancelSyncDialog() {
+        RecordUserAction.record("Signin_Signin_BackOnAdvancedSyncSettings");
         CancelSyncDialog dialog = new CancelSyncDialog();
         dialog.setTargetFragment(this, 0);
         dialog.show(getFragmentManager(), FRAGMENT_CANCEL_SYNC);
     }
 
+    private void confirmSettings() {
+        RecordUserAction.record("Signin_Signin_ConfirmAdvancedSyncSettings");
+        UnifiedConsentServiceBridge.recordSyncSetupDataTypesHistogram();
+        // Settings will be applied when mSyncSetupInProgressHandle is released in onDestroy.
+        getActivity().finish();
+    }
+
     private void cancelSync() {
+        RecordUserAction.record("Signin_Signin_CancelAdvancedSyncSettings");
         SigninManager.get().signOut(SignoutReason.USER_CLICKED_SIGNOUT_SETTINGS, null, null);
         getActivity().finish();
     }
@@ -587,12 +606,19 @@ public class SyncAndServicesPreferences extends PreferenceFragment
             return new AlertDialog.Builder(getActivity(), R.style.Theme_Chromium_AlertDialog)
                     .setTitle(R.string.cancel_sync_dialog_title)
                     .setMessage(R.string.cancel_sync_dialog_message)
-                    .setNegativeButton(R.string.back, (dialog, which) -> dialog.cancel())
-                    .setPositiveButton(R.string.cancel_sync_button, (dialog, which) -> cancelSync())
+                    .setNegativeButton(R.string.back, (dialog, which) -> onBackPressed())
+                    .setPositiveButton(
+                            R.string.cancel_sync_button, (dialog, which) -> onCancelSyncPressed())
                     .create();
         }
 
-        public void cancelSync() {
+        private void onBackPressed() {
+            RecordUserAction.record("Signin_Signin_CancelCancelAdvancedSyncSettings");
+            dismiss();
+        }
+
+        public void onCancelSyncPressed() {
+            RecordUserAction.record("Signin_Signin_ConfirmCancelAdvancedSyncSettings");
             SyncAndServicesPreferences fragment = (SyncAndServicesPreferences) getTargetFragment();
             fragment.cancelSync();
         }

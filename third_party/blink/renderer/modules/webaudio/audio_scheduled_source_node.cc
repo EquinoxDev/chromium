@@ -308,12 +308,14 @@ void AudioScheduledSourceNode::setOnended(EventListener* listener) {
 bool AudioScheduledSourceNode::HasPendingActivity() const {
   // To avoid the leak, a node should be collected regardless of its
   // playback state if the context is closed.
-  if (context()->IsContextClosed())
+  if (context()->ContextState() == BaseAudioContext::kClosed) {
     return false;
+  }
 
   // If a node is scheduled or playing, do not collect the node prematurely
   // even its reference is out of scope. Then fire onended event if assigned.
-  return GetAudioScheduledSourceHandler().IsPlayingOrScheduled();
+  return ContainsHandler() &&
+         GetAudioScheduledSourceHandler().IsPlayingOrScheduled();
 }
 
 }  // namespace blink

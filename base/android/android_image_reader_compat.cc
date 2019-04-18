@@ -10,11 +10,17 @@
 #include "base/feature_list.h"
 #include "base/logging.h"
 
+// Helper function to log errors from dlsym. Calling DLOG(ERROR) inside a macro
+// crashes clang code coverage. https://crbug.com/843356
+static void LogDlsymError(const char* func) {
+  DLOG(ERROR) << "Unable to load function " << func;
+}
+
 #define LOAD_FUNCTION(lib, func)                            \
   do {                                                      \
     func##_ = reinterpret_cast<p##func>(dlsym(lib, #func)); \
     if (!func##_) {                                         \
-      DLOG(ERROR) << "Unable to load function " << #func;   \
+      LogDlsymError(#func);                                 \
       return false;                                         \
     }                                                       \
   } while (0)
@@ -50,9 +56,10 @@ bool AndroidImageReader::LoadFunctions() {
   // devices, this is unlikely to happen in the foreseeable future, so we use
   // dynamic loading.
 
-  // Functions are not present for android version older than OREO
+  // Functions are not present for android version older than OREO.
+  // Currently we want to enable AImageReader only for android P+ devices.
   if (base::android::BuildInfo::GetInstance()->sdk_int() <
-      base::android::SDK_VERSION_OREO) {
+      base::android::SDK_VERSION_P) {
     return false;
   }
 

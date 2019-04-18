@@ -26,6 +26,9 @@ class GlsRunnerTestBase : public ::testing::Test {
   FakeGlsRunHelper* run_helper() { return &run_helper_; }
 
   FakeOSUserManager* fake_os_user_manager() { return &fake_os_user_manager_; }
+  FakeWinHttpUrlFetcherFactory* fake_http_url_fetcher_factory() {
+    return &fake_http_url_fetcher_factory_;
+  }
 
  private:
   FakeOSProcessManager fake_os_process_manager_;
@@ -34,6 +37,9 @@ class GlsRunnerTestBase : public ::testing::Test {
   FakeScopedUserProfileFactory fake_scoped_user_profile_factory_;
   registry_util::RegistryOverrideManager registry_override_;
   FakeGlsRunHelper run_helper_;
+  FakeInternetAvailabilityChecker fake_internet_checker_;
+  FakeAssociatedUserValidator fake_associated_user_validator_;
+  FakeWinHttpUrlFetcherFactory fake_http_url_fetcher_factory_;
 };
 
 }  // namespace testing

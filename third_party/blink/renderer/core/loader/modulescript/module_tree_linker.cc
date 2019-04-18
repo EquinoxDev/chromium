@@ -4,7 +4,7 @@
 
 #include "third_party/blink/renderer/core/loader/modulescript/module_tree_linker.h"
 
-#include "third_party/blink/renderer/bindings/core/v8/script_module.h"
+#include "third_party/blink/renderer/bindings/core/v8/module_record.h"
 #include "third_party/blink/renderer/core/loader/modulescript/module_script_fetch_request.h"
 #include "third_party/blink/renderer/core/loader/modulescript/module_tree_linker_registry.h"
 #include "third_party/blink/renderer/core/script/layered_api.h"
@@ -12,7 +12,6 @@
 #include "third_party/blink/renderer/platform/bindings/v8_throw_exception.h"
 #include "third_party/blink/renderer/platform/loader/fetch/resource_fetcher.h"
 #include "third_party/blink/renderer/platform/loader/fetch/resource_loading_log.h"
-#include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 #include "third_party/blink/renderer/platform/weborigin/security_policy.h"
 #include "third_party/blink/renderer/platform/wtf/vector.h"
 #include "v8/include/v8.h"
@@ -170,8 +169,8 @@ void ModuleTreeLinker::FetchRoot(const KURL& original_url,
   // href="https://github.com/drufball/layered-apis/blob/master/spec.md#fetch-a-module-script-graph"
   // step="1">Set url to the layered API fetching URL given url and the current
   // settings object's API base URL.</spec>
-  if (RuntimeEnabledFeatures::LayeredAPIEnabled())
-    url = blink::layered_api::ResolveFetchingURL(url);
+  if (modulator_->BuiltInModuleInfraEnabled())
+    url = blink::layered_api::ResolveFetchingURL(*modulator_, url);
 
 #if DCHECK_IS_ON()
   url_ = url;
@@ -309,7 +308,7 @@ void ModuleTreeLinker::FetchDescendants(const ModuleScript* module_script) {
   }
 
   // [FD] Step 2. Let record be module script's record.
-  ScriptModule record = module_script->Record();
+  ModuleRecord record = module_script->Record();
 
   // [FD] Step 1. If module script's record is null, then asynchronously
   // complete this algorithm with module script and abort these steps.
@@ -339,7 +338,7 @@ void ModuleTreeLinker::FetchDescendants(const ModuleScript* module_script) {
 
   // [FD] Step 5. For each string requested of record.[[RequestedModules]],
   Vector<Modulator::ModuleRequest> module_requests =
-      modulator_->ModuleRequestsFromScriptModule(record);
+      modulator_->ModuleRequestsFromModuleRecord(record);
   for (const auto& module_request : module_requests) {
     // [FD] Step 5.1. Let url be the result of resolving a module specifier
     // given module script and requested.
@@ -451,7 +450,7 @@ void ModuleTreeLinker::Instantiate() {
 #endif
 
     // [FDaI] Step 6.1. Let record be result's record.
-    ScriptModule record = result_->Record();
+    ModuleRecord record = result_->Record();
 
     // [FDaI] Step 6.2. Perform record.Instantiate().
     AdvanceState(State::kInstantiating);
@@ -502,14 +501,14 @@ ScriptValue ModuleTreeLinker::FindFirstParseError(
 
   // [FFPE] Step 4. If moduleScript's record is null, then return moduleScript's
   // parse error.
-  ScriptModule record = module_script->Record();
+  ModuleRecord record = module_script->Record();
   if (record.IsNull())
     return module_script->CreateParseError();
 
   // [FFPE] Step 5. Let childSpecifiers be the value of moduleScript's record's
   // [[RequestedModules]] internal slot.
   Vector<Modulator::ModuleRequest> child_specifiers =
-      modulator_->ModuleRequestsFromScriptModule(record);
+      modulator_->ModuleRequestsFromModuleRecord(record);
 
   for (const auto& module_request : child_specifiers) {
     // [FFPE] Step 6. Let childURLs be the list obtained by calling resolve a

@@ -6,15 +6,16 @@
 #include "net/quic/quic_chromium_alarm_factory.h"
 #include "net/quic/test_task_runner.h"
 #include "net/test/gtest_util.h"
-#include "net/third_party/quic/core/tls_client_handshaker.h"
-#include "net/third_party/quic/core/tls_server_handshaker.h"
-#include "net/third_party/quic/test_tools/mock_clock.h"
+#include "net/third_party/quiche/src/quic/core/tls_client_handshaker.h"
+#include "net/third_party/quiche/src/quic/core/tls_server_handshaker.h"
+#include "net/third_party/quiche/src/quic/test_tools/mock_clock.h"
 #include "third_party/blink/renderer/modules/peerconnection/adapters/p2p_quic_crypto_config_factory_impl.h"
 #include "third_party/blink/renderer/modules/peerconnection/adapters/p2p_quic_packet_transport.h"
 #include "third_party/blink/renderer/modules/peerconnection/adapters/p2p_quic_transport_factory_impl.h"
 #include "third_party/blink/renderer/modules/peerconnection/adapters/p2p_quic_transport_impl.h"
 #include "third_party/blink/renderer/modules/peerconnection/adapters/test/mock_p2p_quic_stream_delegate.h"
 #include "third_party/blink/renderer/modules/peerconnection/adapters/test/mock_p2p_quic_transport_delegate.h"
+#include "third_party/blink/renderer/platform/wtf/allocator.h"
 #include "third_party/webrtc/rtc_base/rtc_certificate.h"
 #include "third_party/webrtc/rtc_base/ssl_fingerprint.h"
 #include "third_party/webrtc/rtc_base/ssl_identity.h"
@@ -43,6 +44,8 @@ const uint32_t kTransportDelegateReadBufferSize = 100 * 1024;
 //       .WillOnce(FireCallback(run_loop.CreateCallback()));
 //   run_loop.RunUntilCallbacksFired(task_runner);
 class FireCallbackAction {
+  STACK_ALLOCATED();
+
  public:
   FireCallbackAction(base::RepeatingCallback<void()> callback)
       : callback_(callback) {}
@@ -71,6 +74,8 @@ PolymorphicAction<FireCallbackAction> FireCallback(
 // case it will make more sense to use the TestCompletionCallback and the
 // RunLoop for driving the test.
 class CallbackRunLoop {
+  STACK_ALLOCATED();
+
  public:
   CallbackRunLoop(scoped_refptr<net::test::TestTaskRunner> task_runner)
       : task_runner_(task_runner) {}
@@ -209,7 +214,7 @@ class FakePacketTransport : public P2PQuicPacketTransport,
     }
   }
   // If async, packets are queued here to send.
-  quic::QuicDeque<quic::QuicString> packet_queue_;
+  quic::QuicDeque<std::string> packet_queue_;
   // Alarm used to send data asynchronously.
   quic::QuicArenaScopedPtr<quic::QuicAlarm> alarm_;
   // The P2PQuicTransportImpl, which sets itself as the delegate in its
@@ -234,6 +239,8 @@ class FakePacketTransport : public P2PQuicPacketTransport,
 // also keeps track of when callbacks are expected on the delegate objects,
 // which allows running the TestTaskRunner tasks until they have been fired.
 class QuicPeerForTest {
+  USING_FAST_MALLOC(QuicPeerForTest);
+
  public:
   QuicPeerForTest(
       std::unique_ptr<FakePacketTransport> packet_transport,
@@ -314,26 +321,26 @@ class FailingProofVerifierStub : public quic::ProofVerifier {
 
   // ProofVerifier override.
   quic::QuicAsyncStatus VerifyProof(
-      const quic::QuicString& hostname,
+      const std::string& hostname,
       const uint16_t port,
-      const quic::QuicString& server_config,
+      const std::string& server_config,
       quic::QuicTransportVersion transport_version,
       quic::QuicStringPiece chlo_hash,
-      const std::vector<quic::QuicString>& certs,
-      const quic::QuicString& cert_sct,
-      const quic::QuicString& signature,
+      const std::vector<std::string>& certs,
+      const std::string& cert_sct,
+      const std::string& signature,
       const quic::ProofVerifyContext* context,
-      quic::QuicString* error_details,
+      std::string* error_details,
       std::unique_ptr<quic::ProofVerifyDetails>* verify_details,
       std::unique_ptr<quic::ProofVerifierCallback> callback) override {
     return quic::QUIC_FAILURE;
   }
 
   quic::QuicAsyncStatus VerifyCertChain(
-      const quic::QuicString& hostname,
-      const std::vector<quic::QuicString>& certs,
+      const std::string& hostname,
+      const std::vector<std::string>& certs,
       const quic::ProofVerifyContext* context,
-      quic::QuicString* error_details,
+      std::string* error_details,
       std::unique_ptr<quic::ProofVerifyDetails>* details,
       std::unique_ptr<quic::ProofVerifierCallback> callback) override {
     return quic::QUIC_FAILURE;
@@ -352,8 +359,8 @@ class ProofSourceStub : public quic::ProofSource {
 
   // ProofSource override.
   void GetProof(const quic::QuicSocketAddress& server_addr,
-                const quic::QuicString& hostname,
-                const quic::QuicString& server_config,
+                const std::string& hostname,
+                const std::string& server_config,
                 quic::QuicTransportVersion transport_version,
                 quic::QuicStringPiece chlo_hash,
                 std::unique_ptr<Callback> callback) override {
@@ -366,15 +373,15 @@ class ProofSourceStub : public quic::ProofSource {
 
   quic::QuicReferenceCountedPointer<Chain> GetCertChain(
       const quic::QuicSocketAddress& server_address,
-      const quic::QuicString& hostname) override {
-    std::vector<quic::QuicString> certs;
+      const std::string& hostname) override {
+    std::vector<std::string> certs;
     certs.push_back("Test cert");
     return quic::QuicReferenceCountedPointer<Chain>(
         new ProofSource::Chain(certs));
   }
   void ComputeTlsSignature(
       const quic::QuicSocketAddress& server_address,
-      const quic::QuicString& hostname,
+      const std::string& hostname,
       uint16_t signature_algorithm,
       quic::QuicStringPiece in,
       std::unique_ptr<SignatureCallback> callback) override {
@@ -889,8 +896,8 @@ TEST_F(P2PQuicTransportTest, ClientCreatesStream) {
 
   RunCurrentTasks();
 
-  EXPECT_TRUE(client_peer()->quic_transport()->HasOpenDynamicStreams());
-  EXPECT_FALSE(server_peer()->quic_transport()->HasOpenDynamicStreams());
+  EXPECT_TRUE(client_peer()->quic_transport()->ShouldKeepConnectionAlive());
+  EXPECT_FALSE(server_peer()->quic_transport()->ShouldKeepConnectionAlive());
 
   // After sending data across it will trigger a stream to be created on the
   // server side.
@@ -911,7 +918,7 @@ TEST_F(P2PQuicTransportTest, ClientCreatesStream) {
       /*fin=*/false);
   run_loop.RunUntilCallbacksFired();
 
-  EXPECT_TRUE(server_peer()->quic_transport()->HasOpenDynamicStreams());
+  EXPECT_TRUE(server_peer()->quic_transport()->ShouldKeepConnectionAlive());
 }
 
 // Tests that the server transport can create a stream and an incoming stream
@@ -925,8 +932,8 @@ TEST_F(P2PQuicTransportTest, ServerCreatesStream) {
 
   RunCurrentTasks();
 
-  EXPECT_TRUE(server_peer()->quic_transport()->HasOpenDynamicStreams());
-  EXPECT_FALSE(client_peer()->quic_transport()->HasOpenDynamicStreams());
+  EXPECT_TRUE(server_peer()->quic_transport()->ShouldKeepConnectionAlive());
+  EXPECT_FALSE(client_peer()->quic_transport()->ShouldKeepConnectionAlive());
 
   // After sending data across it will trigger a stream to be created on the
   // server side.
@@ -947,7 +954,7 @@ TEST_F(P2PQuicTransportTest, ServerCreatesStream) {
       /*fin=*/false);
   run_loop.RunUntilCallbacksFired();
 
-  EXPECT_TRUE(client_peer()->quic_transport()->HasOpenDynamicStreams());
+  EXPECT_TRUE(client_peer()->quic_transport()->ShouldKeepConnectionAlive());
 }
 
 // Tests that when the client transport calls Stop() it closes its outgoing

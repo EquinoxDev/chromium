@@ -24,20 +24,22 @@ namespace chromeos {
 namespace {
 
 // Fake backend for SyncedPrintersManager.  This allows us to poke arbitrary
-// changes in the configured and enterprise printer lists.
+// changes in the saved and enterprise printer lists.
 class FakeSyncedPrintersManager : public SyncedPrintersManager {
  public:
   FakeSyncedPrintersManager() = default;
   ~FakeSyncedPrintersManager() override = default;
 
   // Returns the printers that are saved in preferences.
-  std::vector<Printer> GetConfiguredPrinters() const override {
-    return configured_printers_;
+  std::vector<Printer> GetSavedPrinters() const override {
+    return saved_printers_;
   }
 
   // Returns printers from enterprise policy.
-  std::vector<Printer> GetEnterprisePrinters() const override {
-    return enterprise_printers_;
+  bool GetEnterprisePrinters(std::vector<Printer>* printers) const override {
+    if (printers != nullptr)
+      *printers = enterprise_printers_;
+    return true;
   }
 
   // Attach |observer| for notification of events.  |observer| is expected to
@@ -54,30 +56,29 @@ class FakeSyncedPrintersManager : public SyncedPrintersManager {
     observers_.RemoveObserver(observer);
   }
 
-  void UpdateConfiguredPrinter(const Printer& printer) override {
+  void UpdateSavedPrinter(const Printer& printer) override {
     size_t i;
-    for (i = 0; i < configured_printers_.size(); ++i) {
-      if (configured_printers_[i].id() == printer.id()) {
-        configured_printers_[i] = printer;
+    for (i = 0; i < saved_printers_.size(); ++i) {
+      if (saved_printers_[i].id() == printer.id()) {
+        saved_printers_[i] = printer;
         break;
       }
     }
-    if (i == configured_printers_.size()) {
+    if (i == saved_printers_.size()) {
       // Didn't find it, add it.
-      configured_printers_.push_back(printer);
+      saved_printers_.push_back(printer);
     }
     for (Observer& observer : observers_) {
-      observer.OnConfiguredPrintersChanged(configured_printers_);
+      observer.OnSavedPrintersChanged();
     }
   }
 
-  bool RemoveConfiguredPrinter(const std::string& printer_id) override {
-    for (auto it = configured_printers_.begin();
-         it != configured_printers_.end(); ++it) {
+  bool RemoveSavedPrinter(const std::string& printer_id) override {
+    for (auto it = saved_printers_.begin(); it != saved_printers_.end(); ++it) {
       if (it->id() == printer_id) {
-        configured_printers_.erase(it);
+        saved_printers_.erase(it);
         for (Observer& observer : observers_) {
-          observer.OnConfiguredPrintersChanged(configured_printers_);
+          observer.OnSavedPrintersChanged();
         }
         return true;
       }
@@ -95,7 +96,7 @@ class FakeSyncedPrintersManager : public SyncedPrintersManager {
   }
   PrintersSyncBridge* GetSyncBridge() override { return nullptr; }
   // Returns the printer with id |printer_id|, or nullptr if no such printer
-  // exists.  Searches both Configured and Enterprise printers.
+  // exists.  Searches both Saved and Enterprise printers.
   std::unique_ptr<Printer> GetPrinter(
       const std::string& printer_id) const override {
     return nullptr;
@@ -103,22 +104,22 @@ class FakeSyncedPrintersManager : public SyncedPrintersManager {
 
   // Fake manipulation functions.
 
-  // Add the given printers to the list of configured printers and
+  // Add the given printers to the list of saved printers and
   // notify observers.
-  void AddConfiguredPrinters(const std::vector<Printer>& printers) {
-    configured_printers_.insert(configured_printers_.end(), printers.begin(),
-                                printers.end());
+  void AddSavedPrinters(const std::vector<Printer>& printers) {
+    saved_printers_.insert(saved_printers_.end(), printers.begin(),
+                           printers.end());
     for (Observer& observer : observers_) {
-      observer.OnConfiguredPrintersChanged(configured_printers_);
+      observer.OnSavedPrintersChanged();
     }
   }
 
-  // Remove the printers with the given ids from the set of configured printers,
+  // Remove the printers with the given ids from the set of saved printers,
   // notify observers.
-  void RemoveConfiguredPrinters(const std::unordered_set<std::string>& ids) {
-    RemovePrinters(ids, &configured_printers_);
+  void RemoveSavedPrinters(const std::unordered_set<std::string>& ids) {
+    RemovePrinters(ids, &saved_printers_);
     for (Observer& observer : observers_) {
-      observer.OnConfiguredPrintersChanged(configured_printers_);
+      observer.OnSavedPrintersChanged();
     }
   }
 
@@ -128,7 +129,7 @@ class FakeSyncedPrintersManager : public SyncedPrintersManager {
     enterprise_printers_.insert(enterprise_printers_.end(), printers.begin(),
                                 printers.end());
     for (Observer& observer : observers_) {
-      observer.OnEnterprisePrintersChanged(enterprise_printers_);
+      observer.OnEnterprisePrintersChanged();
     }
   }
 
@@ -137,7 +138,7 @@ class FakeSyncedPrintersManager : public SyncedPrintersManager {
   void RemoveEnterprisePrinters(const std::unordered_set<std::string>& ids) {
     RemovePrinters(ids, &enterprise_printers_);
     for (Observer& observer : observers_) {
-      observer.OnEnterprisePrintersChanged(enterprise_printers_);
+      observer.OnEnterprisePrintersChanged();
     }
   }
 
@@ -153,7 +154,7 @@ class FakeSyncedPrintersManager : public SyncedPrintersManager {
   }
 
   base::ObserverList<SyncedPrintersManager::Observer>::Unchecked observers_;
-  std::vector<Printer> configured_printers_;
+  std::vector<Printer> saved_printers_;
   std::vector<Printer> enterprise_printers_;
 };
 
@@ -162,11 +163,8 @@ class FakePrinterDetector : public PrinterDetector {
   FakePrinterDetector() {}
   ~FakePrinterDetector() override = default;
 
-  void AddObserver(Observer* observer) override {
-    observers_.AddObserver(observer);
-  }
-  void RemoveObserver(Observer* observer) override {
-    observers_.RemoveObserver(observer);
+  void RegisterPrintersFoundCallback(OnPrintersFoundCallback cb) override {
+    on_printers_found_callback_ = std::move(cb);
   }
 
   std::vector<DetectedPrinter> GetPrinters() override { return detections_; }
@@ -175,9 +173,7 @@ class FakePrinterDetector : public PrinterDetector {
       const std::vector<PrinterDetector::DetectedPrinter>& new_detections) {
     detections_.insert(detections_.end(), new_detections.begin(),
                        new_detections.end());
-    for (Observer& observer : observers_) {
-      observer.OnPrintersFound(detections_);
-    }
+    on_printers_found_callback_.Run(detections_);
   }
 
   // Remove printers that have ids in ids.
@@ -193,7 +189,7 @@ class FakePrinterDetector : public PrinterDetector {
 
  private:
   std::vector<DetectedPrinter> detections_;
-  base::ObserverList<PrinterDetector::Observer>::Unchecked observers_;
+  OnPrintersFoundCallback on_printers_found_callback_;
 };
 
 // Fake PpdProvider backend.  This fake generates PpdReferences based on
@@ -346,11 +342,10 @@ TEST_F(CupsPrintersManagerTest, GetEnterprisePrinters) {
   ExpectPrintersInClassAre(CupsPrintersManager::kEnterprise, {"Foo", "Bar"});
 }
 
-// Test that Configured printers from SyncedPrinterManager are
+// Test that Saved printers from SyncedPrinterManager are
 // surfaced appropriately.
-TEST_F(CupsPrintersManagerTest, GetConfiguredPrinters) {
-  synced_printers_manager_.AddConfiguredPrinters(
-      {Printer("Foo"), Printer("Bar")});
+TEST_F(CupsPrintersManagerTest, GetSavedPrinters) {
+  synced_printers_manager_.AddSavedPrinters({Printer("Foo"), Printer("Bar")});
   scoped_task_environment_.RunUntilIdle();
   ExpectPrintersInClassAre(CupsPrintersManager::kConfigured, {"Foo", "Bar"});
 }
@@ -372,8 +367,7 @@ TEST_F(CupsPrintersManagerTest, GetUsbPrinters) {
 TEST_F(CupsPrintersManagerTest, GetZeroconfPrinters) {
   zeroconf_detector_->AddDetections({MakeDiscoveredPrinter("DiscoveredPrinter"),
                                      MakeAutomaticPrinter("AutomaticPrinter")});
-  synced_printers_manager_.AddConfiguredPrinters(
-      {Printer("Foo"), Printer("Bar")});
+  synced_printers_manager_.AddSavedPrinters({Printer("Foo"), Printer("Bar")});
 
   scoped_task_environment_.RunUntilIdle();
   ExpectPrintersInClassAre(CupsPrintersManager::kDiscovered,
@@ -420,7 +414,7 @@ TEST_F(CupsPrintersManagerTest, UpdateConfiguredPrinter) {
   // Start with a printer in each class named after the class it's in, except
   // Enterprise which is not relevant to this test.
   Printer existing_configured("Configured");
-  synced_printers_manager_.AddConfiguredPrinters({existing_configured});
+  synced_printers_manager_.AddSavedPrinters({existing_configured});
   usb_detector_->AddDetections({MakeDiscoveredPrinter("Discovered")});
   zeroconf_detector_->AddDetections({MakeAutomaticPrinter("Automatic")});
   scoped_task_environment_.RunUntilIdle();
@@ -474,7 +468,7 @@ TEST_F(CupsPrintersManagerTest, UpdateConfiguredPrinter) {
 // Test that GetPrinter() finds printers in any class, and returns null if
 // a printer is not found.
 TEST_F(CupsPrintersManagerTest, GetPrinter) {
-  synced_printers_manager_.AddConfiguredPrinters({Printer("Configured")});
+  synced_printers_manager_.AddSavedPrinters({Printer("Configured")});
   synced_printers_manager_.AddEnterprisePrinters({Printer("Enterprise")});
   usb_detector_->AddDetections({MakeDiscoveredPrinter("Discovered")});
   zeroconf_detector_->AddDetections({MakeAutomaticPrinter("Automatic")});
@@ -495,7 +489,7 @@ TEST_F(CupsPrintersManagerTest, GetPrinter) {
 // GetPrinters() will only return printers from
 // |CupsPrintersManager::kEnterprise|.
 TEST_F(CupsPrintersManagerTest, GetPrintersUserNativePrintersDisabled) {
-  synced_printers_manager_.AddConfiguredPrinters({Printer("Configured")});
+  synced_printers_manager_.AddSavedPrinters({Printer("Configured")});
   synced_printers_manager_.AddEnterprisePrinters({Printer("Enterprise")});
   scoped_task_environment_.RunUntilIdle();
 
@@ -520,7 +514,7 @@ TEST_F(CupsPrintersManagerTest,
   // Start by installing a configured printer to be used to test than any
   // changes made to the printer will not be propogated.
   Printer existing_configured("Configured");
-  synced_printers_manager_.AddConfiguredPrinters({existing_configured});
+  synced_printers_manager_.AddSavedPrinters({existing_configured});
   usb_detector_->AddDetections({MakeDiscoveredPrinter("Discovered")});
   zeroconf_detector_->AddDetections({MakeAutomaticPrinter("Automatic")});
   scoped_task_environment_.RunUntilIdle();
@@ -575,7 +569,7 @@ TEST_F(CupsPrintersManagerTest,
 // returns a printer when the given printer id corresponds to an enterprise
 // printer. Otherwise, it returns nothing.
 TEST_F(CupsPrintersManagerTest, GetPrinterUserNativePrintersDisabled) {
-  synced_printers_manager_.AddConfiguredPrinters({Printer("Configured")});
+  synced_printers_manager_.AddSavedPrinters({Printer("Configured")});
   synced_printers_manager_.AddEnterprisePrinters({Printer("Enterprise")});
   scoped_task_environment_.RunUntilIdle();
 

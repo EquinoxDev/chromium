@@ -149,14 +149,9 @@ SK_API void SkDebugf_FileLine(const char* file, int line, bool fatal,
 #define SK_SUPPORT_LEGACY_DRAWLOOPER
 #endif
 
-#ifndef SK_SUPPORT_LEGACY_SETLENGTH
-#define SK_SUPPORT_LEGACY_SETLENGTH
-#endif
-
-// Skia is enabling this feature soon. Chrome probably does
-// not want it for M64
-#ifndef SK_DISABLE_EXPLICIT_GPU_RESOURCE_ALLOCATION
-#define SK_DISABLE_EXPLICIT_GPU_RESOURCE_ALLOCATION
+// Chrome should only sort opLists within DDLs
+#ifndef SK_DISABLE_OPLIST_SORTING
+#define SK_DISABLE_OPLIST_SORTING
 #endif
 
 #ifndef SK_IGNORE_LINEONLY_AA_CONVEX_PATH_OPTS
@@ -170,15 +165,15 @@ SK_API void SkDebugf_FileLine(const char* file, int line, bool fatal,
 #define SK_SUPPORT_LEGACY_AAA_CHOICE
 #endif
 
-#ifndef SK_SUPPORT_LEGACY_TEXTBLOBCACHEDIFFCANVAS_CONSTRUCTOR
-#define SK_SUPPORT_LEGACY_TEXTBLOBCACHEDIFFCANVAS_CONSTRUCTOR
-#endif
-
 // We're turning this off indefinitely,
 // until we can figure out some fundamental problems with its approach.
 //
 // See chromium:913223, skia:6886.
 #define SK_DISABLE_DAA
+
+// Staging for lowp::bilerp_clamp_8888, and for planned misc. others.
+#define SK_DISABLE_LOWP_BILERP_CLAMP_CLAMP_STAGE
+#define SK_DISABLE_NEXT_BATCH_OF_LOWP_STAGES
 
 ///////////////////////// Imported from BUILD.gn and skia_common.gypi
 

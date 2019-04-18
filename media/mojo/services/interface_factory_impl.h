@@ -8,6 +8,8 @@
 #include <memory>
 
 #include "base/macros.h"
+#include "base/unguessable_token.h"
+#include "build/build_config.h"
 #include "media/base/media_util.h"
 #include "media/mojo/buildflags.h"
 #include "media/mojo/interfaces/audio_decoder.mojom.h"
@@ -39,9 +41,21 @@ class InterfaceFactoryImpl : public DeferredDestroy<mojom::InterfaceFactory> {
   // mojom::InterfaceFactory implementation.
   void CreateAudioDecoder(mojom::AudioDecoderRequest request) final;
   void CreateVideoDecoder(mojom::VideoDecoderRequest request) final;
-  void CreateRenderer(media::mojom::HostedRendererType type,
-                      const std::string& type_specific_id,
-                      mojom::RendererRequest request) final;
+  void CreateDefaultRenderer(const std::string& audio_device_id,
+                             mojom::RendererRequest request) final;
+#if BUILDFLAG(ENABLE_CAST_RENDERER)
+  void CreateCastRenderer(const base::UnguessableToken& overlay_plane_id,
+                          media::mojom::RendererRequest request) final;
+#endif
+#if defined(OS_ANDROID)
+  void CreateMediaPlayerRenderer(
+      mojom::MediaPlayerRendererClientExtensionPtr client_extension_ptr,
+      mojom::RendererRequest request,
+      mojom::MediaPlayerRendererExtensionRequest renderer_extension_request)
+      final;
+  void CreateFlingingRenderer(const std::string& presentation_id,
+                              mojom::RendererRequest request) final;
+#endif  // defined(OS_ANDROID)
   void CreateCdm(const std::string& key_system,
                  mojom::ContentDecryptionModuleRequest request) final;
   void CreateDecryptor(int cdm_id, mojom::DecryptorRequest request) final;

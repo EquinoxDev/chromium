@@ -27,7 +27,6 @@
 #include "components/viz/service/surfaces/surface_hittest.h"
 #include "content/browser/compositor/surface_utils.h"
 #include "content/browser/gpu/compositor_util.h"
-#include "content/common/tab_switching_time_callback.h"
 #include "content/public/common/content_switches.h"
 #include "third_party/khronos/GLES2/gl2.h"
 #include "third_party/skia/include/core/SkColor.h"
@@ -51,8 +50,7 @@ DelegatedFrameHost::DelegatedFrameHost(const viz::FrameSinkId& frame_sink_id,
                                        bool should_register_frame_sink_id)
     : frame_sink_id_(frame_sink_id),
       client_(client),
-      enable_viz_(
-          base::FeatureList::IsEnabled(features::kVizDisplayCompositor)),
+      enable_viz_(features::IsVizDisplayCompositorEnabled()),
       should_register_frame_sink_id_(should_register_frame_sink_id),
       host_frame_sink_manager_(GetHostFrameSinkManager()),
       frame_evictor_(std::make_unique<viz::FrameEvictor>(this)),
@@ -94,14 +92,18 @@ DelegatedFrameHost::~DelegatedFrameHost() {
 void DelegatedFrameHost::WasShown(
     const viz::LocalSurfaceId& new_local_surface_id,
     const gfx::Size& new_dip_size,
-    bool record_presentation_time) {
+    bool record_presentation_time,
+    base::TimeTicks tab_switch_start_time) {
   // Cancel any pending frame eviction and unpause it if paused.
   frame_eviction_state_ = FrameEvictionState::kNotStarted;
 
   frame_evictor_->SetVisible(true);
-  if (record_presentation_time && compositor_) {
+  if (record_presentation_time && compositor_ &&
+      !tab_switch_start_time.is_null()) {
     compositor_->RequestPresentationTimeForNextFrame(
-        CreateTabSwitchingTimeRecorder(base::TimeTicks::Now()));
+        tab_switch_time_recorder_.BeginTimeRecording(
+            tab_switch_start_time, true /* has_saved_frames */,
+            base::TimeTicks::Now()));
   }
 
   // Use the default deadline to synchronize web content with browser UI.
@@ -362,7 +364,7 @@ void DelegatedFrameHost::OnFrameTokenChanged(uint32_t frame_token) {
 
 void DelegatedFrameHost::OnBeginFrame(
     const viz::BeginFrameArgs& args,
-    const base::flat_map<uint32_t, gfx::PresentationFeedback>& feedbacks) {
+    const viz::PresentationFeedbackMap& feedbacks) {
   if (renderer_compositor_frame_sink_)
     renderer_compositor_frame_sink_->OnBeginFrame(args, feedbacks);
   client_->OnBeginFrame(args.frame_time);
@@ -487,11 +489,6 @@ void DelegatedFrameHost::OnCompositingShuttingDown(ui::Compositor* compositor) {
 // DelegatedFrameHost, ContextFactoryObserver implementation:
 
 void DelegatedFrameHost::OnLostSharedContext() {}
-
-void DelegatedFrameHost::OnLostVizProcess() {
-  if (HasSavedFrame())
-    frame_evictor_->OnSurfaceDiscarded();
-}
 
 ////////////////////////////////////////////////////////////////////////////////
 // DelegatedFrameHost, private:

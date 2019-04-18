@@ -68,7 +68,7 @@ int QuicProxyClientSocket::RestartWithAuth(CompletionOnceCallback callback) {
   // stream may not be reused and a new QuicProxyClientSocket must be
   // created (possibly on top of the same QUIC Session).
   next_state_ = STATE_DISCONNECTED;
-  return OK;
+  return ERR_UNABLE_TO_REUSE_CONNECTION_FOR_PROXY_AUTH;
 }
 
 bool QuicProxyClientSocket::IsUsingSpdy() const {
@@ -79,9 +79,13 @@ NextProto QuicProxyClientSocket::GetProxyNegotiatedProtocol() const {
   return kProtoQUIC;
 }
 
-void QuicProxyClientSocket::SetStreamPriority(RequestPriority priority) {
-  stream_->SetPriority(ConvertRequestPriorityToQuicPriority(priority));
-}
+// Ignore priority changes, just use priority of initial request. Since multiple
+// requests are pooled on the QuicProxyClientSocket, reprioritization doesn't
+// really work.
+//
+// TODO(mmenke):  Use a single priority value for all QuicProxyClientSockets,
+// regardless of what priority they're created with.
+void QuicProxyClientSocket::SetStreamPriority(RequestPriority priority) {}
 
 // Sends a HEADERS frame to the proxy with a CONNECT request
 // for the specified endpoint.  Waits for the server to send back
@@ -153,8 +157,14 @@ int64_t QuicProxyClientSocket::GetTotalReceivedBytes() const {
 }
 
 void QuicProxyClientSocket::ApplySocketTag(const SocketTag& tag) {
-  // |session_| can be tagged, but |stream_| cannot.
-  CHECK(false);
+  // In the case of a connection to the proxy using HTTP/2 or HTTP/3 where the
+  // underlying socket may multiplex multiple streams, applying this request's
+  // socket tag to the multiplexed session would incorrectly apply the socket
+  // tag to all mutliplexed streams. Fortunately socket tagging is only
+  // supported on Android without the data reduction proxy, so only simple HTTP
+  // proxies are supported, so proxies won't be using HTTP/2 or HTTP/3. Enforce
+  // that a specific (non-default) tag isn't being applied.
+  CHECK(tag == SocketTag());
 }
 
 int QuicProxyClientSocket::Read(IOBuffer* buf,
@@ -405,7 +415,7 @@ int QuicProxyClientSocket::DoReadReplyComplete(int result) {
       if (!SanitizeProxyRedirect(&response_))
         return ERR_TUNNEL_CONNECTION_FAILED;
       next_state_ = STATE_DISCONNECTED;
-      return ERR_HTTPS_PROXY_TUNNEL_RESPONSE;
+      return ERR_HTTPS_PROXY_TUNNEL_RESPONSE_REDIRECT;
 
     case 407:  // Proxy Authentication Required
       next_state_ = STATE_CONNECT_COMPLETE;

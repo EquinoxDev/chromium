@@ -91,17 +91,15 @@ OmniboxEventProto::Suggestion::ResultType AsOmniboxEventResultType(
 
 }  // namespace
 
-OmniboxMetricsProvider::OmniboxMetricsProvider(
-    const base::Callback<bool(void)>& is_off_the_record_callback)
-    : is_off_the_record_callback_(is_off_the_record_callback) {}
+OmniboxMetricsProvider::OmniboxMetricsProvider() {}
 
 OmniboxMetricsProvider::~OmniboxMetricsProvider() {
 }
 
 void OmniboxMetricsProvider::OnRecordingEnabled() {
   subscription_ = OmniboxEventGlobalTracker::GetInstance()->RegisterCallback(
-      base::Bind(&OmniboxMetricsProvider::OnURLOpenedFromOmnibox,
-                 base::Unretained(this)));
+      base::BindRepeating(&OmniboxMetricsProvider::OnURLOpenedFromOmnibox,
+                          base::Unretained(this)));
 }
 
 void OmniboxMetricsProvider::OnRecordingDisabled() {
@@ -115,10 +113,7 @@ void OmniboxMetricsProvider::ProvideCurrentSessionData(
 }
 
 void OmniboxMetricsProvider::OnURLOpenedFromOmnibox(OmniboxLog* log) {
-  // Do not log events to UMA if the embedder reports that the user is in an
-  // off-the-record context.
-  if (!is_off_the_record_callback_.Run())
-    RecordOmniboxOpenedURL(*log);
+  RecordOmniboxOpenedURL(*log);
 }
 
 void OmniboxMetricsProvider::RecordOmniboxOpenedURL(const OmniboxLog& log) {
@@ -174,17 +169,13 @@ void OmniboxMetricsProvider::RecordOmniboxOpenedURL(const OmniboxLog& log) {
     if (i->subtype_identifier > 0)
       suggestion->set_result_subtype_identifier(i->subtype_identifier);
     suggestion->set_has_tab_match(i->has_tab_match);
-    // TODO(krb@chromium.org): Try including when libprotobuf is updated.
-#if !defined(OS_ANDROID) && !defined(OS_IOS)
     suggestion->set_is_keyword_suggestion(i->from_keyword);
-#endif
   }
   for (auto i(log.providers_info.begin()); i != log.providers_info.end(); ++i) {
     OmniboxEventProto::ProviderInfo* provider_info =
         omnibox_event->add_provider_info();
     provider_info->CopyFrom(*i);
   }
-#if !defined(OS_ANDROID) && !defined(OS_IOS)
   omnibox_event->set_in_keyword_mode(log.in_keyword_mode);
   if (log.in_keyword_mode) {
     if (metrics::OmniboxEventProto_KeywordModeEntryMethod_IsValid(
@@ -194,5 +185,4 @@ void OmniboxMetricsProvider::RecordOmniboxOpenedURL(const OmniboxLog& log) {
     else
       omnibox_event->set_keyword_mode_entry_method(OmniboxEventProto::INVALID);
   }
-#endif
 }

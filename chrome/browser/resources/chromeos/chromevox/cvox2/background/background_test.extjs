@@ -1369,7 +1369,14 @@ TEST_F('ChromeVoxBackgroundTest', 'EditableKeyCommand', function() {
   });
 });
 
-TEST_F('ChromeVoxBackgroundTest', 'TextSelectionAndLiveRegion', function() {
+// TODO(crbug.com/935678): Test times out flakily in MSAN builds.
+TEST_F_WITH_PREAMBLE(`
+#if defined(MEMORY_SANITIZER)
+#define MAYBE_TextSelectionAndLiveRegion DISABLED_TextSelectionAndLiveRegion
+#else
+#define MAYBE_TextSelectionAndLiveRegion TextSelectionAndLiveRegion
+#endif
+`, 'ChromeVoxBackgroundTest', 'MAYBE_TextSelectionAndLiveRegion', function() {
   DesktopAutomationHandler.announceActions = true;
   var mockFeedback = this.createMockFeedback();
   this.runWithLoadedTree(function(root) {/*!
@@ -1532,30 +1539,11 @@ TEST_F('ChromeVoxBackgroundTest', 'NavigationEscapesEdit', function() {
           .call(textArea.focus.bind(textArea))
           .expectSpeech('Text area')
           .call(assertBeginning.bind(this, true))
-          .call(assertEnd.bind(this, false))
-          .clearPendingOutput()
-
-          .call(press(40  /* ArrowDown */))
-          .expectSpeech('is')
-          .call(press(39  /* ArrowRight */))
-          .expectSpeech('s')
-          .call(assertBeginning.bind(this, false))
-          .call(assertEnd.bind(this, false))
-
-          .call(press(40  /* ArrowDown */))
-          .call(press(37  /* ArrowLeft */))
-          .expectSpeech('a')
-          .call(assertBeginning.bind(this, false))
-          .call(assertEnd.bind(this, false))
-
-          .call(press(40  /* ArrowDown */))
-          .expectSpeech('test')
-          .call(press(39  /* ArrowRight */))
-          .expectSpeech('e')
-          .call(assertBeginning.bind(this, false))
           .call(assertEnd.bind(this, true))
 
           .replay();
+
+      // TODO: soft line breaks currently won't work in <textarea>.
     }.bind(this));
     contentEditable.focus();
   });
@@ -1798,12 +1786,13 @@ TEST_F('ChromeVoxBackgroundTest', 'ListName', function() {
 TEST_F('ChromeVoxBackgroundTest', 'LayoutTable', function() {
   var mockFeedback = this.createMockFeedback();
   this.runWithLoadedTree(function() {/*
-    <table><tr><td>start</td></tr></table>
+    <table><tr><td>start</td></tr></table><p>end</p>
   */}, function(root) {
-    mockFeedback.expectSpeech(
-            'start',
-            'row 1 column 1',
-            'Table , 1 by 1')
+    mockFeedback.expectSpeech('start')
+        .call(doCmd('nextObject'))
+        .expectNextSpeechUtteranceIsNot('row 1 column 1')
+        .expectNextSpeechUtteranceIsNot('Table , 1 by 1')
+        .expectSpeech('end')
         .replay();
   });
 });
@@ -1932,35 +1921,5 @@ TEST_F('ChromeVoxBackgroundTest', 'DISABLED_ValidationTest', function() {
       .expectSpeech('Alert')
       .expectSpeech('Please enter name')
       .replay();
-  });
-});
-
-TEST_F('ChromeVoxBackgroundTest', 'AutoCompleteChanged', function() {
-  var mockFeedback = this.createMockFeedback();
-  this.runWithLoadedTree(function() {/*
-    <div><input type="text" aria-autocomplete="off"></input></div>
-    <script>
-      var div = document.querySelector('div');
-      var input = div.firstElementChild;
-      var completion = input.getAttribute('aria-autocomplete');
-      div.addEventListener('click', () => {
-        completion = completion == 'off' ? 'both' : 'off';
-        input.setAttribute('aria-autocomplete', completion);
-      });
-    </script>
-  */}, function(root) {
-    var change = root.firstChild.doDefault.bind(root.firstChild);
-    mockFeedback.expectSpeech('Edit text')
-        .clearPendingOutput()
-        .call(change)
-        .expectSpeech('Edit text')
-        .call(change)
-        .expectSpeech('Edit text')
-        .call(change)
-        .expectNextSpeechUtteranceIsNot(
-            'Press up or down arrow for auto completions.')
-        .expectSpeech('Edit text')
-        .expectSpeech('Press up or down arrow for auto completions.')
-        .replay();
   });
 });

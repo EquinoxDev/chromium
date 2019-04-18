@@ -25,6 +25,9 @@ config("grpc_internal_config") {
 config("nanopb_config") {
   include_dirs = [ "src/third_party/nanopb" ]
   defines = [ "PB_FIELD_32BIT=1" ]
+  if (is_mac || is_ios) {
+    defines += [ "PB_NO_PACKED_STRUCTS=1" ]
+  }
 }
 
 # The gRPC library. Note that server side code will not be built. You probably
@@ -98,7 +101,11 @@ if (current_toolchain == host_toolchain) {
       "src/src/compiler/cpp_generator.cc",
       "src/src/compiler/cpp_plugin.cc",
     ]
-    configs += [ ":grpc_internal_config" ]
+    configs -= [ "//build/config/compiler:chromium_code" ]
+    configs += [
+      ":grpc_internal_config",
+      "//build/config/compiler:no_chromium_code",
+    ]
     public_configs = [ ":grpc_config" ]
     deps = [
       "//third_party/protobuf:protoc_lib",
@@ -147,7 +154,6 @@ static_library("grpc_core") {
     "src/src/core/ext/filters/client_channel/parse_address.cc",
     "src/src/core/ext/filters/client_channel/proxy_mapper.cc",
     "src/src/core/ext/filters/client_channel/proxy_mapper_registry.cc",
-    "src/src/core/ext/filters/client_channel/request_routing.cc",
     "src/src/core/ext/filters/client_channel/resolver.cc",
     "src/src/core/ext/filters/client_channel/resolver/dns/c_ares/dns_resolver_ares.cc",
     "src/src/core/ext/filters/client_channel/resolver/dns/c_ares/grpc_ares_ev_driver.cc",
@@ -162,6 +168,7 @@ static_library("grpc_core") {
     "src/src/core/ext/filters/client_channel/resolver/sockaddr/sockaddr_resolver.cc",
     "src/src/core/ext/filters/client_channel/resolver_registry.cc",
     "src/src/core/ext/filters/client_channel/resolver_result_parsing.cc",
+    "src/src/core/ext/filters/client_channel/resolving_lb_policy.cc",
     "src/src/core/ext/filters/client_channel/retry_throttle.cc",
     "src/src/core/ext/filters/client_channel/server_address.cc",
     "src/src/core/ext/filters/client_channel/subchannel.cc",
@@ -265,7 +272,6 @@ static_library("grpc_core") {
     "src/src/core/lib/gpr/tmpfile_msys.cc",
     "src/src/core/lib/gpr/tmpfile_posix.cc",
     "src/src/core/lib/gpr/tmpfile_windows.cc",
-    "src/src/core/lib/gpr/wrap_memcpy.cc",
     "src/src/core/lib/gprpp/fork.cc",
     "src/src/core/lib/gprpp/thd_posix.cc",
     "src/src/core/lib/gprpp/thd_windows.cc",
@@ -353,7 +359,6 @@ static_library("grpc_core") {
     "src/src/core/lib/iomgr/udp_server.cc",
     "src/src/core/lib/iomgr/unix_sockets_posix.cc",
     "src/src/core/lib/iomgr/unix_sockets_posix_noop.cc",
-    "src/src/core/lib/iomgr/wakeup_fd_cv.cc",
     "src/src/core/lib/iomgr/wakeup_fd_eventfd.cc",
     "src/src/core/lib/iomgr/wakeup_fd_nospecial.cc",
     "src/src/core/lib/iomgr/wakeup_fd_pipe.cc",
@@ -548,6 +553,10 @@ static_library("grpc_test_util") {
   ]
 }
 
+# A dummy group which is needed to make the fuzz targets discoverable.
+group("fuzzers") {
+}
+
 fuzzer_test("grpc_alts_credentials_fuzzer") {
   sources = [
     "src/test/core/security/alts_credentials_fuzzer.cc",
@@ -560,7 +569,9 @@ fuzzer_test("grpc_alts_credentials_fuzzer") {
   additional_configs = [
     ":grpc_config",
     ":grpc_internal_config",
+    "//build/config/compiler:no_chromium_code",
   ]
+  suppressed_configs = [ "//build/config/compiler:chromium_code" ]
   seed_corpus = "src/test/core/security/corpus/alts_credentials_corpus"
 }
 
@@ -576,8 +587,11 @@ fuzzer_test("grpc_api_fuzzer") {
   additional_configs = [
     ":grpc_config",
     ":grpc_internal_config",
+    "//build/config/compiler:no_chromium_code",
   ]
+  suppressed_configs = [ "//build/config/compiler:chromium_code" ]
   seed_corpus = "src/test/core/end2end/fuzzers/api_fuzzer_corpus"
+  dict = "src/test/core/end2end/fuzzers/api_fuzzer.dictionary"
 }
 
 fuzzer_test("grpc_client_fuzzer") {
@@ -592,8 +606,11 @@ fuzzer_test("grpc_client_fuzzer") {
   additional_configs = [
     ":grpc_config",
     ":grpc_internal_config",
+    "//build/config/compiler:no_chromium_code",
   ]
+  suppressed_configs = [ "//build/config/compiler:chromium_code" ]
   seed_corpus = "src/test/core/end2end/fuzzers/client_fuzzer_corpus"
+  dict = "src/test/core/end2end/fuzzers/hpack.dictionary"
 }
 
 fuzzer_test("grpc_hpack_parser_fuzzer_test") {
@@ -608,7 +625,9 @@ fuzzer_test("grpc_hpack_parser_fuzzer_test") {
   additional_configs = [
     ":grpc_config",
     ":grpc_internal_config",
+    "//build/config/compiler:no_chromium_code",
   ]
+  suppressed_configs = [ "//build/config/compiler:chromium_code" ]
   seed_corpus = "src/test/core/transport/chttp2/hpack_parser_corpus"
 }
 
@@ -624,7 +643,9 @@ fuzzer_test("grpc_request_fuzzer") {
   additional_configs = [
     ":grpc_config",
     ":grpc_internal_config",
+    "//build/config/compiler:no_chromium_code",
   ]
+  suppressed_configs = [ "//build/config/compiler:chromium_code" ]
   seed_corpus = "src/test/core/http/request_corpus"
 }
 
@@ -640,7 +661,9 @@ fuzzer_test("grpc_response_fuzzer") {
   additional_configs = [
     ":grpc_config",
     ":grpc_internal_config",
+    "//build/config/compiler:no_chromium_code",
   ]
+  suppressed_configs = [ "//build/config/compiler:chromium_code" ]
   seed_corpus = "src/test/core/http/response_corpus"
 }
 
@@ -656,7 +679,9 @@ fuzzer_test("grpc_json_fuzzer") {
   additional_configs = [
     ":grpc_config",
     ":grpc_internal_config",
+    "//build/config/compiler:no_chromium_code",
   ]
+  suppressed_configs = [ "//build/config/compiler:chromium_code" ]
   seed_corpus = "src/test/core/json/corpus"
 }
 
@@ -672,7 +697,9 @@ fuzzer_test("grpc_nanopb_fuzzer_response") {
   additional_configs = [
     ":grpc_config",
     ":grpc_internal_config",
+    "//build/config/compiler:no_chromium_code",
   ]
+  suppressed_configs = [ "//build/config/compiler:chromium_code" ]
   seed_corpus = "src/test/core/nanopb/corpus_response"
 }
 
@@ -688,7 +715,9 @@ fuzzer_test("grpc_nanopb_fuzzer_serverlist") {
   additional_configs = [
     ":grpc_config",
     ":grpc_internal_config",
+    "//build/config/compiler:no_chromium_code",
   ]
+  suppressed_configs = [ "//build/config/compiler:chromium_code" ]
   seed_corpus = "src/test/core/nanopb/corpus_serverlist"
 }
 
@@ -704,7 +733,9 @@ fuzzer_test("grpc_percent_decode_fuzzer") {
   additional_configs = [
     ":grpc_config",
     ":grpc_internal_config",
+    "//build/config/compiler:no_chromium_code",
   ]
+  suppressed_configs = [ "//build/config/compiler:chromium_code" ]
   seed_corpus = "src/test/core/slice/percent_decode_corpus"
 }
 
@@ -720,7 +751,9 @@ fuzzer_test("grpc_percent_encode_fuzzer") {
   additional_configs = [
     ":grpc_config",
     ":grpc_internal_config",
+    "//build/config/compiler:no_chromium_code",
   ]
+  suppressed_configs = [ "//build/config/compiler:chromium_code" ]
   seed_corpus = "src/test/core/slice/percent_encode_corpus"
 }
 
@@ -736,7 +769,9 @@ fuzzer_test("grpc_server_fuzzer") {
   additional_configs = [
     ":grpc_config",
     ":grpc_internal_config",
+    "//build/config/compiler:no_chromium_code",
   ]
+  suppressed_configs = [ "//build/config/compiler:chromium_code" ]
   seed_corpus = "src/test/core/end2end/fuzzers/server_fuzzer_corpus"
 }
 
@@ -752,7 +787,9 @@ fuzzer_test("grpc_ssl_server_fuzzer") {
   additional_configs = [
     ":grpc_config",
     ":grpc_internal_config",
+    "//build/config/compiler:no_chromium_code",
   ]
+  suppressed_configs = [ "//build/config/compiler:chromium_code" ]
   seed_corpus = "src/test/core/security/corpus/ssl_server_corpus"
 }
 
@@ -768,6 +805,8 @@ fuzzer_test("grpc_uri_fuzzer_test") {
   additional_configs = [
     ":grpc_config",
     ":grpc_internal_config",
+    "//build/config/compiler:no_chromium_code",
   ]
+  suppressed_configs = [ "//build/config/compiler:chromium_code" ]
   seed_corpus = "src/test/core/client_channel/uri_corpus"
 }

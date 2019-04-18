@@ -8,6 +8,7 @@
 #include <utility>
 #include <vector>
 
+#include "ash/login/login_screen_controller.h"
 #include "ash/login/ui/arrow_button_view.h"
 #include "ash/login/ui/login_button.h"
 #include "ash/login/ui/login_pin_view.h"
@@ -23,7 +24,9 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "third_party/skia/include/core/SkColor.h"
+#include "ui/accessibility/ax_node_data.h"
 #include "ui/base/l10n/l10n_util.h"
+#include "ui/events/event.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/color_analysis.h"
 #include "ui/gfx/color_palette.h"
@@ -44,21 +47,26 @@ namespace {
 
 constexpr const char kParentAccessViewClassName[] = "ParentAccessView";
 
+// Identifier of parent access input views group used for focus traversal.
+constexpr int kParentAccessInputGroup = 1;
+
 // Number of digits displayed in access code input.
 constexpr int kParentAccessCodePinLength = 6;
 
 constexpr int kParentAccessViewWidthDp = 340;
-constexpr int kParentAccessViewHeightDp = 560;
+constexpr int kParentAccessViewHeightDp = 340;
+constexpr int kParentAccessViewTabletModeHeightDp = 580;
 constexpr int kParentAccessViewRoundedCornerRadiusDp = 8;
-constexpr int kParentAccessViewVerticalInsetDp = 36;
+constexpr int kParentAccessViewVerticalInsetDp = 16;
 constexpr int kParentAccessViewHorizontalInsetDp = 26;
 
 constexpr int kLockIconSizeDp = 24;
 
 constexpr int kIconToTitleDistanceDp = 28;
 constexpr int kTitleToDescriptionDistanceDp = 14;
-constexpr int kDescriptionToAccessCodeDistanceDp = 38;
-constexpr int kAccessCodeToPinKeyboardDistanceDp = 20;
+constexpr int kDescriptionToAccessCodeDistanceDp = 28;
+constexpr int kAccessCodeToPinKeyboardDistanceDp = 5;
+constexpr int kSubmitButtonBottomMarginDp = 8;
 
 constexpr int kTitleFontSizeDeltaDp = 3;
 constexpr int kDescriptionFontSizeDeltaDp = -1;
@@ -73,7 +81,43 @@ constexpr int kArrowButtonSizeDp = 40;
 constexpr int kArrowSizeDp = 20;
 
 constexpr SkColor kTextColor = SK_ColorWHITE;
+constexpr SkColor kErrorColor = SkColorSetARGB(0xFF, 0xF2, 0x8B, 0x82);
 constexpr SkColor kArrowButtonColor = SkColorSetARGB(0x57, 0xFF, 0xFF, 0xFF);
+
+bool IsTabletMode() {
+  return Shell::Get()
+      ->tablet_mode_controller()
+      ->IsTabletModeWindowManagerEnabled();
+}
+
+// Accessible input field. Customizes field description and focus behavior.
+class AccessibleInputField : public views::Textfield {
+ public:
+  AccessibleInputField() = default;
+  ~AccessibleInputField() override = default;
+
+  void set_accessible_description(const base::string16& description) {
+    accessible_description_ = description;
+  }
+
+  // views::View:
+  void GetAccessibleNodeData(ui::AXNodeData* node_data) override {
+    node_data->role = ax::mojom::Role::kLabelText;
+    node_data->SetDescription(accessible_description_);
+    node_data->SetValue(text());
+  }
+
+  bool IsGroupFocusTraversable() const override { return false; }
+
+  View* GetSelectedViewForGroup(int group) override {
+    return parent() ? parent()->GetSelectedViewForGroup(group) : nullptr;
+  }
+
+ private:
+  base::string16 accessible_description_;
+
+  DISALLOW_COPY_AND_ASSIGN(AccessibleInputField);
+};
 
 }  // namespace
 
@@ -82,26 +126,29 @@ constexpr SkColor kArrowButtonColor = SkColorSetARGB(0x57, 0xFF, 0xFF, 0xFF);
 class ParentAccessView::AccessCodeInput : public views::View,
                                           public views::TextfieldController {
  public:
-  using OnCodeComplete = base::RepeatingCallback<void(bool complete)>;
+  using OnInputChange = base::RepeatingCallback<void(bool complete)>;
+  using OnEnter = base::RepeatingClosure;
 
   // Builds the view for an access code that consists out of |length| digits.
-  // |on_code_complete| will be called when code completion state changes. True
-  // will be passed if the current code is complate (all digits have input
-  // value) and false otherwise.
-  AccessCodeInput(int length, const OnCodeComplete& on_code_complete)
-      : on_code_complete_(on_code_complete) {
+  // |on_input_change| will be called upon access code digit insertion, deletion
+  // or change. True will be passed if the current code is complete (all digits
+  // have input values) and false otherwise. |on_enter| will be called when code
+  // is complete and user presses enter to submit it for validation.
+  AccessCodeInput(int length, OnInputChange on_input_change, OnEnter on_enter)
+      : on_input_change_(std::move(on_input_change)),
+        on_enter_(std::move(on_enter)) {
     DCHECK_LT(0, length);
-    DCHECK(on_code_complete_);
+    DCHECK(on_input_change_);
 
     SetLayoutManager(std::make_unique<views::BoxLayout>(
         views::BoxLayout::kHorizontal, gfx::Insets(),
         kAccessCodeBetweenInputFieldsGapDp));
-
+    SetGroup(kParentAccessInputGroup);
     SetPaintToLayer();
     layer()->SetFillsBoundsOpaquely(false);
 
     for (int i = 0; i < length; ++i) {
-      auto* field = new views::Textfield();
+      auto* field = new AccessibleInputField();
       field->set_controller(this);
       field->SetPreferredSize(gfx::Size(kAccessCodeInputFieldWidthDp,
                                         kAccessCodeInputFieldHeightDp));
@@ -114,7 +161,11 @@ class ParentAccessView::AccessCodeInput : public views::View,
           gfx::Font::Weight::NORMAL));
       field->SetBorder(views::CreateSolidSidedBorder(
           0, 0, kAccessCodeInputFieldUnderlineThicknessDp, 0, kTextColor));
-
+      field->SetGroup(kParentAccessInputGroup);
+      if (i < length - 1) {
+        field->set_accessible_description(l10n_util::GetStringUTF16(
+            IDS_ASH_LOGIN_PARENT_ACCESS_NEXT_NUMBER_PROMPT));
+      }
       input_fields_.push_back(field);
       AddChildView(field);
     }
@@ -128,19 +179,21 @@ class ParentAccessView::AccessCodeInput : public views::View,
     DCHECK_LE(0, value);
     DCHECK_GE(9, value);
 
-    ActiveField()->SetText(base::IntToString16(value));
+    ActiveField()->SetText(base::NumberToString16(value));
     FocusNextField();
 
-    if (GetCode().has_value())
-      on_code_complete_.Run(true);
+    on_input_change_.Run(GetCode().has_value());
   }
 
-  // Clears value from the |active_field_| and moves focus to the previous field
-  // if it exists.
+  // Clears input from the |active_field_|. If |active_field| is empty moves
+  // focus to the previous field (if exists) and clears input there.
   void Backspace() {
+    if (ActiveInput().empty()) {
+      FocusPreviousField();
+    }
+
     ActiveField()->SetText(base::string16());
-    FocusPreviousField();
-    on_code_complete_.Run(false);
+    on_input_change_.Run(false);
   }
 
   // Returns access code as string if all fields contain input.
@@ -158,7 +211,18 @@ class ParentAccessView::AccessCodeInput : public views::View,
     return result;
   }
 
+  // Sets the color of the input text.
+  void SetInputColor(SkColor color) {
+    for (auto* field : input_fields_) {
+      field->SetTextColor(color);
+    }
+  }
+
   // views::View:
+  bool IsGroupFocusTraversable() const override { return false; }
+
+  View* GetSelectedViewForGroup(int group) override { return ActiveField(); }
+
   void RequestFocus() override { ActiveField()->RequestFocus(); }
 
   // views::TextfieldController:
@@ -167,11 +231,16 @@ class ParentAccessView::AccessCodeInput : public views::View,
     if (key_event.type() != ui::ET_KEY_PRESSED)
       return false;
 
-    const ui::KeyboardCode key_code = key_event.key_code();
     // AccessCodeInput class responds to limited subset of key press events.
     // All key pressed events not handled below are ignored.
-    if (key_code >= ui::VKEY_0 && key_code <= ui::VKEY_9) {
+    const ui::KeyboardCode key_code = key_event.key_code();
+    if (key_code == ui::VKEY_TAB || key_code == ui::VKEY_BACKTAB) {
+      // Allow using tab for keyboard navigation.
+      return false;
+    } else if (key_code >= ui::VKEY_0 && key_code <= ui::VKEY_9) {
       InsertDigit(key_code - ui::VKEY_0);
+    } else if (key_code >= ui::VKEY_NUMPAD0 && key_code <= ui::VKEY_NUMPAD9) {
+      InsertDigit(key_code - ui::VKEY_NUMPAD0);
     } else if (key_code == ui::VKEY_LEFT) {
       FocusPreviousField();
     } else if (key_code == ui::VKEY_RIGHT) {
@@ -180,6 +249,41 @@ class ParentAccessView::AccessCodeInput : public views::View,
         FocusNextField();
     } else if (key_code == ui::VKEY_BACK) {
       Backspace();
+    } else if (key_code == ui::VKEY_RETURN) {
+      if (GetCode().has_value())
+        on_enter_.Run();
+    }
+
+    return true;
+  }
+
+  bool HandleMouseEvent(views::Textfield* sender,
+                        const ui::MouseEvent& mouse_event) override {
+    if (!mouse_event.IsOnlyLeftMouseButton())
+      return false;
+
+    // Move focus to the field that was selected with mouse input.
+    for (size_t i = 0; i < input_fields_.size(); ++i) {
+      if (input_fields_[i] == sender) {
+        active_input_index_ = i;
+        break;
+      }
+    }
+
+    return true;
+  }
+
+  bool HandleGestureEvent(views::Textfield* sender,
+                          const ui::GestureEvent& gesture_event) override {
+    if (gesture_event.details().type() != ui::EventType::ET_GESTURE_TAP)
+      return false;
+
+    // Move focus to the field that was selected with gesture.
+    for (size_t i = 0; i < input_fields_.size(); ++i) {
+      if (input_fields_[i] == sender) {
+        active_input_index_ = i;
+        break;
+      }
     }
 
     return true;
@@ -212,9 +316,13 @@ class ParentAccessView::AccessCodeInput : public views::View,
   // Returns text in the active input field.
   const base::string16& ActiveInput() const { return ActiveField()->text(); }
 
-  // To be called when access code completion state changes. Passes true when
-  // code is complete (all digits have input value) and false otherwise.
-  OnCodeComplete on_code_complete_;
+  // To be called when access input code changes (digit is inserted, deleted or
+  // updated). Passes true when code is complete (all digits have input value)
+  // and false otherwise.
+  OnInputChange on_input_change_;
+
+  // To be called when user pressed enter to submit.
+  OnEnter on_enter_;
 
   // An active/focused input field index. Incoming digit will be inserted here.
   int active_input_index_ = 0;
@@ -234,6 +342,23 @@ ParentAccessView::TestApi::~TestApi() = default;
 LoginButton* ParentAccessView::TestApi::back_button() const {
   return view_->back_button_;
 }
+
+views::Label* ParentAccessView::TestApi::title_label() const {
+  return view_->title_label_;
+}
+
+views::Label* ParentAccessView::TestApi::description_label() const {
+  return view_->description_label_;
+}
+
+views::View* ParentAccessView::TestApi::access_code_view() const {
+  return view_->access_code_view_;
+}
+
+views::LabelButton* ParentAccessView::TestApi::help_button() const {
+  return view_->help_button_;
+}
+
 ArrowButtonView* ParentAccessView::TestApi::submit_button() const {
   return view_->submit_button_;
 }
@@ -242,16 +367,22 @@ LoginPinView* ParentAccessView::TestApi::pin_keyboard_view() const {
   return view_->pin_keyboard_view_;
 }
 
+ParentAccessView::State ParentAccessView::TestApi::state() const {
+  return view_->state_;
+}
+
 ParentAccessView::Callbacks::Callbacks() = default;
 
 ParentAccessView::Callbacks::Callbacks(const Callbacks& other) = default;
 
 ParentAccessView::Callbacks::~Callbacks() = default;
 
-ParentAccessView::ParentAccessView(const Callbacks& callbacks)
-    : NonAccessibleView(kParentAccessViewClassName), callbacks_(callbacks) {
-  DCHECK(callbacks.on_submit);
-  DCHECK(callbacks.on_back);
+ParentAccessView::ParentAccessView(const AccountId& account_id,
+                                   const Callbacks& callbacks)
+    : NonAccessibleView(kParentAccessViewClassName),
+      callbacks_(callbacks),
+      account_id_(account_id) {
+  DCHECK(callbacks.on_finished);
 
   // Main view contains all other views aligned vertically and centered.
   auto layout = std::make_unique<views::BoxLayout>(
@@ -259,13 +390,11 @@ ParentAccessView::ParentAccessView(const Callbacks& callbacks)
       gfx::Insets(kParentAccessViewVerticalInsetDp,
                   kParentAccessViewHorizontalInsetDp),
       0);
-  layout->set_main_axis_alignment(views::BoxLayout::MAIN_AXIS_ALIGNMENT_CENTER);
+  layout->set_main_axis_alignment(views::BoxLayout::MAIN_AXIS_ALIGNMENT_START);
   layout->set_cross_axis_alignment(
       views::BoxLayout::CROSS_AXIS_ALIGNMENT_CENTER);
-  SetLayoutManager(std::move(layout));
+  views::BoxLayout* main_layout = SetLayoutManager(std::move(layout));
 
-  SetPreferredSize(
-      gfx::Size(kParentAccessViewWidthDp, kParentAccessViewHeightDp));
   SetPaintToLayer();
   layer()->SetFillsBoundsOpaquely(false);
 
@@ -288,6 +417,10 @@ ParentAccessView::ParentAccessView(const Callbacks& callbacks)
                                                kArrowSizeDp, SK_ColorWHITE));
   back_button_->SetImageAlignment(views::ImageButton::ALIGN_CENTER,
                                   views::ImageButton::ALIGN_MIDDLE);
+  back_button_->SetAccessibleName(
+      l10n_util::GetStringUTF16(IDS_ASH_LOGIN_BACK_BUTTON_ACCESSIBLE_NAME));
+  back_button_->SetFocusBehavior(FocusBehavior::ALWAYS);
+
   header->AddChildView(back_button_);
 
   // Main view icon.
@@ -339,14 +472,18 @@ ParentAccessView::ParentAccessView(const Callbacks& callbacks)
   // Access code input view.
   access_code_view_ =
       new AccessCodeInput(kParentAccessCodePinLength,
-                          base::BindRepeating(&ParentAccessView::OnCodeComplete,
+                          base::BindRepeating(&ParentAccessView::OnInputChange,
+                                              base::Unretained(this)),
+                          base::BindRepeating(&ParentAccessView::SubmitCode,
                                               base::Unretained(this)));
+  access_code_view_->SetFocusBehavior(FocusBehavior::ALWAYS);
   AddChildView(access_code_view_);
 
   add_spacer(kAccessCodeToPinKeyboardDistanceDp);
 
   // Pin keyboard.
   pin_keyboard_view_ = new LoginPinView(
+      LoginPinView::Style::kNumeric,
       base::BindRepeating(&AccessCodeInput::InsertDigit,
                           base::Unretained(access_code_view_)),
       base::BindRepeating(&AccessCodeInput::Backspace,
@@ -354,6 +491,12 @@ ParentAccessView::ParentAccessView(const Callbacks& callbacks)
   // Backspace key is always enabled and |access_code_| field handles it.
   pin_keyboard_view_->OnPasswordTextChanged(false);
   AddChildView(pin_keyboard_view_);
+
+  // Vertical spacer to consume height remaining in the view after all children
+  // are accounted for.
+  auto* vertical_spacer = new NonAccessibleView();
+  AddChildView(vertical_spacer);
+  main_layout->SetFlexForView(vertical_spacer, 1);
 
   // Footer view contains help text button aligned to its start, submit
   // button aligned to its end and spacer view in between.
@@ -373,6 +516,8 @@ ParentAccessView::ParentAccessView(const Callbacks& callbacks)
   help_button_->SetTextColor(views::Button::STATE_NORMAL, kTextColor);
   help_button_->SetTextColor(views::Button::STATE_HOVERED, kTextColor);
   help_button_->SetTextColor(views::Button::STATE_PRESSED, kTextColor);
+  help_button_->SetFocusBehavior(FocusBehavior::ALWAYS);
+
   footer->AddChildView(help_button_);
 
   auto* horizontal_spacer = new NonAccessibleView();
@@ -384,7 +529,17 @@ ParentAccessView::ParentAccessView(const Callbacks& callbacks)
   submit_button_->SetPreferredSize(
       gfx::Size(kArrowButtonSizeDp, kArrowButtonSizeDp));
   submit_button_->SetEnabled(false);
+  submit_button_->SetAccessibleName(
+      l10n_util::GetStringUTF16(IDS_ASH_LOGIN_SUBMIT_BUTTON_ACCESSIBLE_NAME));
+  submit_button_->SetFocusBehavior(FocusBehavior::ALWAYS);
   footer->AddChildView(submit_button_);
+
+  add_spacer(kSubmitButtonBottomMarginDp);
+
+  // Pin keyboard is only shown in tablet mode.
+  pin_keyboard_view_->SetVisible(IsTabletMode());
+
+  tablet_mode_observer_.Add(Shell::Get()->tablet_mode_controller());
 }
 
 ParentAccessView::~ParentAccessView() = default;
@@ -408,22 +563,106 @@ void ParentAccessView::RequestFocus() {
   access_code_view_->RequestFocus();
 }
 
+void ParentAccessView::Layout() {
+  NonAccessibleView::Layout();
+  SizeToPreferredSize();
+}
+
+gfx::Size ParentAccessView::CalculatePreferredSize() const {
+  return gfx::Size(kParentAccessViewWidthDp,
+                   IsTabletMode() ? kParentAccessViewTabletModeHeightDp
+                                  : kParentAccessViewHeightDp);
+}
+
 void ParentAccessView::ButtonPressed(views::Button* sender,
                                      const ui::Event& event) {
   if (sender == back_button_) {
-    callbacks_.on_back.Run();
+    callbacks_.on_finished.Run(false);
   } else if (sender == help_button_) {
     // TODO(agawronska): Implement help view.
     NOTIMPLEMENTED();
   } else if (sender == submit_button_) {
-    base::Optional<std::string> code = access_code_view_->GetCode();
-    DCHECK(code.has_value());
-    callbacks_.on_submit.Run(*code);
+    SubmitCode();
   }
 }
 
-void ParentAccessView::OnCodeComplete(bool complete) {
+void ParentAccessView::OnTabletModeStarted() {
+  VLOG(1) << "Showing PIN keyboard in ParentAccessView";
+  pin_keyboard_view_->SetVisible(true);
+  // This will trigger ChildPreferredSizeChanged in parent view and Layout() in
+  // view. As the result whole hierarchy will go through re-layout.
+  PreferredSizeChanged();
+}
+
+void ParentAccessView::OnTabletModeEnded() {
+  VLOG(1) << "Hiding PIN keyboard in ParentAccessView";
+  DCHECK(pin_keyboard_view_);
+  pin_keyboard_view_->SetVisible(false);
+  // This will trigger ChildPreferredSizeChanged in parent view and Layout() in
+  // view. As the result whole hierarchy will go through re-layout.
+  PreferredSizeChanged();
+}
+
+void ParentAccessView::OnTabletControllerDestroyed() {
+  tablet_mode_observer_.RemoveAll();
+}
+
+void ParentAccessView::SubmitCode() {
+  base::Optional<std::string> code = access_code_view_->GetCode();
+  DCHECK(code.has_value());
+
+  Shell::Get()->login_screen_controller()->ValidateParentAccessCode(
+      account_id_, *code,
+      base::BindOnce(&ParentAccessView::OnValidationResult,
+                     weak_ptr_factory_.GetWeakPtr()));
+}
+
+void ParentAccessView::UpdateState(State state) {
+  if (state_ == state)
+    return;
+
+  state_ = state;
+  switch (state_) {
+    case State::kNormal: {
+      access_code_view_->SetInputColor(kTextColor);
+      title_label_->SetEnabledColor(kTextColor);
+      title_label_->SetText(
+          l10n_util::GetStringUTF16(IDS_ASH_LOGIN_PARENT_ACCESS_TITLE));
+      return;
+    }
+    case State::kError: {
+      access_code_view_->SetInputColor(kErrorColor);
+      title_label_->SetEnabledColor(kErrorColor);
+      title_label_->SetText(
+          l10n_util::GetStringUTF16(IDS_ASH_LOGIN_PARENT_ACCESS_TITLE_ERROR));
+      return;
+    }
+  }
+}
+
+void ParentAccessView::OnValidationResult(base::Optional<bool> result) {
+  if (result.has_value() && *result) {
+    VLOG(1) << "Parent access code successfully validated";
+    callbacks_.on_finished.Run(true);
+    return;
+  }
+
+  VLOG(1) << "Invalid parent access code entered";
+  UpdateState(State::kError);
+}
+
+void ParentAccessView::OnInputChange(bool complete) {
+  if (state_ == State::kError)
+    UpdateState(State::kNormal);
+
   submit_button_->SetEnabled(complete);
+}
+
+void ParentAccessView::GetAccessibleNodeData(ui::AXNodeData* node_data) {
+  views::View::GetAccessibleNodeData(node_data);
+  node_data->role = ax::mojom::Role::kDialog;
+  node_data->SetName(
+      l10n_util::GetStringUTF16(IDS_ASH_LOGIN_PARENT_ACCESS_DIALOG_NAME));
 }
 
 }  // namespace ash

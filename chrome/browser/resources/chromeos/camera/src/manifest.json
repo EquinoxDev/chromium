@@ -3,7 +3,7 @@
   "manifest_version": 2,
   "name": "__MSG_name__",
   "description": "__MSG_description__",
-  "version": "5.2.6",
+  "version": "6.0.0",
   "default_locale": "en",
   "minimum_chrome_version": "60.0.0.0",
   "icons": {
@@ -17,9 +17,11 @@
     "unlimitedStorage",
     "idle",
     "chromeosInfoPrivate",
+    "metricsPrivate",
     "fileManagerPrivate",
     "fileSystem.requestDownloads",
-    {"fileSystem": ["write", "directory"]}
+    {"fileSystem": ["write", "directory"]},
+    "https://www.google-analytics.com/"
   ],
   "app": {
     "background": {

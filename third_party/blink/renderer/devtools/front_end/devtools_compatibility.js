@@ -541,6 +541,15 @@
 
     /**
      * @override
+     * @param {string} histogramName
+     * @param {number} duration
+     */
+    recordPerformanceHistogram(histogramName, duration) {
+      DevToolsAPI.sendMessageToEmbedder('recordPerformanceHistogram', [histogramName, duration], null);
+    }
+
+    /**
+     * @override
      */
     requestFileSystems() {
       DevToolsAPI.sendMessageToEmbedder('requestFileSystems', [], null);
@@ -983,6 +992,7 @@
       'textEditorAutoDetectIndent',
       'textEditorBracketMatching',
       'textEditorIndent',
+      'textEditorTabMovesFocus',
       'timelineCaptureFilmStrip',
       'timelineCaptureLayersAndPictures',
       'timelineCaptureMemory',
@@ -1373,7 +1383,7 @@
    */
   function getRemoteMajorVersion() {
     try {
-      const remoteVersion = new URLSearchParams(window.location.href).get('remoteVersion');
+      const remoteVersion = new URLSearchParams(window.location.search).get('remoteVersion');
       if (!remoteVersion)
         return null;
       const majorVersion = parseInt(remoteVersion.split('.')[0], 10);

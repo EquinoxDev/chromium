@@ -129,6 +129,7 @@ cca.App.prototype.setupToggles_ = function() {
  * Starts the app by loading the model and opening the camera-view.
  */
 cca.App.prototype.start = function() {
+  var ackMigrate = false;
   cca.models.FileSystem.initialize(() => {
     // Prompt to migrate pictures if needed.
     var message = chrome.i18n.getMessage('migrate_pictures_msg');
@@ -136,6 +137,7 @@ cca.App.prototype.start = function() {
       if (!acked) {
         throw new Error('no-migrate');
       }
+      ackMigrate = true;
     });
   }).then((external) => {
     cca.state.set('ext-fs', external);
@@ -152,6 +154,8 @@ cca.App.prototype.start = function() {
       return;
     }
     cca.nav.open('warning', 'filesystem-failure');
+  }).finally(() => {
+    cca.metrics.log(cca.metrics.Type.LAUNCH, ackMigrate);
   });
 };
 

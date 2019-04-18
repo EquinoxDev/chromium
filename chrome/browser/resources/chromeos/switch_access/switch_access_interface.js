@@ -70,13 +70,19 @@ class SwitchAccessInterface {
   performedUserAction() {}
 
   /**
+   * Handle a change in user preferences.
+   * @param {!Object} changes
+   */
+  onPreferencesChanged(changes) {}
+
+  /**
    * Set the value of the preference |key| to |value| in chrome.storage.sync.
-   * this.prefs_ is not set until handleStorageChange_.
+   * The behavior is not updated until the storage update is complete.
    *
    * @param {string} key
    * @param {boolean|string|number} value
    */
-  setPref(key, value) {}
+  setPreference(key, value) {}
 
   /**
    * Get the value of type 'boolean' of the preference |key|. Will throw a type
@@ -85,7 +91,7 @@ class SwitchAccessInterface {
    * @param  {string} key
    * @return {boolean}
    */
-  getBooleanPref(key) {}
+  getBooleanPreference(key) {}
 
   /**
    * Get the value of type 'number' of the preference |key|. Will throw a type
@@ -94,16 +100,7 @@ class SwitchAccessInterface {
    * @param  {string} key
    * @return {number}
    */
-  getNumberPref(key) {}
-
-  /**
-   * Get the value of type 'string' of the preference |key|. Will throw a type
-   * error if the value of |key| is not 'string'.
-   *
-   * @param  {string} key
-   * @return {string}
-   */
-  getStringPref(key) {}
+  getNumberPreference(key) {}
 
   /**
    * Returns true if |keyCode| is already used to run a command from the

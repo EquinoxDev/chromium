@@ -5,19 +5,18 @@
 #import "ios/chrome/browser/ui/settings/clear_browsing_data/clear_browsing_data_manager.h"
 
 #include "base/bind.h"
-#include "components/browser_sync/profile_sync_service_mock.h"
 #include "components/browsing_data/core/pref_names.h"
 #include "components/pref_registry/pref_registry_syncable.h"
+#include "components/sync/driver/test_sync_service.h"
 #include "components/sync_preferences/pref_service_mock_factory.h"
 #include "components/sync_preferences/pref_service_syncable.h"
 #include "ios/chrome/browser/application_context.h"
 #include "ios/chrome/browser/browser_state/test_chrome_browser_state.h"
+#include "ios/chrome/browser/browsing_data/browsing_data_features.h"
 #include "ios/chrome/browser/browsing_data/cache_counter.h"
-#include "ios/chrome/browser/experimental_flags.h"
 #include "ios/chrome/browser/pref_names.h"
 #include "ios/chrome/browser/prefs/browser_prefs.h"
 #include "ios/chrome/browser/signin/identity_test_environment_chrome_browser_state_adaptor.h"
-#include "ios/chrome/browser/sync/ios_chrome_profile_sync_test_util.h"
 #include "ios/chrome/browser/sync/profile_sync_service_factory.h"
 #import "ios/chrome/browser/ui/collection_view/collection_view_model.h"
 #include "ios/web/public/test/test_web_thread_bundle.h"
@@ -30,13 +29,16 @@
 #error "This file requires ARC support."
 #endif
 
-using testing::Return;
-
 @interface ClearBrowsingDataManager (ExposedForTesting)
 - (void)loadModel:(ListModel*)model;
 @end
 
 namespace {
+
+std::unique_ptr<KeyedService> CreateTestSyncService(
+    web::BrowserState* context) {
+  return std::make_unique<syncer::TestSyncService>();
+}
 
 class ClearBrowsingDataManagerTest : public PlatformTest {
  public:
@@ -50,7 +52,7 @@ class ClearBrowsingDataManagerTest : public PlatformTest {
 
     TestChromeBrowserState::TestingFactories factories = {
         {ProfileSyncServiceFactory::GetInstance(),
-         base::BindRepeating(&BuildMockProfileSyncService)},
+         base::BindRepeating(&CreateTestSyncService)},
     };
     browser_state_ = IdentityTestEnvironmentChromeBrowserStateAdaptor::
         CreateChromeBrowserStateForIdentityTestEnvironment(factories);
@@ -65,7 +67,7 @@ class ClearBrowsingDataManagerTest : public PlatformTest {
                     listType:ClearBrowsingDataListType::
                                  kListTypeCollectionView];
 
-    mock_sync_service_ = static_cast<browser_sync::ProfileSyncServiceMock*>(
+    test_sync_service_ = static_cast<syncer::TestSyncService*>(
         ProfileSyncServiceFactory::GetForBrowserState(browser_state_.get()));
   }
 
@@ -79,7 +81,7 @@ class ClearBrowsingDataManagerTest : public PlatformTest {
       identity_test_env_adaptor_;
   CollectionViewModel* model_;
   ClearBrowsingDataManager* manager_;
-  browser_sync::ProfileSyncServiceMock* mock_sync_service_;
+  syncer::TestSyncService* test_sync_service_;
   web::TestWebThreadBundle thread_bundle_;
 };
 
@@ -88,7 +90,7 @@ TEST_F(ClearBrowsingDataManagerTest, TestModel) {
   [manager_ loadModel:model_];
 
   int section_offset = 0;
-  if (experimental_flags::IsNewClearBrowsingDataUIEnabled()) {
+  if (IsNewClearBrowsingDataUIEnabled()) {
     EXPECT_EQ(4, [model_ numberOfSections]);
     EXPECT_EQ(1, [model_ numberOfItemsInSection:0]);
     section_offset = 1;
@@ -104,15 +106,15 @@ TEST_F(ClearBrowsingDataManagerTest, TestModel) {
 // but sync is off.
 TEST_F(ClearBrowsingDataManagerTest, TestModelSignedInSyncOff) {
   // Ensure that sync is not running.
-  EXPECT_CALL(*mock_sync_service_, GetDisableReasons())
-      .WillRepeatedly(Return(syncer::SyncService::DISABLE_REASON_USER_CHOICE));
+  test_sync_service_->SetDisableReasons(
+      syncer::SyncService::DISABLE_REASON_USER_CHOICE);
 
   identity_test_env()->SetPrimaryAccount("syncuser@example.com");
 
   [manager_ loadModel:model_];
 
   int section_offset = 0;
-  if (experimental_flags::IsNewClearBrowsingDataUIEnabled()) {
+  if (IsNewClearBrowsingDataUIEnabled()) {
     EXPECT_EQ(5, [model_ numberOfSections]);
     EXPECT_EQ(1, [model_ numberOfItemsInSection:0]);
     section_offset = 1;
@@ -162,7 +164,7 @@ TEST_F(ClearBrowsingDataManagerTest,
 
   // If the new UI is not enabled then the pref value for the time period
   // is ignored and the time period defaults to ALL_TIME.
-  if (!experimental_flags::IsNewClearBrowsingDataUIEnabled()) {
+  if (!IsNewClearBrowsingDataUIEnabled()) {
     return;
   }
   PrefService* prefs = browser_state_->GetPrefs();

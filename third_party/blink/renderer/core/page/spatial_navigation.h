@@ -51,17 +51,11 @@ struct FocusCandidate {
 
  public:
   FocusCandidate()
-      : visible_node(nullptr),
-        focusable_node(nullptr),
-        is_offscreen(true),
-        is_offscreen_after_scrolling(true) {}
+      : visible_node(nullptr), focusable_node(nullptr), is_offscreen(true) {}
 
   FocusCandidate(Node*, SpatialNavigationDirection);
   explicit FocusCandidate(HTMLAreaElement*, SpatialNavigationDirection);
   bool IsNull() const { return !visible_node; }
-  bool IsFrameOwnerElement() const {
-    return visible_node && visible_node->IsFrameOwnerElement();
-  }
   Document* GetDocument() const {
     return visible_node ? &visible_node->GetDocument() : nullptr;
   }
@@ -74,13 +68,11 @@ struct FocusCandidate {
   Member<Node> focusable_node;
   LayoutRect rect_in_root_frame;
   bool is_offscreen;
-  bool is_offscreen_after_scrolling;
 };
 
 CORE_EXPORT bool HasRemoteFrame(const Node*);
+CORE_EXPORT FloatRect RectInViewport(const Node&);
 CORE_EXPORT bool IsOffscreen(const Node*);
-CORE_EXPORT bool IsOffscreenAfterFrameScroll(const Node*,
-                                             SpatialNavigationDirection);
 bool ScrollInDirection(Node* container, SpatialNavigationDirection);
 CORE_EXPORT bool IsScrollableNode(const Node* node);
 CORE_EXPORT bool IsScrollableAreaOrDocument(const Node*);

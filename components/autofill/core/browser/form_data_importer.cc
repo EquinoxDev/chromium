@@ -31,6 +31,7 @@
 #include "components/autofill/core/browser/phone_number_i18n.h"
 #include "components/autofill/core/browser/validation.h"
 #include "components/autofill/core/common/autofill_features.h"
+#include "components/autofill/core/common/autofill_payments_features.h"
 #include "components/autofill/core/common/autofill_util.h"
 
 namespace autofill {
@@ -177,7 +178,8 @@ void FormDataImporter::ImportFormData(const FormStructure& submitted_form,
            imported_credit_card_record_type_ ==
                ImportedCreditCardRecordType::NEW_CARD);
     credit_card_save_manager_->AttemptToOfferCardUploadSave(
-        submitted_form, *imported_credit_card,
+        submitted_form, from_dynamic_change_form_, has_non_focusable_field_,
+        *imported_credit_card,
         /*uploading_local_card=*/imported_credit_card_record_type_ ==
             ImportedCreditCardRecordType::LOCAL_CARD);
   } else {
@@ -185,6 +187,7 @@ void FormDataImporter::ImportFormData(const FormStructure& submitted_form,
     DCHECK(imported_credit_card_record_type_ ==
            ImportedCreditCardRecordType::NEW_CARD);
     credit_card_save_manager_->AttemptToOfferCardLocalSave(
+        from_dynamic_change_form_, has_non_focusable_field_,
         *imported_credit_card);
   }
 }
@@ -507,6 +510,11 @@ CreditCard FormDataImporter::ExtractCreditCardFromForm(
     // Field was not identified as a credit card field.
     if (field_type.group() != CREDIT_CARD)
       continue;
+
+    if (form.value_from_dynamic_change_form())
+      from_dynamic_change_form_ = true;
+    if (!field->is_focusable)
+      has_non_focusable_field_ = true;
 
     // If we've seen the same credit card field type twice in the same form,
     // set |has_duplicate_field_type| to true.

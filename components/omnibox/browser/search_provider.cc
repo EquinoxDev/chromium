@@ -33,6 +33,7 @@
 #include "components/omnibox/browser/omnibox_field_trial.h"
 #include "components/omnibox/browser/suggestion_answer.h"
 #include "components/omnibox/browser/url_prefix.h"
+#include "components/omnibox/common/omnibox_features.h"
 #include "components/search/search.h"
 #include "components/search_engines/template_url_service.h"
 #include "components/strings/grit/components_strings.h"
@@ -693,9 +694,6 @@ void SearchProvider::StartOrStopSuggestQuery(bool minimal_changes) {
     return;
   }
 
-  if (OmniboxFieldTrial::DisableResultsCaching())
-    ClearAllResults();
-
   // For the minimal_changes case, if we finished the previous query and still
   // have its results, or are allowed to keep running it, just do that, rather
   // than starting a new query.
@@ -1120,7 +1118,7 @@ void SearchProvider::ConvertResultsToAutocompleteMatches() {
       ++num_suggestions;
     }
 
-    matches_.push_back(*i);
+    matches_.push_back(std::move(*i));
   }
 }
 
@@ -1374,7 +1372,7 @@ bool SearchProvider::ShouldCurbDefaultSuggestions() const {
   // non-keyword suggestions if we're not confident that the user entered
   // keyword mode explicitly.
   return OmniboxFieldTrial::IsExperimentalKeywordModeEnabled() &&
-         !keyword_input_.text().empty() && keyword_input_.prefer_keyword() &&
+         keyword_input_.prefer_keyword() &&
          keyword_input_.keyword_mode_entry_method() !=
              OmniboxEventProto::SPACE_AT_END &&
          keyword_input_.keyword_mode_entry_method() !=
@@ -1528,8 +1526,7 @@ AutocompleteMatch SearchProvider::NavigationToMatch(
   match.contents = navigation.match_contents();
   match.contents_class = navigation.match_contents_class();
   match.description = navigation.description();
-  AutocompleteMatch::ClassifyMatchInString(input, match.description,
-      ACMatchClassification::NONE, &match.description_class);
+  match.description_class = navigation.description_class();
 
   match.RecordAdditionalInfo(
       kRelevanceFromServerKey,

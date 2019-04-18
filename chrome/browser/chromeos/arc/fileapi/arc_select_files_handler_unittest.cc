@@ -4,6 +4,8 @@
 
 #include "chrome/browser/chromeos/arc/fileapi/arc_select_files_handler.h"
 
+#include <string>
+
 #include "base/json/json_reader.h"
 #include "base/strings/stringprintf.h"
 #include "base/test/mock_callback.h"
@@ -34,6 +36,11 @@ constexpr char kTestingProfileName[] = "test-user";
 
 MATCHER_P(FileTypeInfoMatcher, expected, "") {
   EXPECT_EQ(expected.extensions, arg.extensions);
+  return true;
+}
+
+MATCHER_P(FilePathMatcher, expected, "") {
+  EXPECT_EQ(expected.value(), arg.value());
   return true;
 }
 
@@ -91,10 +98,10 @@ class MockSelectFileDialog : public SelectFileDialog {
 class MockSelectFileDialogScriptExecutor
     : public SelectFileDialogScriptExecutor {
  public:
-  MockSelectFileDialogScriptExecutor(ui::SelectFileDialog* dialog)
+  explicit MockSelectFileDialogScriptExecutor(ui::SelectFileDialog* dialog)
       : SelectFileDialogScriptExecutor(dialog) {}
   MOCK_METHOD2(ExecuteJavaScript,
-               void(const std::string&, const JavaScriptResultCallback&));
+               void(const std::string&, JavaScriptResultCallback));
 
  protected:
   ~MockSelectFileDialogScriptExecutor() override = default;
@@ -219,6 +226,26 @@ TEST_F(ArcSelectFilesHandlerTest, SelectFiles_FileTypeInfo) {
   arc_select_files_handler_->SelectFiles(request, callback.Get());
 }
 
+TEST_F(ArcSelectFilesHandlerTest, SelectFiles_InitialDocumentPath) {
+  SelectFilesRequestPtr request = SelectFilesRequest::New();
+  request->action_type = SelectFilesActionType::OPEN_DOCUMENT;
+  request->initial_document_path = arc::mojom::DocumentPath::New();
+  request->initial_document_path->authority = "testing.provider";
+  request->initial_document_path->path = {"doc:root", "doc:file1"};
+
+  // "doc:file1" is expected to be ignored.
+  base::FilePath expected_file_path = base::FilePath(
+      "/special/arc-documents-provider/testing.provider/doc:root");
+
+  EXPECT_CALL(
+      *mock_dialog_,
+      SelectFileImpl(_, _, FilePathMatcher(expected_file_path), _, _, _, _, _))
+      .Times(1);
+
+  base::MockCallback<SelectFilesCallback> callback;
+  arc_select_files_handler_->SelectFiles(request, callback.Get());
+}
+
 TEST_F(ArcSelectFilesHandlerTest, FileSelected_CallbackCalled) {
   SelectFilesRequestPtr request = SelectFilesRequest::New();
   request->action_type = SelectFilesActionType::OPEN_DOCUMENT;
@@ -255,11 +282,11 @@ TEST_F(ArcSelectFilesHandlerTest, OnFileSelectorEvent) {
 TEST_F(ArcSelectFilesHandlerTest, GetFileSelectorElements) {
   EXPECT_CALL(*mock_script_executor_, ExecuteJavaScript(kScriptGetElements, _))
       .WillOnce(testing::Invoke(
-          [](const std::string&, const JavaScriptResultCallback& callback) {
-            callback.Run(base::JSONReader::ReadDeprecated(
-                             "{\"dirNames\" :[\"dir1\", \"dir2\"],"
-                             " \"fileNames\":[\"file1\",\"file2\"]}")
-                             .get());
+          [](const std::string&, JavaScriptResultCallback callback) {
+            std::move(callback).Run(
+                base::JSONReader::Read("{\"dirNames\" :[\"dir1\", \"dir2\"],"
+                                       " \"fileNames\":[\"file1\",\"file2\"]}")
+                    .value());
           }));
 
   mojom::FileSelectorElementsPtr expectedElements =

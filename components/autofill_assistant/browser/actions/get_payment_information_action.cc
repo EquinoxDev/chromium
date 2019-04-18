@@ -50,6 +50,9 @@ void GetPaymentInformationAction::InternalProcessAction(
 
   payment_options->request_shipping =
       !get_payment_information.shipping_address_name().empty();
+  payment_options->request_payment_method =
+      get_payment_information.ask_for_payment();
+
   payment_options->callback =
       base::BindOnce(&GetPaymentInformationAction::OnGetPaymentInformation,
                      weak_ptr_factory_.GetWeakPtr(), delegate,
@@ -119,7 +122,8 @@ void GetPaymentInformationAction::OnGetPaymentInformation(
     }
     processed_action_proto_->mutable_payment_details()
         ->set_is_terms_and_conditions_accepted(
-            payment_information->is_terms_and_conditions_accepted);
+            payment_information->terms_and_conditions ==
+            TermsAndConditionsState::ACCEPTED);
     processed_action_proto_->mutable_payment_details()->set_payer_email(
         payment_information->payer_email);
   }

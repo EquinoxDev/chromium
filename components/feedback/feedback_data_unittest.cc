@@ -24,6 +24,7 @@ namespace feedback {
 
 namespace {
 
+constexpr char kHistograms[] = "Histogram Data";
 constexpr char kImageData[] = "Image Data";
 constexpr char kFileData[] = "File Data";
 
@@ -47,10 +48,6 @@ class MockUploader : public FeedbackUploader {
 
   DISALLOW_COPY_AND_ASSIGN(MockUploader);
 };
-
-std::unique_ptr<std::string> MakeScoped(const char* str) {
-  return std::make_unique<std::string>(str);
-}
 
 }  // namespace
 
@@ -97,8 +94,9 @@ class FeedbackDataTest : public testing::Test {
 };
 
 TEST_F(FeedbackDataTest, ReportSending) {
-  data_->set_image(MakeScoped(kImageData));
-  data_->AttachAndCompressFileData(MakeScoped(kFileData));
+  data_->SetAndCompressHistograms(kHistograms);
+  data_->set_image(kImageData);
+  data_->AttachAndCompressFileData(kFileData);
   Send();
   RunMessageLoop();
   EXPECT_TRUE(data_->IsDataComplete());

@@ -24,14 +24,15 @@
 #include "components/favicon_base/favicon_types.h"
 #include "components/history/core/browser/history_database_params.h"
 #include "components/history/core/browser/history_service.h"
+#include "components/image_fetcher/core/fake_image_decoder.h"
 #include "components/image_fetcher/core/image_decoder.h"
 #include "components/image_fetcher/core/image_fetcher.h"
-#include "components/image_fetcher/core/mock_image_decoder.h"
 #include "components/image_fetcher/core/mock_image_fetcher.h"
 #include "components/image_fetcher/core/request_metadata.h"
 #include "net/traffic_annotation/network_traffic_annotation_test_helper.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "ui/base/resource/mock_resource_bundle_delegate.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/base/ui_base_paths.h"
 #include "ui/gfx/image/image_unittest_util.h"
@@ -51,47 +52,11 @@ using ::testing::ReturnArg;
 
 namespace ntp_tiles {
 namespace {
-using MockImageDecoder = image_fetcher::MockImageDecoder;
-
-// This class provides methods to inject an image resource where a real resource
-// would be necessary otherwise. All other methods have return values that allow
-// the normal implementation to proceed.
-class MockResourceDelegate : public ui::ResourceBundle::Delegate {
- public:
-  ~MockResourceDelegate() override {}
-
-  MOCK_METHOD1(GetImageNamed, gfx::Image(int resource_id));
-  MOCK_METHOD1(GetNativeImageNamed, gfx::Image(int resource_id));
-
-  MOCK_METHOD2(GetPathForResourcePack,
-               base::FilePath(const base::FilePath& pack_path,
-                              ui::ScaleFactor scale_factor));
-
-  MOCK_METHOD2(GetPathForLocalePack,
-               base::FilePath(const base::FilePath& pack_path,
-                              const std::string& locale));
-
-  MOCK_METHOD2(LoadDataResourceBytes,
-               base::RefCountedMemory*(int resource_id,
-                                       ui::ScaleFactor scale_factor));
-
-  MOCK_METHOD3(GetRawDataResource,
-               bool(int resource_id,
-                    ui::ScaleFactor scale_factor,
-                    base::StringPiece* value));
-
-  MOCK_METHOD2(GetLocalizedString, bool(int message_id, base::string16* value));
-};
 
 ACTION(FailFetch) {
   base::ThreadTaskRunnerHandle::Get()->PostTask(
       FROM_HERE, base::BindOnce(std::move(*arg2), gfx::Image(),
                                 image_fetcher::RequestMetadata()));
-}
-
-ACTION_P2(DecodeSuccessfully, width, height) {
-  base::ThreadTaskRunnerHandle::Get()->PostTask(
-      FROM_HERE, base::BindOnce(arg2, gfx::test::CreateImage(width, height)));
 }
 
 ACTION_P2(PassFetch, width, height) {
@@ -177,7 +142,7 @@ class IconCacherTestPopularSites : public IconCacherTestBase {
               GURL("http://url.google/favicon.ico"),
               TileTitleSource::UNKNOWN),  // title_source, unused
         image_fetcher_(new ::testing::StrictMock<MockImageFetcher>),
-        image_decoder_(new ::testing::StrictMock<MockImageDecoder>) {}
+        image_decoder_() {}
 
   void SetUp() override {
     if (ui::ResourceBundle::HasSharedInstance()) {
@@ -214,8 +179,8 @@ class IconCacherTestPopularSites : public IconCacherTestBase {
 
   PopularSites::Site site_;
   std::unique_ptr<MockImageFetcher> image_fetcher_;
-  std::unique_ptr<MockImageDecoder> image_decoder_;
-  NiceMock<MockResourceDelegate> mock_resource_delegate_;
+  image_fetcher::FakeImageDecoder image_decoder_;
+  NiceMock<ui::MockResourceBundleDelegate> mock_resource_delegate_;
 };
 
 TEST_F(IconCacherTestPopularSites, LargeCached) {
@@ -322,9 +287,8 @@ TEST_F(IconCacherTestPopularSites, ProvidesDefaultIconAndSucceedsWithFetching) {
   // It's not important when the image_fetcher's decoder is used to decode the
   // image but it must happen at some point.
   EXPECT_CALL(*image_fetcher_, GetImageDecoder())
-      .WillOnce(Return(image_decoder_.get()));
-  EXPECT_CALL(*image_decoder_, DecodeImage(_, gfx::Size(128, 128), _))
-      .WillOnce(DecodeSuccessfully(64, 64));
+      .WillOnce(Return(&image_decoder_));
+  image_decoder_.SetDecodedImage(gfx::test::CreateImage(64, 64));
   base::MockCallback<base::Closure> preliminary_icon_available;
   base::MockCallback<base::Closure> icon_available;
   base::RunLoop default_loop;

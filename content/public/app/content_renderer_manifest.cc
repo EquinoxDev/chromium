@@ -16,14 +16,9 @@ const service_manager::Manifest& GetContentRendererManifest() {
       service_manager::ManifestBuilder()
           .WithServiceName(mojom::kRendererServiceName)
           .WithDisplayName("Content (renderer process)")
-          .ExposeCapability("service_manager:service_factory",
-                            std::set<const char*>{
-                                "service_manager.mojom.ServiceFactory",
-                            })
           .ExposeCapability(
               "browser",
               std::set<const char*>{
-                  "blink.mojom.AppCacheFrontend",
                   "blink.mojom.CodeCacheHost",
                   "blink.mojom.CrashMemoryMetricsReporter",
                   "blink.mojom.LeakDetector",
@@ -35,6 +30,7 @@ const service_manager::Manifest& GetContentRendererManifest() {
                   "content.mojom.ChildHistogramFetcher",
                   "content.mojom.ChildHistogramFetcherFactory",
                   "content.mojom.FrameFactory",
+                  "content.mojom.MhtmlFileWriter",
                   "content.mojom.RenderWidgetWindowTreeClientFactory",
                   "content.mojom.ResourceUsageReporter",
                   "IPC.mojom.ChannelBootstrap",

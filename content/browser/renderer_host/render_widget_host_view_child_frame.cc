@@ -72,8 +72,7 @@ RenderWidgetHostViewChildFrame::RenderWidgetHostViewChildFrame(
           base::checked_cast<uint32_t>(widget_host->GetProcess()->GetID()),
           base::checked_cast<uint32_t>(widget_host->GetRoutingID())),
       frame_connector_(nullptr),
-      enable_viz_(
-          base::FeatureList::IsEnabled(features::kVizDisplayCompositor)),
+      enable_viz_(features::IsVizDisplayCompositorEnabled()),
       enable_surface_synchronization_(
           features::IsSurfaceSynchronizationEnabled()),
       weak_factory_(this) {
@@ -232,13 +231,13 @@ void RenderWidgetHostViewChildFrame::SetBounds(const gfx::Rect& rect) {
 
 void RenderWidgetHostViewChildFrame::Focus() {}
 
-bool RenderWidgetHostViewChildFrame::HasFocus() const {
+bool RenderWidgetHostViewChildFrame::HasFocus() {
   if (frame_connector_)
     return frame_connector_->HasFocus();
   return false;
 }
 
-bool RenderWidgetHostViewChildFrame::IsSurfaceAvailableForCopy() const {
+bool RenderWidgetHostViewChildFrame::IsSurfaceAvailableForCopy() {
   return GetLocalSurfaceIdAllocation().IsValid();
 }
 
@@ -287,7 +286,7 @@ void RenderWidgetHostViewChildFrame::WasUnOccluded() {
   Show();
 }
 
-gfx::Rect RenderWidgetHostViewChildFrame::GetViewBounds() const {
+gfx::Rect RenderWidgetHostViewChildFrame::GetViewBounds() {
   gfx::Rect rect;
   if (frame_connector_) {
     rect = frame_connector_->screen_space_rect_in_dip();
@@ -311,7 +310,7 @@ gfx::Rect RenderWidgetHostViewChildFrame::GetViewBounds() const {
   return rect;
 }
 
-gfx::Size RenderWidgetHostViewChildFrame::GetVisibleViewportSize() const {
+gfx::Size RenderWidgetHostViewChildFrame::GetVisibleViewportSize() {
   // For subframes, the visual viewport corresponds to the main frame size, so
   // this bubbles up to the parent until it hits the main frame's
   // RenderWidgetHostView.
@@ -353,7 +352,7 @@ void RenderWidgetHostViewChildFrame::SetInsets(const gfx::Insets& insets) {
   host()->SynchronizeVisualProperties(!insets_.IsEmpty());
 }
 
-gfx::NativeView RenderWidgetHostViewChildFrame::GetNativeView() const {
+gfx::NativeView RenderWidgetHostViewChildFrame::GetNativeView() {
   // TODO(ekaramad): To accomodate MimeHandlerViewGuest while embedded inside
   // OOPIF-webview, we need to return the native view to be used by
   // RenderWidgetHostViewGuest. Remove this once https://crbug.com/642826 is
@@ -384,8 +383,7 @@ void RenderWidgetHostViewChildFrame::UpdateBackgroundColor() {
   }
 }
 
-gfx::Size RenderWidgetHostViewChildFrame::GetCompositorViewportPixelSize()
-    const {
+gfx::Size RenderWidgetHostViewChildFrame::GetCompositorViewportPixelSize() {
   if (frame_connector_)
     return frame_connector_->local_frame_size_in_pixels();
   return gfx::Size();
@@ -494,12 +492,12 @@ void RenderWidgetHostViewChildFrame::UnregisterFrameSinkId() {
 void RenderWidgetHostViewChildFrame::UpdateViewportIntersection(
     const gfx::Rect& viewport_intersection,
     const gfx::Rect& compositor_visible_rect,
-    bool occluded_or_obscured) {
+    blink::FrameOcclusionState occlusion_state) {
   if (host()) {
     host()->SetIntersectsViewport(!viewport_intersection.IsEmpty());
     host()->Send(new WidgetMsg_SetViewportIntersection(
         host()->GetRoutingID(), viewport_intersection, compositor_visible_rect,
-        occluded_or_obscured));
+        occlusion_state));
   }
 }
 
@@ -773,8 +771,7 @@ bool RenderWidgetHostViewChildFrame::TransformPointToLocalCoordSpaceLegacy(
 bool RenderWidgetHostViewChildFrame::TransformPointToCoordSpaceForView(
     const gfx::PointF& point,
     RenderWidgetHostViewBase* target_view,
-    gfx::PointF* transformed_point,
-    viz::EventSource source) {
+    gfx::PointF* transformed_point) {
   viz::SurfaceId surface_id = GetCurrentSurfaceId();
   // LocalSurfaceId is not needed in Viz hit-test.
   if (!frame_connector_ || (!use_viz_hit_test_ && !surface_id.is_valid())) {
@@ -787,7 +784,7 @@ bool RenderWidgetHostViewChildFrame::TransformPointToCoordSpaceForView(
   }
 
   return frame_connector_->TransformPointToCoordSpaceForView(
-      point, target_view, surface_id, transformed_point, source);
+      point, target_view, surface_id, transformed_point);
 }
 
 gfx::PointF RenderWidgetHostViewChildFrame::TransformRootPointToViewCoordSpace(
@@ -824,7 +821,7 @@ void RenderWidgetHostViewChildFrame::WillSendScreenRects() {
   if (frame_connector_) {
     UpdateViewportIntersection(frame_connector_->viewport_intersection_rect(),
                                frame_connector_->compositor_visible_rect(),
-                               frame_connector_->occluded_or_obscured());
+                               frame_connector_->occlusion_state());
     SetIsInert();
     UpdateInheritedEffectiveTouchAction();
     UpdateRenderThrottlingStatus();
@@ -898,7 +895,7 @@ void RenderWidgetHostViewChildFrame::ReclaimResources(
 
 void RenderWidgetHostViewChildFrame::OnBeginFrame(
     const viz::BeginFrameArgs& args,
-    const base::flat_map<uint32_t, gfx::PresentationFeedback>& feedbacks) {
+    const viz::PresentationFeedbackMap& feedbacks) {
   host_->ProgressFlingIfNeeded(args.frame_time);
   if (renderer_compositor_frame_sink_)
     renderer_compositor_frame_sink_->OnBeginFrame(args, feedbacks);
@@ -1037,8 +1034,7 @@ RenderWidgetHostViewChildFrame::CreateBrowserAccessibilityManager(
       BrowserAccessibilityManager::GetEmptyDocument(), delegate);
 }
 
-void RenderWidgetHostViewChildFrame::GetScreenInfo(
-    ScreenInfo* screen_info) const {
+void RenderWidgetHostViewChildFrame::GetScreenInfo(ScreenInfo* screen_info) {
   if (frame_connector_)
     *screen_info = frame_connector_->screen_info();
   else

@@ -7,12 +7,15 @@
 #include <utility>
 
 #include "base/android/android_hardware_buffer_compat.h"
+#include "base/android/build_info.h"
 #include "base/android/scoped_hardware_buffer_fence_sync.h"
 #include "base/bind.h"
+#include "base/strings/strcat.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "ui/gfx/geometry/rect_conversions.h"
 #include "ui/gl/gl_context.h"
 #include "ui/gl/gl_image_ahardwarebuffer.h"
+#include "ui/gl/gl_utils.h"
 
 namespace gl {
 namespace {
@@ -26,16 +29,24 @@ gfx::Size GetBufferSize(const AHardwareBuffer* buffer) {
   return gfx::Size(desc.width, desc.height);
 }
 
+std::string BuildSurfaceName(const char* suffix) {
+  return base::StrCat(
+      {base::android::BuildInfo::GetInstance()->package_name(), "/", suffix});
+}
+
 }  // namespace
 
 GLSurfaceEGLSurfaceControl::GLSurfaceEGLSurfaceControl(
     ANativeWindow* window,
     scoped_refptr<base::SingleThreadTaskRunner> task_runner)
-    : window_rect_(0,
+    : root_surface_name_(BuildSurfaceName(kRootSurfaceName)),
+      child_surface_name_(BuildSurfaceName(kChildSurfaceName)),
+      window_rect_(0,
                    0,
                    ANativeWindow_getWidth(window),
                    ANativeWindow_getHeight(window)),
-      root_surface_(new SurfaceControl::Surface(window, kRootSurfaceName)),
+      root_surface_(
+          new SurfaceControl::Surface(window, root_surface_name_.c_str())),
       gpu_task_runner_(std::move(task_runner)),
       weak_factory_(this) {}
 
@@ -137,6 +148,14 @@ void GLSurfaceEGLSurfaceControl::CommitPendingTransaction(
                                         surface_damage_rect);
   }
 
+  // Surfaces which are present in the current frame but not in the next frame
+  // need to be explicitly updated in order to get a release fence for them in
+  // the next transaction.
+  for (size_t i = pending_surfaces_count_; i < surface_list_.size(); ++i) {
+    pending_transaction_->SetBuffer(*surface_list_[i].surface, nullptr,
+                                    base::ScopedFD());
+  }
+
   // Release resources for the current frame once the next frame is acked.
   ResourceRefs resources_to_release;
   resources_to_release.swap(current_frame_resources_);
@@ -152,12 +171,20 @@ void GLSurfaceEGLSurfaceControl::CommitPendingTransaction(
       std::move(present_callback), std::move(resources_to_release));
   pending_transaction_->SetOnCompleteCb(std::move(callback), gpu_task_runner_);
 
-  pending_transaction_->Apply();
-  pending_transaction_.reset();
-
-  DCHECK_GE(surface_list_.size(), pending_surfaces_count_);
+  // Cache only those surfaces which were used in this transaction. The surfaces
+  // removed here are persisted in |resources_to_release| so we can release
+  // them after receiving read fences from the framework.
   surface_list_.resize(pending_surfaces_count_);
   pending_surfaces_count_ = 0u;
+
+  if (transaction_ack_pending_) {
+    pending_transaction_queue_.push(std::move(pending_transaction_).value());
+  } else {
+    transaction_ack_pending_ = true;
+    pending_transaction_->Apply();
+  }
+
+  pending_transaction_.reset();
 }
 
 gfx::Size GLSurfaceEGLSurfaceControl::GetSize() {
@@ -177,13 +204,18 @@ bool GLSurfaceEGLSurfaceControl::ScheduleOverlayPlane(
     const gfx::RectF& crop_rect,
     bool enable_blend,
     std::unique_ptr<gfx::GpuFence> gpu_fence) {
+  if (!SurfaceControl::SupportsColorSpace(image->color_space())) {
+    LOG(ERROR) << "Not supported color space used with overlay : "
+               << image->color_space().ToString();
+  }
+
   if (!pending_transaction_)
     pending_transaction_.emplace();
 
   bool uninitialized = false;
   if (pending_surfaces_count_ == surface_list_.size()) {
     uninitialized = true;
-    surface_list_.emplace_back(*root_surface_);
+    surface_list_.emplace_back(*root_surface_, child_surface_name_);
   }
   pending_surfaces_count_++;
   auto& surface_state = surface_list_.at(pending_surfaces_count_ - 1);
@@ -213,11 +245,12 @@ bool GLSurfaceEGLSurfaceControl::ScheduleOverlayPlane(
   if (surface_state.buffer_updated_in_pending_transaction) {
     surface_state.hardware_buffer = hardware_buffer;
 
-    if (!fence_fd.is_valid() && gpu_fence && surface_state.hardware_buffer) {
+    if (gpu_fence && surface_state.hardware_buffer) {
       auto fence_handle =
           gfx::CloneHandleForIPC(gpu_fence->GetGpuFenceHandle());
       DCHECK(!fence_handle.is_null());
-      fence_fd = base::ScopedFD(fence_handle.native_fd.fd);
+      fence_fd = MergeFDs(std::move(fence_fd),
+                          base::ScopedFD(fence_handle.native_fd.fd));
     }
 
     pending_transaction_->SetBuffer(*surface_state.surface,
@@ -250,6 +283,12 @@ bool GLSurfaceEGLSurfaceControl::ScheduleOverlayPlane(
   if (uninitialized || surface_state.opaque != opaque) {
     surface_state.opaque = opaque;
     pending_transaction_->SetOpaque(*surface_state.surface, opaque);
+  }
+
+  if (uninitialized || surface_state.color_space != image->color_space()) {
+    surface_state.color_space = image->color_space();
+    pending_transaction_->SetColorSpace(*surface_state.surface,
+                                        image->color_space());
   }
 
   return true;
@@ -289,7 +328,9 @@ void GLSurfaceEGLSurfaceControl::OnTransactionAckOnGpuThread(
     ResourceRefs released_resources,
     SurfaceControl::TransactionStats transaction_stats) {
   DCHECK(gpu_task_runner_->BelongsToCurrentThread());
-  context_->MakeCurrent(this);
+  DCHECK(transaction_ack_pending_);
+
+  transaction_ack_pending_ = false;
 
   // The presentation feedback callback must run after swap completion.
   std::move(completion_callback).Run(gfx::SwapResult::SWAP_ACK, nullptr);
@@ -301,18 +342,44 @@ void GLSurfaceEGLSurfaceControl::OnTransactionAckOnGpuThread(
                                      0 /* flags */);
   std::move(presentation_callback).Run(feedback);
 
+  const bool has_context = context_->MakeCurrent(this);
   for (auto& surface_stat : transaction_stats.surface_stats) {
     auto it = released_resources.find(surface_stat.surface);
-    DCHECK(it != released_resources.end());
-    if (surface_stat.fence.is_valid())
-      it->second.scoped_buffer->SetReadFence(std::move(surface_stat.fence));
+
+    // The transaction ack includes data for all surfaces updated in this
+    // transaction. So the following condition can occur if a new surface was
+    // added in this transaction with a buffer. It'll be included in the ack
+    // with no fence, since its not being released and so shouldn't be in
+    // |released_resources| either.
+    if (it == released_resources.end()) {
+      DCHECK(!surface_stat.fence.is_valid());
+      continue;
+    }
+
+    if (surface_stat.fence.is_valid()) {
+      it->second.scoped_buffer->SetReadFence(std::move(surface_stat.fence),
+                                             has_context);
+    }
   }
+
+  // Note that we may not see |surface_stats| for every resource above. This is
+  // because we take a ref on every buffer used in a frame, even if it is not
+  // updated in that frame. Since the transaction ack only includes surfaces
+  // which were updated in that transaction, the surfaces with no buffer updates
+  // won't be present in the ack.
   released_resources.clear();
+
+  if (!pending_transaction_queue_.empty()) {
+    transaction_ack_pending_ = true;
+    pending_transaction_queue_.front().Apply();
+    pending_transaction_queue_.pop();
+  }
 }
 
 GLSurfaceEGLSurfaceControl::SurfaceState::SurfaceState(
-    const SurfaceControl::Surface& parent)
-    : surface(new SurfaceControl::Surface(parent, kChildSurfaceName)) {}
+    const SurfaceControl::Surface& parent,
+    const std::string& name)
+    : surface(new SurfaceControl::Surface(parent, name.c_str())) {}
 
 GLSurfaceEGLSurfaceControl::SurfaceState::SurfaceState() = default;
 GLSurfaceEGLSurfaceControl::SurfaceState::SurfaceState(SurfaceState&& other) =

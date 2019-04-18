@@ -8,6 +8,7 @@ import unittest
 import mock
 
 from core import cli_helpers
+from telemetry import decorators
 
 
 class CLIHelpersTest(unittest.TestCase):
@@ -49,6 +50,8 @@ class CLIHelpersTest(unittest.TestCase):
 
   @mock.patch('__builtin__.print')
   @mock.patch('__builtin__.raw_input')
+  # https://crbug.com/938575.
+  @decorators.Disabled('chromeos')
   def testAskAgainOnInvalidAnswer(self, raw_input_mock, print_mock):
     raw_input_mock.side_effect = ['foobar', 'y']
     self.assertTrue(cli_helpers.Ask('Ready?'))
@@ -60,6 +63,8 @@ class CLIHelpersTest(unittest.TestCase):
 
   @mock.patch('__builtin__.print')
   @mock.patch('__builtin__.raw_input')
+  # https://crbug.com/938575.
+  @decorators.Disabled('chromeos')
   def testAskWithCustomAnswersAndDefault(self, raw_input_mock, print_mock):
     raw_input_mock.side_effect = ['']
     self.assertFalse(
@@ -69,6 +74,8 @@ class CLIHelpersTest(unittest.TestCase):
 
   @mock.patch('__builtin__.print')
   @mock.patch('__builtin__.raw_input')
+  # https://crbug.com/938575.
+  @decorators.Disabled('chromeos')
   def testAskNoDefaultCustomAnswersAsList(self, raw_input_mock, print_mock):
     raw_input_mock.side_effect = ['', 'FoO']
     self.assertEqual(cli_helpers.Ask('Ready?', ['foo', 'bar']), 'foo')
@@ -148,6 +155,16 @@ class CLIHelpersTest(unittest.TestCase):
   def testRunWithNonListCommand(self):
     with self.assertRaises(ValueError):
       cli_helpers.Run('cmd with args')
+
+  @mock.patch('__builtin__.print')
+  @mock.patch('__builtin__.raw_input')
+  def testPrompt(self, raw_input_mock, print_mock):
+    raw_input_mock.side_effect = ['', '42']
+    self.assertEqual(cli_helpers.Prompt(
+        'What is the ultimate meaning of life, universe and everything?'), '42')
+    self.assertEqual(raw_input_mock.call_count, 2)
+    self.assertEqual(print_mock.call_count, 3)
+
 
 
 if __name__ == "__main__":

@@ -17,7 +17,8 @@ namespace blink {
 
 class PaintLayerClipperTest : public RenderingTest {
  public:
-  PaintLayerClipperTest() : RenderingTest(EmptyLocalFrameClient::Create()) {}
+  PaintLayerClipperTest()
+      : RenderingTest(MakeGarbageCollected<EmptyLocalFrameClient>()) {}
 
   void SetUp() override {
     WebTestSupport::SetMockThemeEnabledForTest(true);
@@ -316,7 +317,7 @@ TEST_F(PaintLayerClipperTest, ControlClipSelect) {
 #else
   EXPECT_EQ(LayoutRect(17, 9, 60, 15), foreground_rect.Rect());
 #endif
-}
+}  // namespace blink
 
 TEST_F(PaintLayerClipperTest, LayoutSVGRootChild) {
   SetBodyInnerHTML(R"HTML(
@@ -617,8 +618,8 @@ TEST_F(PaintLayerClipperTest, Filter) {
 // Computed infinite clip rects may not match LayoutRect::InfiniteIntRect()
 // due to floating point errors.
 static bool IsInfinite(const LayoutRect& rect) {
-  return rect.X().Round() < -10000000 && rect.MaxX().Round() > 10000000
-      && rect.Y().Round() < -10000000 && rect.MaxY().Round() > 10000000;
+  return rect.X().Round() < -10000000 && rect.MaxX().Round() > 10000000 &&
+         rect.Y().Round() < -10000000 && rect.MaxY().Round() > 10000000;
 }
 
 TEST_F(PaintLayerClipperTest, IgnoreRootLayerClipWithCSSClip) {
@@ -1028,6 +1029,94 @@ TEST_F(PaintLayerClipperTest,
                              kIgnoreOverflowClipAndScroll),
             clip_rect);
     EXPECT_EQ(LayoutRect(100, 300, 200, 300), clip_rect.Rect());
+  }
+}
+
+TEST_F(PaintLayerClipperTest,
+       StickyLayerClipRectInDocumentSpaceWithNestedScroller) {
+  SetBodyInnerHTML(R"HTML(
+    <div style="width:200px; height:200px;"></div>
+    <div style="position:sticky; left:100px; top:100px; width:300px; height:400px; overflow:scroll;">
+      <div style="width:200px; height:300px; overflow:hidden;">
+        <div id="target" style="position:relative;"></div>
+      </div>
+      <div style="height:3000px;"></div>
+    </div>
+    <div style="height:3000px;"></div>
+  )HTML");
+
+  Element* target = GetDocument().getElementById("target");
+  PaintLayer* target_layer =
+      ToLayoutBoxModelObject(target->GetLayoutObject())->Layer();
+
+  // At 10, target is still scrolling - clip_rect shouldn't change.
+  GetDocument().domWindow()->scrollTo(0, 10);
+  GetDocument()
+      .GetLayoutView()
+      ->Layer()
+      ->Clipper(PaintLayer::GeometryMapperOption::kDoNotUseGeometryMapper)
+      .ClearClipRectsIncludingDescendants();
+
+  {
+    ClipRect clip_rect;
+    target_layer
+        ->Clipper(PaintLayer::GeometryMapperOption::kDoNotUseGeometryMapper)
+        .CalculateBackgroundClipRect(
+            ClipRectsContext(GetDocument().GetLayoutView()->Layer(),
+                             &GetDocument().GetLayoutView()->FirstFragment(),
+                             kUncachedClipRects,
+                             kIgnorePlatformOverlayScrollbarSize,
+                             kIgnoreOverflowClipAndScroll),
+            clip_rect);
+    EXPECT_EQ(LayoutRect(100, 208, 200, 300), clip_rect.Rect());
+  }
+
+  // At 50, target is still scrolling - clip_rect shouldn't change.
+  GetDocument().domWindow()->scrollTo(0, 50);
+  {
+    ClipRect clip_rect;
+    target_layer
+        ->Clipper(PaintLayer::GeometryMapperOption::kDoNotUseGeometryMapper)
+        .CalculateBackgroundClipRect(
+            ClipRectsContext(GetDocument().GetLayoutView()->Layer(),
+                             &GetDocument().GetLayoutView()->FirstFragment(),
+                             kUncachedClipRects,
+                             kIgnorePlatformOverlayScrollbarSize,
+                             kIgnoreOverflowClipAndScroll),
+            clip_rect);
+    EXPECT_EQ(LayoutRect(100, 208, 200, 300), clip_rect.Rect());
+  }
+
+  // At 150, target is fixed - clip_rect should now increase.
+  GetDocument().domWindow()->scrollTo(0, 150);
+  {
+    ClipRect clip_rect;
+    target_layer
+        ->Clipper(PaintLayer::GeometryMapperOption::kDoNotUseGeometryMapper)
+        .CalculateBackgroundClipRect(
+            ClipRectsContext(GetDocument().GetLayoutView()->Layer(),
+                             &GetDocument().GetLayoutView()->FirstFragment(),
+                             kUncachedClipRects,
+                             kIgnorePlatformOverlayScrollbarSize,
+                             kIgnoreOverflowClipAndScroll),
+            clip_rect);
+    EXPECT_EQ(LayoutRect(100, 250, 200, 300), clip_rect.Rect());
+  }
+
+  // At 250, target is still fixed - clip_rect should keep increasing.
+  GetDocument().domWindow()->scrollTo(0, 250);
+  {
+    ClipRect clip_rect;
+    target_layer
+        ->Clipper(PaintLayer::GeometryMapperOption::kDoNotUseGeometryMapper)
+        .CalculateBackgroundClipRect(
+            ClipRectsContext(GetDocument().GetLayoutView()->Layer(),
+                             &GetDocument().GetLayoutView()->FirstFragment(),
+                             kUncachedClipRects,
+                             kIgnorePlatformOverlayScrollbarSize,
+                             kIgnoreOverflowClipAndScroll),
+            clip_rect);
+    EXPECT_EQ(LayoutRect(100, 350, 200, 300), clip_rect.Rect());
   }
 }
 

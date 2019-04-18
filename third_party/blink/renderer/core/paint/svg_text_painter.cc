@@ -27,8 +27,7 @@ void SVGTextPainter::Paint(const PaintInfo& paint_info) {
       block_info, layout_svg_text_,
       layout_svg_text_.LocalToSVGParentTransform());
 
-  if (RuntimeEnabledFeatures::PaintTouchActionRectsEnabled())
-    RecordHitTestData(paint_info);
+  RecordHitTestData(paint_info);
   BlockPainter(layout_svg_text_).Paint(block_info);
 
   // Paint the outlines, if any
@@ -47,7 +46,7 @@ void SVGTextPainter::RecordHitTestData(const PaintInfo& paint_info) {
   if (paint_info.phase != PaintPhase::kForeground)
     return;
 
-  auto touch_action = layout_svg_text_.EffectiveWhitelistedTouchAction();
+  auto touch_action = layout_svg_text_.EffectiveAllowedTouchAction();
   if (touch_action == TouchAction::kTouchActionAuto)
     return;
 

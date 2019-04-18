@@ -26,7 +26,7 @@ namespace {
 
 content::WebUIDataSource* CreateAppManagementUIHTMLSource(Profile* profile) {
   content::WebUIDataSource* source =
-      content::WebUIDataSource::Create(chrome::kChromeUIAppLauncherPageHost);
+      content::WebUIDataSource::Create(chrome::kChromeUIAppManagementHost);
 
   source->AddLocalizedString("appListTitle", IDS_APP_MANAGEMENT_APP_LIST_TITLE);
   source->AddLocalizedString("appNoPermission",
@@ -59,16 +59,12 @@ content::WebUIDataSource* CreateAppManagementUIHTMLSource(Profile* profile) {
                           IDR_APP_MANAGEMENT_MOJO_LITE_JS);
   source->AddResourcePath("types.mojom-lite.js",
                           IDR_APP_MANAGEMENT_TYPES_MOJO_LITE_JS);
-  source->AddResourcePath("big_buffer.mojom-lite.js",
-                          IDR_APP_MANAGEMENT_BIG_BUFFER_MOJO_LITE_JS);
   source->AddResourcePath("bitmap.mojom-lite.js",
                           IDR_APP_MANAGEMENT_BITMAP_MOJO_LITE_JS);
   source->AddResourcePath("image.mojom-lite.js",
                           IDR_APP_MANAGEMENT_IMAGE_MOJO_LITE_JS);
   source->AddResourcePath("image_info.mojom-lite.js",
                           IDR_APP_MANAGEMENT_IMAGE_INFO_MOJO_LITE_JS);
-  source->AddResourcePath("time.mojom-lite.js",
-                          IDR_APP_MANAGEMENT_TIME_MOJO_LITE_JS);
 
   source->AddResourcePath("actions.html", IDR_APP_MANAGEMENT_ACTIONS_HTML);
   source->AddResourcePath("actions.js", IDR_APP_MANAGEMENT_ACTIONS_JS);

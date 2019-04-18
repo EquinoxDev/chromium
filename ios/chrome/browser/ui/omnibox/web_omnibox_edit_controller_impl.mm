@@ -16,10 +16,10 @@
 WebOmniboxEditControllerImpl::WebOmniboxEditControllerImpl(
     id<LocationBarDelegate> delegate)
     : delegate_(delegate){
-          // TODO(crbug.com/818645): add security icon and its a11y labels
-      };
+  // TODO(crbug.com/818645): add security icon and its a11y labels
+}
 
-WebOmniboxEditControllerImpl::~WebOmniboxEditControllerImpl(){};
+WebOmniboxEditControllerImpl::~WebOmniboxEditControllerImpl() {}
 
 web::WebState* WebOmniboxEditControllerImpl::GetWebState() {
   return [delegate_ webState];
@@ -53,8 +53,6 @@ void WebOmniboxEditControllerImpl::OnAutocompleteAccept(
 }
 
 void WebOmniboxEditControllerImpl::OnInputInProgress(bool in_progress) {
-  if ([delegate_ locationBarModel])
-    [delegate_ locationBarModel]->set_input_in_progress(in_progress);
   // TODO(crbug.com/818649): see if this is really used.
   if (in_progress)
     [delegate_ locationBarBeganEdit];

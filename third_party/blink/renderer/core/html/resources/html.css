@@ -556,6 +556,25 @@ input[type="image" i] {
     cursor: pointer;
 }
 
+/* TODO(crbug.com/880258): Use different styles for
+  `-internal-autofill-previewed` and `-internal-autofill-selected`. */
+input:-internal-autofill-previewed,
+textarea:-internal-autofill-previewed,
+select:-internal-autofill-previewed {
+  font-family: system-ui !important;
+  background-color: #E8F0FE !important;
+  background-image:none !important;
+  color: #000000 !important;
+}
+
+input:-internal-autofill-selected,
+textarea:-internal-autofill-selected,
+select:-internal-autofill-selected {
+  background-color: #E8F0FE !important;
+  background-image:none !important;
+  color: #000000 !important;
+}
+
 input[type="radio" i], input[type="checkbox" i] {
     margin: 3px 0.5ex;
     padding: initial;
@@ -988,6 +1007,10 @@ nobr {
 }
 
 /* states */
+
+video:-internal-spatial-navigation-interest:not(:fullscreen) {
+  outline-offset: -2px;
+}
 
 :-internal-spatial-navigation-interest {
   outline: auto 5px -webkit-focus-ring-color !important;

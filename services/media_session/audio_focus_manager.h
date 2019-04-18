@@ -103,11 +103,9 @@ class AudioFocusManager : public mojom::AudioFocusManager,
   };
 
   void RequestAudioFocusInternal(std::unique_ptr<StackRow>,
-                                 mojom::AudioFocusType,
-                                 base::OnceCallback<void()>);
+                                 mojom::AudioFocusType);
   void AbandonAudioFocusInternal(RequestId);
 
-  void EnforceAudioFocusAbandon();
   void EnforceAudioFocus();
 
   void MaybeUpdateActiveSession();

@@ -236,7 +236,8 @@ class CORE_EXPORT LayoutTableCell : public LayoutBlockFlow {
   }
 
   static LayoutTableCell* CreateAnonymous(Document*,
-                                          scoped_refptr<ComputedStyle>);
+                                          scoped_refptr<ComputedStyle>,
+                                          LegacyLayout);
   static LayoutTableCell* CreateAnonymousWithParent(const LayoutObject*);
   LayoutBox* CreateAnonymousBoxWithSameTypeAs(
       const LayoutObject* parent) const override {
@@ -346,14 +347,6 @@ class CORE_EXPORT LayoutTableCell : public LayoutBlockFlow {
  protected:
   void StyleDidChange(StyleDifference, const ComputedStyle* old_style) override;
   void ComputePreferredLogicalWidths() override;
-
-  void AddLayerHitTestRects(
-      LayerHitTestRects&,
-      const PaintLayer* current_composited_layer,
-      const LayoutPoint& layer_offset,
-      TouchAction supported_fast_actions,
-      const LayoutRect& container_rect,
-      TouchAction container_whitelisted_touch_action) const override;
 
   void InvalidatePaint(const PaintInvalidatorContext&) const override;
 

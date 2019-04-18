@@ -9,6 +9,7 @@
 #include "base/auto_reset.h"
 #include "base/bind.h"
 #include "base/threading/thread_task_runner_handle.h"
+#include "base/trace_event/trace_event.h"
 #include "base/unguessable_token.h"
 #include "components/viz/common/surfaces/parent_local_surface_id_allocator.h"
 #include "components/viz/common/surfaces/surface_info.h"
@@ -23,6 +24,7 @@
 #include "services/ws/event_observer_helper.h"
 #include "services/ws/proxy_window.h"
 #include "services/ws/public/cpp/property_type_converters.h"
+#include "services/ws/top_level_proxy_window_impl.h"
 #include "services/ws/topmost_window_observer.h"
 #include "services/ws/window_delegate_impl.h"
 #include "services/ws/window_manager_interface.h"
@@ -30,7 +32,9 @@
 #include "services/ws/window_service_delegate.h"
 #include "services/ws/window_service_observer.h"
 #include "ui/aura/client/aura_constants.h"
+#include "ui/aura/client/focus_client.h"
 #include "ui/aura/client/transient_window_client.h"
+#include "ui/aura/client/window_parenting_client.h"
 #include "ui/aura/env.h"
 #include "ui/aura/mus/os_exchange_data_provider_mus.h"
 #include "ui/aura/mus/property_converter.h"
@@ -166,8 +170,8 @@ void WindowTree::SendEventToClient(aura::Window* window,
                                    const ui::Event& event) {
   // As gesture recognition runs in the client, GestureEvents should not be
   // forwarded. ProxyWindow's event processing should ensure no GestureEvents
-  // are sent.
-  DCHECK(!event.IsGestureEvent());
+  // are sent. Some pinch events are allowed.
+  DCHECK(!event.IsGestureEvent() || event.IsPinchEvent());
 
   const uint32_t event_id = GenerateEventAckId();
   auto* in_flight_event_queue =
@@ -213,6 +217,9 @@ void WindowTree::SendEventToClient(aura::Window* window,
            << ProxyWindow::GetMayBeNull(window)->GetIdForDebugging()
            << " event_type=" << ui::EventTypeName(event.type())
            << " event_id=" << event_id;
+  TRACE_EVENT_ASYNC_BEGIN1("ui", "WindowTree::SendEventToClient", event_id,
+                           "event_type",
+                           ui::EventTypeName(event_to_send->type()));
   window_tree_client_->OnWindowInputEvent(
       event_id, TransportIdForWindow(window), display_id,
       std::move(event_to_send), matches_event_observer);
@@ -698,6 +705,9 @@ mojom::WindowDataPtr WindowTree::WindowToWindowData(aura::Window* window) {
                        : kInvalidTransportId;
   window_data->bounds =
       is_top_level ? window->GetBoundsInScreen() : window->bounds();
+  window_data->state = is_top_level
+                           ? window->GetProperty(aura::client::kShowStateKey)
+                           : ui::SHOW_STATE_DEFAULT;
   window_data->properties =
       window_service_->property_converter()->GetTransportProperties(window);
   window_data->visible = (!IsClientRootWindow(window) || is_top_level)
@@ -756,6 +766,17 @@ void WindowTree::SendOcclusionStates(const std::set<aura::Window*>& windows) {
         aura::WindowOcclusionStateToMojom(window->occlusion_state());
   }
   window_tree_client_->OnOcclusionStatesChanged(occlusion_changes);
+}
+
+void WindowTree::OnWindowTreeHostsDisplayIdChanged(
+    const std::set<aura::Window*>& root_windows) {
+  for (auto& client_root : client_roots_) {
+    aura::Window* root_window = client_root->window()->GetRootWindow();
+    if (root_windows.find(root_window) == root_windows.end())
+      continue;
+
+    client_root->OnWindowTreeHostDisplayIdChanged();
+  }
 }
 
 bool WindowTree::NewWindowImpl(
@@ -985,6 +1006,19 @@ bool WindowTree::AddTransientWindowImpl(const ClientWindowId& parent_id,
   }
 
   ::wm::AddTransientChild(parent, transient);
+
+  // Transients are placed in a container by way of the WindowParentingClient.
+  // This code is simular to NativeWidgetAura, where it calls to
+  // ParentWindowWithContext().
+  if (IsTopLevel(parent) && parent->GetRootWindow() && IsTopLevel(transient) &&
+      transient->GetRootWindow()) {
+    aura::client::WindowParentingClient* client =
+        aura::client::GetWindowParentingClient(parent);
+    aura::Window* default_parent =
+        client->GetDefaultParent(transient, transient->GetBoundsInScreen());
+    if (default_parent && transient->parent() != default_parent)
+      default_parent->AddChild(transient);
+  }
   return true;
 }
 
@@ -1167,6 +1201,21 @@ bool WindowTree::SetWindowOpacityImpl(const ClientWindowId& window_id,
   return false;
 }
 
+bool WindowTree::SetWindowTransparentImpl(const ClientWindowId& window_id,
+                                          bool transparent) {
+  aura::Window* window = GetWindowByClientId(window_id);
+  DVLOG(3) << "SetWindowTransparent client=" << client_id_
+           << " client window_id=" << window_id.ToString();
+  if (IsClientCreatedWindow(window) || IsClientRootWindow(window)) {
+    if (window->transparent() == transparent)
+      return true;
+    window->SetTransparent(transparent);
+    return true;
+  }
+  DVLOG(1) << "SetWindowTransparent failed (invalid window or access denied)";
+  return false;
+}
+
 bool WindowTree::SetWindowBoundsImpl(
     const ClientWindowId& window_id,
     const gfx::Rect& bounds,
@@ -1252,9 +1301,10 @@ bool WindowTree::SetWindowBoundsImpl(
   // The window's bounds changed, but not to the value the client requested.
   // Tell the client the new value, and return false, which triggers the client
   // to use the value supplied to OnWindowBoundsChanged().
-  window_tree_client_->OnWindowBoundsChanged(TransportIdForWindow(window),
-                                             window->bounds(),
-                                             local_surface_id_allocation);
+  window_tree_client_->OnWindowBoundsChanged(
+      TransportIdForWindow(window), window->bounds(),
+      window->GetProperty(aura::client::kShowStateKey),
+      local_surface_id_allocation);
   return false;
 }
 
@@ -1433,7 +1483,9 @@ void WindowTree::OnWindowDestroyed(aura::Window* window) {
 
 void WindowTree::OnWindowVisibilityChanging(aura::Window* window,
                                             bool visible) {
-  if (property_change_tracker_->IsProcessingChangeForWindow(
+  // Visibility changes for top-levels are handled by ClientRoot.
+  if (IsTopLevel(window) ||
+      property_change_tracker_->IsProcessingChangeForWindow(
           window, ClientChangeType::kVisibility)) {
     return;
   }
@@ -1509,9 +1561,13 @@ void WindowTree::NewTopLevelWindow(
     window_tree_client_->OnChangeCompleted(change_id, false);
     return;
   }
+  std::unique_ptr<TopLevelProxyWindowImpl> top_level_proxy_window =
+      std::make_unique<TopLevelProxyWindowImpl>(window_tree_client_,
+                                                transport_window_id);
   std::unique_ptr<aura::Window> top_level_ptr =
       window_service_->delegate()->NewTopLevel(
-          window_service_->property_converter(), properties);
+          top_level_proxy_window.get(), window_service_->property_converter(),
+          properties);
   if (!top_level_ptr) {
     DVLOG(1) << "NewTopLevelWindow failed (delegate window creation failed)";
     window_tree_client_->OnChangeCompleted(change_id, false);
@@ -1521,20 +1577,22 @@ void WindowTree::NewTopLevelWindow(
   const bool is_top_level = true;
   aura::Window* top_level = AddClientCreatedWindow(
       client_window_id, is_top_level, std::move(top_level_ptr));
-  ProxyWindow* top_level_proxy_window = ProxyWindow::GetMayBeNull(top_level);
-  top_level_proxy_window->set_frame_sink_id(client_window_id);
+  ProxyWindow* proxy_window = ProxyWindow::GetMayBeNull(top_level);
+  proxy_window->SetTopLevelProxyWindow(std::move(top_level_proxy_window));
+  proxy_window->set_frame_sink_id(client_window_id);
   const int64_t display_id =
       display::Screen::GetScreen()->GetDisplayNearestWindow(top_level).id();
   // This passes null for the mojom::WindowTreePtr because the client has
   // already been given the mojom::WindowTreePtr that is backed by this
   // WindowTree.
-  CreateClientRoot(top_level, is_top_level)->RegisterVizEmbeddingSupport();
+  ClientRoot* client_root = CreateClientRoot(top_level, is_top_level);
+  client_root->RegisterVizEmbeddingSupport();
+  proxy_window->top_level_proxy_window()->set_client_root(client_root);
   // Creating the ClientRoot should trigger setting a LocalSurfaceIdAllocation.
-  DCHECK(top_level_proxy_window->local_surface_id_allocation());
+  DCHECK(proxy_window->local_surface_id_allocation());
   window_tree_client_->OnTopLevelCreated(
       change_id, WindowToWindowData(top_level), display_id,
-      top_level->IsVisible(),
-      *(top_level_proxy_window->local_surface_id_allocation()));
+      top_level->IsVisible(), *(proxy_window->local_surface_id_allocation()));
 }
 
 void WindowTree::DeleteWindow(uint32_t change_id, Id transport_window_id) {
@@ -1609,8 +1667,14 @@ void WindowTree::AllocateLocalSurfaceId(Id transport_window_id) {
   aura::Window* window = GetWindowByClientId(window_id);
   DVLOG(3) << "AllocateLocalSurfaceId client window_id="
            << window_id.ToString();
-  if (!window || !IsTopLevel(window)) {
+  if (!window) {
     DVLOG(1) << "AllocateLocalSurfaceId failed (invalid window id)";
+    return;
+  }
+  if (!IsTopLevel(window) &&
+      (!IsClientRootWindow(window) ||
+       ProxyWindow::GetMayBeNull(window)->owning_window_tree() != nullptr)) {
+    DVLOG(1) << "AllocateLocalSurfaceId failed (must be root or top-level)";
     return;
   }
   ClientRoot* client_root = GetClientRootForWindow(window);
@@ -1669,6 +1733,27 @@ void WindowTree::SetHitTestInsets(Id transport_window_id,
   DCHECK(proxy_window);  // Must exist because of preceding conditionals.
   proxy_window->SetHitTestInsets(MakeInsetsPositive(mouse),
                                  MakeInsetsPositive(touch));
+}
+
+void WindowTree::SetShape(Id transport_window_id,
+                          const std::vector<gfx::Rect>& shape) {
+  const ClientWindowId window_id = MakeClientWindowId(transport_window_id);
+  DVLOG(3) << "SetShape client_window_id=" << window_id.ToString()
+           << " #shape=" << shape.size();
+  aura::Window* window = GetWindowByClientId(window_id);
+  if (!window) {
+    DVLOG(1) << "SetShape failed (invalid window id)";
+    return;
+  }
+  if (!IsClientCreatedWindow(window)) {
+    DVLOG(1) << "SetShape failed (access denied)";
+    return;
+  }
+  window->layer()->SetAlphaShape(
+      shape.empty() ? nullptr
+                    : std::make_unique<std::vector<gfx::Rect>>(shape));
+  ProxyWindow* proxy_window = ProxyWindow::GetMayBeNull(window);
+  proxy_window->SetShape(shape);
 }
 
 void WindowTree::AttachFrameSinkId(Id transport_window_id,
@@ -1768,6 +1853,14 @@ void WindowTree::SetWindowOpacity(uint32_t change_id,
   window_tree_client_->OnChangeCompleted(
       change_id,
       SetWindowOpacityImpl(MakeClientWindowId(transport_window_id), opacity));
+}
+
+void WindowTree::SetWindowTransparent(uint32_t change_id,
+                                      Id transport_window_id,
+                                      bool transparent) {
+  window_tree_client_->OnChangeCompleted(
+      change_id, SetWindowTransparentImpl(
+                     MakeClientWindowId(transport_window_id), transparent));
 }
 
 void WindowTree::AttachCompositorFrameSink(
@@ -2019,6 +2112,7 @@ void WindowTree::OnWindowInputEventAck(uint32_t event_id,
 
   for (WindowServiceObserver& observer : window_service_->observers())
     observer.OnClientAckedEvent(client_id_, event_id);
+  TRACE_EVENT_ASYNC_END0("ui", "WindowTree::SendEventToClient", event_id);
 }
 
 void WindowTree::DeactivateWindow(Id transport_window_id) {
@@ -2163,9 +2257,19 @@ void WindowTree::CancelDragDrop(Id window_id) {
   // Clear |pending_drag_source_window_id_| to cancel posted drag loop task.
   pending_drag_source_window_id_ = kInvalidTransportId;
 
+  aura::Window* window = GetWindowByTransportId(window_id);
+  if (!window) {
+    DVLOG(1) << "CancelDragDrop failed (no window)";
+    return;
+  }
+
+  if (!IsClientCreatedWindow(window)) {
+    DVLOG(1) << "CancelDragDrop failed (access denied)";
+    return;
+  }
+
   // Cancel the current drag loop if it is running.
-  window_service_->delegate()->CancelDragLoop(
-      GetWindowByTransportId(window_id));
+  window_service_->delegate()->CancelDragLoop(window);
 }
 
 void WindowTree::ObserveTopmostWindow(mojom::MoveLoopSource source,
@@ -2304,6 +2408,25 @@ void WindowTree::UnpauseWindowOcclusionTracking() {
   }
 
   window_occlusion_tracking_pauses_.pop_back();
+}
+
+void WindowTree::ConnectToImeEngine(ime::mojom::ImeEngineRequest engine_request,
+                                    ime::mojom::ImeEngineClientPtr client) {
+  aura::Window* focused_window =
+      window_service_->focus_client()->GetFocusedWindow();
+  if (!focused_window) {
+    DVLOG(1) << "ConnectToImeEngine failed (no focused window)";
+    return;
+  }
+
+  if (!IsClientCreatedWindow(focused_window) &&
+      !IsClientRootWindow(focused_window)) {
+    DVLOG(1) << "ConnectToImeEngine failed (the caller client is not focused)";
+    return;
+  }
+
+  window_service_->delegate()->ConnectToImeEngine(std::move(engine_request),
+                                                  std::move(client));
 }
 
 }  // namespace ws

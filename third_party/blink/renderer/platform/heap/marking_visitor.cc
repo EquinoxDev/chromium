@@ -17,11 +17,6 @@ ALWAYS_INLINE bool IsHashTableDeleteValue(const void* value) {
 
 }  // namespace
 
-std::unique_ptr<MarkingVisitor> MarkingVisitor::Create(ThreadState* state,
-                                                       MarkingMode mode) {
-  return std::make_unique<MarkingVisitor>(state, mode);
-}
-
 MarkingVisitor::MarkingVisitor(ThreadState* state, MarkingMode marking_mode)
     : Visitor(state),
       marking_worklist_(Heap().GetMarkingWorklist(),
@@ -40,16 +35,12 @@ MarkingVisitor::MarkingVisitor(ThreadState* state, MarkingMode marking_mode)
 MarkingVisitor::~MarkingVisitor() = default;
 
 void MarkingVisitor::DynamicallyMarkAddress(Address address) {
-  BasePage* const page = PageFromObject(address);
-  HeapObjectHeader* const header =
-      page->IsLargeObjectPage()
-          ? static_cast<LargeObjectPage*>(page)->ObjectHeader()
-          : static_cast<NormalPage*>(page)->FindHeaderFromAddress(address);
+  HeapObjectHeader* const header = HeapObjectHeader::FromInnerAddress(address);
   DCHECK(header);
   DCHECK(!header->IsInConstruction());
   const GCInfo* gc_info =
       GCInfoTable::Get().GCInfoFromIndex(header->GcInfoIndex());
-  MarkHeader(header, gc_info->trace_);
+  MarkHeader(header, gc_info->trace);
 }
 
 void MarkingVisitor::ConservativelyMarkAddress(BasePage* page,
@@ -68,7 +59,7 @@ void MarkingVisitor::ConservativelyMarkAddress(BasePage* page,
   const GCInfo* gc_info =
       GCInfoTable::Get().GCInfoFromIndex(header->GcInfoIndex());
   if (!header->IsInConstruction()) {
-    MarkHeader(header, gc_info->trace_);
+    MarkHeader(header, gc_info->trace);
     return;
   }
 
@@ -146,15 +137,11 @@ void MarkingVisitor::TraceMarkedBackingStoreSlow(void* value) {
   HeapObjectHeader* header = HeapObjectHeader::FromPayload(value);
   CHECK(header->IsMarked());
   DCHECK(thread_state->CurrentVisitor());
-  // This check ensures that the visitor will not eagerly recurse into children
-  // but rather push all blink::GarbageCollected objects and only eagerly trace
-  // non-managed objects.
-  DCHECK(!thread_state->Heap().GetStackFrameDepth().IsEnabled());
   // No weak handling for write barriers. Modifying weakly reachable objects
   // strongifies them for the current cycle.
   GCInfoTable::Get()
       .GCInfoFromIndex(header->GcInfoIndex())
-      ->trace_(thread_state->CurrentVisitor(), value);
+      ->trace(thread_state->CurrentVisitor(), value);
 }
 
 }  // namespace blink

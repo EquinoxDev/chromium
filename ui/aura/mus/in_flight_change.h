@@ -11,6 +11,7 @@
 #include <string>
 #include <vector>
 
+#include "base/location.h"
 #include "base/macros.h"
 #include "base/memory/ptr_util.h"
 #include "base/optional.h"
@@ -53,6 +54,7 @@ enum class ChangeType {
   REMOVE_TRANSIENT_WINDOW_FROM_PARENT,
   REORDER,
   SET_MODAL,
+  SET_TRANSPARENT,
   TRANSFORM,
   VISIBLE,
 };
@@ -153,6 +155,7 @@ class InFlightBoundsChange : public InFlightChange {
   InFlightBoundsChange(WindowTreeClient* window_tree_client,
                        WindowMus* window,
                        const gfx::Rect& revert_bounds,
+                       ui::WindowShowState revert_show_state,
                        bool from_server,
                        const base::Optional<viz::LocalSurfaceIdAllocation>&
                            local_surface_id_allocation);
@@ -166,6 +169,7 @@ class InFlightBoundsChange : public InFlightChange {
  private:
   WindowTreeClient* window_tree_client_;
   gfx::Rect revert_bounds_;
+  ui::WindowShowState revert_show_state_;
   // If true the change originated from the server. If false, the change was
   // initiated by this client.
   bool from_server_;
@@ -209,7 +213,9 @@ class InFlightTransformChange : public InFlightChange {
 // expected to always complete.
 class CrashInFlightChange : public InFlightChange {
  public:
-  CrashInFlightChange(WindowMus* window, ChangeType type);
+  CrashInFlightChange(const base::Location& from_here,
+                      WindowMus* window,
+                      ChangeType type);
   ~CrashInFlightChange() override;
 
   // InFlightChange:
@@ -218,6 +224,8 @@ class CrashInFlightChange : public InFlightChange {
   void Revert() override;
 
  private:
+  const base::Location location_;
+
   DISALLOW_COPY_AND_ASSIGN(CrashInFlightChange);
 };
 
@@ -335,21 +343,6 @@ class InFlightVisibleChange : public InFlightChange {
   bool revert_visible_;
 
   DISALLOW_COPY_AND_ASSIGN(InFlightVisibleChange);
-};
-
-class InFlightOpacityChange : public InFlightChange {
- public:
-  InFlightOpacityChange(WindowMus* window, float revert_value);
-  ~InFlightOpacityChange() override;
-
-  // InFlightChange:
-  void SetRevertValueFrom(const InFlightChange& change) override;
-  void Revert() override;
-
- private:
-  float revert_opacity_;
-
-  DISALLOW_COPY_AND_ASSIGN(InFlightOpacityChange);
 };
 
 class InFlightSetModalTypeChange : public InFlightChange {

@@ -54,10 +54,12 @@ class WebContentsObserverProxy : public WebContentsObserver {
   void NavigationEntryCommitted(
       const LoadCommittedDetails& load_details) override;
   void NavigationEntriesDeleted() override;
+  void NavigationEntryChanged(
+      const EntryChangedDetails& change_details) override;
   void WebContentsDestroyed() override;
   void DidAttachInterstitialPage() override;
   void DidDetachInterstitialPage() override;
-  void DidChangeThemeColor(SkColor color) override;
+  void DidChangeThemeColor(base::Optional<SkColor> color) override;
   void MediaEffectivelyFullscreenChanged(bool is_fullscreen) override;
   void SetToBaseURLForDataURLIfNeeded(std::string* url);
   void ViewportFitChanged(blink::mojom::ViewportFit value) override;

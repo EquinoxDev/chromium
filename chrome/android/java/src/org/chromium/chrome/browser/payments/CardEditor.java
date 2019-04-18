@@ -15,6 +15,7 @@ import android.util.Pair;
 import org.chromium.base.ApiCompatibilityUtils;
 import org.chromium.base.Callback;
 import org.chromium.base.task.AsyncTask;
+import org.chromium.base.task.BackgroundOnlyAsyncTask;
 import org.chromium.chrome.R;
 import org.chromium.chrome.browser.ChromeActivity;
 import org.chromium.chrome.browser.autofill.CardType;
@@ -170,9 +171,11 @@ public class CardEditor extends EditorBase<AutofillPaymentInstrument>
      * @param webContents     The web contents where the web payments API is invoked.
      * @param addressEditor   Used for verifying billing address completeness and also editing
      *                        billing addresses.
+     * @param includeOrgLabel Whether the labels in the billing address dropdown should include the
+     *                        organization name.
      * @param observerForTest Optional observer for test.
      */
-    public CardEditor(WebContents webContents, AddressEditor addressEditor,
+    public CardEditor(WebContents webContents, AddressEditor addressEditor, boolean includeOrgLabel,
             @Nullable PaymentRequestServiceObserverForTest observerForTest) {
         assert webContents != null;
         assert addressEditor != null;
@@ -182,7 +185,7 @@ public class CardEditor extends EditorBase<AutofillPaymentInstrument>
         mObserverForTest = observerForTest;
 
         List<AutofillProfile> profiles =
-                PersonalDataManager.getInstance().getBillingAddressesToSuggest();
+                PersonalDataManager.getInstance().getBillingAddressesToSuggest(includeOrgLabel);
         mProfilesForBillingAddress = new ArrayList<>();
         mIncompleteProfilesForBillingAddress = new HashMap<>();
         for (int i = 0; i < profiles.size(); i++) {
@@ -261,7 +264,7 @@ public class CardEditor extends EditorBase<AutofillPaymentInstrument>
             return cardTypeInfo.icon;
         };
 
-        mCalendar = new AsyncTask<Calendar>() {
+        mCalendar = new BackgroundOnlyAsyncTask<Calendar>() {
             @Override
             protected Calendar doInBackground() {
                 return Calendar.getInstance();

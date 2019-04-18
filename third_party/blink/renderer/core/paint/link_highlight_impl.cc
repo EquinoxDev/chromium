@@ -67,8 +67,15 @@
 
 namespace blink {
 
-std::unique_ptr<LinkHighlightImpl> LinkHighlightImpl::Create(Node* node) {
-  return base::WrapUnique(new LinkHighlightImpl(node));
+static constexpr float kStartOpacity = 1;
+
+static CompositorElementId NewElementId() {
+  if (RuntimeEnabledFeatures::CompositeAfterPaintEnabled() ||
+      RuntimeEnabledFeatures::BlinkGenPropertyTreesEnabled()) {
+    return CompositorElementIdFromUniqueObjectId(
+        NewUniqueObjectId(), CompositorElementIdNamespace::kPrimaryEffect);
+  }
+  return CompositorElementIdFromUniqueObjectId(NewUniqueObjectId());
 }
 
 LinkHighlightImpl::LinkHighlightImpl(Node* node)
@@ -78,20 +85,28 @@ LinkHighlightImpl::LinkHighlightImpl(Node* node)
       geometry_needs_update_(false),
       is_animating_(false),
       start_time_(CurrentTimeTicks()),
-      unique_id_(NewUniqueObjectId()) {
+      element_id_(NewElementId()) {
   DCHECK(node_);
-  fragments_.emplace_back(element_id());
+  fragments_.emplace_back();
+
+  // The layer's element id is required for animating layers in layer trees.
+  // When using layer lists, the element id is set on the effect node.
+  if (!RuntimeEnabledFeatures::CompositeAfterPaintEnabled() &&
+      !RuntimeEnabledFeatures::BlinkGenPropertyTreesEnabled())
+    fragments_[0].Layer()->SetElementId(element_id_);
 
   compositor_animation_ = CompositorAnimation::Create();
   DCHECK(compositor_animation_);
   compositor_animation_->SetAnimationDelegate(this);
-  compositor_animation_->AttachElement(element_id());
+  compositor_animation_->AttachElement(element_id_);
   geometry_needs_update_ = true;
 
   EffectPaintPropertyNode::State state;
+  state.opacity = kStartOpacity;
   state.local_transform_space = &TransformPaintPropertyNode::Root();
-  state.compositor_element_id = element_id();
+  state.compositor_element_id = element_id_;
   state.direct_compositing_reasons = CompositingReason::kActiveOpacityAnimation;
+  state.has_active_opacity_animation = true;
   effect_ = EffectPaintPropertyNode::Create(EffectPaintPropertyNode::Root(),
                                             std::move(state));
 #if DCHECK_IS_ON()
@@ -275,18 +290,11 @@ bool LinkHighlightImpl::ComputeHighlightLayerPathAndPosition(
   return path_has_changed;
 }
 
-LinkHighlightImpl::LinkHighlightFragment::LinkHighlightFragment(
-    CompositorElementId element_id) {
+LinkHighlightImpl::LinkHighlightFragment::LinkHighlightFragment() {
   layer_ = cc::PictureLayer::Create(this);
   layer_->SetTransformOrigin(FloatPoint3D());
   layer_->SetIsDrawable(true);
-  layer_->SetOpacity(1);
-
-  // The element id is required for animating layers in layer trees but not
-  // required when using layer lists.
-  if (!RuntimeEnabledFeatures::BlinkGenPropertyTreesEnabled() &&
-      !RuntimeEnabledFeatures::CompositeAfterPaintEnabled())
-    layer_->SetElementId(element_id);
+  layer_->SetOpacity(kStartOpacity);
 }
 
 LinkHighlightImpl::LinkHighlightFragment::~LinkHighlightFragment() {
@@ -326,16 +334,11 @@ void LinkHighlightImpl::StartHighlightAnimationIfNeeded() {
     return;
 
   is_animating_ = true;
-  const float kStartOpacity = 1;
   // FIXME: Should duration be configurable?
   constexpr auto kFadeDuration = TimeDelta::FromMilliseconds(100);
   constexpr auto kMinPreFadeDuration = TimeDelta::FromMilliseconds(100);
 
-  for (auto& fragment : fragments_)
-    fragment.Layer()->SetOpacity(kStartOpacity);
-
-  std::unique_ptr<CompositorFloatAnimationCurve> curve =
-      CompositorFloatAnimationCurve::Create();
+  auto curve = std::make_unique<CompositorFloatAnimationCurve>();
 
   const auto& timing_function = *CubicBezierTimingFunction::Preset(
       CubicBezierTimingFunction::EaseType::EASE);
@@ -355,9 +358,8 @@ void LinkHighlightImpl::StartHighlightAnimationIfNeeded() {
       (kFadeDuration + extra_duration_required).InSecondsF(),
       WebTestSupport::IsRunningWebTest() ? kStartOpacity : 0, timing_function));
 
-  std::unique_ptr<CompositorKeyframeModel> keyframe_model =
-      CompositorKeyframeModel::Create(
-          *curve, compositor_target_property::OPACITY, 0, 0);
+  auto keyframe_model = std::make_unique<CompositorKeyframeModel>(
+      *curve, compositor_target_property::OPACITY, 0, 0);
 
   compositor_animation_->AddKeyframeModel(std::move(keyframe_model));
 
@@ -434,10 +436,6 @@ CompositorAnimation* LinkHighlightImpl::GetCompositorAnimation() const {
   return compositor_animation_.get();
 }
 
-CompositorElementId LinkHighlightImpl::element_id() const {
-  return CompositorElementIdFromUniqueObjectId(unique_id_);
-}
-
 const EffectPaintPropertyNode& LinkHighlightImpl::Effect() const {
   return *effect_;
 }
@@ -480,7 +478,7 @@ void LinkHighlightImpl::Paint(GraphicsContext& context) {
     }
 
     if (index == fragments_.size()) {
-      fragments_.emplace_back(element_id());
+      fragments_.emplace_back();
       // PaintArtifactCompositor needs update for the new cc::PictureLayer we
       // just created for the fragment.
       SetPaintArtifactCompositorNeedsUpdate();

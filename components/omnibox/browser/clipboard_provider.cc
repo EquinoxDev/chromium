@@ -13,6 +13,7 @@
 #include "base/logging.h"
 #include "base/memory/ref_counted_memory.h"
 #include "base/memory/weak_ptr.h"
+#include "base/metrics/field_trial_params.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/optional.h"
@@ -23,8 +24,8 @@
 #include "components/omnibox/browser/autocomplete_match.h"
 #include "components/omnibox/browser/autocomplete_provider_client.h"
 #include "components/omnibox/browser/autocomplete_provider_listener.h"
-#include "components/omnibox/browser/omnibox_field_trial.h"
 #include "components/omnibox/browser/verbatim_match.h"
+#include "components/omnibox/common/omnibox_features.h"
 #include "components/open_from_clipboard/clipboard_recent_content.h"
 #include "components/search_engines/template_url_service.h"
 #include "components/strings/grit/components_strings.h"
@@ -42,6 +43,8 @@ ClipboardProvider::ClipboardProvider(AutocompleteProviderClient* client,
       clipboard_content_(clipboard_content),
       history_url_provider_(history_url_provider),
       current_url_suggested_times_(0),
+      field_trial_triggered_(false),
+      field_trial_triggered_in_session_(false),
       callback_weak_ptr_factory_(this) {
   DCHECK(clipboard_content_);
 }
@@ -51,6 +54,7 @@ ClipboardProvider::~ClipboardProvider() {}
 void ClipboardProvider::Start(const AutocompleteInput& input,
                               bool minimal_changes) {
   matches_.clear();
+  field_trial_triggered_ = false;
 
   // If the user started typing, do not offer clipboard based match.
   if (!input.from_omnibox_focus()) {
@@ -78,6 +82,11 @@ void ClipboardProvider::Stop(bool clear_cached_results,
                              bool due_to_user_inactivity) {
   callback_weak_ptr_factory_.InvalidateWeakPtrs();
   AutocompleteProvider::Stop(clear_cached_results, due_to_user_inactivity);
+}
+
+void ClipboardProvider::ResetSession() {
+  field_trial_triggered_ = false;
+  field_trial_triggered_in_session_ = false;
 }
 
 void ClipboardProvider::AddCreatedMatchWithTracking(
@@ -171,12 +180,15 @@ base::Optional<AutocompleteMatch> ClipboardProvider::CreateTextMatch(
   }
   base::string16 text = std::move(optional_text).value();
 
+  // The clipboard can contain the empty string, which shouldn't be suggested.
+  if (text.empty()) {
+    return base::nullopt;
+  }
+
   // The text in the clipboard is a url. We don't want to prompt the user to
   // search for a url.
   if (GURL(text).is_valid())
     return base::nullopt;
-
-  DCHECK(!text.empty());
 
   // Add the clipboard match. The relevance is 800 to beat ZeroSuggest results.
   AutocompleteMatch match(this, 800, false,
@@ -204,6 +216,16 @@ base::Optional<AutocompleteMatch> ClipboardProvider::CreateTextMatch(
   match.keyword = default_url->keyword();
   match.transition = ui::PAGE_TRANSITION_GENERATED;
 
+  // Some users may be in a counterfactual study arm in which we perform all
+  // necessary work but do not forward the autocomplete matches.
+  bool in_counterfactual_group = base::GetFieldTrialParamByFeatureAsBool(
+      omnibox::kEnableClipboardProviderTextSuggestions,
+      "ClipboardProviderTextSuggestionsCounterfactualArm", false);
+  field_trial_triggered_ = true;
+  field_trial_triggered_in_session_ = true;
+  if (in_counterfactual_group) {
+    return base::nullopt;
+  }
   return match;
 }
 
@@ -267,12 +289,6 @@ void ClipboardProvider::ConstructImageMatchCallback(
       base::string16::npos, 0, match.description.length(),
       ACMatchClassification::NONE, &match.description_class);
 
-  match.contents.assign(l10n_util::GetStringFUTF16(IDS_SEARCH_WEB_FOR_IMAGE,
-                                                   default_url->short_name()));
-  AutocompleteMatch::ClassifyLocationInString(
-      base::string16::npos, 0, match.contents.length(),
-      ACMatchClassification::NONE, &match.contents_class);
-
   TemplateURLRef::SearchTermsArgs search_args(base::ASCIIToUTF16(""));
   search_args.image_thumbnail_content.assign(image_bytes->front_as<char>(),
                                              image_bytes->size());
@@ -285,8 +301,17 @@ void ClipboardProvider::ConstructImageMatchCallback(
 
   match.transition = ui::PAGE_TRANSITION_GENERATED;
 
-  AddCreatedMatchWithTracking(input, match, clipboard_contents_age);
-  listener_->OnProviderUpdate(true);
+  // Some users may be in a counterfactual study arm in which we perform all
+  // necessary work but do not forward the autocomplete matches.
+  bool in_counterfactual_group = base::GetFieldTrialParamByFeatureAsBool(
+      omnibox::kEnableClipboardProviderImageSuggestions,
+      "ClipboardProviderImageSuggestionsCounterfactualArm", false);
+  if (!in_counterfactual_group) {
+    AddCreatedMatchWithTracking(input, match, clipboard_contents_age);
+    listener_->OnProviderUpdate(true);
+  }
+  field_trial_triggered_ = true;
+  field_trial_triggered_in_session_ = true;
   done_ = true;
 }
 
@@ -301,5 +326,19 @@ void ClipboardProvider::AddProviderInfo(ProvidersInfo* provider_info) const {
   provider_info->push_back(metrics::OmniboxEventProto_ProviderInfo());
   metrics::OmniboxEventProto_ProviderInfo& new_entry = provider_info->back();
   new_entry.set_provider(AsOmniboxEventProviderType());
+  new_entry.set_provider_done(done_);
   new_entry.set_times_returned_results_in_session(current_url_suggested_times_);
+
+  if (field_trial_triggered_ || field_trial_triggered_in_session_) {
+    std::vector<uint32_t> field_trial_hashes;
+    OmniboxFieldTrial::GetActiveSuggestFieldTrialHashes(&field_trial_hashes);
+    for (uint32_t trial : field_trial_hashes) {
+      if (field_trial_triggered_) {
+        new_entry.mutable_field_trial_triggered()->Add(trial);
+      }
+      if (field_trial_triggered_in_session_) {
+        new_entry.mutable_field_trial_triggered_in_session()->Add(trial);
+      }
+    }
+  }
 }

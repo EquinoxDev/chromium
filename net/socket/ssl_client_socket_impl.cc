@@ -298,10 +298,11 @@ class SSLClientSocketImpl::SSLContext {
 
   SSLContext() {
     crypto::EnsureOpenSSLInit();
-    ssl_socket_data_index_ = SSL_get_ex_new_index(0, 0, 0, 0, 0);
+    ssl_socket_data_index_ =
+        SSL_get_ex_new_index(0, nullptr, nullptr, nullptr, nullptr);
     DCHECK_NE(ssl_socket_data_index_, -1);
     ssl_ctx_.reset(SSL_CTX_new(TLS_with_buffers_method()));
-    SSL_CTX_set_cert_cb(ssl_ctx_.get(), ClientCertRequestCallback, NULL);
+    SSL_CTX_set_cert_cb(ssl_ctx_.get(), ClientCertRequestCallback, nullptr);
 
     // Verifies the server certificate even on resumed sessions.
     SSL_CTX_set_reverify_on_resume(ssl_ctx_.get(), 1);
@@ -403,7 +404,7 @@ const SSL_PRIVATE_KEY_METHOD
 };
 
 SSLClientSocketImpl::SSLClientSocketImpl(
-    std::unique_ptr<ClientSocketHandle> transport_socket,
+    std::unique_ptr<StreamSocket> stream_socket,
     const HostPortPair& host_and_port,
     const SSLConfig& ssl_config,
     const SSLClientSocketContext& context)
@@ -414,43 +415,7 @@ SSLClientSocketImpl::SSLClientSocketImpl(
       cert_verifier_(context.cert_verifier),
       cert_verification_result_(kCertVerifyPending),
       cert_transparency_verifier_(context.cert_transparency_verifier),
-      client_socket_handle_(std::move(transport_socket)),
-      stream_socket_(client_socket_handle_->socket()),
-      host_and_port_(host_and_port),
-      ssl_config_(ssl_config),
-      ssl_client_session_cache_(context.ssl_client_session_cache),
-      next_handshake_state_(STATE_NONE),
-      in_confirm_handshake_(false),
-      disconnected_(false),
-      negotiated_protocol_(kProtoUnknown),
-      certificate_requested_(false),
-      signature_result_(kSSLClientSocketNoPendingResult),
-      transport_security_state_(context.transport_security_state),
-      policy_enforcer_(context.ct_policy_enforcer),
-      pkp_bypassed_(false),
-      is_fatal_cert_error_(false),
-      net_log_(stream_socket_->NetLog()),
-      weak_factory_(this) {
-  CHECK(cert_verifier_);
-  CHECK(transport_security_state_);
-  CHECK(cert_transparency_verifier_);
-  CHECK(policy_enforcer_);
-}
-
-SSLClientSocketImpl::SSLClientSocketImpl(
-    std::unique_ptr<StreamSocket> nested_socket,
-    const HostPortPair& host_and_port,
-    const SSLConfig& ssl_config,
-    const SSLClientSocketContext& context)
-    : pending_read_error_(kSSLClientSocketNoPendingResult),
-      pending_read_ssl_error_(SSL_ERROR_NONE),
-      completed_connect_(false),
-      was_ever_used_(false),
-      cert_verifier_(context.cert_verifier),
-      cert_verification_result_(kCertVerifyPending),
-      cert_transparency_verifier_(context.cert_transparency_verifier),
-      nested_socket_(std::move(nested_socket)),
-      stream_socket_(nested_socket_.get()),
+      stream_socket_(std::move(stream_socket)),
       host_and_port_(host_and_port),
       ssl_config_(ssl_config),
       ssl_client_session_cache_(context.ssl_client_session_cache),
@@ -546,9 +511,9 @@ void SSLClientSocketImpl::Disconnect() {
   user_connect_callback_.Reset();
   user_read_callback_.Reset();
   user_write_callback_.Reset();
-  user_read_buf_ = NULL;
+  user_read_buf_ = nullptr;
   user_read_buf_len_ = 0;
-  user_write_buf_ = NULL;
+  user_write_buf_ = nullptr;
   user_write_buf_len_ = 0;
 
   stream_socket_->Disconnect();
@@ -777,7 +742,7 @@ int SSLClientSocketImpl::Write(
   } else {
     if (rv > 0)
       was_ever_used_ = true;
-    user_write_buf_ = NULL;
+    user_write_buf_ = nullptr;
     user_write_buf_len_ = 0;
   }
 
@@ -839,7 +804,7 @@ int SSLClientSocketImpl::Init() {
   }
 
   transport_adapter_.reset(
-      new SocketBIOAdapter(stream_socket_, kDefaultOpenSSLBufferSize,
+      new SocketBIOAdapter(stream_socket_.get(), kDefaultOpenSSLBufferSize,
                            kDefaultOpenSSLBufferSize, this));
   BIO* transport_bio = transport_adapter_->bio();
 
@@ -911,7 +876,7 @@ int SSLClientSocketImpl::Init() {
     std::vector<uint8_t> wire_protos =
         SerializeNextProtos(ssl_config_.alpn_protos);
     SSL_set_alpn_protos(ssl_.get(),
-                        wire_protos.empty() ? NULL : &wire_protos[0],
+                        wire_protos.empty() ? nullptr : &wire_protos[0],
                         wire_protos.size());
   }
 
@@ -943,7 +908,7 @@ void SSLClientSocketImpl::DoWriteCallback(int rv) {
   // up front.
   if (rv > 0)
     was_ever_used_ = true;
-  user_write_buf_ = NULL;
+  user_write_buf_ = nullptr;
   user_write_buf_len_ = 0;
   std::move(user_write_callback_).Run(rv);
 }
@@ -1008,7 +973,7 @@ int SSLClientSocketImpl::DoHandshakeComplete(int result) {
     ssl_client_session_cache_->ResetLookupCount(GetSessionCacheKey());
   }
 
-  const uint8_t* alpn_proto = NULL;
+  const uint8_t* alpn_proto = nullptr;
   unsigned alpn_len = 0;
   SSL_get0_alpn_selected(ssl_.get(), &alpn_proto, &alpn_len);
   if (alpn_len > 0) {
@@ -1190,6 +1155,13 @@ ssl_verify_result_t SSLClientSocketImpl::VerifyCert() {
       base::BindOnce(&SSLClientSocketImpl::OnVerifyComplete,
                      base::Unretained(this)),
       &cert_verifier_request_, net_log_);
+
+  // Enforce keyUsage extension for RSA leaf certificates chaining up to known
+  // roots.
+  // TODO(795089): Enforce this unconditionally.
+  if (server_cert_verify_result_.is_issued_by_known_root) {
+    SSL_set_enforce_rsa_key_usage(ssl_.get(), 1);
+  }
 
   return HandleVerifyResult();
 }
@@ -1625,7 +1597,8 @@ int SSLClientSocketImpl::ClientCertRequestCallback(SSL* ssl) {
         NetLogEventType::SSL_CLIENT_CERT_PROVIDED,
         NetLog::IntCallback(
             "cert_count",
-            1 + ssl_config_.client_cert->intermediate_buffers().size()));
+            base::checked_cast<int>(
+                1 + ssl_config_.client_cert->intermediate_buffers().size())));
     return 1;
   }
 #endif  // defined(OS_IOS)

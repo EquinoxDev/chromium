@@ -31,7 +31,7 @@
 #include "chrome/browser/extensions/extension_function_test_utils.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/signin/account_fetcher_service_factory.h"
+#include "chrome/browser/signin/account_consistency_mode_manager.h"
 #include "chrome/browser/signin/account_reconcilor_factory.h"
 #include "chrome/browser/signin/chrome_signin_client_factory.h"
 #include "chrome/browser/signin/chrome_signin_client_test_util.h"
@@ -46,7 +46,6 @@
 #include "components/crx_file/id_util.h"
 #include "components/guest_view/browser/guest_view_base.h"
 #include "components/prefs/pref_service.h"
-#include "components/signin/core/browser/account_fetcher_service.h"
 #include "components/signin/core/browser/account_reconcilor.h"
 #include "components/signin/core/browser/list_accounts_test_utils.h"
 #include "components/signin/core/browser/signin_pref_names.h"
@@ -68,7 +67,7 @@
 #if defined(OS_CHROMEOS)
 #include "chrome/browser/chromeos/login/users/mock_user_manager.h"
 #include "chrome/browser/chromeos/policy/browser_policy_connector_chromeos.h"
-#include "chrome/browser/chromeos/settings/stub_install_attributes.h"
+#include "chromeos/tpm/stub_install_attributes.h"
 #include "components/user_manager/scoped_user_manager.h"
 #endif
 
@@ -95,9 +94,9 @@ class AsyncFunctionRunner {
                         content::BrowserContext* browser_context) {
     response_delegate_.reset(new api_test_utils::SendResponseHelper(function));
     std::unique_ptr<base::ListValue> parsed_args(utils::ParseList(args));
-    EXPECT_TRUE(parsed_args.get())
+    ASSERT_TRUE(parsed_args.get())
         << "Could not parse extension function arguments: " << args;
-    function->SetArgs(parsed_args.get());
+    function->SetArgs(base::Value::FromUniquePtrValue(std::move(parsed_args)));
 
     if (!function->extension()) {
       scoped_refptr<const Extension> empty_extension(
@@ -467,15 +466,6 @@ class IdentityTestWithSignin : public AsyncExtensionBrowserTest {
     ChromeSigninClientFactory::GetInstance()->SetTestingFactory(
         context, base::BindRepeating(&BuildChromeSigninClientWithURLLoader,
                                      &test_url_loader_factory_));
-
-    // Ensure that AccountFetcherService is (1) created at all and (2) created
-    // early enough for it to observe the Profile initialization process and
-    // loading of tokens by PO2TS. Explicitly forcing this setup (which happens
-    // naturally in production) is necessary for the flow of
-    // AccountTrackerService having accounts removed when tokens are revoked
-    // with PO2TS to work as expected in this testing context.
-    AccountFetcherServiceFactory::GetInstance()->GetForProfile(
-        Profile::FromBrowserContext(context));
   }
 
   void SetUpOnMainThread() override {
@@ -484,18 +474,9 @@ class IdentityTestWithSignin : public AsyncExtensionBrowserTest {
     identity_test_env_profile_adaptor_ =
         std::make_unique<IdentityTestEnvironmentProfileAdaptor>(profile());
 
-#if defined(OS_CHROMEOS)
-    // On ChromeOS, ProfileOAuth2TokenService does not fire
-    // OnRefreshTokensLoaded() in text contexts. However, AccountFetcherService
-    // must receive this call in order to forward later
-    // OnRefreshToken{Available, Revoked} callbacks on to AccountTrackerService
-    // as expected. Hence, we make that call explicitly here.
-    // TODO(blundell): Hide this detail when converting this code to interact
-    // with IdentityTestEnvironment.
-    AccountFetcherServiceFactory::GetInstance()
-        ->GetForProfile(profile())
-        ->OnRefreshTokensLoaded();
-#endif
+    // This test requires these callbacks to be fired on account
+    // update/removal.
+    identity_test_env()->EnableRemovalOfExtendedAccountInfo();
   }
 
   void TearDownOnMainThread() override {
@@ -2387,7 +2368,7 @@ class OnSignInChangedEventTest : public IdentityTestWithSignin {
                                 std::move(args), browser()->profile()));
   }
 
-  bool HasExpectedEvent() { return expected_events_.size(); }
+  bool HasExpectedEvent() { return !expected_events_.empty(); }
 
  private:
   void OnSignInEventChanged(Event* event) {
@@ -2439,8 +2420,14 @@ IN_PROC_BROWSER_TEST_F(OnSignInChangedEventTest, FireOnPrimaryAccountSignIn) {
 }
 
 #if !defined(OS_CHROMEOS)
-// Test that an event is fired when the primary account signs out.
+// Test that an event is fired when the primary account signs out. Only
+// applicable in non-DICE mode, as when DICE is enabled clearing the primary
+// account does not result in its refresh token being removed and hence does
+// not trigger an event to fire.
 IN_PROC_BROWSER_TEST_F(OnSignInChangedEventTest, FireOnPrimaryAccountSignOut) {
+  if (AccountConsistencyModeManager::IsDiceEnabledForProfile(profile()))
+    return;
+
   api::identity::AccountInfo account_info;
   account_info.id = "gaia_id_for_primary_example.com";
   AddExpectedEvent(api::identity::OnSignInChanged::Create(account_info, true));

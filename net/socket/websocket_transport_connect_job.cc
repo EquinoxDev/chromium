@@ -23,22 +23,25 @@ namespace net {
 
 WebSocketTransportConnectJob::WebSocketTransportConnectJob(
     RequestPriority priority,
-    const CommonConnectJobParams& common_connect_job_params,
+    const SocketTag& socket_tag,
+    const CommonConnectJobParams* common_connect_job_params,
     const scoped_refptr<TransportSocketParams>& params,
-    Delegate* delegate)
+    Delegate* delegate,
+    const NetLogWithSource* net_log)
     : ConnectJob(priority,
+                 socket_tag,
                  TransportConnectJob::ConnectionTimeout(),
                  common_connect_job_params,
                  delegate,
-                 NetLogWithSource::Make(
-                     common_connect_job_params.net_log,
-                     NetLogSourceType::WEB_SOCKET_TRANSPORT_CONNECT_JOB)),
+                 net_log,
+                 NetLogSourceType::WEB_SOCKET_TRANSPORT_CONNECT_JOB,
+                 NetLogEventType::WEB_SOCKET_TRANSPORT_CONNECT_JOB_CONNECT),
       params_(params),
       next_state_(STATE_NONE),
       race_result_(TransportConnectJob::RACE_UNKNOWN),
       had_ipv4_(false),
       had_ipv6_(false) {
-  DCHECK(common_connect_job_params.websocket_endpoint_lock_manager);
+  DCHECK(common_connect_job_params->websocket_endpoint_lock_manager);
 }
 
 WebSocketTransportConnectJob::~WebSocketTransportConnectJob() = default;
@@ -105,10 +108,6 @@ int WebSocketTransportConnectJob::DoResolveHost() {
 
   HostResolver::ResolveHostParameters parameters;
   parameters.initial_priority = priority();
-  parameters.cache_usage =
-      params_->disable_resolver_cache()
-          ? HostResolver::ResolveHostParameters::CacheUsage::DISALLOWED
-          : HostResolver::ResolveHostParameters::CacheUsage::ALLOWED;
   request_ = host_resolver()->CreateRequest(params_->destination(), net_log(),
                                             parameters);
 

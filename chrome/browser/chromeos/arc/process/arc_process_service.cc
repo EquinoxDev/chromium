@@ -30,9 +30,9 @@
 #include "base/task/task_traits.h"
 #include "base/task_runner_util.h"
 #include "base/trace_event/trace_event.h"
-#include "components/arc/arc_bridge_service.h"
 #include "components/arc/arc_browser_context_keyed_service_factory_base.h"
 #include "components/arc/arc_util.h"
+#include "components/arc/session/arc_bridge_service.h"
 #include "content/public/browser/browser_thread.h"
 #include "services/resource_coordinator/public/cpp/memory_instrumentation/global_memory_dump.h"
 #include "services/resource_coordinator/public/mojom/memory_instrumentation/memory_instrumentation.mojom.h"
@@ -328,11 +328,11 @@ void ArcProcessService::RequestSystemProcessList(
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
 
   base::PostTaskAndReplyWithResult(task_runner_.get(), FROM_HERE,
-                                   base::Bind(&GetArcSystemProcessList),
-                                   callback);
+                                   base::BindOnce(&GetArcSystemProcessList),
+                                   std::move(callback));
 }
 
-bool ArcProcessService::RequestAppProcessList(
+void ArcProcessService::RequestAppProcessList(
     RequestProcessListCallback callback) {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
 
@@ -340,18 +340,21 @@ bool ArcProcessService::RequestAppProcessList(
   // process list, it can produce a lot of logspam when the board is ARC-ready
   // but the user has not opted into ARC. This redundant check avoids that
   // logspam.
-  if (!connection_ready_)
-    return false;
+  if (!connection_ready_) {
+    std::move(callback).Run(base::nullopt);
+    return;
+  }
 
   mojom::ProcessInstance* process_instance = ARC_GET_INSTANCE_FOR_METHOD(
       arc_bridge_service_->process(), RequestProcessList);
-  if (!process_instance)
-    return false;
+  if (!process_instance) {
+    std::move(callback).Run(base::nullopt);
+    return;
+  }
 
   process_instance->RequestProcessList(
       base::BindOnce(&ArcProcessService::OnReceiveProcessList,
-                     weak_ptr_factory_.GetWeakPtr(), callback));
-  return true;
+                     weak_ptr_factory_.GetWeakPtr(), std::move(callback)));
 }
 
 bool ArcProcessService::RequestAppMemoryInfo(
@@ -385,14 +388,14 @@ bool ArcProcessService::RequestSystemMemoryInfo(
 }
 
 void ArcProcessService::OnReceiveProcessList(
-    const RequestProcessListCallback& callback,
+    RequestProcessListCallback callback,
     std::vector<mojom::RunningAppProcessInfoPtr> processes) {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
   base::PostTaskAndReplyWithResult(
       task_runner_.get(), FROM_HERE,
-      base::Bind(&UpdateAndReturnProcessList, nspid_to_pid_,
-                 base::Passed(&processes)),
-      callback);
+      base::BindOnce(&UpdateAndReturnProcessList, nspid_to_pid_,
+                     std::move(processes)),
+      std::move(callback));
 }
 
 void ArcProcessService::OnReceiveMemoryInfo(

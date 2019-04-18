@@ -15,6 +15,7 @@
 #include "base/task_runner_util.h"
 #include "base/values.h"
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/chromeos/login/demo_mode/demo_session.h"
 #include "chrome/browser/chromeos/login/screens/core_oobe_view.h"
 #include "chrome/browser/chromeos/login/screens/welcome_screen.h"
 #include "chrome/browser/chromeos/login/ui/input_events_blocker.h"
@@ -34,12 +35,6 @@
 #include "ui/base/ime/chromeos/extension_ime_util.h"
 #include "ui/base/ime/chromeos/input_method_manager.h"
 
-namespace {
-
-const char kJsScreenPath[] = "login.WelcomeScreen";
-
-}  // namespace
-
 namespace chromeos {
 
 // WelcomeScreenHandler, public: -----------------------------------------------
@@ -48,7 +43,7 @@ WelcomeScreenHandler::WelcomeScreenHandler(JSCallsContainer* js_calls_container,
                                            CoreOobeView* core_oobe_view)
     : BaseScreenHandler(kScreenId, js_calls_container),
       core_oobe_view_(core_oobe_view) {
-  set_call_js_prefix(kJsScreenPath);
+  set_user_acted_method_path("login.WelcomeScreen.userActed");
   DCHECK(core_oobe_view_);
 }
 
@@ -108,6 +103,11 @@ void WelcomeScreenHandler::ReloadLocalizedContent() {
   core_oobe_view_->ReloadContent(localized_strings);
 }
 
+void WelcomeScreenHandler::SetInputMethodId(
+    const std::string& input_method_id) {
+  CallJS("login.WelcomeScreen.onInputMethodIdSetFromBackend", input_method_id);
+}
+
 // WelcomeScreenHandler, BaseScreenHandler implementation: --------------------
 
 void WelcomeScreenHandler::DeclareLocalizedValues(
@@ -116,8 +116,6 @@ void WelcomeScreenHandler::DeclareLocalizedValues(
     builder->Add("welcomeScreenGreeting", IDS_REMORA_CONFIRM_MESSAGE);
   else
     builder->Add("welcomeScreenGreeting", IDS_WELCOME_SCREEN_GREETING);
-
-  builder->Add("welcomeScreenTitle", IDS_WELCOME_SCREEN_TITLE);
 
   // MD-OOBE (oobe-welcome-md)
   builder->Add("debuggingFeaturesLink", IDS_WELCOME_ENABLE_DEV_FEATURES_LINK);
@@ -153,6 +151,15 @@ void WelcomeScreenHandler::DeclareLocalizedValues(
 
   builder->Add("timezoneDropdownTitle", IDS_TIMEZONE_DROPDOWN_TITLE);
   builder->Add("timezoneButtonText", IDS_TIMEZONE_BUTTON_TEXT);
+}
+
+void WelcomeScreenHandler::DeclareJSCallbacks() {
+  AddCallback("WelcomeScreen.setLocaleId",
+              &WelcomeScreenHandler::HandleSetLocaleId);
+  AddCallback("WelcomeScreen.setInputMethodId",
+              &WelcomeScreenHandler::HandleSetInputMethodId);
+  AddCallback("WelcomeScreen.setTimezoneId",
+              &WelcomeScreenHandler::HandleSetTimezoneId);
 }
 
 void WelcomeScreenHandler::GetAdditionalParameters(
@@ -205,6 +212,8 @@ void WelcomeScreenHandler::GetAdditionalParameters(
             GetAndActivateLoginKeyboardLayouts(
                 application_locale, selected_input_method, enable_layouts));
   dict->Set("timezoneList", GetTimezoneList());
+  dict->Set("demoModeCountryList",
+            base::Value::ToUniquePtrValue(DemoSession::GetCountryList()));
 }
 
 void WelcomeScreenHandler::Initialize() {
@@ -216,6 +225,22 @@ void WelcomeScreenHandler::Initialize() {
   // Reload localized strings if they are already resolved.
   if (screen_ && screen_->language_list())
     ReloadLocalizedContent();
+}
+
+void WelcomeScreenHandler::HandleSetLocaleId(const std::string& locale_id) {
+  if (screen_)
+    screen_->SetApplicationLocale(locale_id);
+}
+
+void WelcomeScreenHandler::HandleSetInputMethodId(
+    const std::string& input_method_id) {
+  if (screen_)
+    screen_->SetInputMethod(input_method_id);
+}
+
+void WelcomeScreenHandler::HandleSetTimezoneId(const std::string& timezone_id) {
+  if (screen_)
+    screen_->SetTimezone(timezone_id);
 }
 
 // WelcomeScreenHandler, private: ----------------------------------------------

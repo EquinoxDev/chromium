@@ -158,7 +158,7 @@ PowerButtonController::PowerButtonController(
   display_controller_ = std::make_unique<PowerButtonDisplayController>(
       backlights_forced_off_setter_, tick_clock_);
   chromeos::PowerManagerClient* power_manager_client =
-      chromeos::DBusThreadManager::Get()->GetPowerManagerClient();
+      chromeos::PowerManagerClient::Get();
   power_manager_client->AddObserver(this);
   power_manager_client->GetSwitchStates(base::BindOnce(
       &PowerButtonController::OnGetSwitchStates, weak_factory_.GetWeakPtr()));
@@ -175,8 +175,7 @@ PowerButtonController::~PowerButtonController() {
     Shell::Get()->tablet_mode_controller()->RemoveObserver(this);
   Shell::Get()->display_configurator()->RemoveObserver(this);
   AccelerometerReader::GetInstance()->RemoveObserver(this);
-  chromeos::DBusThreadManager::Get()->GetPowerManagerClient()->RemoveObserver(
-      this);
+  chromeos::PowerManagerClient::Get()->RemoveObserver(this);
 }
 
 void PowerButtonController::OnPreShutdownTimeout() {
@@ -196,18 +195,19 @@ void PowerButtonController::OnLegacyPowerButtonEvent(bool down) {
 
   if (!down)
     return;
+
+  // Ignore the power button down event if the menu is partially opened.
+  if (IsMenuOpened() && !show_menu_animation_done_)
+    return;
+
   // If power button releases won't get reported correctly because we're not
-  // running on official hardware, just lock the screen or shut down
-  // immediately.
-  const SessionController* const session_controller =
-      Shell::Get()->session_controller();
-  if (session_controller->CanLockScreen() &&
-      !session_controller->IsUserSessionBlocked() &&
-      !lock_state_controller_->LockRequested()) {
-    lock_state_controller_->StartLockAnimationAndLockImmediately();
-  } else {
+  // running on official hardware, show menu animation on the first power
+  // button press. On a further press while the menu is open, simply shut down
+  // (http://crbug.com/945005).
+  if (!show_menu_animation_done_)
+    StartPowerMenuAnimation();
+  else
     lock_state_controller_->RequestShutdown(ShutdownReason::POWER_BUTTON);
-  }
 }
 
 void PowerButtonController::OnPowerButtonEvent(
@@ -523,8 +523,10 @@ void PowerButtonController::LockScreenIfRequired() {
 
 void PowerButtonController::SetShowMenuAnimationDone() {
   show_menu_animation_done_ = true;
-  pre_shutdown_timer_.Start(FROM_HERE, kStartShutdownAnimationTimeout, this,
-                            &PowerButtonController::OnPreShutdownTimeout);
+  if (button_type_ != ButtonType::LEGACY) {
+    pre_shutdown_timer_.Start(FROM_HERE, kStartShutdownAnimationTimeout, this,
+                              &PowerButtonController::OnPreShutdownTimeout);
+  }
 }
 
 void PowerButtonController::ParsePowerButtonPositionSwitch() {

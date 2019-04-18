@@ -6,6 +6,7 @@
 
 #include <stddef.h>
 
+#include <algorithm>
 #include <set>
 
 #include "base/memory/ptr_util.h"
@@ -15,6 +16,7 @@
 #include "base/strings/utf_string_conversions.h"
 #include "build/build_config.h"
 #include "content/common/accessibility_messages.h"
+#include "content/public/common/content_features.h"
 #include "content/renderer/accessibility/ax_image_annotator.h"
 #include "content/renderer/accessibility/blink_ax_enum_conversion.h"
 #include "content/renderer/accessibility/render_accessibility_impl.h"
@@ -38,6 +40,7 @@
 #include "third_party/blink/public/web/web_plugin.h"
 #include "third_party/blink/public/web/web_plugin_container.h"
 #include "third_party/blink/public/web/web_view.h"
+#include "ui/accessibility/accessibility_switches.h"
 #include "ui/accessibility/ax_enum_util.h"
 #include "ui/accessibility/ax_role_properties.h"
 #include "ui/gfx/geometry/vector2d_f.h"
@@ -61,6 +64,11 @@ using blink::WebView;
 namespace content {
 
 namespace {
+
+// Images smaller than this number, in CSS pixels, will never get annotated.
+// Note that OCR works on pretty small images, so this shouldn't be too large.
+const int kMinImageAnnotationWidth = 16;
+const int kMinImageAnnotationHeight = 16;
 
 void AddIntListAttributeFromWebObjects(ax::mojom::IntListAttribute attr,
                                        const WebVector<WebAXObject>& objects,
@@ -166,6 +174,51 @@ bool IsParentUnignoredOf(WebAXObject ancestor,
   return parent.Equals(ancestor);
 }
 
+// Helper function that searches in the subtree of |obj| to a max
+// depth of |max_depth| for an image.
+//
+// Returns true on success, or false if it finds more than one image,
+// or any node with a name, or anything deeper than |max_depth|.
+bool SearchForExactlyOneInnerImage(WebAXObject obj,
+                                   WebAXObject* inner_image,
+                                   int max_depth) {
+  DCHECK(inner_image);
+
+  // If it's the first image, set |inner_image|. If we already
+  // found an image, fail.
+  if (obj.Role() == ax::mojom::Role::kImage) {
+    if (!inner_image->IsDetached())
+      return false;
+    *inner_image = obj;
+  }
+
+  // Fail if we recursed to |max_depth| and there's more of a subtree.
+  if (max_depth == 0 && obj.ChildCount())
+    return false;
+
+  // If we found something else with a name, fail.
+  blink::WebString web_name = obj.GetName();
+  if (!base::ContainsOnlyChars(web_name.Utf8(), base::kWhitespaceASCII))
+    return false;
+
+  // Recurse.
+  for (unsigned int i = 0; i < obj.ChildCount(); i++) {
+    if (!SearchForExactlyOneInnerImage(obj.ChildAt(i), inner_image,
+                                       max_depth - 1))
+      return false;
+  }
+
+  return !inner_image->IsDetached();
+}
+
+// Return true if the subtree of |obj|, to a max depth of 2, contains
+// exactly one image. Return that image in |inner_image|.
+bool FindExactlyOneInnerImageInMaxDepthTwo(WebAXObject obj,
+                                           WebAXObject* inner_image) {
+  DCHECK(inner_image);
+  return SearchForExactlyOneInnerImage(obj, inner_image, /* max_depth = */ 2);
+}
+
 std::string GetEquivalentAriaRoleString(const ax::mojom::Role role) {
   switch (role) {
     case ax::mojom::Role::kArticle:
@@ -217,7 +270,11 @@ ScopedFreezeBlinkAXTreeSource::~ScopedFreezeBlinkAXTreeSource() {
 
 BlinkAXTreeSource::BlinkAXTreeSource(RenderFrameImpl* render_frame,
                                      ui::AXMode mode)
-    : render_frame_(render_frame), accessibility_mode_(mode), frozen_(false) {}
+    : render_frame_(render_frame), accessibility_mode_(mode), frozen_(false) {
+  image_annotation_debugging_ =
+      base::CommandLine::ForCurrentProcess()->HasSwitch(
+          ::switches::kEnableExperimentalAccessibilityLabelsDebugging);
+}
 
 BlinkAXTreeSource::~BlinkAXTreeSource() {
 }
@@ -321,15 +378,23 @@ bool BlinkAXTreeSource::GetTreeData(AXContentTreeData* tree_data) const {
   if (!focus().IsNull())
     tree_data->focus_id = focus().AxID();
 
+  bool is_selection_backward = false;
   WebAXObject anchor_object, focus_object;
   int anchor_offset, focus_offset;
   ax::mojom::TextAffinity anchor_affinity, focus_affinity;
-  root().Selection(anchor_object, anchor_offset, anchor_affinity, focus_object,
-                   focus_offset, focus_affinity);
+  if (base::FeatureList::IsEnabled(features::kNewAccessibilitySelection)) {
+    root().Selection(is_selection_backward, anchor_object, anchor_offset,
+                     anchor_affinity, focus_object, focus_offset,
+                     focus_affinity);
+  } else {
+    root().SelectionDeprecated(anchor_object, anchor_offset, anchor_affinity,
+                               focus_object, focus_offset, focus_affinity);
+  }
   if (!anchor_object.IsNull() && !focus_object.IsNull() && anchor_offset >= 0 &&
       focus_offset >= 0) {
     int32_t anchor_id = anchor_object.AxID();
     int32_t focus_id = focus_object.AxID();
+    tree_data->sel_is_backward = is_selection_backward;
     tree_data->sel_anchor_object_id = anchor_id;
     tree_data->sel_anchor_offset = anchor_offset;
     tree_data->sel_focus_object_id = focus_id;
@@ -480,32 +545,37 @@ void BlinkAXTreeSource::SerializeNode(WebAXObject src,
   AXContentNodeDataSparseAttributeAdapter sparse_attribute_adapter(dst);
   src.GetSparseAXAttributes(sparse_attribute_adapter);
 
-  ax::mojom::NameFrom nameFrom;
-  blink::WebVector<WebAXObject> nameObjects;
-  blink::WebString web_name = src.GetName(nameFrom, nameObjects);
+  ax::mojom::NameFrom name_from;
+  blink::WebVector<WebAXObject> name_objects;
+  blink::WebString web_name = src.GetName(name_from, name_objects);
   if ((!web_name.IsEmpty() && !web_name.IsNull()) ||
-      nameFrom == ax::mojom::NameFrom::kAttributeExplicitlyEmpty) {
+      name_from == ax::mojom::NameFrom::kAttributeExplicitlyEmpty) {
     int max_length = dst->role == ax::mojom::Role::kStaticText
                          ? kMaxStaticTextLength
                          : kMaxStringAttributeLength;
     TruncateAndAddStringAttribute(dst, ax::mojom::StringAttribute::kName,
                                   web_name.Utf8(), max_length);
-    dst->SetNameFrom(nameFrom);
+    dst->SetNameFrom(name_from);
     AddIntListAttributeFromWebObjects(
-        ax::mojom::IntListAttribute::kLabelledbyIds, nameObjects, dst);
+        ax::mojom::IntListAttribute::kLabelledbyIds, name_objects, dst);
   }
 
-  ax::mojom::DescriptionFrom descriptionFrom;
-  blink::WebVector<WebAXObject> descriptionObjects;
+  ax::mojom::DescriptionFrom description_from;
+  blink::WebVector<WebAXObject> description_objects;
   blink::WebString web_description =
-      src.Description(nameFrom, descriptionFrom, descriptionObjects);
+      src.Description(name_from, description_from, description_objects);
   if (!web_description.IsEmpty()) {
     TruncateAndAddStringAttribute(dst, ax::mojom::StringAttribute::kDescription,
                                   web_description.Utf8());
-    dst->AddIntAttribute(ax::mojom::IntAttribute::kDescriptionFrom,
-                         static_cast<int32_t>(descriptionFrom));
+    dst->SetDescriptionFrom(description_from);
     AddIntListAttributeFromWebObjects(
-        ax::mojom::IntListAttribute::kDescribedbyIds, descriptionObjects, dst);
+        ax::mojom::IntListAttribute::kDescribedbyIds, description_objects, dst);
+  }
+
+  blink::WebString web_title = src.Title(name_from);
+  if (!web_title.IsEmpty()) {
+    TruncateAndAddStringAttribute(dst, ax::mojom::StringAttribute::kTooltip,
+                                  web_title.Utf8());
   }
 
   if (src.ValueDescription().length()) {
@@ -537,7 +607,7 @@ void BlinkAXTreeSource::SerializeNode(WebAXObject src,
   // mode is set to screen reader mode, otherwise only the more basic
   // attributes are populated.
   if (accessibility_mode_.has_mode(ui::AXMode::kScreenReader)) {
-    blink::WebString web_placeholder = src.Placeholder(nameFrom);
+    blink::WebString web_placeholder = src.Placeholder(name_from);
     if (!web_placeholder.IsEmpty())
       TruncateAndAddStringAttribute(dst,
                                     ax::mojom::StringAttribute::kPlaceholder,
@@ -583,6 +653,11 @@ void BlinkAXTreeSource::SerializeNode(WebAXObject src,
       dst->AddFloatAttribute(ax::mojom::FloatAttribute::kFontSize,
                              src.FontSize());
 
+    if (src.FontWeight()) {
+      dst->AddFloatAttribute(ax::mojom::FloatAttribute::kFontWeight,
+                             src.FontWeight());
+    }
+
     if (src.HasPopup() != ax::mojom::HasPopup::kFalse)
       dst->SetHasPopup(src.HasPopup());
     else if (src.Role() == ax::mojom::Role::kPopUpButton)
@@ -615,9 +690,30 @@ void BlinkAXTreeSource::SerializeNode(WebAXObject src,
                            static_cast<int32_t>(src.GetTextPosition()));
     }
 
-    if (src.TextStyle()) {
-      dst->AddIntAttribute(ax::mojom::IntAttribute::kTextStyle,
-                           src.TextStyle());
+    int32_t text_style = 0;
+    ax::mojom::TextDecorationStyle text_overline_style;
+    ax::mojom::TextDecorationStyle text_strikethrough_style;
+    ax::mojom::TextDecorationStyle text_underline_style;
+    src.GetTextStyleAndTextDecorationStyle(&text_style, &text_overline_style,
+                                           &text_strikethrough_style,
+                                           &text_underline_style);
+    if (text_style) {
+      dst->AddIntAttribute(ax::mojom::IntAttribute::kTextStyle, text_style);
+    }
+
+    if (text_overline_style != ax::mojom::TextDecorationStyle::kNone) {
+      dst->AddIntAttribute(ax::mojom::IntAttribute::kTextOverlineStyle,
+                           static_cast<int32_t>(text_overline_style));
+    }
+
+    if (text_strikethrough_style != ax::mojom::TextDecorationStyle::kNone) {
+      dst->AddIntAttribute(ax::mojom::IntAttribute::kTextStrikethroughStyle,
+                           static_cast<int32_t>(text_strikethrough_style));
+    }
+
+    if (text_underline_style != ax::mojom::TextDecorationStyle::kNone) {
+      dst->AddIntAttribute(ax::mojom::IntAttribute::kTextUnderlineStyle,
+                           static_cast<int32_t>(text_underline_style));
     }
 
     if (dst->role == ax::mojom::Role::kInlineTextBox) {
@@ -878,16 +974,18 @@ void BlinkAXTreeSource::SerializeNode(WebAXObject src,
       dst->AddIntAttribute(ax::mojom::IntAttribute::kSortDirection,
                            static_cast<int32_t>(src.SortDirection()));
     }
-  }
 
-  if (accessibility_mode_.has_mode(ui::AXMode::kLabelImages) &&
-      dst->role == ax::mojom::Role::kImage) {
-    DCHECK(image_annotator_);
-    if (image_annotator_->HasAnnotationInCache(src)) {
-      dst->AddStringAttribute(ax::mojom::StringAttribute::kImageAnnotation,
-                              image_annotator_->GetImageAnnotation(src));
-    } else if (!image_annotator_->HasImageInCache(src)) {
-      image_annotator_->OnImageAdded(src);
+    if (dst->role == ax::mojom::Role::kImage)
+      AddImageAnnotations(src, dst);
+
+    // If a link or web area isn't otherwise labeled and contains
+    // exactly one image (searching only to a max depth of 2),
+    // annotate the link/web area with the image's annotation, too.
+    if (dst->role == ax::mojom::Role::kLink ||
+        dst->role == ax::mojom::Role::kRootWebArea) {
+      WebAXObject inner_image;
+      if (FindExactlyOneInnerImageInMaxDepthTwo(src, &inner_image))
+        AddImageAnnotations(inner_image, dst);
     }
   }
 
@@ -931,11 +1029,19 @@ void BlinkAXTreeSource::SerializeNode(WebAXObject src,
         dst->AddBoolAttribute(ax::mojom::BoolAttribute::kEditableRoot, true);
 
       if (src.IsControl() && !src.IsRichlyEditable()) {
-        // Only for simple input controls -- rich editable areas use AXTreeData
-        dst->AddIntAttribute(ax::mojom::IntAttribute::kTextSelStart,
-                             src.SelectionStart());
-        dst->AddIntAttribute(ax::mojom::IntAttribute::kTextSelEnd,
-                             src.SelectionEnd());
+        // Only for simple input controls -- rich editable areas use AXTreeData.
+        if (base::FeatureList::IsEnabled(
+                features::kNewAccessibilitySelection)) {
+          dst->AddIntAttribute(ax::mojom::IntAttribute::kTextSelStart,
+                               src.SelectionStart());
+          dst->AddIntAttribute(ax::mojom::IntAttribute::kTextSelEnd,
+                               src.SelectionEnd());
+        } else {
+          dst->AddIntAttribute(ax::mojom::IntAttribute::kTextSelStart,
+                               src.SelectionStartDeprecated());
+          dst->AddIntAttribute(ax::mojom::IntAttribute::kTextSelEnd,
+                               src.SelectionEndDeprecated());
+        }
       }
     }
 
@@ -1041,6 +1147,76 @@ void BlinkAXTreeSource::TruncateAndAddStringAttribute(
     dst->AddStringAttribute(attribute, truncated);
   } else {
     dst->AddStringAttribute(attribute, value);
+  }
+}
+
+void BlinkAXTreeSource::AddImageAnnotations(blink::WebAXObject src,
+                                            AXContentNodeData* dst) const {
+  if (!base::FeatureList::IsEnabled(features::kExperimentalAccessibilityLabels))
+    return;
+
+  // Reject images that are explicitly empty, or that have a name already.
+  //
+  // In the future, we may annotate some images that have a name
+  // if we think we can add additional useful information.
+  ax::mojom::NameFrom name_from;
+  blink::WebVector<WebAXObject> name_objects;
+  blink::WebString web_name = src.GetName(name_from, name_objects);
+
+  // When visual debugging is enabled, the "title" attribute is set to a
+  // string beginning with a "%". We need to ignore such strings when
+  // subsequently deciding whether an image should be annotated or not.
+  bool has_debug_title =
+      image_annotation_debugging_ &&
+      base::StartsWith(web_name.Utf8(), "%", base::CompareCase::SENSITIVE);
+
+  if ((name_from == ax::mojom::NameFrom::kAttributeExplicitlyEmpty ||
+       !web_name.IsEmpty()) &&
+      !has_debug_title) {
+    dst->SetImageAnnotationStatus(
+        ax::mojom::ImageAnnotationStatus::kIneligibleForAnnotation);
+    return;
+  }
+
+  // |dst| may be a document or link containing an image. Skip annotating
+  // it if it already has text other than whitespace.
+  if (!base::ContainsOnlyChars(
+          dst->GetStringAttribute(ax::mojom::StringAttribute::kName),
+          base::kWhitespaceASCII) &&
+      !has_debug_title) {
+    dst->SetImageAnnotationStatus(
+        ax::mojom::ImageAnnotationStatus::kIneligibleForAnnotation);
+    return;
+  }
+
+  // Skip images that are too small to label. This also catches
+  // unloaded images where the size is unknown.
+  if (dst->relative_bounds.bounds.width() < kMinImageAnnotationWidth ||
+      dst->relative_bounds.bounds.height() < kMinImageAnnotationHeight) {
+    dst->SetImageAnnotationStatus(
+        ax::mojom::ImageAnnotationStatus::kIneligibleForAnnotation);
+    return;
+  }
+
+  if (!image_annotator_) {
+    dst->SetImageAnnotationStatus(
+        ax::mojom::ImageAnnotationStatus::kEligibleForAnnotation);
+    return;
+  }
+
+  if (image_annotator_->HasAnnotationInCache(src)) {
+    dst->AddStringAttribute(ax::mojom::StringAttribute::kImageAnnotation,
+                            image_annotator_->GetImageAnnotation(src));
+    dst->SetImageAnnotationStatus(
+        image_annotator_->GetImageAnnotationStatus(src));
+  } else if (image_annotator_->HasImageInCache(src)) {
+    image_annotator_->OnImageUpdated(src);
+    dst->SetImageAnnotationStatus(
+        ax::mojom::ImageAnnotationStatus::kAnnotationPending);
+  } else if (!image_annotator_->HasImageInCache(src)) {
+    image_annotator_->OnImageAdded(src);
+    dst->SetImageAnnotationStatus(
+        ax::mojom::ImageAnnotationStatus::kAnnotationPending);
   }
 }
 

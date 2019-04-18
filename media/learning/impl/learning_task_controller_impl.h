@@ -6,22 +6,33 @@
 #define MEDIA_LEARNING_IMPL_LEARNING_TASK_CONTROLLER_IMPL_H_
 
 #include <memory>
+#include <set>
 
 #include "base/callback.h"
 #include "base/component_export.h"
 #include "base/memory/weak_ptr.h"
-#include "base/sequenced_task_runner.h"
+#include "media/learning/common/learning_task_controller.h"
 #include "media/learning/impl/distribution_reporter.h"
 #include "media/learning/impl/feature_provider.h"
-#include "media/learning/impl/learning_task_controller.h"
+#include "media/learning/impl/learning_task_controller_helper.h"
 #include "media/learning/impl/random_number_generator.h"
 #include "media/learning/impl/training_algorithm.h"
 
 namespace media {
 namespace learning {
 
+class DistributionReporter;
 class LearningTaskControllerImplTest;
 
+// Controller for a single learning task.  Takes training examples, and forwards
+// them to the learner(s).  Responsible for things like:
+//  - Managing underlying learner(s) based on the learning task
+//  - Feature subset selection
+//  - UMA reporting on accuracy / feature importance
+//
+// The idea is that one can create a LearningTask, give it to an LTCI, and the
+// LTCI will do the work of building / evaluating the model based on training
+// examples that are provided to it.
 class COMPONENT_EXPORT(LEARNING_IMPL) LearningTaskControllerImpl
     : public LearningTaskController,
       public HasRandomNumberGenerator,
@@ -35,30 +46,26 @@ class COMPONENT_EXPORT(LEARNING_IMPL) LearningTaskControllerImpl
   ~LearningTaskControllerImpl() override;
 
   // LearningTaskController
-  void AddExample(const LabelledExample& example) override;
+  void BeginObservation(base::UnguessableToken id,
+                        const FeatureVector& features) override;
+  void CompleteObservation(base::UnguessableToken id,
+                           const ObservationCompletion& completion) override;
+  void CancelObservation(base::UnguessableToken id) override;
 
  private:
-  // Trampoline method for receiving examples from |feature_provider_|.  Will
-  // chain directly to OnExampleReady if we're on |task_runner| and |weak_this|
-  // is non-null, else it will post to |task_runner|.
-  static void OnFeaturesReadyTrampoline(
-      scoped_refptr<base::SequencedTaskRunner> task_runner,
-      base::WeakPtr<LearningTaskControllerImpl> weak_this,
-      LabelledExample example,
-      FeatureVector features);
-
-  // Called when a new feature vector has been finished by |feature_provider_|,
-  // if needed, to actually add the example.  |features| will replace the ones
-  // in |example|.
-  void OnFeaturesReady(LabelledExample example, FeatureVector features);
-
   // Add |example| to the training data, and process it.
   void AddFinishedExample(LabelledExample example);
 
-  // Called by |training_cb_| when the model is trained.
-  void OnModelTrained(std::unique_ptr<Model> model);
+  // Called by |training_cb_| when the model is trained.  |training_weight| and
+  // |training_size| are the training set's total weight and number of examples.
+  void OnModelTrained(double training_weight,
+                      int training_size,
+                      std::unique_ptr<Model> model);
 
   void SetTrainerForTesting(std::unique_ptr<TrainingAlgorithm> trainer);
+
+  // Update |task_| to reflect a randomly chosen subset of features.
+  void DoFeatureSubsetSelection();
 
   LearningTask task_;
 
@@ -75,16 +82,25 @@ class COMPONENT_EXPORT(LEARNING_IMPL) LearningTaskControllerImpl
   // This helps us decide when to train a new model.
   int num_untrained_examples_ = 0;
 
+  // Total weight and number of examples in the most recently trained model.
+  double last_training_weight_ = 0.;
+  size_t last_training_size_ = 0u;
+
   // Training algorithm that we'll use.
   std::unique_ptr<TrainingAlgorithm> trainer_;
-
-  // Optional feature provider.
-  SequenceBoundFeatureProvider feature_provider_;
 
   // Optional reporter for training accuracy.
   std::unique_ptr<DistributionReporter> reporter_;
 
-  scoped_refptr<base::SequencedTaskRunner> task_runner_;
+  // Helper that we use to handle deferred examples.
+  std::unique_ptr<LearningTaskControllerHelper> helper_;
+
+  // If the task specifies feature importance measurement, then this is the
+  // randomly chosen subset of features.
+  std::set<int> feature_indices_;
+
+  // Number of features that we expect in each observation.
+  size_t expected_feature_count_;
 
   friend class LearningTaskControllerImplTest;
 };

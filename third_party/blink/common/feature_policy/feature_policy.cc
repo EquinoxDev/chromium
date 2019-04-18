@@ -172,6 +172,7 @@ PolicyValue FeaturePolicy::GetFeatureValueForOrigin(
     const url::Origin& origin) const {
   DCHECK(base::ContainsKey(feature_list_, feature));
   DCHECK(base::ContainsKey(inherited_policies_, feature));
+
   auto inherited_value = inherited_policies_.at(feature);
   auto allowlist = allowlists_.find(feature);
   if (allowlist != allowlists_.end()) {
@@ -231,6 +232,13 @@ void FeaturePolicy::SetHeaderPolicy(const ParsedFeaturePolicy& parsed_header) {
     allowlists_[feature] =
         AllowlistFromDeclaration(parsed_declaration, feature_list_);
   }
+}
+
+FeaturePolicy::FeatureState FeaturePolicy::GetFeatureState() const {
+  FeatureState feature_state;
+  for (const auto& pair : GetDefaultFeatureList())
+    feature_state[pair.first] = GetFeatureValueForOrigin(pair.first, origin_);
+  return feature_state;
 }
 
 FeaturePolicy::FeaturePolicy(url::Origin origin,
@@ -354,6 +362,10 @@ const FeaturePolicy::FeatureList& FeaturePolicy::GetDefaultFeatureList() {
        {mojom::FeaturePolicyFeature::kFormSubmission,
         FeatureDefaultValue(FeaturePolicy::FeatureDefault::EnableForAll,
                             mojom::PolicyValueType::kBool)},
+       // kFrobulate is a test only feature.
+       {mojom::FeaturePolicyFeature::kFrobulate,
+        FeatureDefaultValue(FeaturePolicy::FeatureDefault::EnableForSelf,
+                            mojom::PolicyValueType::kBool)},
        {mojom::FeaturePolicyFeature::kFullscreen,
         FeatureDefaultValue(FeaturePolicy::FeatureDefault::EnableForSelf,
                             mojom::PolicyValueType::kBool)},
@@ -363,8 +375,11 @@ const FeaturePolicy::FeatureList& FeaturePolicy::GetDefaultFeatureList() {
        {mojom::FeaturePolicyFeature::kGyroscope,
         FeatureDefaultValue(FeaturePolicy::FeatureDefault::EnableForSelf,
                             mojom::PolicyValueType::kBool)},
-       {mojom::FeaturePolicyFeature::kUnoptimizedImages,
-        FeatureDefaultValue(FeaturePolicy::FeatureDefault::EnableForAll,
+       {mojom::FeaturePolicyFeature::kHid,
+        FeatureDefaultValue(FeaturePolicy::FeatureDefault::EnableForSelf,
+                            mojom::PolicyValueType::kBool)},
+       {mojom::FeaturePolicyFeature::kIdleDetection,
+        FeatureDefaultValue(FeaturePolicy::FeatureDefault::EnableForSelf,
                             mojom::PolicyValueType::kBool)},
        {mojom::FeaturePolicyFeature::kLayoutAnimations,
         FeatureDefaultValue(FeaturePolicy::FeatureDefault::EnableForAll,
@@ -372,7 +387,7 @@ const FeaturePolicy::FeatureList& FeaturePolicy::GetDefaultFeatureList() {
        {mojom::FeaturePolicyFeature::kLazyLoad,
         FeatureDefaultValue(FeaturePolicy::FeatureDefault::EnableForAll,
                             mojom::PolicyValueType::kBool)},
-       {mojom::FeaturePolicyFeature::kLegacyImageFormats,
+       {mojom::FeaturePolicyFeature::kLoadingFrameDefaultEager,
         FeatureDefaultValue(FeaturePolicy::FeatureDefault::EnableForAll,
                             mojom::PolicyValueType::kBool)},
        {mojom::FeaturePolicyFeature::kMagnetometer,
@@ -380,7 +395,7 @@ const FeaturePolicy::FeatureList& FeaturePolicy::GetDefaultFeatureList() {
                             mojom::PolicyValueType::kBool)},
        {mojom::FeaturePolicyFeature::kOversizedImages,
         FeatureDefaultValue(FeaturePolicy::FeatureDefault::EnableForAll,
-                            mojom::PolicyValueType::kBool)},
+                            mojom::PolicyValueType::kDecDouble)},
        {mojom::FeaturePolicyFeature::kMicrophone,
         FeatureDefaultValue(FeaturePolicy::FeatureDefault::EnableForSelf,
                             mojom::PolicyValueType::kBool)},
@@ -426,6 +441,15 @@ const FeaturePolicy::FeatureList& FeaturePolicy::GetDefaultFeatureList() {
        {mojom::FeaturePolicyFeature::kTopNavigation,
         FeatureDefaultValue(FeaturePolicy::FeatureDefault::EnableForAll,
                             mojom::PolicyValueType::kBool)},
+       {mojom::FeaturePolicyFeature::kUnoptimizedLosslessImages,
+        FeatureDefaultValue(FeaturePolicy::FeatureDefault::EnableForAll,
+                            mojom::PolicyValueType::kDecDouble)},
+       {mojom::FeaturePolicyFeature::kUnoptimizedLosslessImagesStrict,
+        FeatureDefaultValue(FeaturePolicy::FeatureDefault::EnableForAll,
+                            mojom::PolicyValueType::kDecDouble)},
+       {mojom::FeaturePolicyFeature::kUnoptimizedLossyImages,
+        FeatureDefaultValue(FeaturePolicy::FeatureDefault::EnableForAll,
+                            mojom::PolicyValueType::kDecDouble)},
        {mojom::FeaturePolicyFeature::kUnsizedMedia,
         FeatureDefaultValue(FeaturePolicy::FeatureDefault::EnableForAll,
                             mojom::PolicyValueType::kBool)},
@@ -439,10 +463,6 @@ const FeaturePolicy::FeatureList& FeaturePolicy::GetDefaultFeatureList() {
         FeatureDefaultValue(FeaturePolicy::FeatureDefault::EnableForSelf,
                             mojom::PolicyValueType::kBool)},
        {mojom::FeaturePolicyFeature::kWebVr,
-        FeatureDefaultValue(FeaturePolicy::FeatureDefault::EnableForSelf,
-                            mojom::PolicyValueType::kBool)},
-       // kFrobulate is a test only feature.
-       {mojom::FeaturePolicyFeature::kFrobulate,
         FeatureDefaultValue(FeaturePolicy::FeatureDefault::EnableForSelf,
                             mojom::PolicyValueType::kBool)}});
   return *default_feature_list;

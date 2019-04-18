@@ -13,6 +13,8 @@
 #include "base/metrics/histogram_macros.h"
 #include "base/strings/sys_string_conversions.h"
 #include "base/threading/sequenced_task_runner_handle.h"
+#import "ios/web/common/crw_content_view.h"
+#include "ios/web/common/url_util.h"
 #import "ios/web/interstitials/web_interstitial_impl.h"
 #import "ios/web/navigation/crw_session_controller.h"
 #import "ios/web/navigation/legacy_navigation_manager_impl.h"
@@ -26,10 +28,8 @@
 #include "ios/web/public/favicon_url.h"
 #import "ios/web/public/java_script_dialog_presenter.h"
 #import "ios/web/public/navigation_item.h"
-#include "ios/web/public/url_util.h"
 #import "ios/web/public/web_client.h"
 #import "ios/web/public/web_state/context_menu_params.h"
-#import "ios/web/public/web_state/ui/crw_content_view.h"
 #import "ios/web/public/web_state/ui/crw_native_content.h"
 #import "ios/web/public/web_state/web_state_delegate.h"
 #include "ios/web/public/web_state/web_state_interface_provider.h"
@@ -61,6 +61,8 @@ std::unique_ptr<WebState> WebState::Create(const CreateParams& params) {
 
   // Initialize the new session.
   web_state->GetNavigationManagerImpl().InitializeSession();
+  web_state->GetNavigationManagerImpl().GetSessionController().delegate =
+      web_state->GetWebController();
 
   return web_state;
 }
@@ -584,6 +586,10 @@ void WebStateImpl::WasHidden() {
     observer.WasHidden(this);
 }
 
+void WebStateImpl::SetKeepRenderProcessAlive(bool keep_alive) {
+  [web_controller_ setKeepsRenderProcessAlive:keep_alive];
+}
+
 BrowserState* WebStateImpl::GetBrowserState() const {
   return navigation_manager_->GetBrowserState();
 }
@@ -687,13 +693,16 @@ const GURL& WebStateImpl::GetLastCommittedURL() const {
 GURL WebStateImpl::GetCurrentURL(URLVerificationTrustLevel* trust_level) const {
   GURL result = [web_controller_ currentURLWithTrustLevel:trust_level];
 
-  web::NavigationItem* item = navigation_manager_->GetLastCommittedItem();
+  web::NavigationItemImpl* item =
+      navigation_manager_->GetLastCommittedItemImpl();
   GURL lastCommittedURL;
   if (item) {
     if ([web_controller_.nativeController
-            respondsToSelector:@selector(virtualURL)]) {
-      // For native content |currentURLWithTrustLevel:| returns virtual URL if
-      // one is available.
+            respondsToSelector:@selector(virtualURL)] ||
+        item->error_retry_state_machine().state() ==
+            ErrorRetryState::kReadyToDisplayErrorForFailedNavigation) {
+      // For native content, or when webView.URL is a placeholder URL,
+      // |currentURLWithTrustLevel:| returns virtual URL if one is available.
       lastCommittedURL = item->GetVirtualURL();
     } else {
       // Otherwise document URL is returned.
@@ -892,6 +901,10 @@ void WebStateImpl::RemoveWebView() {
   return [web_controller_ removeWebView];
 }
 
+NavigationItemImpl* WebStateImpl::GetPendingItem() {
+  return [web_controller_ lastPendingItemForNewNavigation];
+}
+
 void WebStateImpl::RestoreSessionStorage(CRWSessionStorage* session_storage) {
   // Session storage restore is asynchronous with WKBasedNavigationManager
   // because it involves a page load in WKWebView. Temporarily cache the
@@ -904,6 +917,8 @@ void WebStateImpl::RestoreSessionStorage(CRWSessionStorage* session_storage) {
     restored_session_storage_ = session_storage;
   SessionStorageBuilder session_storage_builder;
   session_storage_builder.ExtractSessionState(this, session_storage);
+  GetNavigationManagerImpl().GetSessionController().delegate =
+      GetWebController();
 }
 
 }  // namespace web

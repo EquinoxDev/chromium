@@ -58,6 +58,7 @@ source_set("translate_ui") {
   deps = [
     "//base",
     "//components/strings:components_strings",
+    "//ios/chrome/app/strings:ios_strings_grit",
     "//ios/chrome/browser",
     "//ios/chrome/browser/ui/colors",
     "//ios/chrome/browser/ui/fullscreen:ui",
@@ -82,6 +83,7 @@ source_set("unit_tests") {
   ]
   deps = [
     ":translate",
+    "//components/language/ios/browser",
     "//components/translate/core/browser:test_support",
     "//ios/chrome/browser/browser_state:test_support",
     "//ios/chrome/browser/translate",

@@ -86,7 +86,6 @@
 #include "services/network/test/test_url_loader_client.h"
 #include "storage/browser/blob/shareable_file_reference.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/blink/public/common/features.h"
 #include "third_party/blink/public/mojom/appcache/appcache.mojom.h"
 
 // TODO(eroman): Write unit tests for SafeBrowsing that exercise
@@ -130,7 +129,6 @@ class TestFilterSpecifyingChild : public ResourceMessageFilter {
             nullptr,
             nullptr,
             nullptr,
-            browser_context->GetSharedCorsOriginAccessList(),
             base::Bind(&TestFilterSpecifyingChild::GetContexts,
                        base::Unretained(this)),
             base::CreateSingleThreadTaskRunnerWithTraits({BrowserThread::IO})),
@@ -658,19 +656,12 @@ class ResourceDispatcherHostTest : public testing::TestWithParam<TestMode> {
         auto_advance_(false) {
     switch (GetParam()) {
       case TestMode::kWithoutOutOfBlinkCors:
-        scoped_feature_list_.InitWithFeatures(
-            // Enabled features
-            {},
-            // Disabled features
-            {network::features::kOutOfBlinkCors});
+        scoped_feature_list_.InitAndDisableFeature(
+            network::features::kOutOfBlinkCors);
         break;
       case TestMode::kWithOutOfBlinkCors:
-        scoped_feature_list_.InitWithFeatures(
-            // Enabled features
-            {network::features::kOutOfBlinkCors,
-             blink::features::kServiceWorkerServicification},
-            // Disabled features
-            {});
+        scoped_feature_list_.InitAndEnableFeature(
+            network::features::kOutOfBlinkCors);
         break;
     }
     host_.SetLoaderDelegate(&loader_delegate_);
@@ -2193,7 +2184,9 @@ class ExternalProtocolBrowserClient : public TestContentBrowserClient {
       ui::PageTransition page_transition,
       bool has_user_gesture,
       const std::string& method,
-      const net::HttpRequestHeaders& headers) override {
+      const net::HttpRequestHeaders& headers,
+      network::mojom::URLLoaderFactoryRequest* factory_request,
+      network::mojom::URLLoaderFactory*& out_factory) override {
     return false;
   }
 

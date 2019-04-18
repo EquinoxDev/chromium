@@ -93,6 +93,7 @@ class BASE_EXPORT OSInfo {
     X86_ARCHITECTURE,
     X64_ARCHITECTURE,
     IA64_ARCHITECTURE,
+    ARM64_ARCHITECTURE,
     OTHER_ARCHITECTURE,
   };
 
@@ -109,23 +110,29 @@ class BASE_EXPORT OSInfo {
 
   static OSInfo* GetInstance();
 
-  Version version() const { return version_; }
-  Version Kernel32Version() const;
-  base::Version Kernel32BaseVersion() const;
-  // The next two functions return arrays of values, [major, minor(, build)].
-  VersionNumber version_number() const { return version_number_; }
-  VersionType version_type() const { return version_type_; }
-  ServicePack service_pack() const { return service_pack_; }
-  std::string service_pack_str() const { return service_pack_str_; }
-  WindowsArchitecture architecture() const { return architecture_; }
-  int processors() const { return processors_; }
-  size_t allocation_granularity() const { return allocation_granularity_; }
-  WOW64Status wow64_status() const { return wow64_status_; }
-  std::string processor_model_name();
+  // Separate from the rest of OSInfo so it can be used during early process
+  // initialization.
+  static WindowsArchitecture GetArchitecture();
 
   // Like wow64_status(), but for the supplied handle instead of the current
   // process.  This doesn't touch member state, so you can bypass the singleton.
   static WOW64Status GetWOW64StatusForProcess(HANDLE process_handle);
+
+  const Version& version() const { return version_; }
+  Version Kernel32Version() const;
+  base::Version Kernel32BaseVersion() const;
+  // The next two functions return arrays of values, [major, minor(, build)].
+  const VersionNumber& version_number() const { return version_number_; }
+  const VersionType& version_type() const { return version_type_; }
+  const ServicePack& service_pack() const { return service_pack_; }
+  const std::string& service_pack_str() const { return service_pack_str_; }
+  const int& processors() const { return processors_; }
+  const size_t& allocation_granularity() const {
+    return allocation_granularity_;
+  }
+  const WOW64Status& wow64_status() const { return wow64_status_; }
+  std::string processor_model_name();
+  const std::string& release_id() const { return release_id_; }
 
  private:
   friend class base::test::ScopedOSInfoOverride;
@@ -145,11 +152,20 @@ class BASE_EXPORT OSInfo {
   VersionType version_type_;
   ServicePack service_pack_;
 
+  // Represents the version of the OS associated to a release of
+  // Windows 10. Each version may have different releases (such as patch
+  // updates). This is the identifier of the release.
+  // Example:
+  //    Windows 10 Version 1809 (OS build 17763) has multiple releases
+  //    (i.e. build 17763.1, build 17763.195, build 17763.379, ...).
+  // See https://docs.microsoft.com/en-us/windows/windows-10/release-information
+  // for more information.
+  std::string release_id_;
+
   // A string, such as "Service Pack 3", that indicates the latest Service Pack
   // installed on the system. If no Service Pack has been installed, the string
   // is empty.
   std::string service_pack_str_;
-  WindowsArchitecture architecture_;
   int processors_;
   size_t allocation_granularity_;
   WOW64Status wow64_status_;

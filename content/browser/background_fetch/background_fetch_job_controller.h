@@ -47,7 +47,11 @@ class CONTENT_EXPORT BackgroundFetchJobController
                               blink::mojom::BackgroundFetchFailureReason,
                               ErrorCallback)>;
   using ProgressCallback = base::RepeatingCallback<void(
-      const blink::mojom::BackgroundFetchRegistration&)>;
+      const std::string& unique_id,
+      const blink::mojom::BackgroundFetchRegistrationData&)>;
+  using RequestStartedCallback =
+      base::OnceCallback<void(const BackgroundFetchRegistrationId&,
+                              const BackgroundFetchRequestInfo*)>;
   using RequestFinishedCallback =
       base::OnceCallback<void(const BackgroundFetchRegistrationId&,
                               scoped_refptr<BackgroundFetchRequestInfo>)>;
@@ -80,9 +84,9 @@ class CONTENT_EXPORT BackgroundFetchJobController
   uint64_t GetInProgressDownloadedBytes();
   uint64_t GetInProgressUploadedBytes();
 
-  // Returns a blink::mojom::BackgroundFetchRegistrationPtr object
+  // Returns a blink::mojom::BackgroundFetchRegistrationDataPtr object
   // created with member fields.
-  blink::mojom::BackgroundFetchRegistrationPtr NewRegistration() const;
+  blink::mojom::BackgroundFetchRegistrationDataPtr NewRegistrationData() const;
 
   const BackgroundFetchRegistrationId& registration_id() const {
     return registration_id_;
@@ -110,8 +114,10 @@ class CONTENT_EXPORT BackgroundFetchJobController
              ErrorCallback callback);
 
   // Request processing.
-  void PopNextRequest(RequestFinishedCallback request_finished_callback);
+  void PopNextRequest(RequestStartedCallback request_started_callback,
+                      RequestFinishedCallback request_finished_callback);
   void DidPopNextRequest(
+      RequestStartedCallback request_started_callback,
       RequestFinishedCallback request_finished_callback,
       blink::mojom::BackgroundFetchError error,
       scoped_refptr<BackgroundFetchRequestInfo> request_info);
@@ -125,6 +131,11 @@ class CONTENT_EXPORT BackgroundFetchJobController
   int pending_downloads() const { return pending_downloads_; }
 
  private:
+  struct InProgressRequestBytes {
+    uint64_t uploaded = 0u;
+    uint64_t downloaded = 0u;
+  };
+
   // Called after the request is completely processed, and the next one can be
   // started.
   void DidMarkRequestAsComplete(blink::mojom::BackgroundFetchError error);
@@ -155,6 +166,9 @@ class CONTENT_EXPORT BackgroundFetchJobController
   std::map<std::string, scoped_refptr<BackgroundFetchRequestInfo>>
       active_request_map_;
 
+  // A map from the download GUID to the in-progress bytes.
+  std::map<std::string, InProgressRequestBytes> active_bytes_map_;
+
   // The registration ID of the fetch this controller represents.
   BackgroundFetchRegistrationId registration_id_;
 
@@ -163,10 +177,6 @@ class CONTENT_EXPORT BackgroundFetchJobController
 
   // Icon for the represented background fetch registration.
   SkBitmap icon_;
-
-  // Number of bytes downloaded/uploaded for the active request.
-  uint64_t active_request_downloaded_bytes_ = 0u;
-  uint64_t active_request_uploaded_bytes_ = 0u;
 
   // Finished callback to invoke when the active request has finished mapped by
   // its download GUID.

@@ -107,18 +107,9 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
           textEnterXRTitle: "START AR",
           textXRNotFoundTitle: "AR NOT FOUND",
           textExitXRTitle: "EXIT  AR",
+          supportedSessionTypes: ['immersive-ar', 'legacy-inline-ar']
         });
         document.querySelector('header').appendChild(xrButton.domElement);
-
-        if (navigator.xr) {
-          navigator.xr.supportsSessionMode('immersive-ar').then(() => {
-            xrButton.enabled = true;
-          }).catch(() => {
-            navigator.xr.supportsSessionMode('legacy-inline-ar').then(() => {
-                xrButton.enabled = true;
-            });
-          });
-        }
       }
 
       function makeCanvas() {
@@ -140,12 +131,8 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
               xrButton.setSession(session);
               onSessionStarted(session);
         }).catch(() => {
-            let legacyCanvas = makeCanvas();
-            let legacyCtx = legacyCanvas.getContext('xrpresent');
-            navigator.xr.requestSession({ mode: 'legacy-inline-ar',
-                                          outputContext: legacyCtx
-                                        }).then((session) => {
-                document.body.appendChild(legacyCanvas);
+            navigator.xr.requestSession({ mode: 'legacy-inline-ar' })
+              .then((session) => {
                 xrButton.setSession(session);
                 onSessionStarted(session);
             });
@@ -166,7 +153,13 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
           scene.setRenderer(renderer);
         }
 
-        session.updateRenderState({ baseLayer: new XRWebGLLayer(session, gl) });
+        let outputCanvas = makeCanvas();
+        document.body.appendChild(outputCanvas);
+
+        session.updateRenderState({
+            baseLayer: new XRWebGLLayer(session, gl),
+            outputContext: outputCanvas.getContext('xrpresent')
+        });
 
         session.requestReferenceSpace({ type: 'stationary', subtype: 'eye-level' }).then((refSpace) => {
           xrRefSpace = refSpace;
@@ -179,10 +172,10 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
       }
 
       function onSessionEnded(event) {
-        if (event.session.mode.startsWith('legacy')) {
-          document.body.removeChild(document.querySelector('#legacy-canvas'));
-        }
         xrButton.setSession(null);
+        if (event.session.renderState.outputContext) {
+          document.body.removeChild(event.session.renderState.outputContext.canvas);
+        }
       }
 
       // Adds a new object to the scene at the
@@ -219,20 +212,17 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
         } else {
           // Otherwise we'll use the target ray from the input source that generated
           // this event to fire off a new hit test.
-          let inputPose = event.frame.getInputPose(event.inputSource, xrRefSpace);
-          if (!inputPose) {
-            return;
-          }
-
-          if (inputPose.targetRay) {
+          let inputPose = event.frame.getPose(event.inputSource.targetRaySpace, xrRefSpace);
+          if (inputPose) {
+            let targetRay = new XRRay(inputPose.transform);
             vec3.set(rayOrigin,
-                inputPose.targetRay.origin.x,
-                inputPose.targetRay.origin.y,
-                inputPose.targetRay.origin.z);
+                targetRay.origin.x,
+                targetRay.origin.y,
+                targetRay.origin.z);
             vec3.set(rayDirection,
-                inputPose.targetRay.direction.x,
-                inputPose.targetRay.direction.y,
-                inputPose.targetRay.direction.z);
+                targetRay.direction.x,
+                targetRay.direction.y,
+                targetRay.direction.z);
 
             let ray = new XRRay(DOMPointFromVec3(rayOrigin), DOMPointFromVec3(rayDirection));
             event.frame.session.requestHitTest(ray, xrRefSpace).then((results) => {

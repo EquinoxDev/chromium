@@ -11,6 +11,7 @@ import("//build/config/ui.gni")
 import("//build/util/branding.gni")
 import("//testing/test.gni")
 import("//tools/grit/grit_rule.gni")
+import("//ui/base/mpris/buildflags/buildflags.gni")
 import("//ui/base/ui_features.gni")
 import("//ui/ozone/ozone.gni")
 
@@ -68,6 +69,8 @@ jumbo_component("base") {
   sources = [
     "accelerators/media_keys_listener.cc",
     "accelerators/media_keys_listener.h",
+    "accelerators/media_keys_util.cc",
+    "accelerators/media_keys_util.h",
     "accelerators/menu_label_accelerator_util.cc",
     "accelerators/menu_label_accelerator_util.h",
     "accelerators/menu_label_accelerator_util_linux.cc",
@@ -262,8 +265,6 @@ jumbo_component("base") {
     "win/accessibility_misc_utils.cc",
     "win/accessibility_misc_utils.h",
     "win/atl_module.h",
-    "win/direct_manipulation.cc",
-    "win/direct_manipulation.h",
     "win/foreground_helper.cc",
     "win/foreground_helper.h",
     "win/hidden_window.cc",
@@ -282,6 +283,8 @@ jumbo_component("base") {
     "win/mouse_wheel_util.h",
     "win/scoped_ole_initializer.cc",
     "win/scoped_ole_initializer.h",
+    "win/session_change_observer.cc",
+    "win/session_change_observer.h",
     "win/shell.cc",
     "win/shell.h",
     "win/touch_input.cc",
@@ -317,13 +320,6 @@ jumbo_component("base") {
       "dragdrop/file_info.cc",
       "dragdrop/file_info.h",
       "emoji/emoji_panel_helper.h",
-      "idle/idle.cc",
-      "idle/idle.h",
-      "idle/idle_android.cc",
-      "idle/idle_chromeos.cc",
-      "idle/idle_linux.cc",
-      "idle/idle_mac.mm",
-      "idle/idle_win.cc",
       "pointer/pointer_device.h",
       "pointer/pointer_device_util.cc",
       "pointer/touch_editing_controller.cc",
@@ -345,12 +341,24 @@ jumbo_component("base") {
   }
 
   if (is_mac) {
-    sources += [ "accelerators/media_keys_listener_mac.mm" ]
+    sources += [
+      "accelerators/media_keys_listener_mac.mm",
+      "accelerators/remote_command_media_keys_listener_mac.h",
+      "accelerators/remote_command_media_keys_listener_mac.mm",
+    ]
   } else if (is_win) {
     sources += [
       "accelerators/global_media_keys_listener_win.cc",
       "accelerators/global_media_keys_listener_win.h",
       "accelerators/media_keys_listener_win.cc",
+      "accelerators/system_media_controls_media_keys_listener.cc",
+      "accelerators/system_media_controls_media_keys_listener.h",
+    ]
+  } else if (use_mpris) {
+    sources += [
+      "accelerators/media_keys_listener_linux.cc",
+      "accelerators/mpris_media_keys_listener.cc",
+      "accelerators/mpris_media_keys_listener.h",
     ]
   } else {
     sources += [ "accelerators/media_keys_listener_stub.cc" ]
@@ -372,7 +380,6 @@ jumbo_component("base") {
 
   if (is_fuchsia) {
     sources += [
-      "idle/idle_fuchsia.cc",
       "l10n/l10n_util_posix.cc",
       "resource/resource_bundle_fuchsia.cc",
     ]
@@ -435,15 +442,20 @@ jumbo_component("base") {
     configs += [ "//build/config/linux:x11" ]
 
     if (!is_chromeos) {
-      sources += [
-        "idle/idle_query_x11.cc",
-        "idle/idle_query_x11.h",
-        "idle/screensaver_window_finder_x11.cc",
-        "idle/screensaver_window_finder_x11.h",
-      ]
       configs += [ "//build/config/linux:xscrnsaver" ]
       deps += [ "//ui/gfx/x" ]
     }
+  }
+
+  if (is_win) {
+    deps += [ "//ui/base/win/system_media_controls" ]
+  }
+
+  if (use_mpris) {
+    deps += [
+      "//dbus",
+      "//ui/base/mpris",
+    ]
   }
 
   if (use_x11 && use_aura) {
@@ -494,14 +506,6 @@ jumbo_component("base") {
     ]
   }
 
-  if (is_chromeos) {
-    deps += [
-      "//chromeos",
-      "//chromeos/dbus",
-    ]
-    sources -= [ "idle/idle_linux.cc" ]
-  }
-
   if (is_chromeos || (use_aura && is_linux && !use_x11)) {
     sources += [
       "dragdrop/os_exchange_data_provider_aura.cc",
@@ -535,6 +539,7 @@ jumbo_component("base") {
       "d2d1.lib",
       "dwmapi.lib",
       "oleacc.lib",
+      "wtsapi32.lib",
     ]
   } else {
     if (!use_aura) {
@@ -546,7 +551,10 @@ jumbo_component("base") {
   }
 
   if (is_mac) {
-    deps += [ "//third_party/mozilla" ]
+    deps += [
+      "//third_party/mozilla",
+      "//ui/base/now_playing",
+    ]
 
     libs += [
       "Accelerate.framework",
@@ -599,7 +607,6 @@ jumbo_component("base") {
     sources -= [
       "cursor/cursor_android.cc",
       "default_theme_provider.cc",
-      "idle/idle.cc",
       "l10n/l10n_font_util.cc",
       "models/button_menu_item_model.cc",
       "pointer/touch_editing_controller.cc",
@@ -642,6 +649,8 @@ component("features") {
 jumbo_static_library("test_support") {
   testonly = true
   sources = [
+    "resource/mock_resource_bundle_delegate.cc",
+    "resource/mock_resource_bundle_delegate.h",
     "test/material_design_controller_test_api.cc",
     "test/material_design_controller_test_api.h",
     "test/ui_controls.h",
@@ -693,6 +702,7 @@ jumbo_static_library("test_support") {
     "//base/test:test_config",
     "//base/test:test_support",
     "//skia",
+    "//testing/gmock",
     "//testing/gtest",
     "//ui/base:ui_data_pack",
     "//ui/display:test_support",
@@ -716,6 +726,10 @@ jumbo_static_library("test_support") {
       "//ui/base/ime",
       "//ui/events",
     ]
+
+    if (is_win) {
+      deps += [ "//ui/base/ime/win" ]
+    }
   }
 
   if (is_chromeos) {
@@ -728,6 +742,7 @@ jumbo_static_library("test_support") {
     deps += [
       # Generates a header used by input_method_whitelist.cc
       "//chromeos/ime:gencode",
+      "//ui/base/ime/chromeos",
     ]
   }
 
@@ -822,6 +837,7 @@ if (is_ios) {
 
 test("ui_base_unittests") {
   sources = [
+    "accelerators/remote_command_media_keys_listener_mac_unittest.mm",
     "class_property_unittest.cc",
     "l10n/l10n_util_mac_unittest.mm",
     "l10n/l10n_util_unittest.cc",
@@ -880,6 +896,7 @@ test("ui_base_unittests") {
       "cocoa/touch_bar_util_unittest.mm",
       "cocoa/tracking_area_unittest.mm",
       "cocoa/weak_ptr_nsobject_unittest.mm",
+      "cursor/cursor_unittest.cc",
       "cursor/cursor_util_unittest.cc",
       "models/list_model_unittest.cc",
       "models/list_selection_model_unittest.cc",
@@ -887,37 +904,6 @@ test("ui_base_unittests") {
       "text/bytes_formatting_unittest.cc",
       "webui/web_ui_util_unittest.cc",
     ]
-  }
-
-  if (build_ime) {
-    sources += [
-      "ime/candidate_window_unittest.cc",
-      "ime/chromeos/extension_ime_util_unittest.cc",
-      "ime/chromeos/ime_keyboard_unittest.cc",
-      "ime/chromeos/input_method_util_unittest.cc",
-      "ime/composition_text_unittest.cc",
-      "ime/input_method_base_unittest.cc",
-      "ime/input_method_chromeos_unittest.cc",
-      "ime/win/imm32_manager_unittest.cc",
-      "ime/win/on_screen_keyboard_display_manager_unittest.cc",
-      "ime/win/tsf_input_scope_unittest.cc",
-      "ime/win/tsf_text_store_unittest.cc",
-    ]
-    if (is_linux && use_aura && !is_chromeos) {
-      if (use_x11 || use_ozone) {
-        sources += [ "ime/input_method_auralinux_unittest.cc" ]
-      } else {
-        sources += [ "ime/input_method_minimal_unittest.cc" ]
-      }
-    }
-    if (use_x11) {
-      sources += [ "ime/composition_text_util_pango_unittest.cc" ]
-    }
-    if (is_chromeos || use_ozone) {
-      sources += [
-        "ime/character_composer_unittest.cc",
-      ]
-    }
   }
 
   deps = [
@@ -947,6 +933,51 @@ test("ui_base_unittests") {
     "//url",
   ]
 
+  if (build_ime) {
+    sources += [
+      "ime/candidate_window_unittest.cc",
+      "ime/composition_text_unittest.cc",
+      "ime/input_method_base_unittest.cc",
+      "ime/mojo/ime_struct_traits_unittest.cc",
+    ]
+    if (is_win) {
+      sources += [
+        "ime/win/imm32_manager_unittest.cc",
+        "ime/win/on_screen_keyboard_display_manager_unittest.cc",
+        "ime/win/tsf_input_scope_unittest.cc",
+        "ime/win/tsf_text_store_unittest.cc",
+      ]
+      deps += [ "//ui/base/ime/win" ]
+    }
+    if (is_chromeos) {
+      sources += [
+        "ime/chromeos/extension_ime_util_unittest.cc",
+        "ime/chromeos/ime_keyboard_unittest.cc",
+        "ime/chromeos/input_method_chromeos_unittest.cc",
+        "ime/chromeos/input_method_util_unittest.cc",
+      ]
+      deps += [ "//ui/base/ime/chromeos" ]
+    }
+    if (is_linux && use_aura && !is_chromeos) {
+      if (use_x11 || use_ozone) {
+        sources += [ "ime/linux/input_method_auralinux_unittest.cc" ]
+        deps += [
+          "//ui/base/ime/init",
+          "//ui/base/ime/linux",
+        ]
+      }
+      if (!use_x11) {
+        sources += [ "ime/input_method_minimal_unittest.cc" ]
+      }
+    }
+    if (use_x11) {
+      sources += [ "ime/linux/composition_text_util_pango_unittest.cc" ]
+    }
+    if (is_chromeos || use_ozone) {
+      sources += [ "ime/character_composer_unittest.cc" ]
+    }
+  }
+
   # Include the correct ui_base_test resources per platform.
   if (is_android) {
     deps += [ ":ui_base_test_android_assets" ]
@@ -959,7 +990,10 @@ test("ui_base_unittests") {
   }
 
   if (build_ime) {
-    deps += [ "//ui/base/ime" ]
+    deps += [
+      "//ui/base/ime",
+      "//ui/base/ime/mojo:test_interfaces",
+    ]
   }
 
   if (is_ios) {
@@ -973,10 +1007,12 @@ test("ui_base_unittests") {
 
   if (is_win) {
     sources += [
+      "accelerators/system_media_controls_media_keys_listener_unittest.cc",
       "dragdrop/os_exchange_data_win_unittest.cc",
-      "win/direct_manipulation_unittest.cc",
       "win/hwnd_subclass_unittest.cc",
     ]
+
+    deps += [ "//ui/base/win/system_media_controls:test_support" ]
 
     ldflags = [
       "/DELAYLOAD:d2d1.dll",
@@ -1018,6 +1054,7 @@ test("ui_base_unittests") {
     deps += [
       ":ui_unittests_framework",
       "//third_party/mozilla",
+      "//ui/base/now_playing:test_support",
     ]
   }
 
@@ -1034,6 +1071,14 @@ test("ui_base_unittests") {
     sources += [
       "dragdrop/os_exchange_data_provider_aurax11_unittest.cc",
       "x/selection_requestor_unittest.cc",
+    ]
+  }
+
+  if (use_mpris) {
+    sources += [ "accelerators/mpris_media_keys_listener_unittest.cc" ]
+    deps += [
+      "//ui/base/mpris:test_support",
+      "//ui/base/mpris:unit_tests",
     ]
   }
 

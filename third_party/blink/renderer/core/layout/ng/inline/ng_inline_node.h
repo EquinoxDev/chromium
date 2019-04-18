@@ -9,6 +9,7 @@
 #include "third_party/blink/renderer/core/layout/layout_block_flow.h"
 #include "third_party/blink/renderer/core/layout/ng/inline/ng_inline_node_data.h"
 #include "third_party/blink/renderer/core/layout/ng/ng_layout_input_node.h"
+#include "third_party/blink/renderer/platform/wtf/casting.h"
 #include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
 
 namespace blink {
@@ -76,17 +77,10 @@ class CORE_EXPORT NGInlineNode : public NGLayoutInputNode {
   // This funciton must be called with clean layout.
   const NGOffsetMapping* ComputeOffsetMappingIfNeeded();
 
-  // Get |NGOffsetMapping| for the |layout_block_flow|. If |layout_block_flow|
-  // is LayoutNG and it is already laid out, this function is the same as
-  // |ComputeOffsetMappingIfNeeded|. |storage| is not used in this case, and can
-  // be null.
-  //
-  // Otherwise, this function computes |NGOffsetMapping| and store in |storage|
-  // as well as returning the pointer. The caller is responsible for keeping
-  // |storage| for the life cycle of the returned |NGOffsetMapping|.
+  // Get |NGOffsetMapping| for the |layout_block_flow|. |layout_block_flow|
+  // should be laid out. This function works for both new and legacy layout.
   static const NGOffsetMapping* GetOffsetMapping(
-      LayoutBlockFlow* layout_block_flow,
-      std::unique_ptr<NGOffsetMapping>* storage);
+      LayoutBlockFlow* layout_block_flow);
 
   bool IsBidiEnabled() const { return Data().is_bidi_enabled_; }
   TextDirection BaseDirection() const { return Data().BaseDirection(); }
@@ -104,6 +98,19 @@ class CORE_EXPORT NGInlineNode : public NGLayoutInputNode {
   void CheckConsistency() const;
 
   String ToString() const;
+
+  // A helper function for NGInlineItemsBuilder.
+  static void ClearInlineFragment(LayoutObject* object) {
+    object->SetIsInLayoutNGInlineFormattingContext(true);
+    object->SetFirstInlineFragment(nullptr);
+  }
+
+  // A helper function for NGInlineItemsBuilder.
+  static void ClearNeedsLayout(LayoutObject* object) {
+    object->ClearNeedsLayout();
+    object->ClearNeedsCollectInlines();
+    ClearInlineFragment(object);
+  }
 
  protected:
   bool IsPrepareLayoutFinished() const;
@@ -147,11 +154,12 @@ class CORE_EXPORT NGInlineNode : public NGLayoutInputNode {
   friend class NGInlineNodeLegacy;
 };
 
-DEFINE_TYPE_CASTS(NGInlineNode,
-                  NGLayoutInputNode,
-                  node,
-                  node->IsInline(),
-                  node.IsInline());
+template <>
+struct DowncastTraits<NGInlineNode> {
+  static bool AllowFrom(const NGLayoutInputNode& node) {
+    return node.IsInline();
+  }
+};
 
 }  // namespace blink
 

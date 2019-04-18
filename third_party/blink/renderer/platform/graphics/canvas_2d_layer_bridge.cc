@@ -299,6 +299,7 @@ CanvasResourceProvider* Canvas2DLayerBridge::GetOrCreateResourceProvider(
   if (IsAccelerated() && !layer_) {
     layer_ = cc::TextureLayer::CreateForMailbox(this);
     layer_->SetIsDrawable(true);
+    layer_->SetHitTestable(true);
     layer_->SetContentsOpaque(ColorParams().GetOpacityMode() == kOpaque);
     layer_->SetBlendBackgroundColor(ColorParams().GetOpacityMode() != kOpaque);
     layer_->SetNearestNeighbor(resource_host_->FilterQuality() ==
@@ -585,7 +586,8 @@ bool Canvas2DLayerBridge::PrepareTransferableResource(
   if (!GetOrCreateResourceProvider())
     return false;
 
-  scoped_refptr<CanvasResource> frame = ResourceProvider()->ProduceFrame();
+  scoped_refptr<CanvasResource> frame =
+      ResourceProvider()->ProduceCanvasResource();
   if (!frame || !frame->IsValid())
     return false;
 
@@ -640,8 +642,8 @@ void Canvas2DLayerBridge::FinalizeFrame() {
     if (IsAccelerated() && !rate_limiter_) {
       // Make sure the GPU is never more than two animation frames behind.
       constexpr unsigned kMaxCanvasAnimationBacklog = 2;
-      rate_limiter_ =
-          SharedContextRateLimiter::Create(kMaxCanvasAnimationBacklog);
+      rate_limiter_ = std::make_unique<SharedContextRateLimiter>(
+          kMaxCanvasAnimationBacklog);
     }
   }
 

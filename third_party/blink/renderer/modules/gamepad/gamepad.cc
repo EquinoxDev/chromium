@@ -29,20 +29,17 @@
 
 namespace blink {
 
-Gamepad::Gamepad(ExecutionContext* context)
-    : ContextClient(context),
-      index_(0),
+Gamepad::Gamepad(Client* client, unsigned index)
+    : client_(client),
+      index_(index),
       timestamp_(0.0),
+      has_vibration_actuator_(false),
+      vibration_actuator_type_(device::GamepadHapticActuatorType::kDualRumble),
       display_id_(0),
       is_axis_data_dirty_(true),
       is_button_data_dirty_(true) {}
 
 Gamepad::~Gamepad() = default;
-
-// static
-Gamepad* Gamepad::Create(ExecutionContext* context) {
-  return MakeGarbageCollected<Gamepad>(context);
-}
 
 const Gamepad::DoubleVector& Gamepad::axes() {
   is_axis_data_dirty_ = false;
@@ -80,27 +77,21 @@ void Gamepad::SetButtons(unsigned count, const device::GamepadButton* data) {
   if (buttons_.size() != count) {
     buttons_.resize(count);
     for (unsigned i = 0; i < count; ++i)
-      buttons_[i] = GamepadButton::Create();
+      buttons_[i] = MakeGarbageCollected<GamepadButton>();
   }
   for (unsigned i = 0; i < count; ++i)
     buttons_[i]->UpdateValuesFrom(data[i]);
   is_button_data_dirty_ = true;
 }
 
-void Gamepad::SetVibrationActuator(
+GamepadHapticActuator* Gamepad::vibrationActuator() const {
+  return client_->GetVibrationActuatorForGamepad(*this);
+}
+
+void Gamepad::SetVibrationActuatorInfo(
     const device::GamepadHapticActuator& actuator) {
-  if (!actuator.not_null) {
-    if (vibration_actuator_)
-      vibration_actuator_ = nullptr;
-    return;
-  }
-
-  if (!vibration_actuator_) {
-    vibration_actuator_ =
-        GamepadHapticActuator::Create(GetExecutionContext(), index_);
-  }
-
-  vibration_actuator_->SetType(actuator.type);
+  has_vibration_actuator_ = actuator.not_null;
+  vibration_actuator_type_ = actuator.type;
 }
 
 void Gamepad::SetPose(const device::GamepadPose& pose) {
@@ -111,7 +102,7 @@ void Gamepad::SetPose(const device::GamepadPose& pose) {
   }
 
   if (!pose_)
-    pose_ = GamepadPose::Create();
+    pose_ = MakeGarbageCollected<GamepadPose>();
 
   pose_->SetPose(pose);
 }
@@ -133,11 +124,10 @@ void Gamepad::SetHand(const device::GamepadHand& hand) {
 }
 
 void Gamepad::Trace(blink::Visitor* visitor) {
+  visitor->Trace(client_);
   visitor->Trace(buttons_);
-  visitor->Trace(vibration_actuator_);
   visitor->Trace(pose_);
   ScriptWrappable::Trace(visitor);
-  ContextClient::Trace(visitor);
 }
 
 }  // namespace blink

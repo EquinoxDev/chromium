@@ -34,6 +34,8 @@ class FrameScheduler : public FrameOrWorkerScheduler {
 
     virtual ukm::UkmRecorder* GetUkmRecorder() = 0;
     virtual ukm::SourceId GetUkmSourceId() = 0;
+    // Called when a frame has exceeded a total task time threshold (100ms).
+    virtual void UpdateTaskTime(base::TimeDelta time) = 0;
   };
 
   ~FrameScheduler() override = default;
@@ -42,6 +44,12 @@ class FrameScheduler : public FrameOrWorkerScheduler {
   enum class FrameType {
     kMainFrame,
     kSubframe,
+  };
+
+  enum class NavigationType {
+    kReload,
+    kSameDocument,
+    kOther,
   };
 
   // The scheduler may throttle tasks associated with offscreen frames.
@@ -106,8 +114,7 @@ class FrameScheduler : public FrameOrWorkerScheduler {
   // may reset the task cost estimators and the UserModel. Must be called from
   // the main thread.
   virtual void DidCommitProvisionalLoad(bool is_web_history_inert_commit,
-                                        bool is_reload,
-                                        bool is_main_frame) = 0;
+                                        NavigationType navigation_type) = 0;
 
   // Tells the scheduler that the first meaningful paint has occured for this
   // frame.
@@ -129,6 +136,9 @@ class FrameScheduler : public FrameOrWorkerScheduler {
   // exists.
   virtual std::unique_ptr<blink::mojom::blink::PauseSubresourceLoadingHandle>
   GetPauseSubresourceLoadingHandle() = 0;
+
+  // TODO(altimin): Move FrameScheduler object to oilpan.
+  virtual base::WeakPtr<FrameScheduler> GetWeakPtr() = 0;
 };
 
 }  // namespace blink

@@ -7,7 +7,7 @@
 #include "base/bit_cast.h"
 #include "third_party/blink/renderer/platform/crypto.h"
 #include "third_party/blink/renderer/platform/loader/fetch/cached_metadata.h"
-#include "third_party/blink/renderer/platform/wtf/string_hasher.h"
+#include "third_party/blink/renderer/platform/wtf/text/string_hasher.h"
 #include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
 
 namespace blink {
@@ -63,12 +63,19 @@ class SourceKeyedCachedMetadataHandler::SingleKeyHandler final
     // No memory to report here because it is attributed to |parent_|.
   }
 
+  size_t GetCodeCacheSize() const override {
+    // No need to implement this because it is attributed to |parent_|.
+    return 0;
+  }
+
  private:
   Member<SourceKeyedCachedMetadataHandler> parent_;
   Key key_;
 };
 
 class SourceKeyedCachedMetadataHandler::KeyHash {
+  STATIC_ONLY(KeyHash);
+
  public:
   static unsigned GetHash(const Key& key) {
     return StringHasher::ComputeHash(key.data(),

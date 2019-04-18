@@ -7,7 +7,9 @@
 
 #include <stdint.h>
 
+#include "base/time/time.h"
 #include "content/common/content_export.h"
+#include "third_party/blink/public/mojom/background_sync/background_sync.mojom-shared.h"
 
 namespace url {
 class Origin;
@@ -33,16 +35,18 @@ class CONTENT_EXPORT BackgroundSyncController {
   // registered a background sync event.
   virtual void NotifyBackgroundSyncRegistered(const url::Origin& origin) {}
 
-  // If |enabled|, ensures that the browser is running when the device next goes
-  // online after |min_ms| has passed. The behavior is platform dependent:
-  // * Android: Registers a GCM task which verifies that the browser is running
-  // the next time the device goes online after |min_ms| has passed. If it's
-  // not, it starts it.
-  //
-  // * Other Platforms: (UNIMPLEMENTED) Keeps the browser alive via
-  // BackgroundModeManager until called with |enabled| = false. |min_ms| is
-  // ignored.
-  virtual void RunInBackground(bool enabled, int64_t min_ms) {}
+  // Calculates the soonest wakeup delta across all storage partitions and
+  // schedules a background task to wake up the browser.
+  virtual void RunInBackground() {}
+
+  // Calculates the delay after which the next sync event should be fired
+  // for a BackgroundSync registration. The delay is based on the |sync_type|.
+  virtual base::TimeDelta GetNextEventDelay(
+      const url::Origin& origin,
+      int64_t min_interval,
+      int num_attempts,
+      blink::mojom::BackgroundSyncType sync_type,
+      BackgroundSyncParameters* parameters) const = 0;
 };
 
 }  // namespace content

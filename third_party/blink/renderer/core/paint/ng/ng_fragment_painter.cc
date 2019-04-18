@@ -54,7 +54,7 @@ void NGFragmentPainter::AddPDFURLRectIfNeeded(const PaintInfo& paint_info,
   if (!url.IsValid())
     return;
 
-  IntRect rect = PixelSnappedIntRect(paint_fragment_.VisualRect());
+  IntRect rect = paint_fragment_.VisualRect();
   if (rect.IsEmpty())
     return;
 
@@ -81,9 +81,6 @@ void NGFragmentPainter::AddPDFURLRectIfNeeded(const PaintInfo& paint_info,
 bool NGFragmentPainter::ShouldRecordHitTestData(
     const PaintInfo& paint_info,
     const NGPhysicalFragment& fragment) {
-  if (!RuntimeEnabledFeatures::PaintTouchActionRectsEnabled())
-    return false;
-
   // Hit test display items are only needed for compositing. This flag is used
   // for for printing and drag images which do not need hit testing.
   if (paint_info.GetGlobalPaintFlags() & kGlobalPaintFlattenCompositingLayers)
@@ -93,7 +90,7 @@ bool NGFragmentPainter::ShouldRecordHitTestData(
   if (fragment.Style().Visibility() != EVisibility::kVisible)
     return false;
 
-  auto touch_action = fragment.EffectiveWhitelistedTouchAction();
+  auto touch_action = fragment.EffectiveAllowedTouchAction();
   if (touch_action == TouchAction::kTouchActionAuto)
     return false;
 

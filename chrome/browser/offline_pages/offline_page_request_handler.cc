@@ -618,7 +618,7 @@ void OfflinePageRequestHandler::OnTrustedOfflinePageFound() {
   // after intermediate redirects for authentication. Previously this case was
   // not handled and some pages might be saved with same URLs. Though we fixed
   // the problem, we still need to support those pages already saved with this
-  if (url_ == GetCurrentOfflinePage().original_url &&
+  if (url_ == GetCurrentOfflinePage().original_url_if_different &&
       url_ != GetCurrentOfflinePage().url) {
     ReportRequestResult(RequestResult::REDIRECTED, network_state_);
     Redirect(GetCurrentOfflinePage().url);
@@ -1043,9 +1043,9 @@ void OfflinePageRequestHandler::DidComputeActualDigestForServing(
     // be called before the response is being received. Furthermore, there is
     // no need to clear the offline bit since the error code should already
     // indicate that the offline page is not loaded.
-    base::PostTaskWithTraits(
-        FROM_HERE, {content::BrowserThread::UI},
-        base::Bind(&ClearOfflinePageData, delegate_->GetWebContentsGetter()));
+    base::PostTaskWithTraits(FROM_HERE, {content::BrowserThread::UI},
+                             base::BindOnce(&ClearOfflinePageData,
+                                            delegate_->GetWebContentsGetter()));
     result = net::ERR_FAILED;
   }
 

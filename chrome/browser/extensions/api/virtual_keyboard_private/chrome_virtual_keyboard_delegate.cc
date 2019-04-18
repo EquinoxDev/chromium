@@ -11,6 +11,7 @@
 #include "base/bind.h"
 #include "base/command_line.h"
 #include "base/feature_list.h"
+#include "base/metrics/field_trial_params.h"
 #include "base/metrics/user_metrics.h"
 #include "base/metrics/user_metrics_action.h"
 #include "base/strings/string16.h"
@@ -361,10 +362,7 @@ void ChromeVirtualKeyboardDelegate::OnHasInputDevices(
                            keyboard::switches::kDisableGestureTyping)));
   // TODO(https://crbug.com/890134): Implement gesture editing.
   features->AppendString(GenerateFeatureFlag("gestureediting", false));
-  features->AppendString(GenerateFeatureFlag(
-      "fullscreenhandwriting",
-      base::FeatureList::IsEnabled(
-          features::kEnableFullscreenHandwritingVirtualKeyboard)));
+  features->AppendString(GenerateFeatureFlag("fullscreenhandwriting", false));
   features->AppendString(GenerateFeatureFlag("virtualkeyboardmdui", true));
   features->AppendString(GenerateFeatureFlag(
       "imeservice", base::FeatureList::IsEnabled(
@@ -373,9 +371,7 @@ void ChromeVirtualKeyboardDelegate::OnHasInputDevices(
   keyboard::mojom::KeyboardConfig config = keyboard_client->GetKeyboardConfig();
   // TODO(oka): Change this to use config.voice_input.
   features->AppendString(GenerateFeatureFlag(
-      "voiceinput", has_audio_input_devices && config.voice_input &&
-                        !base::CommandLine::ForCurrentProcess()->HasSwitch(
-                            keyboard::switches::kDisableVoiceInput)));
+      "voiceinput", has_audio_input_devices && config.voice_input));
   features->AppendString(
       GenerateFeatureFlag("autocomplete", config.auto_complete));
   features->AppendString(
@@ -386,6 +382,10 @@ void ChromeVirtualKeyboardDelegate::OnHasInputDevices(
   features->AppendString(GenerateFeatureFlag(
       "handwritinggesture",
       base::FeatureList::IsEnabled(features::kHandwritingGesture)));
+  features->AppendString(GenerateFeatureFlag(
+      "fstinputlogic",
+      base::FeatureList::IsEnabled(chromeos::features::kImeInputLogicFst)));
+
   results->Set("features", std::move(features));
 
   std::move(on_settings_callback).Run(std::move(results));

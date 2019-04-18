@@ -7,10 +7,12 @@
 #include <utility>
 
 #include "base/bind.h"
+#include "base/feature_list.h"
 #include "base/location.h"
 #include "base/single_thread_task_runner.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "build/build_config.h"
+#include "chrome/browser/themes/theme_properties.h"
 #include "chrome/browser/themes/theme_service.h"
 #include "chrome/browser/themes/theme_service_factory.h"
 #include "chrome/browser/ui/layout_constants.h"
@@ -22,14 +24,16 @@
 #include "ui/base/models/menu_model.h"
 #include "ui/display/display.h"
 #include "ui/display/screen.h"
+#include "ui/gfx/color_utils.h"
 #include "ui/views/animation/ink_drop.h"
 #include "ui/views/animation/ink_drop_highlight.h"
+#include "ui/views/animation/installable_ink_drop.h"
 #include "ui/views/background.h"
 #include "ui/views/controls/button/label_button_border.h"
 #include "ui/views/controls/menu/menu_item_view.h"
 #include "ui/views/controls/menu/menu_model_adapter.h"
 #include "ui/views/controls/menu/menu_runner.h"
-#include "ui/views/view_properties.h"
+#include "ui/views/view_class_properties.h"
 #include "ui/views/widget/widget.h"
 
 ToolbarButton::ToolbarButton(views::ButtonListener* listener)
@@ -46,6 +50,10 @@ ToolbarButton::ToolbarButton(views::ButtonListener* listener,
       show_menu_factory_(this) {
   set_has_ink_drop_action_on_click(true);
   set_context_menu_controller(this);
+
+  if (base::FeatureList::IsEnabled(views::kInstallableInkDropFeature))
+    installable_ink_drop_ = std::make_unique<views::InstallableInkDrop>();
+
   SetInkDropMode(InkDropMode::ON);
 
   // Make sure icons are flipped by default so that back, forward, etc. follows
@@ -244,25 +252,72 @@ void ToolbarButton::GetAccessibleNodeData(ui::AXNodeData* node_data) {
     node_data->SetDefaultActionVerb(ax::mojom::DefaultActionVerb::kPress);
 }
 
+std::unique_ptr<views::InkDrop> ToolbarButton::CreateInkDrop() {
+  // Ensure this doesn't get called when InstallableInkDrops are enabled.
+  DCHECK(!base::FeatureList::IsEnabled(views::kInstallableInkDropFeature));
+  return views::LabelButton::CreateInkDrop();
+}
+
 std::unique_ptr<views::InkDropHighlight> ToolbarButton::CreateInkDropHighlight()
     const {
+  // Ensure this doesn't get called when InstallableInkDrops are enabled.
+  DCHECK(!base::FeatureList::IsEnabled(views::kInstallableInkDropFeature));
   return CreateToolbarInkDropHighlight(this);
 }
 
 SkColor ToolbarButton::GetInkDropBaseColor() const {
+  // Ensure this doesn't get called when InstallableInkDrops are enabled.
+  DCHECK(!base::FeatureList::IsEnabled(views::kInstallableInkDropFeature));
   if (highlight_color_)
     return *highlight_color_;
   return GetToolbarInkDropBaseColor(this);
 }
 
-void ToolbarButton::ShowContextMenuForView(View* source,
-                                           const gfx::Point& point,
-                                           ui::MenuSourceType source_type) {
+views::InkDrop* ToolbarButton::GetInkDrop() {
+  if (installable_ink_drop_)
+    return installable_ink_drop_.get();
+  return views::LabelButton::GetInkDrop();
+}
+
+void ToolbarButton::ShowContextMenuForViewImpl(View* source,
+                                               const gfx::Point& point,
+                                               ui::MenuSourceType source_type) {
   if (!enabled())
     return;
 
   show_menu_factory_.InvalidateWeakPtrs();
   ShowDropDownMenu(source_type);
+}
+
+// static
+SkColor ToolbarButton::AdjustHighlightColorForContrast(
+    const ui::ThemeProvider* theme_provider,
+    SkColor desired_dark_color,
+    SkColor desired_light_color,
+    SkColor dark_extreme,
+    SkColor light_extreme) {
+  if (!theme_provider)
+    return desired_light_color;
+  const SkColor toolbar_color =
+      theme_provider->GetColor(ThemeProperties::COLOR_TOOLBAR);
+  const SkColor contrasting_color = color_utils::PickContrastingColor(
+      desired_dark_color, desired_light_color, toolbar_color);
+  const SkColor limit =
+      contrasting_color == desired_dark_color ? dark_extreme : light_extreme;
+  // Setting highlight color will set the text to the highlight color, and the
+  // background to the same color with a low alpha. This means that our target
+  // contrast is between the text (the highlight color) and a blend of the
+  // highlight color and the toolbar color.
+  const SkColor base_color = color_utils::AlphaBlend(
+      contrasting_color, toolbar_color, kToolbarButtonBackgroundAlpha);
+
+  // Add a fudge factor to the minimum contrast ratio since we'll actually be
+  // blending with the adjusted color.
+  const SkAlpha blend_alpha = color_utils::GetBlendValueWithMinimumContrast(
+      contrasting_color, limit, base_color,
+      color_utils::kMinimumReadableContrastRatio * 1.05);
+
+  return color_utils::AlphaBlend(limit, contrasting_color, blend_alpha);
 }
 
 bool ToolbarButton::ShouldShowMenu() {
@@ -317,7 +372,7 @@ void ToolbarButton::ShowDropDownMenu(ui::MenuSourceType source_type) {
   menu_runner_ = std::make_unique<views::MenuRunner>(
       menu_model_adapter_->CreateMenu(), views::MenuRunner::HAS_MNEMONICS);
   menu_runner_->RunMenuAt(GetWidget(), nullptr, menu_anchor_bounds,
-                          views::MENU_ANCHOR_TOPLEFT, source_type);
+                          views::MenuAnchorPosition::kTopLeft, source_type);
 }
 
 void ToolbarButton::OnMenuClosed() {

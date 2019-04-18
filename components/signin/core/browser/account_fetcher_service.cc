@@ -4,7 +4,9 @@
 
 #include "components/signin/core/browser/account_fetcher_service.h"
 
+#include <string>
 #include <utility>
+#include <vector>
 
 #include "base/bind.h"
 #include "base/command_line.h"
@@ -18,6 +20,7 @@
 #include "components/signin/core/browser/account_info_fetcher.h"
 #include "components/signin/core/browser/account_tracker_service.h"
 #include "components/signin/core/browser/avatar_icon_util.h"
+#include "components/signin/core/browser/profile_oauth2_token_service.h"
 #include "components/signin/core/browser/signin_client.h"
 #include "components/signin/core/browser/signin_switches.h"
 #include "services/network/public/cpp/shared_url_loader_factory.h"
@@ -65,7 +68,7 @@ void AccountFetcherService::RegisterPrefs(PrefRegistrySimple* user_prefs) {
 
 void AccountFetcherService::Initialize(
     SigninClient* signin_client,
-    OAuth2TokenService* token_service,
+    ProfileOAuth2TokenService* token_service,
     AccountTrackerService* account_tracker_service,
     std::unique_ptr<image_fetcher::ImageDecoder> image_decoder) {
   DCHECK(signin_client);
@@ -83,6 +86,12 @@ void AccountFetcherService::Initialize(
   image_decoder_ = std::move(image_decoder);
   last_updated_ = signin_client_->GetPrefs()->GetTime(
       AccountFetcherService::kLastUpdatePref);
+
+  // Tokens may have already been loaded and we will not receive a
+  // notification-on-registration for |token_service_->AddObserver(this)| few
+  // lines above.
+  if (token_service_->AreAllCredentialsLoaded())
+    OnRefreshTokensLoaded();
 }
 
 void AccountFetcherService::Shutdown() {
@@ -99,7 +108,7 @@ bool AccountFetcherService::IsAllUserInfoFetched() const {
   return user_info_requests_.empty();
 }
 
-void AccountFetcherService::FetchUserInfoBeforeSignin(
+void AccountFetcherService::ForceRefreshOfAccountInfo(
     const std::string& account_id) {
   DCHECK(network_fetches_enabled_);
   RefreshAccountInfo(account_id, false);
@@ -116,8 +125,15 @@ void AccountFetcherService::OnNetworkInitialized() {
 }
 
 void AccountFetcherService::EnableNetworkFetchesForTest() {
-  OnNetworkInitialized();
-  OnRefreshTokensLoaded();
+  if (!network_initialized_)
+    OnNetworkInitialized();
+
+  if (!refresh_tokens_loaded_)
+    OnRefreshTokensLoaded();
+}
+
+void AccountFetcherService::EnableAccountRemovalForTest() {
+  enable_account_removal_for_test_ = true;
 }
 
 void AccountFetcherService::RefreshAllAccountInfo(bool only_fetch_if_invalid) {
@@ -346,8 +362,14 @@ void AccountFetcherService::OnRefreshTokenRevoked(
                account_id);
   DVLOG(1) << "REVOKED " << account_id;
 
-  if (!network_fetches_enabled_)
+  // Short-circuit out if network fetches are not enabled.
+  if (!network_fetches_enabled_) {
+    if (enable_account_removal_for_test_) {
+      account_tracker_service_->StopTrackingAccount(account_id);
+    }
     return;
+  }
+
   user_info_requests_.erase(account_id);
 #if defined(OS_ANDROID)
   UpdateChildInfo();

@@ -24,13 +24,13 @@ import org.chromium.base.ApplicationStatus;
 import org.chromium.base.Callback;
 import org.chromium.base.ContextUtils;
 import org.chromium.base.StreamUtil;
-import org.chromium.base.ThreadUtils;
 import org.chromium.base.task.AsyncTask;
 import org.chromium.base.test.util.AdvancedMockContext;
 import org.chromium.base.test.util.CallbackHelper;
 import org.chromium.base.test.util.Feature;
 import org.chromium.chrome.browser.ChromeTabbedActivity;
 import org.chromium.chrome.browser.compositor.layouts.content.TabContentManager;
+import org.chromium.chrome.browser.tab.MockTab;
 import org.chromium.chrome.browser.tab.Tab;
 import org.chromium.chrome.browser.tab.TabState;
 import org.chromium.chrome.browser.tabmodel.TabModelSelector;
@@ -40,6 +40,7 @@ import org.chromium.chrome.browser.tabmodel.TabPersistentStore;
 import org.chromium.chrome.browser.tabmodel.TestTabModelDirectory;
 import org.chromium.chrome.test.ChromeJUnit4ClassRunner;
 import org.chromium.chrome.test.util.browser.tabmodel.MockTabModel;
+import org.chromium.content_public.browser.test.util.TestThreadUtils;
 
 import java.io.File;
 import java.io.FileOutputStream;
@@ -83,7 +84,7 @@ public class CustomTabTabPersistencePolicyTest {
         mMockDirectory.tearDown();
 
         for (Activity activity : ApplicationStatus.getRunningActivities()) {
-            ThreadUtils.runOnUiThreadBlocking(
+            TestThreadUtils.runOnUiThreadBlocking(
                     () -> ApplicationStatus.onStateChangeForTesting(
                             activity, ActivityState.DESTROYED));
         }
@@ -271,7 +272,7 @@ public class CustomTabTabPersistencePolicyTest {
 
         // Create a tab model and associated tabs. Ensure it is not marked for deletion as it is
         // new enough.
-        byte[] data = ThreadUtils.runOnUiThreadBlockingNoException(new Callable<byte[]>() {
+        byte[] data = TestThreadUtils.runOnUiThreadBlockingNoException(new Callable<byte[]>() {
             @Override
             public byte[] call() throws Exception {
                 TabModelSelectorImpl selectorImpl =
@@ -439,7 +440,7 @@ public class CustomTabTabPersistencePolicyTest {
                 new MockTabModel.MockTabModelDelegate() {
                     @Override
                     public Tab createTab(int id, boolean incognito) {
-                        return new Tab(id, incognito, null) {
+                        return new MockTab(id, incognito) {
                             @Override
                             public String getUrl() {
                                 return "https://www.google.com";

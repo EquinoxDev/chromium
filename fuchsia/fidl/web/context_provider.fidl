@@ -4,6 +4,8 @@
 
 library chromium.web;
 
+using fuchsia.io;
+
 /// The top-level service interface which allows for the creation of
 /// Context resources.
 [Discoverable]
@@ -16,14 +18,14 @@ protocol ContextProvider {
   Create(CreateContextParams params, request<Context> context);
 };
 
-struct CreateContextParams {
+table CreateContextParams {
   /// Service directory to be used by the context.
   // TODO(https://crbug.com/870057): Document required and optional services
   // that Context needs.
-  handle<channel> service_directory;
+  1: fuchsia.io.Directory service_directory;
 
   /// Handle to the directory that will contain the Context's
   /// persistent data. If it is left unset, then the created Context will be
   /// stateless, with all of its data discarded upon Context destruction.
-  handle<channel>? data_directory;
+  2: fuchsia.io.Directory data_directory;
 };

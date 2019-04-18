@@ -75,7 +75,7 @@ class CastCdmContextForTest : public CastCdmContext {
 
   std::unique_ptr<DecryptContextImpl> GetDecryptContext(
       const std::string& key_id,
-      const EncryptionScheme& encryption_scheme) override {
+      EncryptionScheme encryption_scheme) override {
     if (license_installed_) {
       return std::unique_ptr<DecryptContextImpl>(
           new DecryptContextImpl(KEY_SYSTEM_CLEAR_KEY));
@@ -358,7 +358,7 @@ TEST_P(AudioVideoPipelineImplTest, FullCycle) {
       base::BindOnce(&PipelineHelper::Start,
                      base::Unretained(pipeline_helper_.get()), eos_cb));
   base::RunLoop().Run();
-};
+}
 
 // Test all three types of pipeline: audio-only, video-only, audio-video.
 INSTANTIATE_TEST_SUITE_P(

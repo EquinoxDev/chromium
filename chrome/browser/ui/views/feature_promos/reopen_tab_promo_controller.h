@@ -28,6 +28,10 @@ class ReopenTabPromoController : public AppMenuButtonObserver,
   // tabs" menu.
   void OnTabReopened(int command_id);
 
+  void disable_bubble_timeout_for_test() {
+    disable_bubble_timeout_for_test_ = true;
+  }
+
  private:
   // Last step of the flow completed by the user before dismissal (whether by
   // successful completion of the flow, timing out, or clicking away.). This is
@@ -72,7 +76,17 @@ class ReopenTabPromoController : public AppMenuButtonObserver,
   // Whether we are showing the promo.
   bool is_showing_ = false;
 
+<<<<<<< HEAD
 >>>>>>> 1edcc2f128d290860af09401391ae79df290b5f3
+=======
+  // Whether ShowPromo() has ever been called. It should only ever be called
+  // once.
+  bool show_promo_called_ = false;
+
+  // Whether we want to disable timeout for test.
+  bool disable_bubble_timeout_for_test_ = false;
+
+>>>>>>> 2d57e5b8afc6d01b344a8d95d3470d46b35845c5
   DISALLOW_COPY_AND_ASSIGN(ReopenTabPromoController);
 };
 

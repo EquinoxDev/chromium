@@ -90,7 +90,7 @@ class LinkHighlightImplTest : public testing::Test,
     // garbage collection would occur after ScopedBlinkGenPropertyTreesForTest
     // is out of scope, so the settings would not apply in some destructors.
     web_view_helper_.Reset();
-    ThreadState::Current()->CollectAllGarbage();
+    ThreadState::Current()->CollectAllGarbageForTesting();
   }
 
   size_t ContentLayerCount() {
@@ -273,9 +273,11 @@ TEST_P(LinkHighlightImplTest, HighlightInvalidation) {
 
   // Change the touched element's height to 12px.
   auto& style = touch_element->getAttribute(html_names::kStyleAttr);
-  String new_style = style.GetString();
-  new_style.append("height: 12px;");
-  touch_element->setAttribute(html_names::kStyleAttr, AtomicString(new_style));
+  StringBuilder new_style;
+  new_style.Append(style.GetString());
+  new_style.Append("height: 12px;");
+  touch_element->setAttribute(html_names::kStyleAttr,
+                              new_style.ToAtomicString());
   UpdateAllLifecyclePhases();
 
   const auto& highlights =
@@ -328,12 +330,13 @@ TEST_P(LinkHighlightImplTest, HighlightLayerEffectNode) {
   auto* property_trees = layer->layer_tree_host()->property_trees();
   EXPECT_EQ(
       effect_tree_index,
-      property_trees->element_id_to_effect_node_index[highlight->element_id()]);
+      property_trees
+          ->element_id_to_effect_node_index[highlight->ElementIdForTesting()]);
   // The link highlight cc effect node should correspond to the blink effect
   // node.
   EXPECT_EQ(highlight->Effect().GetCompositorElementId(),
-            highlight->element_id());
-  EXPECT_TRUE(highlight->Effect().RequiresCompositingForAnimation());
+            highlight->ElementIdForTesting());
+  EXPECT_TRUE(highlight->Effect().HasActiveOpacityAnimation());
 
   touch_node->remove(IGNORE_EXCEPTION_FOR_TESTING);
   UpdateAllLifecyclePhases();
@@ -379,8 +382,8 @@ TEST_P(LinkHighlightImplTest, MultiColumn) {
   // The link highlight cc effect node should correspond to the blink effect
   // node.
   const auto& effect = highlight->Effect();
-  EXPECT_EQ(effect.GetCompositorElementId(), highlight->element_id());
-  EXPECT_TRUE(effect.RequiresCompositingForAnimation());
+  EXPECT_EQ(effect.GetCompositorElementId(), highlight->ElementIdForTesting());
+  EXPECT_TRUE(effect.HasActiveOpacityAnimation());
 
   const auto& first_fragment = touch_node->GetLayoutObject()->FirstFragment();
   const auto* second_fragment = first_fragment.NextFragment();
@@ -393,9 +396,8 @@ TEST_P(LinkHighlightImplTest, MultiColumn) {
     EXPECT_EQ(cc::ElementId(), layer->element_id());
     auto effect_tree_index = layer->effect_tree_index();
     auto* property_trees = layer->layer_tree_host()->property_trees();
-    EXPECT_EQ(effect_tree_index,
-              property_trees
-                  ->element_id_to_effect_node_index[highlight->element_id()]);
+    EXPECT_EQ(effect_tree_index, property_trees->element_id_to_effect_node_index
+                                     [highlight->ElementIdForTesting()]);
   };
 
   if (RuntimeEnabledFeatures::CompositeAfterPaintEnabled()) {

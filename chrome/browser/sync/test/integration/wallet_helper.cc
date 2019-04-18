@@ -6,14 +6,10 @@
 
 #include <stddef.h>
 
-#include <map>
-#include <utility>
-
 #include "base/bind.h"
 #include "base/run_loop.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/autofill/personal_data_manager_factory.h"
-#include "chrome/browser/sync/profile_sync_test_util.h"
 #include "chrome/browser/sync/test/integration/sync_datatype_helper.h"
 #include "chrome/browser/sync/test/integration/sync_test.h"
 #include "chrome/browser/web_data_service_factory.h"
@@ -96,7 +92,7 @@ bool ListsMatch(int profile_a,
     list_a_map.erase(item->server_id());
   }
 
-  if (list_a_map.size()) {
+  if (!list_a_map.empty()) {
     DVLOG(1) << "Entries present in profile " << profile_a
              << " but not in profile" << profile_b << ".";
     return false;
@@ -276,25 +272,26 @@ void UpdateServerAddressMetadata(int profile,
   WaitForCurrentTasksToComplete(wds->GetDBTaskRunner());
 }
 
-void GetServerCardsMetadata(
-    int profile,
-    std::map<std::string, AutofillMetadata>* cards_metadata) {
+std::map<std::string, AutofillMetadata> GetServerCardsMetadata(int profile) {
+  std::map<std::string, AutofillMetadata> cards_metadata;
   scoped_refptr<AutofillWebDataService> wds = GetProfileWebDataService(profile);
   wds->GetDBTaskRunner()->PostTask(
       FROM_HERE, base::BindOnce(&GetServerCardsMetadataOnDBSequence,
-                                base::Unretained(wds.get()), cards_metadata));
+                                base::Unretained(wds.get()), &cards_metadata));
   WaitForCurrentTasksToComplete(wds->GetDBTaskRunner());
+  return cards_metadata;
 }
 
-void GetServerAddressesMetadata(
-    int profile,
-    std::map<std::string, AutofillMetadata>* addresses_metadata) {
+std::map<std::string, AutofillMetadata> GetServerAddressesMetadata(
+    int profile) {
+  std::map<std::string, AutofillMetadata> addresses_metadata;
   scoped_refptr<AutofillWebDataService> wds = GetProfileWebDataService(profile);
   wds->GetDBTaskRunner()->PostTask(
       FROM_HERE,
       base::BindOnce(&GetServerAddressesMetadataOnDBSequence,
-                     base::Unretained(wds.get()), addresses_metadata));
+                     base::Unretained(wds.get()), &addresses_metadata));
   WaitForCurrentTasksToComplete(wds->GetDBTaskRunner());
+  return addresses_metadata;
 }
 
 sync_pb::ModelTypeState GetWalletDataModelTypeState(int profile) {
@@ -546,28 +543,29 @@ AutofillWalletMetadataSizeChecker::~AutofillWalletMetadataSizeChecker() {
 }
 
 bool AutofillWalletMetadataSizeChecker::IsExitConditionSatisfied() {
-  // There could be trailing metadata left on one of the clients. Check that
-  // metadata.size() is the same on both clients.
-  std::map<std::string, AutofillMetadata> addresses_metadata_a,
-      addresses_metadata_b;
-  wallet_helper::GetServerAddressesMetadata(profile_a_, &addresses_metadata_a);
-  wallet_helper::GetServerAddressesMetadata(profile_b_, &addresses_metadata_b);
-  if (addresses_metadata_a.size() != addresses_metadata_b.size()) {
-    LOG(WARNING) << "Server addresses metadata mismatch, expected "
-                 << addresses_metadata_a.size()
-                 << ", found: " << addresses_metadata_b.size();
-    return false;
+  // Make sure we do not nest IsExitConditionSatisfiedImpl() (as it can happen
+  // that OnPersonalDataChanged() gets notified while we're inside
+  // IsExitConditionSatisfiedImpl(), waiting for the DB task that loads metadata
+  // to finish).
+  switch (state_) {
+    case IDLE:
+      do {
+        state_ = CHECKING;
+        if (IsExitConditionSatisfiedImpl()) {
+          return true;
+        }
+      } while (state_ == SHOULD_RECHECK);
+      state_ = IDLE;
+      return false;
+    case CHECKING:
+      // Make sure that each IsExitConditionSatisfied() call is followed by a
+      // IsExitConditionSatisfiedImpl() call so that we do not miss any updates
+      // to the DB.
+      state_ = SHOULD_RECHECK;
+      return false;
+    case SHOULD_RECHECK:
+      return false;
   }
-  std::map<std::string, AutofillMetadata> cards_metadata_a, cards_metadata_b;
-  wallet_helper::GetServerCardsMetadata(profile_a_, &cards_metadata_a);
-  wallet_helper::GetServerCardsMetadata(profile_b_, &cards_metadata_b);
-  if (cards_metadata_a.size() != cards_metadata_b.size()) {
-    LOG(WARNING) << "Server cards metadata mismatch, expected "
-                 << cards_metadata_a.size() << ", found "
-                 << cards_metadata_b.size();
-    return false;
-  }
-  return true;
 }
 
 std::string AutofillWalletMetadataSizeChecker::GetDebugMessage() const {
@@ -576,6 +574,32 @@ std::string AutofillWalletMetadataSizeChecker::GetDebugMessage() const {
 
 void AutofillWalletMetadataSizeChecker::OnPersonalDataChanged() {
   CheckExitCondition();
+}
+
+bool AutofillWalletMetadataSizeChecker::IsExitConditionSatisfiedImpl() {
+  // There could be trailing metadata left on one of the clients. Check that
+  // metadata.size() is the same on both clients.
+  std::map<std::string, AutofillMetadata> addresses_metadata_a =
+      wallet_helper::GetServerAddressesMetadata(profile_a_);
+  std::map<std::string, AutofillMetadata> addresses_metadata_b =
+      wallet_helper::GetServerAddressesMetadata(profile_b_);
+  if (addresses_metadata_a.size() != addresses_metadata_b.size()) {
+    DVLOG(1) << "Server addresses metadata mismatch, expected "
+             << addresses_metadata_a.size()
+             << ", found: " << addresses_metadata_b.size();
+    return false;
+  }
+  std::map<std::string, AutofillMetadata> cards_metadata_a =
+      wallet_helper::GetServerCardsMetadata(profile_a_);
+  std::map<std::string, AutofillMetadata> cards_metadata_b =
+      wallet_helper::GetServerCardsMetadata(profile_b_);
+  if (cards_metadata_a.size() != cards_metadata_b.size()) {
+    DVLOG(1) << "Server cards metadata mismatch, expected "
+             << cards_metadata_a.size() << ", found "
+             << cards_metadata_b.size();
+    return false;
+  }
+  return true;
 }
 
 UssWalletSwitchToggler::UssWalletSwitchToggler() {}
@@ -587,12 +611,7 @@ void UssWalletSwitchToggler::InitWithDefaultFeatures() {
 void UssWalletSwitchToggler::InitWithFeatures(
     std::vector<base::Feature> enabled_features,
     std::vector<base::Feature> disabled_features) {
-  if (GetParam().first) {
-    enabled_features.push_back(switches::kSyncUSSAutofillWalletData);
-  } else {
-    disabled_features.push_back(switches::kSyncUSSAutofillWalletData);
-  }
-  if (GetParam().second) {
+  if (GetParam()) {
     enabled_features.push_back(switches::kSyncUSSAutofillWalletMetadata);
   } else {
     disabled_features.push_back(switches::kSyncUSSAutofillWalletMetadata);

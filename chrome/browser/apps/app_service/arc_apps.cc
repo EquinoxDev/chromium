@@ -10,20 +10,21 @@
 #include "base/bind.h"
 #include "base/callback.h"
 #include "base/containers/flat_map.h"
-#include "chrome/browser/apps/app_service/app_icon_factory.h"
-#include "chrome/browser/apps/app_service/app_service_proxy.h"
+#include "chrome/browser/apps/app_service/app_service_proxy_factory.h"
 #include "chrome/browser/apps/app_service/arc_apps_factory.h"
 #include "chrome/browser/apps/app_service/dip_px_util.h"
 #include "chrome/browser/chromeos/arc/arc_util.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/ui/app_list/arc/arc_app_dialog.h"
 #include "chrome/browser/ui/app_list/arc/arc_app_icon_descriptor.h"
 #include "chrome/browser/ui/app_list/arc/arc_app_utils.h"
 #include "chrome/grit/component_extension_resources.h"
+#include "chrome/services/app_service/public/cpp/app_service_proxy.h"
 #include "components/arc/app_permissions/arc_app_permissions_bridge.h"
-#include "components/arc/arc_bridge_service.h"
 #include "components/arc/arc_service_manager.h"
 #include "components/arc/common/app.mojom.h"
 #include "components/arc/common/app_permissions.mojom.h"
+#include "components/arc/session/arc_bridge_service.h"
 #include "content/public/common/service_manager_connection.h"
 #include "extensions/grit/extensions_browser_resources.h"
 #include "mojo/public/cpp/bindings/interface_request.h"
@@ -31,6 +32,28 @@
 #include "ui/display/display.h"
 #include "ui/display/screen.h"
 #include "ui/gfx/geometry/size.h"
+
+// TODO(crbug.com/826982): investigate re-using the ArcAppIcon class directly.
+// This may or may not be difficult: see
+// (https://chromium-review.googlesource.com/c/chromium/src/+/1482350/7#message-b45fa253ea01b523e8389b30d74ce805b0e05f77)
+// and
+// (https://chromium-review.googlesource.com/c/chromium/src/+/1482350/7#message-52080b7d348d7806c818aa395392ff1385d1784e).
+
+// TODO(crbug.com/826982): consider that, per khmel@, "App icon can be
+// overwritten (setTaskDescription) or by assigning the icon for the app
+// window. In this case some consumers (Shelf for example) switch to
+// overwritten icon... IIRC this applies to shelf items and ArcAppWindow icon".
+
+// TODO(crbug.com/826982): consider that, per khmel@, "We may change the way
+// how we handle icons in ARC++ container. That means view of the icon can be
+// changed. We support invalidation of icon scales way, similar to the case
+// above... We have methods to notify about new icon arrival. IIRC ArcAppIcon
+// already handles this".
+
+// TODO(crbug.com/826982): consider that, per khmel@, "Functionality to detect
+// icons cannot be decoded correctly and issue request to refresh the icon
+// scale from ARC++ container... The logic here is wider. We request new copy
+// of icon in this case".
 
 namespace {
 
@@ -82,6 +105,11 @@ void LoadIcon0(apps::mojom::IconCompression icon_compression,
                std::string icon_resource_id,
                apps::mojom::Publisher::LoadIconCallback callback,
                apps::ArcApps::AppConnectionHolder* app_connection_holder) {
+  // TODO(crbug.com/826982): consider that, per khmel@, "Regardless the number
+  // of request for the same icon scale it should be only one and only one
+  // request to ARC++ container to extract the real data. This logic is
+  // isolated inside ArcAppListPrefs and I don't think that anybody else should
+  // call mojom RequestAppIcon".
   if (icon_resource_id.empty()) {
     auto* app_instance =
         ARC_GET_INSTANCE_FOR_METHOD(app_connection_holder, RequestAppIcon);
@@ -130,7 +158,7 @@ ArcApps* ArcApps::Get(Profile* profile) {
 }
 
 ArcApps::ArcApps(Profile* profile)
-    : binding_(this), profile_(profile), prefs_(nullptr), next_u_key_(1) {
+    : binding_(this), profile_(profile), prefs_(nullptr) {
   if (!arc::IsArcAllowedForProfile(profile_) ||
       (arc::ArcServiceManager::Get() == nullptr)) {
     return;
@@ -145,8 +173,9 @@ ArcApps::ArcApps(Profile* profile)
 
   apps::mojom::PublisherPtr publisher;
   binding_.Bind(mojo::MakeRequest(&publisher));
-  apps::AppServiceProxy::Get(profile)->AppService()->RegisterPublisher(
-      std::move(publisher), apps::mojom::AppType::kArc);
+  apps::AppServiceProxyFactory::GetForProfile(profile)
+      ->AppService()
+      ->RegisterPublisher(std::move(publisher), apps::mojom::AppType::kArc);
 }
 
 ArcApps::~ArcApps() {
@@ -169,22 +198,22 @@ void ArcApps::Connect(apps::mojom::SubscriberPtr subscriber,
   subscribers_.AddPtr(std::move(subscriber));
 }
 
-void ArcApps::LoadIcon(apps::mojom::IconKeyPtr icon_key,
+void ArcApps::LoadIcon(const std::string& app_id,
+                       apps::mojom::IconKeyPtr icon_key,
                        apps::mojom::IconCompression icon_compression,
                        int32_t size_hint_in_dip,
                        bool allow_placeholder_icon,
                        LoadIconCallback callback) {
-  if (!icon_key.is_null() &&
-      (icon_key->icon_type == apps::mojom::IconType::kArc) &&
-      !icon_key->s_key.empty()) {
+  if (icon_key) {
     // Treat the Play Store as a special case, loading an icon defined by a
     // resource instead of asking the Android VM (or the cache of previous
     // responses from the Android VM). Presumably this is for bootstrapping:
     // the Play Store icon (the UI for enabling and installing Android apps)
     // should be showable even before the user has installed their first
     // Android app and before bringing up an Android VM for the first time.
-    if (icon_key->s_key == arc::kPlayStoreAppId) {
+    if (app_id == arc::kPlayStoreAppId) {
       LoadPlayStoreIcon(icon_compression, size_hint_in_dip,
+                        static_cast<IconEffects>(icon_key->icon_effects),
                         std::move(callback));
       return;
     }
@@ -193,11 +222,12 @@ void ArcApps::LoadIcon(apps::mojom::IconKeyPtr icon_key,
     // LoadIconFromVM.
     LoadIconFromFileWithFallback(
         icon_compression, size_hint_in_dip,
-        GetCachedIconFilePath(icon_key->s_key, size_hint_in_dip),
-        std::move(callback),
+        GetCachedIconFilePath(app_id, size_hint_in_dip),
+        static_cast<IconEffects>(icon_key->icon_effects), std::move(callback),
         base::BindOnce(&ArcApps::LoadIconFromVM, weak_ptr_factory_.GetWeakPtr(),
-                       icon_key->s_key, icon_compression, size_hint_in_dip,
-                       allow_placeholder_icon));
+                       app_id, icon_compression, size_hint_in_dip,
+                       allow_placeholder_icon,
+                       static_cast<IconEffects>(icon_key->icon_effects)));
     return;
   }
 
@@ -228,6 +258,9 @@ void ArcApps::Launch(const std::string& app_id,
       break;
     case apps::mojom::LaunchSource::kFromAppListRecommendation:
       uit = arc::UserInteractionType::APP_STARTED_FROM_LAUNCHER_SUGGESTED_APP;
+      break;
+    case apps::mojom::LaunchSource::kFromKioskNextHome:
+      uit = arc::UserInteractionType::APP_STARTED_FROM_KIOSK_NEXT_HOME;
       break;
   }
 
@@ -271,21 +304,10 @@ void ArcApps::SetPermission(const std::string& app_id,
 }
 
 void ArcApps::Uninstall(const std::string& app_id) {
-  const std::unique_ptr<ArcAppListPrefs::AppInfo> app_info =
-      prefs_->GetApp(app_id);
-  if (!app_info) {
-    LOG(ERROR) << "Uninstall failed, could not find app with id " << app_id;
+  if (!profile_) {
     return;
   }
-
-  auto* instance = ARC_GET_INSTANCE_FOR_METHOD(prefs_->app_connection_holder(),
-                                               UninstallPackage);
-  if (!instance) {
-    LOG(ERROR) << "Uninstall failed, could not find instance";
-    return;
-  }
-
-  instance->UninstallPackage(app_info->package_name);
+  arc::ShowArcAppUninstallDialog(profile_, app_id);
 }
 
 void ArcApps::OpenNativeSettings(const std::string& app_id) {
@@ -329,10 +351,11 @@ void ArcApps::OnAppRemoved(const std::string& app_id) {
 
 void ArcApps::OnAppIconUpdated(const std::string& app_id,
                                const ArcAppIconDescriptor& descriptor) {
+  static constexpr uint32_t icon_effects = 0;
   apps::mojom::AppPtr app = apps::mojom::App::New();
   app->app_type = apps::mojom::AppType::kArc;
   app->app_id = app_id;
-  app->icon_key = NewIconKey(app_id);
+  app->icon_key = icon_key_factory_.MakeIconKey(icon_effects);
   Publish(std::move(app));
 }
 
@@ -386,21 +409,21 @@ const base::FilePath ArcApps::GetCachedIconFilePath(const std::string& app_id,
                            apps_util::GetPrimaryDisplayUIScaleFactor()));
 }
 
-void ArcApps::LoadIconFromVM(const std::string icon_key_s_key,
+void ArcApps::LoadIconFromVM(const std::string app_id,
                              apps::mojom::IconCompression icon_compression,
                              int32_t size_hint_in_dip,
                              bool allow_placeholder_icon,
+                             IconEffects icon_effects,
                              LoadIconCallback callback) {
   if (allow_placeholder_icon) {
     constexpr bool is_placeholder_icon = true;
     LoadIconFromResource(icon_compression, size_hint_in_dip,
                          IDR_APP_DEFAULT_ICON, is_placeholder_icon,
-                         std::move(callback));
+                         icon_effects, std::move(callback));
     return;
   }
 
-  std::unique_ptr<ArcAppListPrefs::AppInfo> app_info =
-      prefs_->GetApp(icon_key_s_key);
+  std::unique_ptr<ArcAppListPrefs::AppInfo> app_info = prefs_->GetApp(app_id);
   if (app_info) {
     base::OnceCallback<void(apps::ArcApps::AppConnectionHolder*)> pending =
         base::BindOnce(&LoadIcon0, icon_compression,
@@ -424,6 +447,7 @@ void ArcApps::LoadIconFromVM(const std::string icon_key_s_key,
 
 void ArcApps::LoadPlayStoreIcon(apps::mojom::IconCompression icon_compression,
                                 int32_t size_hint_in_dip,
+                                IconEffects icon_effects,
                                 LoadIconCallback callback) {
   // Use overloaded Chrome icon for Play Store that is adapted to Chrome style.
   int size_hint_in_px = apps_util::ConvertDipToPx(size_hint_in_dip);
@@ -431,7 +455,7 @@ void ArcApps::LoadPlayStoreIcon(apps::mojom::IconCompression icon_compression,
                                             : IDR_ARC_SUPPORT_ICON_192;
   constexpr bool is_placeholder_icon = false;
   LoadIconFromResource(icon_compression, size_hint_in_dip, resource_id,
-                       is_placeholder_icon, std::move(callback));
+                       is_placeholder_icon, icon_effects, std::move(callback));
 }
 
 apps::mojom::AppPtr ArcApps::Convert(const std::string& app_id,
@@ -440,13 +464,15 @@ apps::mojom::AppPtr ArcApps::Convert(const std::string& app_id,
 
   app->app_type = apps::mojom::AppType::kArc;
   app->app_id = app_id;
-  // TODO(crbug.com/826982): examine app_info.suspended, and possibly have a
-  // corresponding 'suspended' apps::mojom::Readiness enum value??
   app->readiness = apps::mojom::Readiness::kReady;
   app->name = app_info.name;
   app->short_name = app->name;
 
-  app->icon_key = NewIconKey(app_id);
+  IconEffects icon_effects = IconEffects::kNone;
+  if (app_info.suspended) {
+    icon_effects = static_cast<IconEffects>(icon_effects | IconEffects::kGray);
+  }
+  app->icon_key = icon_key_factory_.MakeIconKey(icon_effects);
 
   app->last_launch_time = app_info.last_launch_time;
   app->install_time = app_info.install_time;
@@ -473,14 +499,6 @@ apps::mojom::AppPtr ArcApps::Convert(const std::string& app_id,
   }
 
   return app;
-}
-
-apps::mojom::IconKeyPtr ArcApps::NewIconKey(const std::string& app_id) {
-  auto icon_key = apps::mojom::IconKey::New();
-  icon_key->icon_type = apps::mojom::IconType::kArc;
-  icon_key->s_key = app_id;
-  icon_key->u_key = next_u_key_++;
-  return icon_key;
 }
 
 void ArcApps::Publish(apps::mojom::AppPtr app) {

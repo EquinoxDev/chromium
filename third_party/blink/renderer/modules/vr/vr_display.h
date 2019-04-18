@@ -240,8 +240,7 @@ class VRDisplay final : public EventTargetWithInlineData,
   Member<WebGLRenderingContextBase> rendering_context_;
   Member<XRFrameTransport> frame_transport_;
 
-  TraceWrapperMember<ScriptedAnimationController>
-      scripted_animation_controller_;
+  Member<ScriptedAnimationController> scripted_animation_controller_;
   bool pending_vrdisplay_raf_ = false;
   bool pending_presenting_vsync_ = false;
   bool pending_non_immersive_vsync_ = false;
@@ -259,6 +258,7 @@ class VRDisplay final : public EventTargetWithInlineData,
   bool did_log_getFrameData_ = false;
   bool did_log_requestPresent_ = false;
 
+  bool non_immersive_session_initialized_ = false;
   device::mojom::blink::XRFrameDataProviderPtr non_immersive_provider_;
 
   device::mojom::blink::XRDevicePtr device_ptr_;

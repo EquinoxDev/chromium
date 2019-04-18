@@ -64,7 +64,8 @@ function shouldIgnoreKeyEvents(activeElement) {
   }
 
   return (
-      activeElement.isContentEditable || activeElement.tagName == 'INPUT' ||
+      activeElement.isContentEditable ||
+      (activeElement.tagName == 'INPUT' && activeElement.type != 'radio') ||
       activeElement.tagName == 'TEXTAREA');
 }
 
@@ -100,14 +101,20 @@ PDFViewer.MATERIAL_TOOLBAR_HEIGHT = 56;
 PDFViewer.TOOLBAR_WINDOW_MIN_HEIGHT = 250;
 
 /**
- * The light-gray background color used for print preview.
+ * The background color used for print preview (--google-grey-refresh-300).
  */
-PDFViewer.LIGHT_BACKGROUND_COLOR = '0xFFCCCCCC';
+PDFViewer.PRINT_PREVIEW_BACKGROUND_COLOR = '0xFFDADCE0';
 
 /**
- * The dark-gray background color used for the regular viewer.
+ * The background color used for print preview when dark mode is enabled
+ * (--google-grey-refresh-700).
  */
-PDFViewer.DARK_BACKGROUND_COLOR = '0xFF525659';
+PDFViewer.PRINT_PREVIEW_DARK_BACKGROUND_COLOR = '0xFF5F6368';
+
+/**
+ * The background color used for the regular viewer.
+ */
+PDFViewer.BACKGROUND_COLOR = '0xFF525659';
 
 /**
  * Creates a new PDFViewer. There should only be one of these objects per
@@ -134,6 +141,12 @@ function PDFViewer(browserApi) {
 
   /** @private {boolean} */
   this.hasEnteredAnnotationMode_ = false;
+
+  /** @private {boolean} */
+  this.hadPassword_ = false;
+
+  /** @private {boolean} */
+  this.canSerializeDocument_ = false;
 
   PDFMetrics.record(PDFMetrics.UserAction.DOCUMENT_OPENED);
 
@@ -207,8 +220,7 @@ function PDFViewer(browserApi) {
   }
   this.plugin_.setAttribute('headers', headers);
 
-  const backgroundColor = PDFViewer.DARK_BACKGROUND_COLOR;
-  this.plugin_.setAttribute('background-color', backgroundColor);
+  this.plugin_.setAttribute('background-color', PDFViewer.BACKGROUND_COLOR);
   this.plugin_.setAttribute('top-toolbar-height', topToolbarHeight);
   this.plugin_.setAttribute('javascript', this.javascript_);
 
@@ -254,9 +266,9 @@ function PDFViewer(browserApi) {
     this.toolbar_.addEventListener(
         'redo', () => this.currentController_.redo());
     this.toolbar_.addEventListener(
-        'rotate-right', () => this.currentController_.rotateClockwise());
+        'rotate-right', () => this.rotateClockwise());
     this.toolbar_.addEventListener(
-        'annotation-mode-changed', e => this.annotationModeChanged_(e));
+        'annotation-mode-toggled', e => this.annotationModeToggled_(e));
     this.toolbar_.addEventListener(
         'annotation-tool-changed',
         e => this.inkController_.setAnnotationTool(e.detail.value));
@@ -448,7 +460,7 @@ PDFViewer.prototype = {
         return;
       case 219:  // Left bracket key.
         if (e.ctrlKey) {
-          this.currentController_.rotateCounterClockwise();
+          this.rotateCounterclockwise();
         }
         return;
       case 220:  // Backslash key.
@@ -458,7 +470,7 @@ PDFViewer.prototype = {
         return;
       case 221:  // Right bracket key.
         if (e.ctrlKey) {
-          this.currentController_.rotateClockwise();
+          this.rotateClockwise();
         }
         return;
     }
@@ -500,17 +512,28 @@ PDFViewer.prototype = {
    * @param {!CustomEvent<{value: boolean}>} e
    * @private
    */
-  annotationModeChanged_: async function(e) {
+  annotationModeToggled_: async function(e) {
     const annotationMode = e.detail.value;
     if (annotationMode) {
       // Enter annotation mode.
-      PDFMetrics.record(PDFMetrics.UserAction.ENTER_ANNOTATION_MODE);
-      this.hasEnteredAnnotationMode_ = true;
       assert(this.currentController_ == this.pluginController_);
       // TODO(dstockwell): set plugin read-only, begin transition
       this.updateProgress(0);
       // TODO(dstockwell): handle save failure
       const result = await this.pluginController_.save(true);
+      if (result.hasUnsavedChanges) {
+        assert(!loadTimeData.getBoolean('pdfFormSaveEnabled'));
+        try {
+          await $('form-warning').show();
+        } catch (e) {
+          // The user aborted entering annotation mode. Revert to the plugin.
+          this.toolbar_.annotationMode = false;
+          this.updateProgress(100);
+          return;
+        }
+      }
+      PDFMetrics.record(PDFMetrics.UserAction.ENTER_ANNOTATION_MODE);
+      this.hasEnteredAnnotationMode_ = true;
       // TODO(dstockwell): feed real progress data from the Ink component
       this.updateProgress(50);
       await this.inkController_.load(result.fileName, result.dataToSave);
@@ -719,6 +742,16 @@ PDFViewer.prototype = {
     }
   },
 
+  /** @private */
+  sendBackgroundColorForPrintPreview_: function() {
+    this.pluginController_.postMessage({
+      type: 'backgroundColorChanged',
+      backgroundColor: document.documentElement.hasAttribute('dark') ?
+          PDFViewer.PRINT_PREVIEW_DARK_BACKGROUND_COLOR :
+          PDFViewer.PRINT_PREVIEW_BACKGROUND_COLOR,
+    });
+  },
+
   /**
    * Load a dictionary of translated strings into the UI. Used as a callback for
    * chrome.resourcesPrivate.
@@ -731,12 +764,24 @@ PDFViewer.prototype = {
     document.documentElement.lang = strings.language;
 
     loadTimeData.data = strings;
+    const isNewPrintPreview = this.isPrintPreview_ &&
+        loadTimeData.getBoolean('newPrintPreviewLayoutEnabled');
+    if (isNewPrintPreview) {
+      this.sendBackgroundColorForPrintPreview_();
+      this.toolbarManager_.reverseSideToolbar();
+    }
+    this.reverseZoomToolbar_ = isNewPrintPreview;
+    this.zoomToolbar_.newPrintPreview = isNewPrintPreview;
+
     $('toolbar').strings = strings;
     $('toolbar').pdfAnnotationsEnabled =
         loadTimeData.getBoolean('pdfAnnotationsEnabled');
     $('zoom-toolbar').strings = strings;
     $('password-screen').strings = strings;
     $('error-screen').strings = strings;
+    if ($('form-warning')) {
+      $('form-warning').strings = strings;
+    }
   },
 
   /**
@@ -828,9 +873,11 @@ PDFViewer.prototype = {
     // gives a compromise: if there is no scrollbar visible then the toolbar
     // will be half a scrollbar width further left than the spec but if there
     // is a scrollbar visible it will be half a scrollbar width further right
-    // than the spec. In RTL layout, the zoom toolbar is on the left side, but
-    // the scrollbar is still on the right, so this is not necessary.
-    if (!isRTL()) {
+    // than the spec. In RTL layout normally, and in LTR layout in Print Preview
+    // when the NewPrintPreview flag is enabled, the zoom toolbar is on the left
+    // left side, but the scrollbar is still on the right, so this is not
+    // necessary.
+    if (isRTL() === this.reverseZoomToolbar_) {
       this.zoomToolbar_.style.right =
           -verticalScrollbarWidth + (scrollbarWidth / 2) + 'px';
     }
@@ -963,6 +1010,15 @@ PDFViewer.prototype = {
       case 'sendKeyEvent':
         this.handleKeyEvent_(DeserializeKeyEvent(message.data.keyEvent));
         return true;
+      case 'hideToolbars':
+        this.toolbarManager_.resetKeyboardNavigationAndHideToolbars();
+        return true;
+      case 'darkModeChanged':
+        document.documentElement.toggleAttribute('dark', message.data.darkMode);
+        if (this.isPrintPreview_) {
+          this.sendBackgroundColorForPrintPreview_();
+        }
+        return true;
       case 'scrollPosition':
         const position = this.viewport_.position;
         position.y += message.data.y;
@@ -1059,6 +1115,8 @@ PDFViewer.prototype = {
     // If the password screen isn't up, put it up. Otherwise we're
     // responding to an incorrect password so deny it.
     if (!this.passwordScreen_.active) {
+      this.hadPassword_ = true;
+      this.updateAnnotationAvailable_();
       this.passwordScreen_.show();
     } else {
       this.passwordScreen_.deny();
@@ -1104,8 +1162,9 @@ PDFViewer.prototype = {
    * Sets document metadata from the current controller.
    * @param {string} title
    * @param {Array} bookmarks
+   * @param {boolean} canSerializeDocument
    */
-  setDocumentMetadata: function(title, bookmarks) {
+  setDocumentMetadata: function(title, bookmarks, canSerializeDocument) {
     if (title) {
       document.title = title;
     } else {
@@ -1116,6 +1175,8 @@ PDFViewer.prototype = {
       this.toolbar_.docTitle = document.title;
       this.toolbar_.bookmarks = this.bookmarks;
     }
+    this.canSerializeDocument_ = canSerializeDocument;
+    this.updateAnnotationAvailable_();
   },
 
   /**
@@ -1187,6 +1248,9 @@ PDFViewer.prototype = {
           entry.createWriter(writer => {
             writer.write(
                 new Blob([result.dataToSave], {type: 'application/pdf'}));
+            // Unblock closing the window now that the user has saved
+            // successfully.
+            chrome.mimeHandlerPrivate.setShowBeforeUnloadDialog(false);
           });
         });
 
@@ -1198,6 +1262,52 @@ PDFViewer.prototype = {
     PDFMetrics.record(PDFMetrics.UserAction.PRINT);
     await this.exitAnnotationMode_();
     this.currentController_.print();
+  },
+
+  /**
+   * Updates the toolbar's annotation available flag depending on current
+   * conditions.
+   */
+  updateAnnotationAvailable_() {
+    if (!this.toolbar_) {
+      return;
+    }
+    let annotationAvailable = true;
+    if (this.viewport_.getClockwiseRotations() != 0) {
+      annotationAvailable = false;
+    }
+    if (this.hadPassword_) {
+      annotationAvailable = false;
+    }
+    if (!this.canSerializeDocument_) {
+      annotationAvailable = false;
+    }
+    this.toolbar_.annotationAvailable = annotationAvailable;
+  },
+
+  rotateClockwise() {
+    PDFMetrics.record(PDFMetrics.UserAction.ROTATE);
+    this.viewport_.rotateClockwise(1);
+    this.currentController_.rotateClockwise();
+    this.updateAnnotationAvailable_();
+  },
+
+  rotateCounterclockwise() {
+    PDFMetrics.record(PDFMetrics.UserAction.ROTATE);
+    this.viewport_.rotateClockwise(3);
+    this.currentController_.rotateCounterclockwise();
+    this.updateAnnotationAvailable_();
+  },
+
+  setHasUnsavedChanges: function() {
+    // Warn the user if they attempt to close the window without saving.
+    chrome.mimeHandlerPrivate.setShowBeforeUnloadDialog(true);
+  },
+
+  /** @param {UndoState} state */
+  setAnnotationUndoState(state) {
+    this.toolbar_.canUndoAnnotation = state.canUndo;
+    this.toolbar_.canRedoAnnotation = state.canRedo;
   }
 };
 
@@ -1230,7 +1340,7 @@ class ContentController {
    * Rotates the document 90 degrees in the counter clockwise direction.
    * @abstract
    */
-  rotateCounterClockwise() {}
+  rotateCounterclockwise() {}
 
   /**
    * Triggers printing of the current document.
@@ -1300,7 +1410,7 @@ class InkController extends ContentController {
   }
 
   /** @override */
-  rotateCounterClockwise() {
+  rotateCounterclockwise() {
     // TODO(dstockwell): implement rotation
   }
 
@@ -1330,6 +1440,12 @@ class InkController extends ContentController {
       this.inkHost_ = document.createElement('viewer-ink-host');
       $('content').appendChild(this.inkHost_);
       this.inkHost_.viewport = this.viewport_;
+      this.inkHost_.addEventListener('stroke-added', e => {
+        this.viewer_.setHasUnsavedChanges();
+      });
+      this.inkHost_.addEventListener('undo-state-changed', e => {
+        this.viewer_.setAnnotationUndoState(e.detail);
+      });
     }
     return this.inkHost_.load(filename, data);
   }
@@ -1422,15 +1538,11 @@ class PluginController extends ContentController {
 
   /** @override */
   rotateClockwise() {
-    PDFMetrics.record(PDFMetrics.UserAction.ROTATE);
-    this.viewport_.rotateClockwise(1);
     this.postMessage({type: 'rotateClockwise'});
   }
 
   /** @override */
-  rotateCounterClockwise() {
-    PDFMetrics.record(PDFMetrics.UserAction.ROTATE);
-    this.viewport_.rotateClockwise(3);
+  rotateCounterclockwise() {
     this.postMessage({type: 'rotateCounterclockwise'});
   }
 
@@ -1515,13 +1627,15 @@ class PluginController extends ContentController {
         break;
       case 'metadata':
         this.viewer_.setDocumentMetadata(
-            message.data.title, message.data.bookmarks);
+            message.data.title, message.data.bookmarks,
+            message.data.canSerializeDocument);
         break;
       case 'setIsSelecting':
         this.viewer_.setIsSelecting(message.data.isSelecting);
         break;
       case 'getNamedDestinationReply':
-        this.paramsParser_.onNamedDestinationReceived(message.data.pageNumber);
+        this.viewer_.paramsParser_.onNamedDestinationReceived(
+            message.data.pageNumber);
         break;
       case 'formFocusChange':
         this.viewer_.setIsFormFieldFocused(message.data.focused);

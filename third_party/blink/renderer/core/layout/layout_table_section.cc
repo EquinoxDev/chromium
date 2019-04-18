@@ -810,7 +810,7 @@ void LayoutTableSection::UpdateBaselineForCell(LayoutTableCell* cell,
   }
 }
 
-int LayoutTableSection::VBorderSpacingBeforeFirstRow() const {
+int16_t LayoutTableSection::VBorderSpacingBeforeFirstRow() const {
   // We ignore the border-spacing on any non-top section, as it is already
   // included in the previous section's last row position.
   if (this != Table()->TopSection())
@@ -905,7 +905,7 @@ int LayoutTableSection::CalcRowLogicalHeight() {
         if (cell->HasOverrideLogicalHeight()) {
           cell->ClearIntrinsicPadding();
           cell->ClearOverrideSize();
-          cell->ForceChildLayout();
+          cell->ForceLayout();
         }
 
         if (cell->ResolvedRowSpan() == 1)
@@ -1177,7 +1177,7 @@ void LayoutTableSection::LayoutRows() {
   // Set the width of our section now.  The rows will also be this width.
   SetLogicalWidth(Table()->ContentLogicalWidth());
 
-  int vspacing = Table()->VBorderSpacing();
+  int16_t vspacing = Table()->VBorderSpacing();
   LayoutState state(*this);
 
   // Set the rows' location and size.
@@ -1394,19 +1394,6 @@ void LayoutTableSection::ComputeVisualOverflowFromDescendants() {
     for (auto* cell = row->FirstCell(); cell; cell = cell->NextCell()) {
       if (cell->HasSelfPaintingLayer())
         continue;
-      // Let the section's self visual overflow cover the cell's whole collapsed
-      // borders. This ensures correct raster invalidation on section border
-      // style change.
-      // TODO(wangxianzhu): When implementing row as DisplayItemClient of
-      // collapsed borders, the following logic should be replaced by
-      // invalidation of rows on section border style change. crbug.com/663208.
-      if (const auto* collapsed_borders = cell->GetCollapsedBorderValues()) {
-        LayoutRect rect = cell->RectForOverflowPropagation(
-            collapsed_borders->LocalVisualRect());
-        rect.MoveBy(cell->Location());
-        AddSelfVisualOverflow(rect);
-      }
-
       if (force_full_paint_ || !cell->HasVisualOverflow())
         continue;
 
@@ -1897,7 +1884,7 @@ void LayoutTableSection::SetLogicalPositionForCell(
     LayoutTableCell* cell,
     unsigned effective_column) const {
   LayoutPoint cell_location(0, row_pos_[cell->RowIndex()]);
-  int horizontal_border_spacing = Table()->HBorderSpacing();
+  int16_t horizontal_border_spacing = Table()->HBorderSpacing();
 
   if (!TableStyle().IsLeftToRightDirection()) {
     cell_location.SetX(LayoutUnit(
@@ -1965,7 +1952,7 @@ void LayoutTableSection::RelayoutCellIfFlexed(LayoutTableCell& cell,
   // Alignment within a cell is based off the calculated height, which becomes
   // irrelevant once the cell has been resized based off its percentage.
   cell.SetOverrideLogicalHeightFromRowHeight(LayoutUnit(row_height));
-  cell.ForceChildLayout();
+  cell.ForceLayout();
 
   // If the baseline moved, we may have to update the data for our row. Find
   // out the new baseline.

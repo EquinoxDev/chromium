@@ -22,8 +22,7 @@
 #include "base/time/time.h"
 #include "chromeos/dbus/constants/dbus_paths.h"
 #include "chromeos/dbus/cryptohome/rpc.pb.h"
-#include "chromeos/dbus/dbus_thread_manager.h"
-#include "chromeos/dbus/util/tpm_util.h"
+#include "chromeos/dbus/cryptohome/tpm_util.h"
 #include "components/policy/proto/install_attributes.pb.h"
 #include "google_apis/gaia/gaia_auth_util.h"
 #include "third_party/cros_system_api/dbus/service_constants.h"
@@ -77,9 +76,7 @@ void InstallAttributes::Initialize() {
     return;
 
   DCHECK(!g_install_attributes);
-  DCHECK(DBusThreadManager::IsInitialized());
-  g_install_attributes =
-      new InstallAttributes(DBusThreadManager::Get()->GetCryptohomeClient());
+  g_install_attributes = new InstallAttributes(CryptohomeClient::Get());
   base::FilePath install_attrs_file;
   CHECK(base::PathService::Get(dbus_paths::FILE_INSTALL_ATTRIBUTES,
                                &install_attrs_file));

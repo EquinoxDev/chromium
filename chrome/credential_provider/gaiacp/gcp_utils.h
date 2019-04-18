@@ -5,6 +5,7 @@
 #ifndef CHROME_CREDENTIAL_PROVIDER_GAIACP_GCP_UTILS_H_
 #define CHROME_CREDENTIAL_PROVIDER_GAIACP_GCP_UTILS_H_
 
+#include <memory>
 #include <string>
 
 #include "base/callback.h"
@@ -53,6 +54,10 @@ constexpr int kMaxUsernameAttempts = 10;
 // First index to append to a username when another user with the same name
 // already exists.
 constexpr int kInitialDuplicateUsernameIndex = 2;
+
+// Default extension used as a fallback if the picture_url returned from gaia
+// does not have a file extension.
+extern const wchar_t kDefaultProfilePictureFileExtension[];
 
 // Because of some strange dependency problems with windows header files,
 // define STATUS_SUCCESS here instead of including ntstatus.h or SubAuth.h
@@ -191,9 +196,6 @@ HRESULT GetCommandLineForEntrypoint(HINSTANCE dll_handle,
                                     const wchar_t* entrypoint,
                                     base::CommandLine* command_line);
 
-// Enrolls the machine to with the Google MDM server if not already.
-HRESULT EnrollToGoogleMdmIfNeeded(const base::DictionaryValue& properties);
-
 // Handles the writing and deletion of a startup sentinel file used to ensure
 // that the GCPW does not crash continuously on startup and render the
 // winlogon process unusable.
@@ -206,16 +208,23 @@ base::string16 GetStringResource(int base_message_id);
 // Gets the language selected by the base::win::i18n::LanguageSelector.
 base::string16 GetSelectedLanguage();
 
-// Helpers to get strings from DictionaryValues.
-base::string16 GetDictString(const base::DictionaryValue* dict,
+// Securely clear a base::Value that may be a dictionary value that may
+// have a password field.
+void SecurelyClearDictionaryValue(base::Optional<base::Value>* value);
+
+// Helpers to get strings from base::Values that are expected to be
+// DictionaryValues.
+base::string16 GetDictString(const base::Value& dict, const char* name);
+base::string16 GetDictString(const std::unique_ptr<base::Value>& dict,
                              const char* name);
-base::string16 GetDictString(const std::unique_ptr<base::DictionaryValue>& dict,
-                             const char* name);
-std::string GetDictStringUTF8(const base::DictionaryValue* dict,
+std::string GetDictStringUTF8(const base::Value& dict, const char* name);
+std::string GetDictStringUTF8(const std::unique_ptr<base::Value>& dict,
                               const char* name);
-std::string GetDictStringUTF8(
-    const std::unique_ptr<base::DictionaryValue>& dict,
-    const char* name);
+
+// Returns the major build version of Windows by reading the registry.
+// See:
+// https://stackoverflow.com/questions/31072543/reliable-way-to-get-windows-version-from-registry
+base::string16 GetWindowsVersion();
 
 class OSUserManager;
 class OSProcessManager;

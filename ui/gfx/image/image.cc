@@ -146,9 +146,8 @@ class ImageRepPNG : public ImageRep {
 
 class ImageRepSkia : public ImageRep {
  public:
-  // Takes ownership of |image|.
-  explicit ImageRepSkia(ImageSkia* image)
-      : ImageRep(Image::kImageRepSkia), image_(*image) {}
+  explicit ImageRepSkia(ImageSkia image)
+      : ImageRep(Image::kImageRepSkia), image_(image) {}
 
   ~ImageRepSkia() override {}
 
@@ -341,8 +340,7 @@ Image::Image(const std::vector<ImagePNGRep>& image_reps) {
 Image::Image(const ImageSkia& image) {
   if (!image.isNull()) {
     storage_ = new internal::ImageStorage(Image::kImageRepSkia);
-    AddRepresentation(
-        std::make_unique<internal::ImageRepSkia>(new ImageSkia(image)));
+    AddRepresentation(std::make_unique<internal::ImageRepSkia>(image));
   }
 }
 
@@ -422,7 +420,7 @@ const ImageSkia* Image::ToImageSkia() const {
             GetRepresentation(kImageRepCocoaTouch, true)
                 ->AsImageRepCocoaTouch();
         scoped_rep.reset(new internal::ImageRepSkia(
-            new ImageSkia(ImageSkiaFromUIImage(native_rep->image()))));
+            ImageSkia(ImageSkiaFromUIImage(native_rep->image()))));
         break;
       }
 #elif defined(OS_MACOSX)
@@ -430,7 +428,7 @@ const ImageSkia* Image::ToImageSkia() const {
         const internal::ImageRepCocoa* native_rep =
             GetRepresentation(kImageRepCocoa, true)->AsImageRepCocoa();
         scoped_rep.reset(new internal::ImageRepSkia(
-            new ImageSkia(ImageSkiaFromNSImage(native_rep->image()))));
+            ImageSkia(ImageSkiaFromNSImage(native_rep->image()))));
         break;
       }
 #endif

@@ -314,7 +314,7 @@ void ContainerNode::InsertNodeVector(
     const Functor& mutator,
     NodeVector* post_insertion_notification_targets) {
   DCHECK(post_insertion_notification_targets);
-  probe::willInsertDOMNode(this);
+  probe::WillInsertDOMNode(this);
   {
     EventDispatchForbiddenScope assert_no_event_dispatch;
     ScriptForbiddenScope forbid_script;
@@ -326,7 +326,7 @@ void ContainerNode::InsertNodeVector(
       ChildListMutationScope(*this).ChildAdded(child);
       if (GetDocument().ContainsV1ShadowTree())
         child.CheckSlotChangeAfterInserted();
-      probe::didInsertDOMNode(&child);
+      probe::DidInsertDOMNode(&child);
       NotifyNodeInsertedInternal(child, *post_insertion_notification_targets);
     }
   }
@@ -632,6 +632,11 @@ void ContainerNode::WillRemoveChild(Node& child) {
   EventDispatchForbiddenScope assert_no_event_dispatch;
   // e.g. mutation event listener can create a new range.
   GetDocument().NodeWillBeRemoved(child);
+
+  if (child.IsElementNode()) {
+    if (auto* context = ToElement(child).GetDisplayLockContext())
+      context->NotifyWillDisconnect();
+  }
 }
 
 void ContainerNode::WillRemoveChildren() {
@@ -904,7 +909,7 @@ void ContainerNode::NotifyNodeInserted(Node& root,
   if (GetDocument().ContainsV1ShadowTree())
     root.CheckSlotChangeAfterInserted();
 
-  probe::didInsertDOMNode(&root);
+  probe::DidInsertDOMNode(&root);
 
   NodeVector post_insertion_notification_targets;
   NotifyNodeInsertedInternal(root, post_insertion_notification_targets);
@@ -1318,7 +1323,7 @@ static void DispatchChildInsertionEvents(Node& child) {
 
 static void DispatchChildRemovalEvents(Node& child) {
   if (child.IsInShadowTree()) {
-    probe::willRemoveDOMNode(&child);
+    probe::WillRemoveDOMNode(&child);
     return;
   }
 
@@ -1326,7 +1331,7 @@ static void DispatchChildRemovalEvents(Node& child) {
   DCHECK(!EventDispatchForbiddenScope::IsEventDispatchForbidden());
 #endif
 
-  probe::willRemoveDOMNode(&child);
+  probe::WillRemoveDOMNode(&child);
 
   Node* c = &child;
   Document& document = child.GetDocument();

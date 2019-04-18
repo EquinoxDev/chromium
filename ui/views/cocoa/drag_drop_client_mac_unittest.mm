@@ -124,7 +124,7 @@ namespace test {
 // View object that will receive and process dropped data from the test.
 class DragDropView : public View {
  public:
-  DragDropView() {}
+  DragDropView() = default;
 
   void set_formats(int formats) { formats_ = formats; }
 
@@ -198,7 +198,7 @@ class DragDropClientMacTest : public WidgetTest {
     widget_->GetContentsView()->AddChildView(target_);
     target_->SetBoundsRect(bounds);
 
-    drag_drop_client()->operation_ = ui::DragDropTypes::DRAG_COPY;
+    drag_drop_client()->source_operation_ = ui::DragDropTypes::DRAG_COPY;
   }
 
   void TearDown() override {

@@ -26,9 +26,12 @@ import org.chromium.chrome.browser.fullscreen.FullscreenHtmlApiHandler.Fullscree
 import org.chromium.chrome.browser.tab.BrowserControlsVisibilityDelegate;
 import org.chromium.chrome.browser.tab.Tab;
 import org.chromium.chrome.browser.tab.TabBrowserControlsOffsetHelper;
+import org.chromium.chrome.browser.tab.TabBrowserControlsState;
+import org.chromium.chrome.browser.tab.TabFullscreenHandler;
 import org.chromium.chrome.browser.tabmodel.TabModelSelector;
 import org.chromium.chrome.browser.tabmodel.TabModelSelectorTabModelObserver;
 import org.chromium.chrome.browser.tabmodel.TabSelectionType;
+import org.chromium.chrome.browser.util.FeatureUtilities;
 import org.chromium.chrome.browser.vr.VrModuleProvider;
 import org.chromium.chrome.browser.widget.ControlContainer;
 import org.chromium.content_public.browser.UiThreadTaskTraits;
@@ -170,7 +173,7 @@ public class ChromeFullscreenManager
                     @Override
                     public void run() {
                         if (getTab() != null) {
-                            getTab().updateFullscreenEnabledState();
+                            TabFullscreenHandler.updateEnabledState(getTab());
                         } else if (!mBrowserVisibilityDelegate.canAutoHideBrowserControls()) {
                             setPositionsForTabToNonFullscreen();
                         }
@@ -298,7 +301,7 @@ public class ChromeFullscreenManager
                     // We should hide browser controls first.
                     mPendingFullscreenOptions = options;
                     mIsEnteringPersistentModeState = true;
-                    tab.updateFullscreenEnabledState();
+                    TabFullscreenHandler.updateEnabledState(tab);
                 }
             }
 
@@ -314,7 +317,7 @@ public class ChromeFullscreenManager
             public void onFullscreenExited(Tab tab) {
                 // At this point, browser controls are hidden. Show browser controls only if it's
                 // permitted.
-                tab.updateBrowserControlsState(BrowserControlsState.SHOWN, true);
+                TabBrowserControlsState.get(tab).update(BrowserControlsState.SHOWN, true);
             }
 
             @Override
@@ -323,7 +326,8 @@ public class ChromeFullscreenManager
                 // there is no touchscreen when browsing in VR, the toast doesn't have any useful
                 // information.
                 return !isOverlayVideoMode() && !VrModuleProvider.getDelegate().isInVr()
-                        && !VrModuleProvider.getDelegate().bootsToVr();
+                        && !VrModuleProvider.getDelegate().bootsToVr()
+                        && !FeatureUtilities.isNoTouchModeEnabled();
             }
         };
     }
@@ -464,39 +468,17 @@ public class ChromeFullscreenManager
      * Updates viewport size to have it render the content correctly.
      */
     public void updateViewportSize() {
+        if (mInGesture || mContentViewScrolling) return;
+
         // Update content viewport size only when the browser controls are not animating.
         int topContentOffset = (int) mRendererTopContentOffset;
-        int topControlOffset = Math.max(mRendererTopControlOffset, -getTopControlsHeight());
         int bottomControlOffset = (int) mRendererBottomControlOffset;
-
-        // Controls resize the view only when they are being displayed at their
-        // maximum. Otherwise when the viewport is small, we can show unrelated
-        // graphical textures while scrolling the controls away.
-        // For top controls this is when the offset matches the height.
-        // For bottom controls this is the inverse, an offset of 0 means fully
-        // displayed. When there are no bottom controls, their height is 0.
-        boolean controlsResizeView = topControlOffset == 0 && bottomControlOffset == 0;
-
-        // Do not update the size during a gesture or scroll. Unless there has
-        // been a change in how a view resizes for controls, due to the viewport
-        // growing in size. When growing the viewport, it must be done
-        // immediately, otheriwse we render old textures in the expanded region.
-        // When shrinking the viewport, we can wait for the user input to finish
-        // before adjusting.
-        if (mControlsResizeView == controlsResizeView) {
-            if (mInGesture || mContentViewScrolling) return;
-            if ((topContentOffset != 0 && topContentOffset != getTopControlsHeight())
-                    && bottomControlOffset != 0
-                    && bottomControlOffset != getBottomControlsHeight()) {
-                return;
-            }
-        } else if ((mInGesture || mContentViewScrolling)
-                && topContentOffset == getTopControlsHeight()) {
-            // When shrinking the viewport, we can wait for the user input to finish
-            // before adjusting.
+        if ((topContentOffset != 0 && topContentOffset != getTopControlsHeight())
+                && bottomControlOffset != 0 && bottomControlOffset != getBottomControlsHeight()) {
             return;
         }
-
+        boolean controlsResizeView =
+                topContentOffset > 0 || bottomControlOffset < getBottomControlsHeight();
         mControlsResizeView = controlsResizeView;
         for (FullscreenListener listener : mListeners) listener.onUpdateViewportSize();
     }
@@ -668,7 +650,7 @@ public class ChromeFullscreenManager
     @Override
     public void setPositionsForTabToNonFullscreen() {
         Tab tab = getTab();
-        if (tab == null || tab.canShowBrowserControls()) {
+        if (tab == null || TabBrowserControlsState.get(tab).canShow()) {
             setPositionsForTab(0, 0, getTopControlsHeight());
         } else {
             setPositionsForTab(-getTopControlsHeight(), getBottomControlsHeight(), 0);

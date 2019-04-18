@@ -17,13 +17,13 @@
 #include "ash/assistant/assistant_controller.h"
 #include "ash/assistant/assistant_ui_controller.h"
 #include "ash/assistant/model/assistant_ui_model.h"
-#include "ash/contained_shell/contained_shell_controller.h"
 #include "ash/debug.h"
 #include "ash/display/display_configuration_controller.h"
 #include "ash/display/display_move_window_util.h"
 #include "ash/focus_cycler.h"
 #include "ash/ime/ime_controller.h"
 #include "ash/ime/ime_switch_type.h"
+#include "ash/kiosk_next/kiosk_next_shell_controller.h"
 #include "ash/magnifier/docked_magnifier_controller.h"
 #include "ash/magnifier/magnification_controller.h"
 #include "ash/media/media_controller.h"
@@ -37,6 +37,7 @@
 #include "ash/root_window_controller.h"
 #include "ash/rotator/window_rotation.h"
 #include "ash/session/session_controller.h"
+#include "ash/shelf/home_button_delegate.h"
 #include "ash/shelf/shelf.h"
 #include "ash/shelf/shelf_widget.h"
 #include "ash/shell.h"
@@ -74,7 +75,7 @@
 #include "base/system/sys_info.h"
 #include "chromeos/constants/chromeos_switches.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
-#include "chromeos/dbus/power_manager_client.h"
+#include "chromeos/dbus/power/power_manager_client.h"
 #include "components/user_manager/user_type.h"
 #include "ui/base/accelerators/accelerator.h"
 #include "ui/base/accelerators/accelerator_manager.h"
@@ -515,7 +516,7 @@ void HandleToggleAppList(const ui::Accelerator& accelerator,
   if (accelerator.key_code() == ui::VKEY_LWIN)
     base::RecordAction(UserMetricsAction("Accel_Search_LWin"));
 
-  Shell::Get()->app_list_controller()->OnAppListButtonPressed(
+  HomeButtonDelegate::PerformHomeButtonAction(
       display::Screen::GetScreen()
           ->GetDisplayNearestWindow(Shell::GetRootWindowForNewWindows())
           .id(),
@@ -710,6 +711,7 @@ void HandleToggleVoiceInteraction(const ui::Accelerator& accelerator) {
     case mojom::AssistantAllowedState::DISALLOWED_BY_FLAG:
     case mojom::AssistantAllowedState::DISALLOWED_BY_SUPERVISED_USER:
     case mojom::AssistantAllowedState::DISALLOWED_BY_INCOGNITO:
+    case mojom::AssistantAllowedState::DISALLOWED_BY_ACCOUNT_TYPE:
       // TODO(xiaohuic): show a specific toast.
       return;
     case mojom::AssistantAllowedState::ALLOWED:
@@ -724,7 +726,7 @@ void HandleToggleVoiceInteraction(const ui::Accelerator& accelerator) {
 
 void HandleSuspend() {
   base::RecordAction(UserMetricsAction("Accel_Suspend"));
-  chromeos::DBusThreadManager::Get()->GetPowerManagerClient()->RequestSuspend();
+  chromeos::PowerManagerClient::Get()->RequestSuspend();
 }
 
 bool CanHandleCycleUser() {
@@ -1087,9 +1089,11 @@ bool AcceleratorController::IsDeprecated(
   return deprecated_accelerators_.count(accelerator) != 0;
 }
 
-bool AcceleratorController::PerformActionIfEnabled(AcceleratorAction action) {
-  if (CanPerformAction(action, ui::Accelerator())) {
-    PerformAction(action, ui::Accelerator());
+bool AcceleratorController::PerformActionIfEnabled(
+    AcceleratorAction action,
+    const ui::Accelerator& accelerator) {
+  if (CanPerformAction(action, accelerator)) {
+    PerformAction(action, accelerator);
     return true;
   }
   return false;
@@ -1175,9 +1179,9 @@ void AcceleratorController::Init() {
     actions_allowed_in_pinned_mode_.insert(
         kActionsAllowedInAppModeOrPinnedMode[i]);
   }
-  for (size_t i = 0; i < kActionsAllowedForContainedShellLength; i++) {
-    actions_allowed_for_contained_shell_.insert(
-        kActionsAllowedForContainedShell[i]);
+  for (size_t i = 0; i < kActionsAllowedForKioskNextShellLength; i++) {
+    actions_allowed_for_kiosk_next_shell_.insert(
+        kActionsAllowedForKioskNextShell[i]);
   }
   for (size_t i = 0; i < kActionsAllowedInPinnedModeLength; ++i)
     actions_allowed_in_pinned_mode_.insert(kActionsAllowedInPinnedMode[i]);
@@ -1404,6 +1408,12 @@ void AcceleratorController::PerformAction(AcceleratorAction action,
       GetAcceleratorProcessingRestriction(action);
   if (restriction != RESTRICTION_NONE)
     return;
+
+  // TODO(minch): For VOLUME_DOWN and VOLUME_UP. Do the calculation based on
+  // accelerator.source_device_id() and
+  // ui::InputDeviceManager::GetInstance()->GetOtherInputDevices() to see
+  // whether we need to flip its action on current screen orientation for side
+  // volume button. http://crbug.com/937907.
 
   // If your accelerator invokes more than one line of code, please either
   // implement it in your module's controller code or pull it into a HandleFoo()
@@ -1728,8 +1738,8 @@ bool AcceleratorController::ShouldActionConsumeKeyEvent(
 
 AcceleratorController::AcceleratorProcessingRestriction
 AcceleratorController::GetAcceleratorProcessingRestriction(int action) const {
-  if (Shell::Get()->contained_shell_controller()->IsEnabled() &&
-      actions_allowed_for_contained_shell_.count(action) == 0) {
+  if (Shell::Get()->kiosk_next_shell_controller()->IsEnabled() &&
+      actions_allowed_for_kiosk_next_shell_.count(action) == 0) {
     return RESTRICTION_PREVENT_PROCESSING_AND_PROPAGATION;
   }
   if (Shell::Get()->screen_pinning_controller()->IsPinned() &&

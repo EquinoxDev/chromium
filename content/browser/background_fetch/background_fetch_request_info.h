@@ -25,7 +25,7 @@
 
 namespace storage {
 class BlobDataHandle;
-}
+}  // namespace storage
 
 namespace content {
 
@@ -33,9 +33,7 @@ struct BackgroundFetchResponse;
 struct BackgroundFetchResult;
 class ChromeBlobStorageContext;
 
-// Simple class to encapsulate the components of a fetch request.
-// TODO(peter): This can likely change to have a single owner, and thus become
-// an std::unique_ptr<>, when persistent storage has been implemented.
+// Class to encapsulate the components of a fetch request.
 class CONTENT_EXPORT BackgroundFetchRequestInfo
     : public base::RefCountedDeleteOnSequence<BackgroundFetchRequestInfo> {
  public:
@@ -112,10 +110,10 @@ class CONTENT_EXPORT BackgroundFetchRequestInfo
   storage::BlobDataHandle* GetResponseBlobDataHandle();
 
   // Hands over ownership of the blob data handle.
+  // `CreateResponseBlobDataHandle` must have been called before this.
   std::unique_ptr<storage::BlobDataHandle> TakeResponseBlobDataHandle();
 
-  // Returns the size of the response. `CreateResponseBlobDataHandle` must have
-  // been called before this.
+  // Returns the size of the response.
   uint64_t GetResponseSize() const;
 
   // Returns the time at which the response was completed.

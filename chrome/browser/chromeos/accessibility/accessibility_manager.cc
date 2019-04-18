@@ -57,9 +57,8 @@
 #include "chrome/grit/browser_resources.h"
 #include "chromeos/audio/chromeos_sounds.h"
 #include "chromeos/constants/chromeos_switches.h"
-#include "chromeos/dbus/dbus_thread_manager.h"
-#include "chromeos/dbus/power_manager_client.h"
-#include "chromeos/dbus/upstart_client.h"
+#include "chromeos/dbus/power/power_manager_client.h"
+#include "chromeos/dbus/upstart/upstart_client.h"
 #include "components/language/core/browser/pref_names.h"
 #include "components/prefs/pref_member.h"
 #include "components/prefs/pref_service.h"
@@ -81,8 +80,8 @@
 #include "extensions/common/extension_messages.h"
 #include "extensions/common/extension_resource.h"
 #include "extensions/common/host_id.h"
-#include "media/audio/sounds/sounds_manager.h"
 #include "mojo/public/cpp/bindings/binding.h"
+#include "services/audio/public/cpp/sounds/sounds_manager.h"
 #include "services/media_session/public/mojom/constants.mojom.h"
 #include "services/service_manager/public/cpp/connector.h"
 #include "ui/accessibility/accessibility_switches.h"
@@ -149,8 +148,7 @@ void EnableSwitchAccessAfterChromeVoxMetric(bool val) {
 // stop followed by start ensures we both stop a started job, and also start
 // brltty.
 void RestartBrltty(const std::string& address) {
-  chromeos::UpstartClient* client =
-      chromeos::DBusThreadManager::Get()->GetUpstartClient();
+  chromeos::UpstartClient* client = chromeos::UpstartClient::Get();
   client->StopJob(kBrlttyUpstartJobName, EmptyVoidDBusMethodCallback());
 
   std::vector<std::string> args;
@@ -259,7 +257,7 @@ AccessibilityManager::AccessibilityManager()
   input_method::InputMethodManager::Get()->AddObserver(this);
 
   ui::ResourceBundle& bundle = ui::ResourceBundle::GetSharedInstance();
-  media::SoundsManager* manager = media::SoundsManager::Get();
+  audio::SoundsManager* manager = audio::SoundsManager::Get();
   manager->Initialize(SOUND_SHUTDOWN,
                       bundle.GetRawDataResource(IDR_SOUND_SHUTDOWN_WAV));
   manager->Initialize(
@@ -476,8 +474,9 @@ void AccessibilityManager::OnSpokenFeedbackChanged() {
 
   if (enabled) {
     chromevox_loader_->SetProfile(
-        profile_, base::Bind(&AccessibilityManager::PostSwitchChromeVoxProfile,
-                             weak_ptr_factory_.GetWeakPtr()));
+        profile_,
+        base::BindRepeating(&AccessibilityManager::PostSwitchChromeVoxProfile,
+                            weak_ptr_factory_.GetWeakPtr()));
   }
 
   if (spoken_feedback_enabled_ == enabled)
@@ -490,9 +489,9 @@ void AccessibilityManager::OnSpokenFeedbackChanged() {
   NotifyAccessibilityStatusChanged(details);
 
   if (enabled) {
-    chromevox_loader_->Load(profile_,
-                            base::Bind(&AccessibilityManager::PostLoadChromeVox,
-                                       weak_ptr_factory_.GetWeakPtr()));
+    chromevox_loader_->Load(
+        profile_, base::BindRepeating(&AccessibilityManager::PostLoadChromeVox,
+                                      weak_ptr_factory_.GetWeakPtr()));
   } else {
     chromevox_loader_->Unload();
   }
@@ -553,7 +552,7 @@ bool AccessibilityManager::PlayEarcon(int sound_key, PlaySoundOption option) {
       !IsSpokenFeedbackEnabled()) {
     return false;
   }
-  return media::SoundsManager::Get()->Play(sound_key);
+  return audio::SoundsManager::Get()->Play(sound_key);
 }
 
 void AccessibilityManager::OnTwoFingerTouchStart() {
@@ -616,7 +615,7 @@ bool AccessibilityManager::ShouldToggleSpokenFeedbackViaTouch() {
 }
 
 bool AccessibilityManager::PlaySpokenFeedbackToggleCountdown(int tick_count) {
-  return media::SoundsManager::Get()->Play(
+  return audio::SoundsManager::Get()->Play(
       tick_count % 2 ? SOUND_SPOKEN_FEEDBACK_TOGGLE_COUNTDOWN_HIGH
                      : SOUND_SPOKEN_FEEDBACK_TOGGLE_COUNTDOWN_LOW);
 }
@@ -835,7 +834,10 @@ void AccessibilityManager::OnSelectToSpeakChanged() {
   NotifyAccessibilityStatusChanged(details);
 
   if (enabled) {
-    select_to_speak_loader_->Load(profile_, base::Closure() /* done_cb */);
+    select_to_speak_loader_->Load(
+        profile_,
+        base::BindRepeating(&AccessibilityManager::PostLoadSelectToSpeak,
+                            weak_ptr_factory_.GetWeakPtr()));
     // Construct a delegate to connect SelectToSpeak and its EventHandler in
     // ash.
     select_to_speak_event_handler_delegate_ =
@@ -1131,7 +1133,7 @@ base::TimeDelta AccessibilityManager::PlayShutdownSound() {
                   PlaySoundOption::ONLY_IF_SPOKEN_FEEDBACK_ENABLED)) {
     return base::TimeDelta();
   }
-  return media::SoundsManager::Get()->GetDuration(SOUND_SHUTDOWN);
+  return audio::SoundsManager::Get()->GetDuration(SOUND_SHUTDOWN);
 }
 
 std::unique_ptr<AccessibilityStatusSubscription>
@@ -1314,14 +1316,15 @@ void AccessibilityManager::PostLoadChromeVox() {
   extensions::EventRouter* event_router =
       extensions::EventRouter::Get(profile_);
 
+  const std::string& extension_id = extension_misc::kChromeVoxExtensionId;
+
   std::unique_ptr<base::ListValue> event_args =
       std::make_unique<base::ListValue>();
   std::unique_ptr<extensions::Event> event(new extensions::Event(
       extensions::events::ACCESSIBILITY_PRIVATE_ON_INTRODUCE_CHROME_VOX,
       extensions::api::accessibility_private::OnIntroduceChromeVox::kEventName,
       std::move(event_args)));
-  event_router->DispatchEventWithLazyListener(
-      extension_misc::kChromeVoxExtensionId, std::move(event));
+  event_router->DispatchEventWithLazyListener(extension_id, std::move(event));
 
   if (!chromevox_panel_) {
     chromevox_panel_ = new ChromeVoxPanel(profile_);
@@ -1332,21 +1335,20 @@ void AccessibilityManager::PostLoadChromeVox() {
   }
 
   audio_focus_manager_ptr_->SetEnforcementMode(
-      media_session::mojom::EnforcementMode::kSingleSession);
+      media_session::mojom::EnforcementMode::kNone);
+
+  InitializeFocusRings(extension_id);
 }
 
 void AccessibilityManager::PostUnloadChromeVox() {
   // Do any teardown work needed immediately after ChromeVox actually unloads.
   // Stop brltty.
-  chromeos::DBusThreadManager::Get()->GetUpstartClient()->StopJob(
-      kBrlttyUpstartJobName, EmptyVoidDBusMethodCallback());
+  chromeos::UpstartClient::Get()->StopJob(kBrlttyUpstartJobName,
+                                          EmptyVoidDBusMethodCallback());
 
   PlayEarcon(SOUND_SPOKEN_FEEDBACK_DISABLED, PlaySoundOption::ALWAYS);
 
-  // Clear the accessibility focus ring.
-  SetFocusRing(std::vector<gfx::Rect>(),
-               ash::mojom::FocusRingBehavior::PERSIST_FOCUS_RING,
-               extension_misc::kChromeVoxExtensionId);
+  RemoveFocusRings(extension_misc::kChromeVoxExtensionId);
 
   if (chromevox_panel_) {
     chromevox_panel_->Close();
@@ -1380,12 +1382,16 @@ void AccessibilityManager::OnChromeVoxPanelDestroying() {
   chromevox_panel_ = nullptr;
 }
 
+void AccessibilityManager::PostLoadSelectToSpeak() {
+  InitializeFocusRings(extension_misc::kSelectToSpeakExtensionId);
+}
+
 void AccessibilityManager::PostUnloadSelectToSpeak() {
   // Do any teardown work needed immediately after Select-to-Speak actually
   // unloads.
 
   // Clear the accessibility focus ring and highlight.
-  HideFocusRing(extension_misc::kSelectToSpeakExtensionId);
+  RemoveFocusRings(extension_misc::kSelectToSpeakExtensionId);
   HideHighlights();
 
   // Stop speech.
@@ -1401,6 +1407,8 @@ void AccessibilityManager::PostLoadSwitchAccess() {
             base::BindOnce(&AccessibilityManager::OnSwitchAccessPanelDestroying,
                            base::Unretained(this))));
   }
+
+  InitializeFocusRings(extension_misc::kSwitchAccessExtensionId);
 }
 
 void AccessibilityManager::PostUnloadSwitchAccess() {
@@ -1408,7 +1416,7 @@ void AccessibilityManager::PostUnloadSwitchAccess() {
   // unloads.
 
   // Clear the accessibility focus ring.
-  HideFocusRing(extension_misc::kSwitchAccessExtensionId);
+  RemoveFocusRings(extension_misc::kSwitchAccessExtensionId);
 
   // Close the context menu
   if (switch_access_panel_) {
@@ -1439,8 +1447,10 @@ void AccessibilityManager::HideSwitchAccessMenu() {
 
 void AccessibilityManager::ShowSwitchAccessMenu(const gfx::Rect& element_bounds,
                                                 int menu_width,
-                                                int menu_height) {
-  switch_access_panel_->Show(element_bounds, menu_width, menu_height);
+                                                int menu_height,
+                                                bool back_button_only) {
+  switch_access_panel_->Show(element_bounds, menu_width, menu_height,
+                             back_button_only);
 }
 
 bool AccessibilityManager::ToggleDictation() {
@@ -1453,27 +1463,45 @@ bool AccessibilityManager::ToggleDictation() {
   return dictation_->OnToggleDictation();
 }
 
-void AccessibilityManager::SetFocusRingColor(SkColor color,
-                                             std::string caller_id) {
-  accessibility_focus_ring_controller_->SetFocusRingColor(color, caller_id);
+const std::string AccessibilityManager::GetFocusRingId(
+    const std::string& extension_id,
+    const std::string& focus_ring_name) {
+  // Add the focus ring name to the list of focus rings for the extension.
+  focus_ring_names_for_extension_id_.find(extension_id)
+      ->second.insert(focus_ring_name);
+  return extension_id + '-' + focus_ring_name;
 }
 
-void AccessibilityManager::ResetFocusRingColor(std::string caller_id) {
-  accessibility_focus_ring_controller_->ResetFocusRingColor(caller_id);
+void AccessibilityManager::InitializeFocusRings(
+    const std::string& extension_id) {
+  if (focus_ring_names_for_extension_id_.count(extension_id) == 0) {
+    focus_ring_names_for_extension_id_.emplace(extension_id,
+                                               std::set<std::string>());
+  }
 }
 
-void AccessibilityManager::SetFocusRing(
-    const std::vector<gfx::Rect>& rects_in_screen,
-    ash::mojom::FocusRingBehavior focus_ring_behavior,
-    std::string caller_id) {
-  accessibility_focus_ring_controller_->SetFocusRing(
-      rects_in_screen, focus_ring_behavior, caller_id);
+void AccessibilityManager::RemoveFocusRings(const std::string& extension_id) {
+  if (focus_ring_names_for_extension_id_.count(extension_id) != 0) {
+    const std::set<std::string>& focus_ring_names =
+        focus_ring_names_for_extension_id_.find(extension_id)->second;
+
+    for (const std::string& focus_ring_name : focus_ring_names)
+      HideFocusRing(GetFocusRingId(extension_id, focus_ring_name));
+  }
+  focus_ring_names_for_extension_id_.erase(extension_id);
+}
+
+void AccessibilityManager::SetFocusRing(std::string focus_ring_id,
+                                        ash::mojom::FocusRingPtr focus_ring) {
+  accessibility_focus_ring_controller_->SetFocusRing(focus_ring_id,
+                                                     std::move(focus_ring));
+
   if (focus_ring_observer_for_test_)
     focus_ring_observer_for_test_.Run();
 }
 
-void AccessibilityManager::HideFocusRing(std::string caller_id) {
-  accessibility_focus_ring_controller_->HideFocusRing(caller_id);
+void AccessibilityManager::HideFocusRing(std::string focus_ring_id) {
+  accessibility_focus_ring_controller_->HideFocusRing(focus_ring_id);
   if (focus_ring_observer_for_test_)
     focus_ring_observer_for_test_.Run();
 }
@@ -1505,8 +1533,8 @@ bool AccessibilityManager::GetStartupSoundEnabled() const {
   if (user_list.empty())
     return false;
 
-  // |user_list| is sorted by last log in date. Take the most recent user to log
-  // in.
+  // |user_list| is sorted by last log in date. Take the most recent user to
+  // log in.
   bool val;
   return user_manager::known_user::GetBooleanPref(
              user_list[0]->GetAccountId(), kUserStartupSoundEnabled, &val) &&
@@ -1529,8 +1557,8 @@ const std::string AccessibilityManager::GetBluetoothBrailleDisplayAddress()
   if (user_list.empty())
     return std::string();
 
-  // |user_list| is sorted by last log in date. Take the most recent user to log
-  // in.
+  // |user_list| is sorted by last log in date. Take the most recent user to
+  // log in.
   std::string val;
   return user_manager::known_user::GetStringPref(
              user_list[0]->GetAccountId(), kUserBluetoothBrailleDisplayAddress,

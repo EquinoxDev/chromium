@@ -13,6 +13,10 @@ import("//printing/buildflags/buildflags.gni")
 import("//tools/grit/grit_rule.gni")
 import("//tools/ipc_fuzzer/ipc_fuzzer.gni")
 
+if (is_android) {
+  import("//build/config/android/rules.gni")
+}
+
 # This target is for dependency tracking for the command ID header.
 source_set("command_ids") {
   sources = [
@@ -453,6 +457,7 @@ source_set("chrome_content_browser_overlay_manifest") {
       "//ash/components/shortcut_viewer/public/mojom",
       "//ash/components/tap_visualizer/public/cpp:manifest",
       "//ash/components/tap_visualizer/public/mojom",
+      "//chrome/browser/chromeos/kiosk_next_home/mojom",
       "//chromeos/assistant:buildflags",
       "//chromeos/services/device_sync/public/cpp:manifest",
       "//chromeos/services/ime/public/mojom",
@@ -469,7 +474,10 @@ source_set("chrome_content_browser_overlay_manifest") {
   }
 
   if (is_android) {
-    deps += [ "//chrome/browser/ui/webui/eoc_internals:mojo_bindings" ]
+    deps += [
+      "//chrome/browser/ui/webui/eoc_internals:mojo_bindings",
+      "//chrome/browser/ui/webui/explore_sites_internals:mojo_bindings",
+    ]
   } else {
     deps += [
       "//chrome/browser/ui/webui/app_management:mojo_bindings",
@@ -482,6 +490,10 @@ source_set("chrome_content_browser_overlay_manifest") {
       "//chrome/browser/ui/webui/discards:mojo_bindings",
       "//services/resource_coordinator/public/mojom",
     ]
+  }
+
+  if (is_android && notouch_build) {
+    configs += [ "//chrome/browser:notouch_config" ]
   }
 }
 

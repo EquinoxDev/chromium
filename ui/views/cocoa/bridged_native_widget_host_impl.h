@@ -164,6 +164,10 @@ class VIEWS_EXPORT BridgedNativeWidgetHostImpl
   // Called when the owning Widget's Init method has completed.
   void OnWidgetInitDone();
 
+  // Redispatch a keyboard event using the widget's window's CommandDispatcher.
+  // Return true if the event is handled.
+  bool RedispatchKeyEvent(NSEvent* event);
+
   // See widget.h for documentation.
   ui::InputMethod* GetInputMethod();
 
@@ -362,6 +366,7 @@ class VIEWS_EXPORT BridgedNativeWidgetHostImpl
   void OnPaintLayer(const ui::PaintContext& context) override;
   void OnDeviceScaleFactorChanged(float old_device_scale_factor,
                                   float new_device_scale_factor) override;
+  void UpdateVisualState() override;
 
   // ui::AcceleratedWidgetMacNSView:
   void AcceleratedWidgetCALayerParamsUpdated() override;
@@ -425,6 +430,12 @@ class VIEWS_EXPORT BridgedNativeWidgetHostImpl
 
   // Display link for getting vsync info for |display_|.
   scoped_refptr<ui::DisplayLinkMac> display_link_;
+
+  // Structure to avoid sending IOSurface mach ports over mojo.
+  // https://crbug.com/942213
+  class IOSurfaceToRemoteLayerInterceptor;
+  std::unique_ptr<IOSurfaceToRemoteLayerInterceptor>
+      io_surface_to_remote_layer_interceptor_;
 
   // The geometry of the window and its contents view, in screen coordinates.
   gfx::Rect window_bounds_in_screen_;

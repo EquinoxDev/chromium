@@ -89,6 +89,7 @@
 
 #if BUILDFLAG(ENABLE_EXTENSIONS)
 #include "chrome/browser/extensions/api/streams_private/streams_private_api.h"
+#include "extensions/browser/guest_view/mime_handler_view/mime_handler_view_attach_helper.h"
 #include "extensions/browser/guest_view/web_view/web_view_renderer_state.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/extension_urls.h"
@@ -103,11 +104,9 @@
 
 #if defined(OS_ANDROID)
 #include "chrome/browser/android/download/intercept_download_resource_throttle.h"
-#include "chrome/browser/loader/data_reduction_proxy_resource_throttle_android.h"
 #endif
 
 using content::BrowserThread;
-using content::LoginDelegate;
 using content::RenderViewHost;
 using content::ResourceRequestInfo;
 using content::ResourceType;
@@ -406,16 +405,11 @@ void ChromeResourceDispatcherHostDelegate::AppendStandardResourceThrottles(
     std::vector<std::unique_ptr<content::ResourceThrottle>>* throttles) {
   ProfileIOData* io_data = ProfileIOData::FromResourceContext(resource_context);
 
-  // Insert either safe browsing or data reduction proxy throttle at the front
-  // of the list, so one of them gets to decide if the resource is safe.
+  // Insert safe browsing to decide if the resource is safe.
   content::ResourceThrottle* first_throttle = NULL;
-#if defined(OS_ANDROID)
-  first_throttle = DataReductionProxyResourceThrottle::MaybeCreate(
-      request, resource_context, resource_type, safe_browsing_.get());
-#endif  // defined(OS_ANDROID)
 
 #if defined(SAFE_BROWSING_DB_LOCAL) || defined(SAFE_BROWSING_DB_REMOTE)
-  if (!first_throttle && io_data->safe_browsing_enabled()->GetValue() &&
+  if (io_data->safe_browsing_enabled()->GetValue() &&
       !base::FeatureList::IsEnabled(safe_browsing::kCheckByURLLoaderThrottle)) {
     first_throttle = MaybeCreateSafeBrowsingResourceThrottle(
         request, resource_type, safe_browsing_.get(), io_data);
@@ -441,6 +435,12 @@ bool ChromeResourceDispatcherHostDelegate::ShouldInterceptResourceAsStream(
     target_info.extension_id = extension_id;
     target_info.view_id = base::GenerateGUID();
     *payload = target_info.view_id;
+    // Provide the MimeHandlerView code a chance to override the payload. This
+    // is the case where the resource is handled by frame-based MimeHandlerView.
+    uint32_t unused_data_pipe_size;
+    extensions::MimeHandlerViewAttachHelper::OverrideBodyForInterceptedResponse(
+        info->GetFrameTreeNodeId(), request->url(), mime_type,
+        target_info.view_id, payload, &unused_data_pipe_size);
     stream_target_info_[request] = target_info;
     return true;
   }

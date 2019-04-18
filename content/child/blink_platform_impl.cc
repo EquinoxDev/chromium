@@ -111,6 +111,8 @@ static int ToMessageID(WebLocalizedString::Name name) {
       return IDS_AX_MEDIA_SHOW_CLOSED_CAPTIONS_MENU_BUTTON;
     case WebLocalizedString::kAXMediaHideClosedCaptionsMenuButton:
       return IDS_AX_MEDIA_HIDE_CLOSED_CAPTIONS_MENU_BUTTON;
+    case WebLocalizedString::kAXMediaLoadingPanel:
+      return IDS_AX_MEDIA_LOADING_PANEL;
     case WebLocalizedString::kAXMediaCastOffButton:
       return IDS_AX_MEDIA_CAST_OFF_BUTTON;
     case WebLocalizedString::kAXMediaCastOnButton:
@@ -163,6 +165,8 @@ static int ToMessageID(WebLocalizedString::Name name) {
       return IDS_FORM_INPUT_ALT;
     case WebLocalizedString::kMissingPluginText:
       return IDS_PLUGIN_INITIALIZATION_ERROR;
+    case WebLocalizedString::kAXMediaPlaybackError:
+      return IDS_MEDIA_PLAYBACK_ERROR;
     case WebLocalizedString::kMediaRemotingCastText:
       return IDS_MEDIA_REMOTING_CAST_TEXT;
     case WebLocalizedString::kMediaRemotingCastToUnknownDeviceText:
@@ -426,16 +430,16 @@ const DataResource kDataResources[] = {
     {"fullscreenAndroid.css", IDR_UASTYLE_FULLSCREEN_ANDROID_CSS,
      ui::SCALE_FACTOR_NONE, true},
     // Not limited to Linux since it's used for mobile layouts in inspector.
-    {"linux.css", IDR_UASTYLE_THEME_CHROMIUM_LINUX_CSS,
+    {"linux.css", IDR_UASTYLE_THEME_CHROMIUM_LINUX_CSS, ui::SCALE_FACTOR_NONE,
+     true},
+    {"input_multiple_fields.css", IDR_UASTYLE_THEME_INPUT_MULTIPLE_FIELDS_CSS,
      ui::SCALE_FACTOR_NONE, true},
-    {"input_multiple_fields.css",
-     IDR_UASTYLE_THEME_INPUT_MULTIPLE_FIELDS_CSS, ui::SCALE_FACTOR_NONE, true},
 #if defined(OS_MACOSX)
     {"mac.css", IDR_UASTYLE_THEME_MAC_CSS, ui::SCALE_FACTOR_NONE, true},
 #endif
     {"win.css", IDR_UASTYLE_THEME_WIN_CSS, ui::SCALE_FACTOR_NONE, true},
-    {"win_quirks.css", IDR_UASTYLE_THEME_WIN_QUIRKS_CSS,
-     ui::SCALE_FACTOR_NONE, true},
+    {"win_quirks.css", IDR_UASTYLE_THEME_WIN_QUIRKS_CSS, ui::SCALE_FACTOR_NONE,
+     true},
     {"svg.css", IDR_UASTYLE_SVG_CSS, ui::SCALE_FACTOR_NONE, true},
     {"mathml.css", IDR_UASTYLE_MATHML_CSS, ui::SCALE_FACTOR_NONE, true},
     {"fullscreen.css", IDR_UASTYLE_FULLSCREEN_CSS, ui::SCALE_FACTOR_NONE, true},
@@ -444,7 +448,19 @@ const DataResource kDataResources[] = {
      ui::SCALE_FACTOR_NONE, true},
     {"viewportTelevision.css", IDR_UASTYLE_VIEWPORT_TELEVISION_CSS,
      ui::SCALE_FACTOR_NONE, true},
-    {"InspectorOverlayPage.html", IDR_INSPECTOR_OVERLAY_PAGE_HTML,
+    {"inspect_tool_common.css", IDR_INSPECT_TOOL_COMMON_CSS,
+     ui::SCALE_FACTOR_NONE, true},
+    {"inspect_tool_common.js", IDR_INSPECT_TOOL_COMMON_JS,
+     ui::SCALE_FACTOR_NONE, true},
+    {"inspect_tool_distances.html", IDR_INSPECT_TOOL_DISTANCES_HTML,
+     ui::SCALE_FACTOR_NONE, true},
+    {"inspect_tool_highlight.html", IDR_INSPECT_TOOL_HIGHLIGHT_HTML,
+     ui::SCALE_FACTOR_NONE, true},
+    {"inspect_tool_paused.html", IDR_INSPECT_TOOL_PAUSED_HTML,
+     ui::SCALE_FACTOR_NONE, true},
+    {"inspect_tool_screenshot.html", IDR_INSPECT_TOOL_SCREENSHOT_HTML,
+     ui::SCALE_FACTOR_NONE, true},
+    {"inspect_tool_viewport_size.html", IDR_INSPECT_TOOL_VIEWPORT_SIZE_HTML,
      ui::SCALE_FACTOR_NONE, true},
     {"DocumentXMLTreeViewer.css", IDR_DOCUMENTXMLTREEVIEWER_CSS,
      ui::SCALE_FACTOR_NONE, true},
@@ -609,14 +625,10 @@ WebThemeEngine* BlinkPlatformImpl::ThemeEngine() {
   return &native_theme_engine_;
 }
 
-blink::Platform::FileHandle BlinkPlatformImpl::DatabaseOpenFile(
+base::File BlinkPlatformImpl::DatabaseOpenFile(
     const blink::WebString& vfs_file_name,
     int desired_flags) {
-#if defined(OS_WIN)
-  return INVALID_HANDLE_VALUE;
-#elif defined(OS_POSIX) || defined(OS_FUCHSIA)
-  return -1;
-#endif
+  return base::File();
 }
 
 int BlinkPlatformImpl::DatabaseDeleteFile(const blink::WebString& vfs_file_name,
@@ -624,24 +636,24 @@ int BlinkPlatformImpl::DatabaseDeleteFile(const blink::WebString& vfs_file_name,
   return -1;
 }
 
-long BlinkPlatformImpl::DatabaseGetFileAttributes(
+int32_t BlinkPlatformImpl::DatabaseGetFileAttributes(
     const blink::WebString& vfs_file_name) {
   return 0;
 }
 
-long long BlinkPlatformImpl::DatabaseGetFileSize(
+int64_t BlinkPlatformImpl::DatabaseGetFileSize(
     const blink::WebString& vfs_file_name) {
   return 0;
 }
 
-long long BlinkPlatformImpl::DatabaseGetSpaceAvailableForOrigin(
+int64_t BlinkPlatformImpl::DatabaseGetSpaceAvailableForOrigin(
     const blink::WebSecurityOrigin& origin) {
   return 0;
 }
 
 bool BlinkPlatformImpl::DatabaseSetFileSize(
     const blink::WebString& vfs_file_name,
-    long long size) {
+    int64_t size) {
   return false;
 }
 

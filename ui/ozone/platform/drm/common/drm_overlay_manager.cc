@@ -5,6 +5,7 @@
 #include "ui/ozone/platform/drm/common/drm_overlay_manager.h"
 
 #include <algorithm>
+#include <memory>
 #include <utility>
 
 #include "base/trace_event/trace_event.h"
@@ -36,11 +37,8 @@ DrmOverlayManager::CreateOverlayCandidates(gfx::AcceleratedWidget widget) {
   return std::make_unique<DrmOverlayCandidates>(this, widget);
 }
 
-bool DrmOverlayManager::SupportsOverlays() const {
-  return supports_overlays_;
-}
-
 void DrmOverlayManager::ResetCache() {
+  TRACE_EVENT0("hwoverlays", "DrmOverlayManager::ResetCache");
   DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
   cache_.Clear();
 }
@@ -53,22 +51,14 @@ void DrmOverlayManager::CheckOverlaySupport(
 
   std::vector<OverlaySurfaceCandidate> result_candidates;
   for (auto& candidate : *candidates) {
-    // Reject candidates that don't fall on a pixel boundary.
-    if (!gfx::IsNearestRectWithinDistance(candidate.display_rect, 0.01f)) {
-      DCHECK_NE(candidate.plane_z_order, 0);
-      result_candidates.push_back(OverlaySurfaceCandidate());
-      result_candidates.back().overlay_handled = false;
-      continue;
-    }
+    bool can_handle = CanHandleCandidate(candidate, widget);
 
-    result_candidates.push_back(OverlaySurfaceCandidate(candidate));
-    // Start out hoping that we can have an overlay.
-    result_candidates.back().overlay_handled = true;
+    // CanHandleCandidate() should never return false if the candidate is
+    // the primary plane.
+    DCHECK(can_handle || candidate.plane_z_order != 0);
 
-    if (!CanHandleCandidate(candidate, widget)) {
-      DCHECK_NE(candidate.plane_z_order, 0);
-      result_candidates.back().overlay_handled = false;
-    }
+    result_candidates.push_back(candidate);
+    result_candidates.back().overlay_handled = can_handle;
   }
 
   auto iter = cache_.Get(result_candidates);
@@ -98,7 +88,7 @@ void DrmOverlayManager::CheckOverlaySupport(
 
     size_t size = candidates->size();
     const std::vector<OverlayStatus>& status = value.status;
-    DCHECK(size == status.size());
+    DCHECK_EQ(size, status.size());
     for (size_t i = 0; i < size; i++) {
       DCHECK(status[i] == OVERLAY_STATUS_ABLE ||
              status[i] == OVERLAY_STATUS_NOT);
@@ -114,6 +104,10 @@ bool DrmOverlayManager::CanHandleCandidate(
     return false;
 
   if (candidate.transform == gfx::OVERLAY_TRANSFORM_INVALID)
+    return false;
+
+  // Reject candidates that don't fall on a pixel boundary.
+  if (!gfx::IsNearestRectWithinDistance(candidate.display_rect, 0.01f))
     return false;
 
   if (candidate.is_clipped && !candidate.clip_rect.Contains(

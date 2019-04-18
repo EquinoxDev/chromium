@@ -38,7 +38,7 @@
 #include "third_party/blink/renderer/core/core_export.h"
 #include "third_party/blink/renderer/core/css/invalidation/invalidation_flags.h"
 #include "third_party/blink/renderer/platform/wtf/allocator.h"
-#include "third_party/blink/renderer/platform/wtf/assertions.h"
+#include "third_party/blink/renderer/platform/wtf/casting.h"
 #include "third_party/blink/renderer/platform/wtf/forward.h"
 #include "third_party/blink/renderer/platform/wtf/hash_set.h"
 #include "third_party/blink/renderer/platform/wtf/text/atomic_string_hash.h"
@@ -49,7 +49,7 @@ namespace blink {
 class Element;
 class TracedValue;
 
-enum InvalidationType { kInvalidateDescendants, kInvalidateSiblings };
+enum class InvalidationType { kInvalidateDescendants, kInvalidateSiblings };
 
 class InvalidationSet;
 
@@ -99,10 +99,10 @@ class CORE_EXPORT InvalidationSet
     return static_cast<InvalidationType>(type_);
   }
   bool IsDescendantInvalidationSet() const {
-    return GetType() == kInvalidateDescendants;
+    return GetType() == InvalidationType::kInvalidateDescendants;
   }
   bool IsSiblingInvalidationSet() const {
-    return GetType() == kInvalidateSiblings;
+    return GetType() == InvalidationType::kInvalidateSiblings;
   }
 
   static void CacheTracingFlag();
@@ -394,7 +394,8 @@ class CORE_EXPORT DescendantInvalidationSet final : public InvalidationSet {
   }
 
  private:
-  DescendantInvalidationSet() : InvalidationSet(kInvalidateDescendants) {}
+  DescendantInvalidationSet()
+      : InvalidationSet(InvalidationType::kInvalidateDescendants) {}
 };
 
 class CORE_EXPORT SiblingInvalidationSet final : public InvalidationSet {
@@ -499,16 +500,19 @@ bool InvalidationSet::Backing<type>::IsEmpty(
   return !IsHashSet(flags) && !string_impl_;
 }
 
-DEFINE_TYPE_CASTS(DescendantInvalidationSet,
-                  InvalidationSet,
-                  value,
-                  value->IsDescendantInvalidationSet(),
-                  value.IsDescendantInvalidationSet());
-DEFINE_TYPE_CASTS(SiblingInvalidationSet,
-                  InvalidationSet,
-                  value,
-                  value->IsSiblingInvalidationSet(),
-                  value.IsSiblingInvalidationSet());
+template <>
+struct DowncastTraits<DescendantInvalidationSet> {
+  static bool AllowFrom(const InvalidationSet& value) {
+    return value.IsDescendantInvalidationSet();
+  }
+};
+
+template <>
+struct DowncastTraits<SiblingInvalidationSet> {
+  static bool AllowFrom(const InvalidationSet& value) {
+    return value.IsSiblingInvalidationSet();
+  }
+};
 
 }  // namespace blink
 

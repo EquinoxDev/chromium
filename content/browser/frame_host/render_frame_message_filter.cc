@@ -41,10 +41,10 @@
 #include "gpu/GLES2/gl2extchromium.h"
 #include "mojo/public/cpp/bindings/callback_helpers.h"
 #include "mojo/public/cpp/system/message_pipe.h"
-#include "net/base/registry_controlled_domains/registry_controlled_domain.h"
 #include "net/cookies/canonical_cookie.h"
 #include "net/cookies/cookie_options.h"
 #include "net/cookies/cookie_store.h"
+#include "net/cookies/cookie_util.h"
 #include "net/traffic_annotation/network_traffic_annotation.h"
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_context_getter.h"
@@ -585,6 +585,9 @@ void RenderFrameMessageFilter::SetCookie(int32_t render_frame_id,
   }
 
   net::CookieOptions options;
+  // TODO(https://crbug.com/925311): Wire initiator in here properly.
+  options.set_same_site_cookie_context(net::cookie_util::ComputeSameSiteContext(
+      url, site_for_cookies, base::nullopt));
   std::unique_ptr<net::CanonicalCookie> cookie = net::CanonicalCookie::Create(
       url, cookie_line, base::Time::Now(), options);
   if (!cookie) {
@@ -613,22 +616,25 @@ void RenderFrameMessageFilter::SetCookie(int32_t render_frame_id,
 
     // Pass a null callback since we don't care about when the 'set' completes.
     cookie_store->SetCanonicalCookieAsync(
-        std::move(cookie), url.SchemeIsCryptographic(),
-        !options.exclude_httponly(), net::CookieStore::SetCookiesCallback());
+        std::move(cookie), url.scheme(), options,
+        net::CookieStore::SetCookiesCallback());
     return;
   }
 
   // |callback| needs to be fired even if network process crashes as it's for
   // sync IPC.
-  net::CookieStore::SetCookiesCallback net_callback =
-      mojo::WrapCallbackWithDefaultInvokeIfNotRun(
-          base::BindOnce([](SetCookieCallback callback,
-                            bool success) { std::move(callback).Run(); },
-                         std::move(callback)),
-          false);
+  base::OnceCallback<void(net::CanonicalCookie::CookieInclusionStatus)>
+      net_callback = mojo::WrapCallbackWithDefaultInvokeIfNotRun(
+          base::BindOnce(
+              [](SetCookieCallback callback,
+                 net::CanonicalCookie::CookieInclusionStatus success) {
+                std::move(callback).Run();
+              },
+              std::move(callback)),
+          net::CanonicalCookie::CookieInclusionStatus::EXCLUDE_UNKNOWN_ERROR);
+
   (*GetCookieManager())
-      ->SetCanonicalCookie(*cookie, url.SchemeIsCryptographic(),
-                           !options.exclude_httponly(),
+      ->SetCanonicalCookie(*cookie, url.scheme(), options,
                            std::move(net_callback));
 }
 
@@ -654,17 +660,10 @@ void RenderFrameMessageFilter::GetCookies(int render_frame_id,
   }
 
   net::CookieOptions options;
-  if (net::registry_controlled_domains::SameDomainOrHost(
-          url, site_for_cookies,
-          net::registry_controlled_domains::INCLUDE_PRIVATE_REGISTRIES)) {
-    // TODO(mkwst): This check ought to further distinguish between frames
-    // initiated in a strict or lax same-site context.
-    options.set_same_site_cookie_mode(
-        net::CookieOptions::SameSiteCookieMode::INCLUDE_STRICT_AND_LAX);
-  } else {
-    options.set_same_site_cookie_mode(
-        net::CookieOptions::SameSiteCookieMode::DO_NOT_INCLUDE);
-  }
+  // TODO(https://crbug.com/925311): Wire initiator in here properly.
+  options.set_same_site_cookie_context(net::cookie_util::ComputeSameSiteContext(
+      url, site_for_cookies, base::nullopt));
+
   // If the embedder overrides the cookie store then always use it, even if
   // the network service is enabled, instead of the CookieManager associated
   // this process' StoragePartition.
@@ -695,13 +694,7 @@ void RenderFrameMessageFilter::GetCookies(int render_frame_id,
   // |callback| needs to be fired even if network process crashes as it's for
   // sync IPC.
   auto wrapped_callback = mojo::WrapCallbackWithDefaultInvokeIfNotRun(
-      base::BindOnce(
-          [](net::CookieStore::GetCookieListCallback callback,
-             const net::CookieList& cookies) {
-            std::move(callback).Run(cookies, net::CookieStatusList());
-          },
-          std::move(bound_callback)),
-      net::CookieList());
+      std::move(bound_callback), net::CookieList(), net::CookieStatusList());
 
   (*GetCookieManager())
       ->GetCookieList(url, options, std::move(wrapped_callback));

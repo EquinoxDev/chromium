@@ -30,13 +30,20 @@ class MODULES_EXPORT WebIDBCursorImpl : public WebIDBCursor {
   void CursorContinue(const IDBKey* key,
                       const IDBKey* primary_key,
                       WebIDBCallbacks* callback) override;
+  void CursorContinueCallback(std::unique_ptr<WebIDBCallbacks> callbacks,
+                              mojom::blink::IDBErrorPtr error,
+                              mojom::blink::IDBCursorValuePtr value);
+  void PrefetchCallback(std::unique_ptr<WebIDBCallbacks> callbacks,
+                        mojom::blink::IDBErrorPtr error,
+                        mojom::blink::IDBCursorValuePtr value);
+
   void PostSuccessHandlerCallback() override;
 
   void SetPrefetchData(Vector<std::unique_ptr<IDBKey>> keys,
                        Vector<std::unique_ptr<IDBKey>> primary_keys,
                        Vector<std::unique_ptr<IDBValue>> values);
 
-  void CachedAdvance(unsigned long count, WebIDBCallbacks* callbacks);
+  void CachedAdvance(uint32_t count, WebIDBCallbacks* callbacks);
   void CachedContinue(WebIDBCallbacks* callbacks);
 
   // This method is virtual so it can be overridden in unit tests.

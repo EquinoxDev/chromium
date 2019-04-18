@@ -120,7 +120,7 @@ void PictureInPictureControllerImpl::EnterPictureInPicture(
       element->GetWebMediaPlayer()->GetDelegateId(),
       element->GetWebMediaPlayer()->GetSurfaceId(),
       element->GetWebMediaPlayer()->NaturalSize(),
-      ShouldShowPlayPauseButton(*element),
+      ShouldShowPlayPauseButton(*element), ShouldShowMuteButton(*element),
       WTF::Bind(&PictureInPictureControllerImpl::OnEnteredPictureInPicture,
                 WrapPersistent(this), WrapPersistent(element),
                 WrapPersistent(resolver)));
@@ -162,7 +162,11 @@ void PictureInPictureControllerImpl::OnEnteredPictureInPicture(
     delegate_binding_.Close();
 
   mojom::blink::PictureInPictureDelegatePtr delegate;
-  delegate_binding_.Bind(mojo::MakeRequest(&delegate));
+  scoped_refptr<base::SingleThreadTaskRunner> task_runner =
+      picture_in_picture_element_->GetDocument().GetTaskRunner(
+          TaskType::kMediaElementEvent);
+  delegate_binding_.Bind(mojo::MakeRequest(&delegate, task_runner),
+                         task_runner);
   picture_in_picture_service_->SetDelegate(std::move(delegate));
 
   if (resolver)
@@ -223,6 +227,15 @@ bool PictureInPictureControllerImpl::IsPictureInPictureElement(
   return element == picture_in_picture_element_;
 }
 
+bool PictureInPictureControllerImpl::IsPictureInPictureShadowHost(
+    const Element& host) const {
+  if (!picture_in_picture_element_)
+    return false;
+
+  return host.GetTreeScope().AdjustedElement(*picture_in_picture_element_) ==
+         &host;
+}
+
 void PictureInPictureControllerImpl::AddToAutoPictureInPictureElementsList(
     HTMLVideoElement* element) {
   RemoveFromAutoPictureInPictureElementsList(element);
@@ -245,37 +258,64 @@ HTMLVideoElement* PictureInPictureControllerImpl::AutoPictureInPictureElement()
              : auto_picture_in_picture_elements_.back();
 }
 
+bool PictureInPictureControllerImpl::IsEnterAutoPictureInPictureAllowed()
+    const {
+  // Entering Auto Picture-in-Picture is allowed if one of these conditions is
+  // true:
+  // - Document runs in a Chrome Extension.
+  // - Document is in fullscreen.
+  // - Document is in a PWA window that runs in the scope of the PWA.
+  if (!(GetSupplementable()->Url().ProtocolIs("chrome-extension") ||
+        Fullscreen::FullscreenElementFrom(*GetSupplementable()) ||
+        (GetSupplementable()->View() &&
+         GetSupplementable()->View()->DisplayMode() !=
+             WebDisplayMode::kWebDisplayModeBrowser &&
+         GetSupplementable()->IsInWebAppScope()))) {
+    return false;
+  }
+
+  // Don't allow if there's already an element in Auto Picture-in-Picture.
+  if (picture_in_picture_element_)
+    return false;
+
+  // Don't allow if there's no element eligible to enter Auto Picture-in-Picture
+  if (!AutoPictureInPictureElement())
+    return false;
+
+  // Don't allow if video won't resume playing automatically when it becomes
+  // visible again.
+  if (AutoPictureInPictureElement()->PausedWhenVisible())
+    return false;
+
+  // Allow if video is allowed to enter Picture-in-Picture.
+  return (IsElementAllowed(*AutoPictureInPictureElement()) == Status::kEnabled);
+}
+
+bool PictureInPictureControllerImpl::IsExitAutoPictureInPictureAllowed() const {
+  // Don't allow exiting Auto Picture-in-Picture if there's no eligible element
+  // to exit Auto Picture-in-Picture.
+  if (!AutoPictureInPictureElement())
+    return false;
+
+  // Allow if the element already in Picture-in-Picture is the same as the one
+  // eligible to exit Auto Picture-in-Picture.
+  return (picture_in_picture_element_ == AutoPictureInPictureElement());
+}
+
 void PictureInPictureControllerImpl::PageVisibilityChanged() {
   DCHECK(GetSupplementable());
 
-  // Auto Picture-in-Picture is allowed only in a PWA window.
-  if (!GetSupplementable()->GetFrame() ||
-      GetSupplementable()->GetFrame()->View()->DisplayMode() ==
-          WebDisplayMode::kWebDisplayModeBrowser) {
-    return;
-  }
-
-  // Auto Picture-in-Picture is allowed only in the scope of a PWA.
-  if (!GetSupplementable()->IsInWebAppScope())
-    return;
-
-  // If page becomes visible and Picture-in-Picture element has entered
-  // automatically Picture-in-Picture and is still eligible to Auto
-  // Picture-in-Picture, exit Picture-in-Picture.
-  if (GetSupplementable()->IsPageVisible() && picture_in_picture_element_ &&
-      picture_in_picture_element_ == AutoPictureInPictureElement() &&
-      picture_in_picture_element_->FastHasAttribute(
-          html_names::kAutopictureinpictureAttr)) {
+  // If page becomes visible and exiting Auto Picture-in-Picture is allowed,
+  // exit Picture-in-Picture.
+  if (GetSupplementable()->IsPageVisible() &&
+      IsExitAutoPictureInPictureAllowed()) {
     ExitPictureInPicture(picture_in_picture_element_, nullptr);
     return;
   }
 
-  // If page becomes hidden with no video in Picture-in-Picture and a video
-  // element is allowed to, enter Picture-in-Picture.
-  if (GetSupplementable()->hidden() && !picture_in_picture_element_ &&
-      AutoPictureInPictureElement() &&
-      !AutoPictureInPictureElement()->PausedWhenVisible() &&
-      IsElementAllowed(*AutoPictureInPictureElement()) == Status::kEnabled) {
+  // If page becomes hidden and entering Auto Picture-in-Picture is allowed,
+  // enter Picture-in-Picture.
+  if (GetSupplementable()->hidden() && IsEnterAutoPictureInPictureAllowed()) {
     EnterPictureInPicture(AutoPictureInPictureElement(), nullptr);
   }
 }
@@ -293,13 +333,21 @@ void PictureInPictureControllerImpl::OnPictureInPictureStateChange() {
       picture_in_picture_element_->GetWebMediaPlayer()->GetDelegateId(),
       picture_in_picture_element_->GetWebMediaPlayer()->GetSurfaceId(),
       picture_in_picture_element_->GetWebMediaPlayer()->NaturalSize(),
-      ShouldShowPlayPauseButton(*picture_in_picture_element_));
+      ShouldShowPlayPauseButton(*picture_in_picture_element_),
+      ShouldShowMuteButton(*picture_in_picture_element_));
 }
 
 void PictureInPictureControllerImpl::PictureInPictureWindowSizeChanged(
     const blink::WebSize& size) {
   if (picture_in_picture_window_)
     picture_in_picture_window_->OnResize(size);
+}
+
+bool PictureInPictureControllerImpl::ShouldShowMuteButton(
+    const HTMLVideoElement& element) {
+  DCHECK(GetSupplementable());
+  return element.HasAudio() && RuntimeEnabledFeatures::MuteButtonEnabled(
+                                   GetSupplementable()->GetExecutionContext());
 }
 
 void PictureInPictureControllerImpl::Trace(blink::Visitor* visitor) {
@@ -324,8 +372,11 @@ bool PictureInPictureControllerImpl::EnsureService() {
   if (!GetSupplementable()->GetFrame())
     return false;
 
+  scoped_refptr<base::SingleThreadTaskRunner> task_runner =
+      GetSupplementable()->GetFrame()->GetTaskRunner(
+          TaskType::kMediaElementEvent);
   GetSupplementable()->GetFrame()->GetInterfaceProvider().GetInterface(
-      mojo::MakeRequest(&picture_in_picture_service_));
+      mojo::MakeRequest(&picture_in_picture_service_, task_runner));
   return true;
 }
 

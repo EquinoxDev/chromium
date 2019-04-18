@@ -15,6 +15,7 @@
 #include "services/ws/public/mojom/window_tree.mojom.h"
 #include "ui/aura/mus/mus_types.h"
 #include "ui/base/hit_test.h"
+#include "ui/base/ime/mojo/ime.mojom.h"
 #include "ui/platform_window/mojo/text_input_state.mojom.h"
 
 namespace aura {
@@ -141,6 +142,7 @@ class TestWindowTree : public ws::mojom::WindowTree {
   ws::Id last_cancelled_window_id() const { return last_cancelled_window_id_; }
   ws::Id last_transfer_current() const { return last_transfer_current_; }
   ws::Id last_transfer_new() const { return last_transfer_new_; }
+  ws::Id last_focused_window_id() const { return last_focused_window_id_; }
   bool last_transfer_should_cancel() const {
     return last_transfer_should_cancel_;
   }
@@ -211,10 +213,14 @@ class TestWindowTree : public ws::mojom::WindowTree {
   void SetHitTestInsets(ws::Id window_id,
                         const gfx::Insets& mouse,
                         const gfx::Insets& touch) override;
+  void SetShape(ws::Id window_id, const std::vector<gfx::Rect>& shape) override;
   void SetCanAcceptDrops(ws::Id window_id, bool accepts_drags) override;
   void SetWindowVisibility(uint32_t change_id,
                            ws::Id window_id,
                            bool visible) override;
+  void SetWindowTransparent(uint32_t change_id,
+                            ws::Id window_id,
+                            bool transparent) override;
   void SetWindowProperty(
       uint32_t change_id,
       ws::Id window_id,
@@ -314,6 +320,8 @@ class TestWindowTree : public ws::mojom::WindowTree {
   void TrackOcclusionState(ws::Id window_id) override;
   void PauseWindowOcclusionTracking() override;
   void UnpauseWindowOcclusionTracking() override;
+  void ConnectToImeEngine(ime::mojom::ImeEngineRequest engine_request,
+                          ime::mojom::ImeEngineClientPtr client) override;
 
   struct AckedEvent {
     uint32_t event_id;
@@ -351,6 +359,7 @@ class TestWindowTree : public ws::mojom::WindowTree {
   ws::Id last_cancelled_window_id_ = 0u;
   ws::Id last_transfer_current_ = 0u;
   ws::Id last_transfer_new_ = 0u;
+  ws::Id last_focused_window_id_ = 0u;
   bool last_transfer_should_cancel_ = false;
   bool last_accepts_drops_ = false;
   size_t can_focus_count_ = 0u;

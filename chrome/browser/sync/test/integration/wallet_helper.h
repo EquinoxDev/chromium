@@ -5,6 +5,7 @@
 #ifndef CHROME_BROWSER_SYNC_TEST_INTEGRATION_WALLET_HELPER_H_
 #define CHROME_BROWSER_SYNC_TEST_INTEGRATION_WALLET_HELPER_H_
 
+#include <map>
 #include <utility>
 #include <vector>
 
@@ -65,13 +66,11 @@ void UpdateServerAddressMetadata(
     int profile,
     const autofill::AutofillProfile& server_address);
 
-void GetServerCardsMetadata(
-    int profile,
-    std::map<std::string, autofill::AutofillMetadata>* cards_metadata);
+std::map<std::string, autofill::AutofillMetadata> GetServerCardsMetadata(
+    int profile);
 
-void GetServerAddressesMetadata(
-    int profile,
-    std::map<std::string, autofill::AutofillMetadata>* addresses_metadata);
+std::map<std::string, autofill::AutofillMetadata> GetServerAddressesMetadata(
+    int profile);
 
 sync_pb::ModelTypeState GetWalletDataModelTypeState(int profile);
 
@@ -152,16 +151,21 @@ class AutofillWalletMetadataSizeChecker
   void OnPersonalDataChanged() override;
 
  private:
+  // A state machine that makes sure we do not nest checking exit conditions.
+  enum State { IDLE, CHECKING, SHOULD_RECHECK };
+
+  bool IsExitConditionSatisfiedImpl();
+
+  State state_ = IDLE;
   const int profile_a_;
   const int profile_b_;
 };
 
-// Class that enables or disables USS based on test parameter. Must be the first
-// base class of the test fixture.
+// Class that enables or disables USS for Wallet metadata based on test
+// parameter. Must be the first base class of the test fixture.
 // TODO(jkrcal): When the new implementation fully launches, remove this class,
 // convert all tests from *_P back to *_F and remove the instance at the end.
-class UssWalletSwitchToggler
-    : public testing::WithParamInterface<std::pair<bool, bool>> {
+class UssWalletSwitchToggler : public testing::WithParamInterface<bool> {
  public:
   UssWalletSwitchToggler();
 

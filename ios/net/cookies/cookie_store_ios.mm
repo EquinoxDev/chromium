@@ -136,13 +136,13 @@ NSHTTPCookie* GetNSHTTPCookieFromCookieLine(const std::string& cookie_line,
 }
 
 // Returns an empty closure if |callback| is null callback or binds the
-// callback to |success|.
+// callback to |status|.
 base::OnceClosure BindSetCookiesCallback(
     CookieStoreIOS::SetCookiesCallback* callback,
-    bool success) {
+    net::CanonicalCookie::CookieInclusionStatus status) {
   base::OnceClosure set_callback;
   if (!callback->is_null()) {
-    set_callback = base::BindOnce(std::move(*callback), success);
+    set_callback = base::BindOnce(std::move(*callback), status);
   }
   return set_callback;
 }
@@ -298,7 +298,10 @@ void CookieStoreIOS::SetCookieWithOptionsAsync(
   bool has_explicit_domain = HasExplicitDomain(cookie_line);
   bool has_valid_domain =
       net::cookie_util::GetCookieDomainWithString(url, domain_string, &dummy);
-  // A cookie can be set if all of:
+  net::CanonicalCookie::CookieInclusionStatus status =
+      net::CanonicalCookie::CookieInclusionStatus::INCLUDE;
+
+  // A cookie can be set if all of the following conditions are met:
   //   a) The cookie line is well-formed
   //   b) The Domain attribute, if present, was not malformed
   //   c) At least one of:
@@ -306,23 +309,39 @@ void CookieStoreIOS::SetCookieWithOptionsAsync(
   //          from the URL, or
   //       2) The cookie had an explicit Domain for which the URL is allowed
   //          to set cookies.
-  bool success = (cookie != nil) && !domain_string.empty() &&
-                 (!has_explicit_domain || has_valid_domain);
 
-  if (success) {
-    system_store_->SetCookieAsync(cookie,
-                                  BindSetCookiesCallback(&callback, true));
+  // If |cookie| is nil, the cookie line was not well-formed.
+  if (cookie == nil)
+    status =
+        net::CanonicalCookie::CookieInclusionStatus::EXCLUDE_FAILURE_TO_STORE;
+
+  // If |domain_string| is empty, the domain was not well-formed.
+  if (domain_string.empty())
+    status =
+        net::CanonicalCookie::CookieInclusionStatus::EXCLUDE_INVALID_DOMAIN;
+
+  // If the cookie had an explicit domain and it's not a domain it's allowed to
+  // set cookies to.
+  if (has_explicit_domain && !has_valid_domain)
+    status =
+        net::CanonicalCookie::CookieInclusionStatus::EXCLUDE_INVALID_DOMAIN;
+
+  if (status == net::CanonicalCookie::CookieInclusionStatus::INCLUDE) {
+    system_store_->SetCookieAsync(
+        cookie,
+        BindSetCookiesCallback(
+            &callback, net::CanonicalCookie::CookieInclusionStatus::INCLUDE));
     return;
   }
 
   if (!callback.is_null())
-    std::move(callback).Run(false);
+    std::move(callback).Run(status);
 }
 
 void CookieStoreIOS::SetCanonicalCookieAsync(
     std::unique_ptr<net::CanonicalCookie> cookie,
-    bool secure_source,
-    bool modify_http_only,
+    std::string source_scheme,
+    const net::CookieOptions& options,
     SetCookiesCallback callback) {
   DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
 
@@ -333,24 +352,31 @@ void CookieStoreIOS::SetCanonicalCookieAsync(
   DCHECK(cookie->IsCanonical());
   // The exclude_httponly() option would only be used by a javascript
   // engine.
-  DCHECK(modify_http_only);
+  DCHECK(!options.exclude_httponly());
+
+  bool secure_source =
+      GURL::SchemeIsCryptographic(base::ToLowerASCII(source_scheme));
 
   if (cookie->IsSecure() && !secure_source) {
     if (!callback.is_null())
-      std::move(callback).Run(false);
+      std::move(callback).Run(
+          net::CanonicalCookie::CookieInclusionStatus::EXCLUDE_SECURE_ONLY);
     return;
   }
 
   NSHTTPCookie* ns_cookie = SystemCookieFromCanonicalCookie(*cookie.get());
 
   if (ns_cookie != nil) {
-    system_store_->SetCookieAsync(ns_cookie, &cookie->CreationDate(),
-                                  BindSetCookiesCallback(&callback, true));
+    system_store_->SetCookieAsync(
+        ns_cookie, &cookie->CreationDate(),
+        BindSetCookiesCallback(
+            &callback, net::CanonicalCookie::CookieInclusionStatus::INCLUDE));
     return;
   }
 
   if (!callback.is_null())
-    std::move(callback).Run(false);
+    std::move(callback).Run(
+        net::CanonicalCookie::CookieInclusionStatus::EXCLUDE_FAILURE_TO_STORE);
 }
 
 void CookieStoreIOS::GetCookieListWithOptionsAsync(
@@ -475,7 +501,6 @@ CookieStoreIOS::CookieStoreIOS(
     std::unique_ptr<SystemCookieStore> system_store,
     NetLog* net_log)
     : cookie_monster_(new net::CookieMonster(persistent_store,
-                                             nullptr /* channel_id_service */,
                                              net_log)),
       system_store_(std::move(system_store)),
       metrics_enabled_(false),
@@ -614,6 +639,13 @@ CookieChangeDispatcher& CookieStoreIOS::GetChangeDispatcher() {
   return change_dispatcher_;
 }
 
+void CookieStoreIOS::SetCookieableSchemes(
+    const std::vector<std::string>& schemes,
+    SetCookieableSchemesCallback callback) {
+  // Not supported on iOS.
+  std::move(callback).Run(false);
+}
+
 bool CookieStoreIOS::IsEphemeral() {
   return cookie_monster_->IsEphemeral();
 }
@@ -721,13 +753,14 @@ void CookieStoreIOS::UpdateCachesFromCookieMonster() {
   }
 }
 
-void CookieStoreIOS::UpdateCachesAfterSet(SetCookiesCallback callback,
-                                          bool success) {
+void CookieStoreIOS::UpdateCachesAfterSet(
+    SetCookiesCallback callback,
+    net::CanonicalCookie::CookieInclusionStatus status) {
   DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
-  if (success)
+  if (status == net::CanonicalCookie::CookieInclusionStatus::INCLUDE)
     UpdateCachesFromCookieMonster();
   if (!callback.is_null())
-    std::move(callback).Run(success);
+    std::move(callback).Run(status);
 }
 
 void CookieStoreIOS::UpdateCachesAfterDelete(DeleteCallback callback,

@@ -115,9 +115,9 @@ bool ContentBrowserClient::ShouldUseSpareRenderProcessHost(
 }
 
 bool ContentBrowserClient::DoesSiteRequireDedicatedProcess(
-    BrowserContext* browser_context,
+    BrowserOrResourceContext browser_or_resource_context,
     const GURL& effective_site_url) {
-  DCHECK(browser_context);
+  DCHECK(browser_or_resource_context);
   return false;
 }
 
@@ -254,6 +254,11 @@ bool ContentBrowserClient::ShouldDisableSiteIsolation() {
   return false;
 }
 
+std::vector<std::string>
+ContentBrowserClient::GetAdditionalSiteIsolationModes() {
+  return std::vector<std::string>();
+}
+
 bool ContentBrowserClient::IsFileAccessAllowed(
     const base::FilePath& path,
     const base::FilePath& absolute_path,
@@ -310,6 +315,10 @@ bool ContentBrowserClient::AllowSharedWorker(
   return true;
 }
 
+bool ContentBrowserClient::AllowSignedExchange(ResourceContext* context) {
+  return true;
+}
+
 bool ContentBrowserClient::IsDataSaverEnabled(BrowserContext* context) {
   DCHECK(context);
   return false;
@@ -362,6 +371,13 @@ void ContentBrowserClient::AllowWorkerFileSystem(
 }
 
 bool ContentBrowserClient::AllowWorkerIndexedDB(
+    const GURL& url,
+    ResourceContext* context,
+    const std::vector<GlobalFrameRoutingId>& render_frames) {
+  return true;
+}
+
+bool ContentBrowserClient::AllowWorkerCacheStorage(
     const GURL& url,
     ResourceContext* context,
     const std::vector<GlobalFrameRoutingId>& render_frames) {
@@ -486,7 +502,8 @@ MediaObserver* ContentBrowserClient::GetMediaObserver() {
 }
 
 PlatformNotificationService*
-ContentBrowserClient::GetPlatformNotificationService() {
+ContentBrowserClient::GetPlatformNotificationService(
+    BrowserContext* browser_context) {
   return nullptr;
 }
 
@@ -531,6 +548,10 @@ base::FilePath ContentBrowserClient::GetDefaultDownloadDirectory() {
 
 std::string ContentBrowserClient::GetDefaultDownloadName() {
   return std::string();
+}
+
+base::FilePath ContentBrowserClient::GetFontLookupTableCacheDir() {
+  return base::FilePath();
 }
 
 base::FilePath ContentBrowserClient::GetShaderDiskCacheDirectory() {
@@ -711,8 +732,8 @@ std::vector<std::string> ContentBrowserClient::GetStartupServices() {
   return nullptr;
 }
 
-std::unique_ptr<base::TaskScheduler::InitParams>
-ContentBrowserClient::GetTaskSchedulerInitParams() {
+std::unique_ptr<base::ThreadPool::InitParams>
+ContentBrowserClient::GetThreadPoolInitParams() {
   return nullptr;
 }
 
@@ -740,6 +761,7 @@ bool ContentBrowserClient::WillCreateURLLoaderFactory(
     RenderFrameHost* frame,
     int render_process_id,
     bool is_navigation,
+    bool is_download,
     const url::Origin& request_initiator,
     network::mojom::URLLoaderFactoryRequest* factory_request,
     network::mojom::TrustedURLLoaderHeaderClientPtrInfo* header_client,
@@ -751,7 +773,9 @@ bool ContentBrowserClient::WillCreateURLLoaderFactory(
 void ContentBrowserClient::WillCreateWebSocket(
     RenderFrameHost* frame,
     network::mojom::WebSocketRequest* request,
-    network::mojom::AuthenticationHandlerPtr* auth_handler) {}
+    network::mojom::AuthenticationHandlerPtr* auth_handler,
+    network::mojom::TrustedHeaderClientPtr* header_client,
+    uint32_t* options) {}
 
 std::vector<std::unique_ptr<URLLoaderRequestInterceptor>>
 ContentBrowserClient::WillCreateURLLoaderRequestInterceptors(
@@ -778,7 +802,6 @@ network::mojom::NetworkContextPtr ContentBrowserClient::CreateNetworkContext(
       network::mojom::NetworkContextParams::New();
   context_params->user_agent = GetUserAgent();
   context_params->accept_language = "en-us,en";
-  context_params->enable_data_url_support = true;
   GetNetworkService()->CreateNetworkContext(MakeRequest(&network_context),
                                             std::move(context_params));
   return network_context;
@@ -790,10 +813,6 @@ ContentBrowserClient::GetNetworkContextsParentDirectory() {
 }
 
 #if defined(OS_ANDROID)
-bool ContentBrowserClient::NeedURLRequestContext() {
-  return true;
-}
-
 bool ContentBrowserClient::ShouldOverrideUrlLoading(
     int frame_tree_node_id,
     bool browser_initiated,
@@ -837,13 +856,14 @@ bool ContentBrowserClient::ShowPaymentHandlerWindow(
   return false;
 }
 
-bool ContentBrowserClient::ShouldCreateTaskScheduler() {
+bool ContentBrowserClient::ShouldCreateThreadPool() {
   return true;
 }
 
 std::unique_ptr<AuthenticatorRequestClientDelegate>
 ContentBrowserClient::GetWebAuthenticationRequestDelegate(
-    RenderFrameHost* render_frame_host) {
+    RenderFrameHost* render_frame_host,
+    const std::string& relying_party_id) {
   return std::make_unique<AuthenticatorRequestClientDelegate>();
 }
 
@@ -858,9 +878,9 @@ ContentBrowserClient::CreateClientCertStore(ResourceContext* resource_context) {
   return nullptr;
 }
 
-scoped_refptr<LoginDelegate> ContentBrowserClient::CreateLoginDelegate(
-    net::AuthChallengeInfo* auth_info,
-    content::ResourceRequestInfo::WebContentsGetter web_contents_getter,
+std::unique_ptr<LoginDelegate> ContentBrowserClient::CreateLoginDelegate(
+    const net::AuthChallengeInfo& auth_info,
+    content::WebContents* web_contents,
     const GlobalRequestID& request_id,
     bool is_request_for_main_frame,
     const GURL& url,
@@ -879,7 +899,9 @@ bool ContentBrowserClient::HandleExternalProtocol(
     ui::PageTransition page_transition,
     bool has_user_gesture,
     const std::string& method,
-    const net::HttpRequestHeaders& headers) {
+    const net::HttpRequestHeaders& headers,
+    network::mojom::URLLoaderFactoryRequest* factory_request,
+    network::mojom::URLLoaderFactory*& out_factory) {
   return true;
 }
 
@@ -894,7 +916,7 @@ bool ContentBrowserClient::IsSafeRedirectTarget(const GURL& url,
   return true;
 }
 
-void ContentBrowserClient::RegisterRendererPreferenceWatcherForWorkers(
+void ContentBrowserClient::RegisterRendererPreferenceWatcher(
     BrowserContext* browser_context,
     blink::mojom::RendererPreferenceWatcherPtr watcher) {
   // |browser_context| may be null (e.g. during shutdown of a service worker).
@@ -955,6 +977,18 @@ bool ContentBrowserClient::IsRendererDebugURLBlacklisted(
 ui::AXMode ContentBrowserClient::GetAXModeForBrowserContext(
     BrowserContext* browser_context) {
   return BrowserAccessibilityState::GetInstance()->GetAccessibilityMode();
+}
+
+#if defined(OS_ANDROID)
+ContentBrowserClient::WideColorGamutHeuristic
+ContentBrowserClient::GetWideColorGamutHeuristic() const {
+  return WideColorGamutHeuristic::kNone;
+}
+#endif
+
+base::flat_set<std::string> ContentBrowserClient::GetMimeHandlerViewMimeTypes(
+    ResourceContext* resource_context) {
+  return base::flat_set<std::string>();
 }
 
 }  // namespace content

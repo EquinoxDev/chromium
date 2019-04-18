@@ -10,6 +10,7 @@
 
 #include "base/bind.h"
 #include "base/files/file.h"
+#include "base/files/file_util.h"
 #include "base/fuchsia/file_utils.h"
 #include "base/fuchsia/fuchsia_logging.h"
 #include "base/fuchsia/scoped_service_binding.h"
@@ -20,19 +21,28 @@
 #include "fuchsia/runners/common/web_component.h"
 #include "url/gurl.h"
 
-// static
-chromium::web::ContextPtr WebContentRunner::CreateDefaultWebContext() {
+namespace {
+
+fidl::InterfaceHandle<fuchsia::io::Directory> OpenDirectoryOrFail(
+    const base::FilePath& path) {
+  auto directory = base::fuchsia::OpenDirectory(path);
+  CHECK(directory) << "Failed to open " << path;
+  return directory;
+}
+
+chromium::web::ContextPtr CreateWebContextWithDataDirectory(
+    fidl::InterfaceHandle<fuchsia::io::Directory> data_directory) {
   auto web_context_provider =
       base::fuchsia::ServiceDirectoryClient::ForCurrentProcess()
           ->ConnectToService<chromium::web::ContextProvider>();
 
   chromium::web::CreateContextParams create_params;
 
-  // Clone /svc to the context.
-  create_params.service_directory =
-      zx::channel(base::fuchsia::GetHandleFromFile(
-          base::File(base::FilePath("/svc"),
-                     base::File::FLAG_OPEN | base::File::FLAG_READ)));
+  // Pass /svc and /data to the context.
+  create_params.set_service_directory(OpenDirectoryOrFail(
+      base::FilePath(base::fuchsia::kServiceDirectoryPath)));
+  if (data_directory)
+    create_params.set_data_directory(std::move(data_directory));
 
   chromium::web::ContextPtr web_context;
   web_context_provider->Create(std::move(create_params),
@@ -44,6 +54,20 @@ chromium::web::ContextPtr WebContentRunner::CreateDefaultWebContext() {
     exit(1);
   });
   return web_context;
+}
+
+}  // namespace
+
+// static
+chromium::web::ContextPtr WebContentRunner::CreateDefaultWebContext() {
+  return CreateWebContextWithDataDirectory(OpenDirectoryOrFail(
+      base::FilePath(base::fuchsia::kPersistedDataDirectoryPath)));
+}
+
+// static
+chromium::web::ContextPtr WebContentRunner::CreateIncognitoWebContext() {
+  return CreateWebContextWithDataDirectory(
+      fidl::InterfaceHandle<fuchsia::io::Directory>());
 }
 
 WebContentRunner::WebContentRunner(
@@ -92,7 +116,6 @@ void WebContentRunner::GetWebComponentForTest(
 }
 
 void WebContentRunner::DestroyComponent(WebComponent* component) {
-  LOG(ERROR) << "DestroyComponent " << components_.size();
   components_.erase(components_.find(component));
 
   if (components_.empty())

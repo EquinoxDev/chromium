@@ -139,11 +139,15 @@ class TestNode : public NodeDelegate {
     return node_.SendUserMessage(port, NewUserMessageEvent(s, 0));
   }
 
+  int SendStringMessage(const SlotRef& slot, const std::string& s) {
+    return node_.SendUserMessage(slot, NewUserMessageEvent(s, 0));
+  }
+
   int SendStringMessageWithPort(const PortRef& port,
                                 const std::string& s,
                                 const PortName& sent_port_name) {
     auto event = NewUserMessageEvent(s, 1);
-    event->ports()[0] = sent_port_name;
+    event->ports()[0].name = sent_port_name;
     return node_.SendUserMessage(port, std::move(event));
   }
 
@@ -165,6 +169,10 @@ class TestNode : public NodeDelegate {
 
   bool ReadMessage(const PortRef& port, ScopedMessage* message) {
     return node_.GetMessage(port, message, nullptr) == OK && *message;
+  }
+
+  bool ReadMessage(const SlotRef& slot, ScopedMessage* message) {
+    return node_.GetMessage(slot, message, nullptr) == OK && *message;
   }
 
   bool GetSavedMessage(ScopedMessage* message) {
@@ -210,7 +218,7 @@ class TestNode : public NodeDelegate {
     router_->BroadcastEvent(this, std::move(event));
   }
 
-  void PortStatusChanged(const PortRef& port) override {
+  void SlotStatusChanged(const SlotRef& slot) override {
     // The port may be closed, in which case we ignore the notification.
     base::AutoLock lock(lock_);
     if (!save_messages_)
@@ -220,7 +228,7 @@ class TestNode : public NodeDelegate {
       ScopedMessage message;
       {
         base::AutoUnlock unlock(lock_);
-        if (!ReadMessage(port, &message))
+        if (!ReadMessage(slot.port(), &message))
           break;
       }
 
@@ -235,7 +243,7 @@ class TestNode : public NodeDelegate {
     UserMessageEvent* message_event = static_cast<UserMessageEvent*>(event);
     for (size_t i = 0; i < message_event->num_ports(); ++i) {
       PortRef port;
-      ASSERT_EQ(OK, node_.GetPort(message_event->ports()[i], &port));
+      ASSERT_EQ(OK, node_.GetPort(message_event->ports()[i].name, &port));
       EXPECT_EQ(OK, node_.ClosePort(port));
     }
   }
@@ -599,7 +607,7 @@ TEST_F(PortsTest, LostConnectionToNodeWithSecondaryProxy) {
   ASSERT_TRUE(node1.ReadMessage(B, &message));
   ASSERT_EQ(1u, message->num_ports());
 
-  EXPECT_EQ(OK, node1.node().GetPort(message->ports()[0], &F));
+  EXPECT_EQ(OK, node1.node().GetPort(message->ports()[0].name, &F));
 
   // Send F over C to node 2 and then simulate node 2 loss from node 1. Node 1
   // will trivially become aware of the loss, and this test verifies that the
@@ -666,7 +674,7 @@ TEST_F(PortsTest, LostConnectionToNodeWithLocalProxy) {
   ASSERT_TRUE(node1.ReadMessage(B, &message));
   ASSERT_EQ(1u, message->num_ports());
   PortRef E;
-  EXPECT_EQ(OK, node1.node().GetPort(message->ports()[0], &E));
+  EXPECT_EQ(OK, node1.node().GetPort(message->ports()[0].name, &E));
 
   RemoveNode(&node1);
 
@@ -782,7 +790,7 @@ TEST_F(PortsTest, Delegation1) {
   EXPECT_TRUE(MessageEquals(message, "a1"));
 
   // This is "a1" from the point of view of node1.
-  PortName a2_name = message->ports()[0];
+  PortName a2_name = message->ports()[0].name;
   EXPECT_EQ(OK, node1.SendStringMessageWithPort(x1, "a2", a2_name));
   EXPECT_EQ(OK, node0.SendStringMessage(a0, "hello"));
 
@@ -793,7 +801,7 @@ TEST_F(PortsTest, Delegation1) {
   EXPECT_TRUE(MessageEquals(message, "a2"));
 
   // This is "a2" from the point of view of node1.
-  PortName a3_name = message->ports()[0];
+  PortName a3_name = message->ports()[0].name;
 
   PortRef a3;
   EXPECT_EQ(OK, node0.node().GetPort(a3_name, &a3));
@@ -948,7 +956,7 @@ TEST_F(PortsTest, AllowShutdownWithLocalPortsOpen) {
   ASSERT_EQ(1u, message->num_ports());
   EXPECT_TRUE(MessageEquals(message, "foo"));
   PortRef E;
-  ASSERT_EQ(OK, node.node().GetPort(message->ports()[0], &E));
+  ASSERT_EQ(OK, node.node().GetPort(message->ports()[0].name, &E));
 
   EXPECT_TRUE(
       node.node().CanShutdownCleanly(Node::ShutdownPolicy::ALLOW_LOCAL_PORTS));
@@ -986,21 +994,21 @@ TEST_F(PortsTest, ProxyCollapse1) {
   ASSERT_TRUE(node.ReadMessage(Y, &message));
   ASSERT_EQ(1u, message->num_ports());
   PortRef C;
-  ASSERT_EQ(OK, node.node().GetPort(message->ports()[0], &C));
+  ASSERT_EQ(OK, node.node().GetPort(message->ports()[0].name, &C));
 
   // Send C and receive it as D.
   EXPECT_EQ(OK, node.SendStringMessageWithPort(X, "foo", C));
   ASSERT_TRUE(node.ReadMessage(Y, &message));
   ASSERT_EQ(1u, message->num_ports());
   PortRef D;
-  ASSERT_EQ(OK, node.node().GetPort(message->ports()[0], &D));
+  ASSERT_EQ(OK, node.node().GetPort(message->ports()[0].name, &D));
 
   // Send D and receive it as E.
   EXPECT_EQ(OK, node.SendStringMessageWithPort(X, "foo", D));
   ASSERT_TRUE(node.ReadMessage(Y, &message));
   ASSERT_EQ(1u, message->num_ports());
   PortRef E;
-  ASSERT_EQ(OK, node.node().GetPort(message->ports()[0], &E));
+  ASSERT_EQ(OK, node.node().GetPort(message->ports()[0].name, &E));
 
   EXPECT_EQ(OK, node.node().ClosePort(X));
   EXPECT_EQ(OK, node.node().ClosePort(Y));
@@ -1067,7 +1075,7 @@ TEST_F(PortsTest, SendWithClosedPeer) {
   ASSERT_TRUE(node.ReadMessage(Y, &message));
   ASSERT_EQ(1u, message->num_ports());
   PortRef C;
-  ASSERT_EQ(OK, node.node().GetPort(message->ports()[0], &C));
+  ASSERT_EQ(OK, node.node().GetPort(message->ports()[0].name, &C));
 
   EXPECT_EQ(OK, node.node().ClosePort(X));
   EXPECT_EQ(OK, node.node().ClosePort(Y));
@@ -1116,7 +1124,7 @@ TEST_F(PortsTest, SendWithClosedPeerSent) {
   ASSERT_TRUE(node.ReadMessage(Y, &message));
   ASSERT_EQ(1u, message->num_ports());
   PortRef C;
-  ASSERT_EQ(OK, node.node().GetPort(message->ports()[0], &C));
+  ASSERT_EQ(OK, node.node().GetPort(message->ports()[0].name, &C));
 
   // Send C as new port D.
   EXPECT_EQ(OK, node.SendStringMessageWithPort(X, "foo", C));
@@ -1124,7 +1132,7 @@ TEST_F(PortsTest, SendWithClosedPeerSent) {
   ASSERT_TRUE(node.ReadMessage(Y, &message));
   ASSERT_EQ(1u, message->num_ports());
   PortRef D;
-  ASSERT_EQ(OK, node.node().GetPort(message->ports()[0], &D));
+  ASSERT_EQ(OK, node.node().GetPort(message->ports()[0].name, &D));
 
   // Send a message to B through D, then close D.
   EXPECT_EQ(OK, node.SendStringMessage(D, "hey"));
@@ -1138,7 +1146,7 @@ TEST_F(PortsTest, SendWithClosedPeerSent) {
   ASSERT_TRUE(node.ReadMessage(Y, &message));
   ASSERT_EQ(1u, message->num_ports());
   PortRef E;
-  ASSERT_EQ(OK, node.node().GetPort(message->ports()[0], &E));
+  ASSERT_EQ(OK, node.node().GetPort(message->ports()[0].name, &E));
 
   EXPECT_EQ(OK, node.node().ClosePort(Y));
 
@@ -1345,7 +1353,7 @@ TEST_F(PortsTest, MergePortsWithMovedPeers) {
   ASSERT_TRUE(node0.ReadMessage(Y, &message));
   ASSERT_EQ(1u, message->num_ports());
   PortRef E;
-  ASSERT_EQ(OK, node0.node().GetPort(message->ports()[0], &E));
+  ASSERT_EQ(OK, node0.node().GetPort(message->ports()[0].name, &E));
 
   EXPECT_EQ(OK, node0.node().ClosePort(X));
   EXPECT_EQ(OK, node0.node().ClosePort(Y));
@@ -1418,7 +1426,7 @@ TEST_F(PortsTest, MergePortsFailsGracefully) {
   ASSERT_TRUE(node0.ReadMessage(X, &message));
   ASSERT_EQ(1u, message->num_ports());
   PortRef E;
-  ASSERT_EQ(OK, node0.node().GetPort(message->ports()[0], &E));
+  ASSERT_EQ(OK, node0.node().GetPort(message->ports()[0].name, &E));
 
   EXPECT_EQ(OK, node0.node().ClosePort(X));
   EXPECT_EQ(OK, node1.node().ClosePort(Y));
@@ -1480,11 +1488,11 @@ TEST_F(PortsTest, RemotePeerStatus) {
   ScopedMessage message;
   ASSERT_TRUE(node0.ReadMessage(x2, &message));
   ASSERT_EQ(1u, message->num_ports());
-  ASSERT_EQ(OK, node0.node().GetPort(message->ports()[0], &x1));
+  ASSERT_EQ(OK, node0.node().GetPort(message->ports()[0].name, &x1));
 
   ASSERT_TRUE(node1.ReadMessage(x3, &message));
   ASSERT_EQ(1u, message->num_ports());
-  ASSERT_EQ(OK, node1.node().GetPort(message->ports()[0], &b));
+  ASSERT_EQ(OK, node1.node().GetPort(message->ports()[0].name, &b));
 
   // Now x0-x1 should be local to node0 and a-b should span the nodes.
   ASSERT_EQ(OK, node0.node().GetStatus(x0, &status));
@@ -1503,11 +1511,11 @@ TEST_F(PortsTest, RemotePeerStatus) {
 
   ASSERT_TRUE(node0.ReadMessage(x2, &message));
   ASSERT_EQ(1u, message->num_ports());
-  ASSERT_EQ(OK, node0.node().GetPort(message->ports()[0], &b));
+  ASSERT_EQ(OK, node0.node().GetPort(message->ports()[0].name, &b));
 
   ASSERT_TRUE(node1.ReadMessage(x3, &message));
   ASSERT_EQ(1u, message->num_ports());
-  ASSERT_EQ(OK, node1.node().GetPort(message->ports()[0], &x1));
+  ASSERT_EQ(OK, node1.node().GetPort(message->ports()[0].name, &x1));
 
   ASSERT_EQ(OK, node0.node().GetStatus(x0, &status));
   EXPECT_TRUE(status.peer_remote);
@@ -1636,6 +1644,411 @@ TEST_F(PortsTest, RetransmitUserMessageEvents) {
 
   EXPECT_EQ(OK, node0.node().ClosePort(a));
   EXPECT_EQ(OK, node0.node().ClosePort(b));
+}
+
+TEST_F(PortsTest, BasicSlotUsage) {
+  TestNode node0(0);
+  AddNode(&node0);
+
+  PortRef a, b;
+  node0.node().CreatePortPair(&a, &b);
+
+  SlotId slot_id = node0.node().AllocateSlot(a);
+  ASSERT_TRUE(node0.node().AddSlotFromPeer(b, slot_id));
+
+  // Test the default slot.
+  const char* kMessage1 = "hey";
+  ScopedMessage message;
+  EXPECT_EQ(OK, node0.SendStringMessage(a, kMessage1));
+  ASSERT_TRUE(node0.ReadMessage(b, &message));
+  EXPECT_TRUE(MessageEquals(message, kMessage1));
+
+  // Test our newly added slot.
+  const char* kMessage2 = "hey again";
+  EXPECT_EQ(OK, node0.SendStringMessage(SlotRef(a, slot_id), kMessage2));
+  ASSERT_TRUE(node0.ReadMessage(SlotRef(b, slot_id | kPeerAllocatedSlotIdBit),
+                                &message));
+  EXPECT_TRUE(MessageEquals(message, kMessage2));
+
+  // Also test it in the reverse direction.
+  const char* kMessage3 = "hey one more time";
+  EXPECT_EQ(OK, node0.SendStringMessage(
+                    SlotRef(b, slot_id | kPeerAllocatedSlotIdBit), kMessage3));
+  ASSERT_TRUE(node0.ReadMessage(SlotRef(a, slot_id), &message));
+  EXPECT_TRUE(MessageEquals(message, kMessage3));
+
+  EXPECT_EQ(OK, node0.node().ClosePort(a));
+  EXPECT_EQ(OK, node0.node().ClosePort(b));
+}
+
+TEST_F(PortsTest, MultipleSlots) {
+  TestNode node0(0);
+  AddNode(&node0);
+
+  PortRef a, b;
+  node0.node().CreatePortPair(&a, &b);
+
+  SlotId slot_id1 = node0.node().AllocateSlot(a);
+  ASSERT_TRUE(node0.node().AddSlotFromPeer(b, slot_id1));
+
+  SlotId slot_id2 = node0.node().AllocateSlot(a);
+  ASSERT_TRUE(node0.node().AddSlotFromPeer(b, slot_id2));
+
+  // Test our newly added slots.
+  const char* kMessage1 = "hey";
+  ScopedMessage message;
+  EXPECT_EQ(OK, node0.SendStringMessage(SlotRef(a, slot_id1), kMessage1));
+  ASSERT_TRUE(node0.ReadMessage(SlotRef(b, slot_id1 | kPeerAllocatedSlotIdBit),
+                                &message));
+  EXPECT_TRUE(MessageEquals(message, kMessage1));
+
+  const char* kMessage2 = "hey again";
+  EXPECT_EQ(OK, node0.SendStringMessage(SlotRef(a, slot_id2), kMessage2));
+  ASSERT_TRUE(node0.ReadMessage(SlotRef(b, slot_id2 | kPeerAllocatedSlotIdBit),
+                                &message));
+  EXPECT_TRUE(MessageEquals(message, kMessage2));
+
+  EXPECT_EQ(OK, node0.node().ClosePort(a));
+  EXPECT_EQ(OK, node0.node().ClosePort(b));
+}
+
+TEST_F(PortsTest, RemoteSlotUsage) {
+  TestNode node0(0);
+  AddNode(&node0);
+
+  TestNode node1(1);
+  AddNode(&node1);
+
+  PortRef a, b;
+  EXPECT_EQ(OK, node0.node().CreateUninitializedPort(&a));
+  EXPECT_EQ(OK, node1.node().CreateUninitializedPort(&b));
+  EXPECT_EQ(OK, node0.node().InitializePort(a, node1.name(), b.name()));
+  EXPECT_EQ(OK, node1.node().InitializePort(b, node0.name(), a.name()));
+
+  SlotId slot_id = node0.node().AllocateSlot(a);
+  ASSERT_TRUE(node1.node().AddSlotFromPeer(b, slot_id));
+
+  // Test the default slot.
+  const char* kMessage1 = "hey";
+  ScopedMessage message;
+  EXPECT_EQ(OK, node0.SendStringMessage(a, kMessage1));
+  WaitForIdle();
+  ASSERT_TRUE(node1.ReadMessage(b, &message));
+  EXPECT_TRUE(MessageEquals(message, kMessage1));
+
+  // Test our newly added slot.
+  const char* kMessage2 = "hey again";
+  EXPECT_EQ(OK, node0.SendStringMessage(SlotRef(a, slot_id), kMessage2));
+  WaitForIdle();
+  ASSERT_TRUE(node1.ReadMessage(SlotRef(b, slot_id | kPeerAllocatedSlotIdBit),
+                                &message));
+  EXPECT_TRUE(MessageEquals(message, kMessage2));
+
+  // Also test it in the reverse direction.
+  const char* kMessage3 = "hey one more time";
+  EXPECT_EQ(OK, node1.SendStringMessage(
+                    SlotRef(b, slot_id | kPeerAllocatedSlotIdBit), kMessage3));
+  WaitForIdle();
+  ASSERT_TRUE(node0.ReadMessage(SlotRef(a, slot_id), &message));
+  EXPECT_TRUE(MessageEquals(message, kMessage3));
+
+  EXPECT_EQ(OK, node0.node().ClosePort(a));
+  EXPECT_EQ(OK, node1.node().ClosePort(b));
+}
+
+TEST_F(PortsTest, SlotsStrictOrdering) {
+  TestNode node0(0);
+  AddNode(&node0);
+
+  TestNode node1(1);
+  AddNode(&node1);
+
+  PortRef a, b;
+  EXPECT_EQ(OK, node0.node().CreateUninitializedPort(&a));
+  EXPECT_EQ(OK, node1.node().CreateUninitializedPort(&b));
+  EXPECT_EQ(OK, node0.node().InitializePort(a, node1.name(), b.name()));
+  EXPECT_EQ(OK, node1.node().InitializePort(b, node0.name(), a.name()));
+
+  SlotId slot_id1 = node0.node().AllocateSlot(a);
+  ASSERT_TRUE(node1.node().AddSlotFromPeer(b, slot_id1));
+  SlotId slot_id2 = node0.node().AllocateSlot(a);
+  ASSERT_TRUE(node1.node().AddSlotFromPeer(b, slot_id2));
+
+  const char* kMessage1 = "hey";
+  EXPECT_EQ(OK, node0.SendStringMessage(a, kMessage1));
+
+  const char* kMessage2 = "hey again";
+  EXPECT_EQ(OK, node0.SendStringMessage(SlotRef(a, slot_id1), kMessage2));
+
+  const char* kMessage3 = "hey one more time";
+  EXPECT_EQ(OK, node0.SendStringMessage(SlotRef(a, slot_id2), kMessage3));
+
+  const char* kMessage4 = "last hey";
+  EXPECT_EQ(OK, node0.SendStringMessage(a, kMessage4));
+
+  WaitForIdle();
+
+  // Verify that we can only observe the received messages in precise order,
+  // despite spanning many slot endpoints.
+  ScopedMessage message;
+  EXPECT_FALSE(node1.ReadMessage(SlotRef(b, slot_id1 | kPeerAllocatedSlotIdBit),
+                                 &message));
+  EXPECT_FALSE(node1.ReadMessage(SlotRef(b, slot_id2 | kPeerAllocatedSlotIdBit),
+                                 &message));
+  ASSERT_TRUE(node1.ReadMessage(b, &message));
+  EXPECT_TRUE(MessageEquals(message, kMessage1));
+
+  EXPECT_FALSE(node1.ReadMessage(b, &message));
+  EXPECT_FALSE(node1.ReadMessage(SlotRef(b, slot_id2 | kPeerAllocatedSlotIdBit),
+                                 &message));
+  ASSERT_TRUE(node1.ReadMessage(SlotRef(b, slot_id1 | kPeerAllocatedSlotIdBit),
+                                &message));
+  EXPECT_TRUE(MessageEquals(message, kMessage2));
+
+  EXPECT_FALSE(node1.ReadMessage(b, &message));
+  EXPECT_FALSE(node1.ReadMessage(SlotRef(b, slot_id1 | kPeerAllocatedSlotIdBit),
+                                 &message));
+  ASSERT_TRUE(node1.ReadMessage(SlotRef(b, slot_id2 | kPeerAllocatedSlotIdBit),
+                                &message));
+  EXPECT_TRUE(MessageEquals(message, kMessage3));
+
+  EXPECT_FALSE(node1.ReadMessage(SlotRef(b, slot_id1 | kPeerAllocatedSlotIdBit),
+                                 &message));
+  EXPECT_FALSE(node1.ReadMessage(SlotRef(b, slot_id2 | kPeerAllocatedSlotIdBit),
+                                 &message));
+  ASSERT_TRUE(node1.ReadMessage(b, &message));
+  EXPECT_TRUE(MessageEquals(message, kMessage4));
+
+  EXPECT_EQ(OK, node0.node().ClosePort(a));
+  EXPECT_EQ(OK, node1.node().ClosePort(b));
+}
+
+TEST_F(PortsTest, ClosedSlotDiscardsNewMessages) {
+  TestNode node0(0);
+  AddNode(&node0);
+
+  TestNode node1(1);
+  AddNode(&node1);
+
+  PortRef a, b;
+  EXPECT_EQ(OK, node0.node().CreateUninitializedPort(&a));
+  EXPECT_EQ(OK, node1.node().CreateUninitializedPort(&b));
+  EXPECT_EQ(OK, node0.node().InitializePort(a, node1.name(), b.name()));
+  EXPECT_EQ(OK, node1.node().InitializePort(b, node0.name(), a.name()));
+
+  SlotId slot_id1 = node0.node().AllocateSlot(a);
+  ASSERT_TRUE(node1.node().AddSlotFromPeer(b, slot_id1));
+
+  const char* kMessage1 = "message 1";
+  EXPECT_EQ(OK, node0.SendStringMessage(a, kMessage1));
+
+  node1.node().ClosePortSlot(SlotRef(b, slot_id1 | kPeerAllocatedSlotIdBit));
+
+  const char* kMessage2 = "message 2";
+  EXPECT_EQ(OK, node0.SendStringMessage(SlotRef(a, slot_id1), kMessage2));
+
+  const char* kMessage3 = "message 3";
+  EXPECT_EQ(OK, node0.SendStringMessage(a, kMessage3));
+
+  WaitForIdle();
+
+  ScopedMessage message;
+  ASSERT_TRUE(node1.ReadMessage(b, &message));
+  EXPECT_TRUE(MessageEquals(message, kMessage1));
+
+  ASSERT_TRUE(node1.ReadMessage(b, &message));
+  EXPECT_TRUE(MessageEquals(message, kMessage3));
+
+  EXPECT_EQ(OK, node0.node().ClosePort(a));
+  EXPECT_EQ(OK, node1.node().ClosePort(b));
+}
+
+TEST_F(PortsTest, ClosedSlotDiscardsQueuedMessages) {
+  TestNode node0(0);
+  AddNode(&node0);
+
+  TestNode node1(1);
+  AddNode(&node1);
+
+  PortRef a, b;
+  EXPECT_EQ(OK, node0.node().CreateUninitializedPort(&a));
+  EXPECT_EQ(OK, node1.node().CreateUninitializedPort(&b));
+  EXPECT_EQ(OK, node0.node().InitializePort(a, node1.name(), b.name()));
+  EXPECT_EQ(OK, node1.node().InitializePort(b, node0.name(), a.name()));
+
+  SlotId slot_id1 = node0.node().AllocateSlot(a);
+  ASSERT_TRUE(node1.node().AddSlotFromPeer(b, slot_id1));
+
+  const char* kMessage1 = "message 1";
+  EXPECT_EQ(OK, node0.SendStringMessage(a, kMessage1));
+
+  const char* kMessage2 = "message 2";
+  EXPECT_EQ(OK, node0.SendStringMessage(SlotRef(a, slot_id1), kMessage2));
+
+  const char* kMessage3 = "message 3";
+  EXPECT_EQ(OK, node0.SendStringMessage(a, kMessage3));
+
+  WaitForIdle();
+
+  node1.node().ClosePortSlot(SlotRef(b, slot_id1 | kPeerAllocatedSlotIdBit));
+
+  ScopedMessage message;
+  ASSERT_TRUE(node1.ReadMessage(b, &message));
+  EXPECT_TRUE(MessageEquals(message, kMessage1));
+
+  ASSERT_TRUE(node1.ReadMessage(b, &message));
+  EXPECT_TRUE(MessageEquals(message, kMessage3));
+
+  EXPECT_EQ(OK, node0.node().ClosePort(a));
+  EXPECT_EQ(OK, node1.node().ClosePort(b));
+}
+
+TEST_F(PortsTest, CanCloseDefaultSlot) {
+  TestNode node0(0);
+  AddNode(&node0);
+
+  TestNode node1(1);
+  AddNode(&node1);
+
+  PortRef a, b;
+  EXPECT_EQ(OK, node0.node().CreateUninitializedPort(&a));
+  EXPECT_EQ(OK, node1.node().CreateUninitializedPort(&b));
+  EXPECT_EQ(OK, node0.node().InitializePort(a, node1.name(), b.name()));
+  EXPECT_EQ(OK, node1.node().InitializePort(b, node0.name(), a.name()));
+
+  SlotId slot_id1 = node0.node().AllocateSlot(a);
+  ASSERT_TRUE(node1.node().AddSlotFromPeer(b, slot_id1));
+
+  const char* kMessage1 = "message 1";
+  EXPECT_EQ(OK, node0.SendStringMessage(a, kMessage1));
+
+  const char* kMessage2 = "message 2";
+  EXPECT_EQ(OK, node0.SendStringMessage(SlotRef(a, slot_id1), kMessage2));
+
+  const char* kMessage3 = "message 3";
+  EXPECT_EQ(OK, node0.SendStringMessage(a, kMessage3));
+
+  WaitForIdle();
+
+  node1.node().ClosePortSlot(SlotRef(b, kDefaultSlotId));
+
+  ScopedMessage message;
+  EXPECT_FALSE(node1.ReadMessage(b, &message));
+  ASSERT_TRUE(node1.ReadMessage(SlotRef(b, slot_id1 | kPeerAllocatedSlotIdBit),
+                                &message));
+  EXPECT_TRUE(MessageEquals(message, kMessage2));
+  EXPECT_FALSE(node1.ReadMessage(b, &message));
+
+  EXPECT_EQ(OK, node0.node().ClosePort(a));
+  EXPECT_EQ(OK, node1.node().ClosePort(b));
+}
+
+TEST_F(PortsTest, ClosingAllSlotsClosesPort) {
+  TestNode node0(0);
+  AddNode(&node0);
+
+  TestNode node1(1);
+  AddNode(&node1);
+
+  PortRef a, b;
+  EXPECT_EQ(OK, node0.node().CreateUninitializedPort(&a));
+  EXPECT_EQ(OK, node1.node().CreateUninitializedPort(&b));
+  EXPECT_EQ(OK, node0.node().InitializePort(a, node1.name(), b.name()));
+  EXPECT_EQ(OK, node1.node().InitializePort(b, node0.name(), a.name()));
+
+  SlotId slot_id1 = node0.node().AllocateSlot(a);
+  ASSERT_TRUE(node1.node().AddSlotFromPeer(b, slot_id1));
+
+  node0.node().ClosePortSlot(SlotRef(a, slot_id1));
+  node0.node().ClosePortSlot(SlotRef(a, kDefaultSlotId));
+
+  node1.node().ClosePortSlot(SlotRef(b, slot_id1 | kPeerAllocatedSlotIdBit));
+  node1.node().ClosePortSlot(SlotRef(b, kDefaultSlotId));
+
+  EXPECT_EQ(ERROR_PORT_UNKNOWN, node1.node().GetPort(a.name(), &a));
+  EXPECT_EQ(ERROR_PORT_UNKNOWN, node1.node().GetPort(b.name(), &b));
+}
+
+TEST_F(PortsTest, SlotPeerClosureDetectedSequentially) {
+  // This test verifies that when a slot is closed its peer can still read
+  // messages up to the point in the sequence where closure occurred.
+
+  TestNode node0(0);
+  AddNode(&node0);
+
+  TestNode node1(1);
+  AddNode(&node1);
+
+  PortRef a, b;
+  EXPECT_EQ(OK, node0.node().CreateUninitializedPort(&a));
+  EXPECT_EQ(OK, node1.node().CreateUninitializedPort(&b));
+  EXPECT_EQ(OK, node0.node().InitializePort(a, node1.name(), b.name()));
+  EXPECT_EQ(OK, node1.node().InitializePort(b, node0.name(), a.name()));
+
+  SlotId slot_id1 = node0.node().AllocateSlot(a);
+  ASSERT_TRUE(node1.node().AddSlotFromPeer(b, slot_id1));
+
+  const char* kMessage1 = "message 1";
+  EXPECT_EQ(OK, node0.SendStringMessage(a, kMessage1));
+
+  const char* kMessage2 = "message 2";
+  EXPECT_EQ(OK, node0.SendStringMessage(SlotRef(a, slot_id1), kMessage2));
+
+  node0.node().ClosePortSlot(SlotRef(a, slot_id1));
+
+  const char* kMessage3 = "message 3";
+  EXPECT_EQ(OK, node0.SendStringMessage(a, kMessage3));
+
+  WaitForIdle();
+
+  // |slot1_id|'s peer in |b| should still appear to be receiving messages
+  // despite |slot_id| being closed in |a|. This is because the system expects
+  // the slot in |b| to have at least one more message currently or imminently
+  // in queue.
+  SlotStatus status;
+  EXPECT_EQ(OK, node1.node().GetStatus(
+                    SlotRef(b, slot_id1 | kPeerAllocatedSlotIdBit), &status));
+  EXPECT_TRUE(status.peer_closed);
+  EXPECT_TRUE(status.receiving_messages);
+  EXPECT_FALSE(status.has_messages);
+
+  // Sanity check the default slot's status while we're here too.
+  EXPECT_EQ(OK, node1.node().GetStatus(SlotRef(b, kDefaultSlotId), &status));
+  EXPECT_FALSE(status.peer_closed);
+  EXPECT_TRUE(status.receiving_messages);
+  EXPECT_TRUE(status.has_messages);
+
+  ScopedMessage message;
+
+  EXPECT_FALSE(node1.ReadMessage(SlotRef(b, slot_id1 | kPeerAllocatedSlotIdBit),
+                                 &message));
+  ASSERT_TRUE(node1.ReadMessage(b, &message));
+  EXPECT_TRUE(MessageEquals(message, kMessage1));
+
+  // The queued message for this slot should now be readable. The peer still
+  // appears to be closed.
+  EXPECT_EQ(OK, node1.node().GetStatus(
+                    SlotRef(b, slot_id1 | kPeerAllocatedSlotIdBit), &status));
+  EXPECT_TRUE(status.peer_closed);
+  EXPECT_TRUE(status.receiving_messages);
+  EXPECT_TRUE(status.has_messages);
+
+  EXPECT_FALSE(node1.ReadMessage(b, &message));
+  ASSERT_TRUE(node1.ReadMessage(SlotRef(b, slot_id1 | kPeerAllocatedSlotIdBit),
+                                &message));
+  EXPECT_TRUE(MessageEquals(message, kMessage2));
+
+  // Now that the last message has been read from the slot, the slot should
+  // appear to no longer have or be receiving new messages. In conjunction with
+  // peer closure this implies the slot will never receive messages again.
+  EXPECT_EQ(OK, node1.node().GetStatus(
+                    SlotRef(b, slot_id1 | kPeerAllocatedSlotIdBit), &status));
+  EXPECT_TRUE(status.peer_closed);
+  EXPECT_FALSE(status.receiving_messages);
+  EXPECT_FALSE(status.has_messages);
+
+  EXPECT_EQ(OK, node0.node().ClosePort(a));
+  EXPECT_EQ(OK, node1.node().ClosePort(b));
 }
 
 }  // namespace test

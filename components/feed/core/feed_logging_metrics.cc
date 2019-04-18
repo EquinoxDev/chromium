@@ -28,13 +28,53 @@ namespace {
 // identical bucket sizes and names with Zine is for comparing Feed with Zine
 // easily. After Zine is deprecated, we can change the values if we needed.
 
+// Constants used as max sample sizes for histograms.
+const int kMaxContentCount = 50;
+const int kMaxFailureCount = 10;
 const int kMaxSuggestionsTotal = 50;
+const int kMaxTokenCount = 10;
 
 // Keep in sync with MAX_SUGGESTIONS_PER_SECTION in NewTabPageUma.java.
 const int kMaxSuggestionsForArticle = 20;
 
 const char kHistogramArticlesUsageTimeLocal[] =
     "NewTabPage.ContentSuggestions.UsageTimeLocal";
+
+// Values correspond to
+// third_party/feed/src/src/main/java/com/google/android/libraries/feed/host/
+// logging/SpinnerType.java, enums.xml and histograms.xml.
+// These values are persisted to logs. Entries should not be renumbered and
+// numeric values should never be reused.
+enum class SpinnerType {
+  KInitialLoad = 1,
+  KZeroStateRefresh = 2,
+  KMoreButton = 3,
+  KSyntheticToken = 4,
+  KInfiniteFeed = 5,
+  kMaxValue = KInfiniteFeed
+};
+
+// Each suffix here should correspond to an entry under histogram suffix
+// ContentSuggestionCategory in histograms.xml.
+std::string GetSpinnerTypeSuffix(SpinnerType spinner_type) {
+  switch (spinner_type) {
+    case SpinnerType::KInitialLoad:
+      return "InitialLoad";
+    case SpinnerType::KZeroStateRefresh:
+      return "ZeroStateRefresh";
+    case SpinnerType::KMoreButton:
+      return "MoreButton";
+    case SpinnerType::KSyntheticToken:
+      return "SyntheticToken";
+    case SpinnerType::KInfiniteFeed:
+      return "InfiniteFeed";
+  }
+
+  // TODO(https://crbug.com/935602): Handle new values when adding new values on
+  // java side.
+  NOTREACHED();
+  return std::string();
+}
 
 // Records ContentSuggestions usage. Therefore the day is sliced into 20min
 // buckets. Depending on the current local time the count of the corresponding
@@ -86,6 +126,10 @@ void RecordUndoableActionUMA(const std::string& histogram_base,
 
   // Since the |histogram_name| is dynamic, we can't use the regular macro.
   base::UmaHistogramExactLinear(histogram_name, position, kMaxSuggestionsTotal);
+
+  // Report to |histogram_base| as well, then |histogram_base| will be the sum
+  // of "Commit" and "Undo".
+  base::UmaHistogramExactLinear(histogram_base, position, kMaxSuggestionsTotal);
 }
 
 void CheckURLVisitedDone(int position, bool committed, bool visited) {
@@ -96,6 +140,17 @@ void CheckURLVisitedDone(int position, bool committed, bool visited) {
     RecordUndoableActionUMA("NewTabPage.ContentSuggestions.DismissedUnvisited",
                             position, committed);
   }
+}
+
+void RecordSpinnerTimeUMA(const char* base_name,
+                          base::TimeDelta time,
+                          int spinner_type) {
+  SpinnerType type = static_cast<SpinnerType>(spinner_type);
+  std::string suffix = GetSpinnerTypeSuffix(type);
+  std::string histogram_name(
+      base::StringPrintf("%s.%s", base_name, suffix.c_str()));
+  base::UmaHistogramTimes(histogram_name, time);
+  base::UmaHistogramTimes(base_name, time);
 }
 
 }  // namespace
@@ -256,10 +311,28 @@ void FeedLoggingMetrics::OnNotInterestedInTopic(int position, bool committed) {
       committed);
 }
 
-void FeedLoggingMetrics::OnSpinnerShown(base::TimeDelta shown_time) {
-  base::UmaHistogramTimes(
-      "ContentSuggestions.Feed.FetchPendingSpinner.VisibleDuration",
-      shown_time);
+void FeedLoggingMetrics::OnSpinnerStarted(int spinner_type) {
+  // TODO(https://crbug.com/935602): Handle new values when adding new values on
+  // java side.
+  SpinnerType type = static_cast<SpinnerType>(spinner_type);
+  UMA_HISTOGRAM_ENUMERATION("ContentSuggestions.Feed.FetchPendingSpinner.Shown",
+                            type);
+}
+
+void FeedLoggingMetrics::OnSpinnerFinished(base::TimeDelta shown_time,
+                                           int spinner_type) {
+  RecordSpinnerTimeUMA(
+      "ContentSuggestions.Feed.FetchPendingSpinner.VisibleDuration", shown_time,
+      spinner_type);
+}
+
+void FeedLoggingMetrics::OnSpinnerDestroyedWithoutCompleting(
+    base::TimeDelta shown_time,
+    int spinner_type) {
+  RecordSpinnerTimeUMA(
+      "ContentSuggestions.Feed.FetchPendingSpinner."
+      "VisibleDurationWithoutCompleting",
+      shown_time, spinner_type);
 }
 
 void FeedLoggingMetrics::OnPietFrameRenderingEvent(
@@ -268,6 +341,70 @@ void FeedLoggingMetrics::OnPietFrameRenderingEvent(
     base::UmaHistogramSparse(
         "ContentSuggestions.Feed.Piet.FrameRenderingErrorCode", error_code);
   }
+}
+
+void FeedLoggingMetrics::OnInternalError(int internal_error) {
+  // TODO(https://crbug.com/935602): The max value here is fragile, figure out
+  // some way to test the @IntDef size.
+  UMA_HISTOGRAM_ENUMERATION("ContentSuggestions.Feed.InternalError",
+                            internal_error, 10);
+}
+
+void FeedLoggingMetrics::OnTokenCompleted(bool was_synthetic,
+                                          int content_count,
+                                          int token_count) {
+  if (was_synthetic) {
+    UMA_HISTOGRAM_EXACT_LINEAR(
+        "ContentSuggestions.Feed.TokenCompleted.ContentCount2.Synthetic",
+        content_count, kMaxContentCount);
+    UMA_HISTOGRAM_EXACT_LINEAR(
+        "ContentSuggestions.Feed.TokenCompleted.TokenCount.Synthetic",
+        token_count, kMaxTokenCount);
+  } else {
+    UMA_HISTOGRAM_EXACT_LINEAR(
+        "ContentSuggestions.Feed.TokenCompleted.ContentCount2.NotSynthetic",
+        content_count, kMaxContentCount);
+    UMA_HISTOGRAM_EXACT_LINEAR(
+        "ContentSuggestions.Feed.TokenCompleted.TokenCount.NotSynthetic",
+        token_count, kMaxTokenCount);
+  }
+}
+
+void FeedLoggingMetrics::OnTokenFailedToComplete(bool was_synthetic,
+                                                 int failure_count) {
+  if (was_synthetic) {
+    UMA_HISTOGRAM_EXACT_LINEAR(
+        "ContentSuggestions.Feed.TokenFailedToCompleted.Synthetic",
+        failure_count, kMaxFailureCount);
+  } else {
+    UMA_HISTOGRAM_EXACT_LINEAR(
+        "ContentSuggestions.Feed.TokenFailedToCompleted.NotSynthetic",
+        failure_count, kMaxFailureCount);
+  }
+}
+
+void FeedLoggingMetrics::OnServerRequest(int request_reason) {
+  // TODO(https://crbug.com/935602): The max value here is fragile, figure out
+  // some way to test the @IntDef size.
+  UMA_HISTOGRAM_ENUMERATION("ContentSuggestions.Feed.ServerRequest.Reason",
+                            request_reason, 8);
+}
+
+void FeedLoggingMetrics::OnZeroStateShown(int zero_state_show_reason) {
+  // TODO(https://crbug.com/935602): The max value here is fragile, figure out
+  // some way to test the @IntDef size.
+  UMA_HISTOGRAM_ENUMERATION("ContentSuggestions.Feed.ZeroStateShown.Reason",
+                            zero_state_show_reason, 3);
+}
+
+void FeedLoggingMetrics::OnZeroStateRefreshCompleted(int new_content_count,
+                                                     int new_token_count) {
+  UMA_HISTOGRAM_EXACT_LINEAR(
+      "ContentSuggestions.Feed.ZeroStateRefreshCompleted.ContentCount",
+      new_content_count, kMaxContentCount);
+  UMA_HISTOGRAM_EXACT_LINEAR(
+      "ContentSuggestions.Feed.ZeroStateRefreshCompleted.TokenCount",
+      new_token_count, kMaxTokenCount);
 }
 
 void FeedLoggingMetrics::ReportScrolledAfterOpen() {

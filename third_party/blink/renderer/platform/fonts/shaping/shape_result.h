@@ -39,6 +39,7 @@
 #include "third_party/blink/renderer/platform/geometry/layout_unit.h"
 #include "third_party/blink/renderer/platform/platform_export.h"
 #include "third_party/blink/renderer/platform/text/text_direction.h"
+#include "third_party/blink/renderer/platform/wtf/allocator.h"
 #include "third_party/blink/renderer/platform/wtf/forward.h"
 #include "third_party/blink/renderer/platform/wtf/hash_set.h"
 #include "third_party/blink/renderer/platform/wtf/ref_counted.h"
@@ -106,6 +107,8 @@ typedef void (*GraphemeClusterCallback)(void* context,
                                         CanvasRotationInVertical);
 
 class PLATFORM_EXPORT ShapeResult : public RefCounted<ShapeResult> {
+  USING_FAST_MALLOC(ShapeResult);
+
  public:
   static scoped_refptr<ShapeResult> Create(const Font* font,
                                     unsigned num_characters,
@@ -131,6 +134,11 @@ class PLATFORM_EXPORT ShapeResult : public RefCounted<ShapeResult> {
       float position,
       unsigned start_index,
       unsigned length);
+  static scoped_refptr<ShapeResult> CreateForSpaces(const Font* font,
+                                                    TextDirection direction,
+                                                    unsigned start_index,
+                                                    unsigned length,
+                                                    float width);
   ~ShapeResult();
 
   // Returns a mutable unique instance. If |this| has more than 1 ref count,

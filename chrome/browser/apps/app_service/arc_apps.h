@@ -12,9 +12,11 @@
 #include "base/files/file_path.h"
 #include "base/macros.h"
 #include "base/memory/weak_ptr.h"
+#include "chrome/browser/apps/app_service/app_icon_factory.h"
+#include "chrome/browser/apps/app_service/icon_key_util.h"
 #include "chrome/browser/ui/app_list/arc/arc_app_list_prefs.h"
 #include "chrome/services/app_service/public/mojom/app_service.mojom.h"
-#include "components/arc/connection_observer.h"
+#include "components/arc/session/connection_observer.h"
 #include "components/keyed_service/core/keyed_service.h"
 #include "mojo/public/cpp/bindings/binding.h"
 #include "mojo/public/cpp/bindings/interface_ptr_set.h"
@@ -44,7 +46,8 @@ class ArcApps : public KeyedService,
   // apps::mojom::Publisher overrides.
   void Connect(apps::mojom::SubscriberPtr subscriber,
                apps::mojom::ConnectOptionsPtr opts) override;
-  void LoadIcon(apps::mojom::IconKeyPtr icon_key,
+  void LoadIcon(const std::string& app_id,
+                apps::mojom::IconKeyPtr icon_key,
                 apps::mojom::IconCompression icon_compression,
                 int32_t size_hint_in_dip,
                 bool allow_placeholder_icon,
@@ -80,18 +83,19 @@ class ArcApps : public KeyedService,
 
   const base::FilePath GetCachedIconFilePath(const std::string& app_id,
                                              int32_t size_hint_in_dip);
-  void LoadIconFromVM(const std::string icon_key_s_key,
+  void LoadIconFromVM(const std::string app_id,
                       apps::mojom::IconCompression icon_compression,
                       int32_t size_hint_in_dip,
                       bool allow_placeholder_icon,
+                      IconEffects icon_effects,
                       LoadIconCallback callback);
   void LoadPlayStoreIcon(apps::mojom::IconCompression icon_compression,
                          int32_t size_hint_in_dip,
+                         IconEffects icon_effects,
                          LoadIconCallback callback);
 
   apps::mojom::AppPtr Convert(const std::string& app_id,
                               const ArcAppListPrefs::AppInfo& app_info);
-  apps::mojom::IconKeyPtr NewIconKey(const std::string& app_id);
   void Publish(apps::mojom::AppPtr app);
   void ConvertAndPublishPackageApps(
       const arc::mojom::ArcPackageInfo& package_info);
@@ -105,10 +109,7 @@ class ArcApps : public KeyedService,
   std::vector<base::OnceCallback<void(AppConnectionHolder*)>>
       pending_load_icon_calls_;
 
-  // |next_u_key_| is incremented every time Convert returns a valid AppPtr, so
-  // that when an app's icon has changed, this apps::mojom::Publisher sends a
-  // different IconKey even though the IconKey's s_key hasn't changed.
-  uint64_t next_u_key_;
+  apps_util::IncrementingIconKeyFactory icon_key_factory_;
 
   base::WeakPtrFactory<ArcApps> weak_ptr_factory_{this};
 

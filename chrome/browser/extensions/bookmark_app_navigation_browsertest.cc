@@ -38,9 +38,6 @@ const char kOutOfScopeUrlPath[] = "/out_of_scope/index.html";
 
 const char kAppName[] = "Test app";
 
-const base::FilePath::CharType kDocRoot[] =
-    FILE_PATH_LITERAL("chrome/test/data");
-
 bool HasOpenedWindowAndOpener(content::WebContents* opener_contents,
                               content::WebContents* opened_contents) {
   bool has_opener;
@@ -177,7 +174,7 @@ void BookmarkAppNavigationBrowserTest::ClickLinkWithModifiersAndWaitForURL(
   content::SimulateMouseClick(web_contents, modifiers,
                               blink::WebMouseEvent::Button::kLeft);
 
-  observer->WaitForNavigationFinished();
+  observer->Wait();
 }
 
 // static
@@ -218,7 +215,7 @@ BookmarkAppNavigationBrowserTest::BookmarkAppNavigationBrowserTest()
 BookmarkAppNavigationBrowserTest::~BookmarkAppNavigationBrowserTest() = default;
 
 void BookmarkAppNavigationBrowserTest::SetUp() {
-  https_server_.AddDefaultHandlers(base::FilePath(kDocRoot));
+  https_server_.AddDefaultHandlers(GetChromeTestDataDir());
   // Register a request handler that will return empty pages. Tests are
   // responsible for adding elements and firing events on these empty pages.
   https_server_.RegisterRequestHandler(
@@ -306,7 +303,7 @@ Browser* BookmarkAppNavigationBrowserTest::OpenTestBookmarkApp() {
   GURL app_url = https_server_.GetURL(GetAppUrlHost(), GetAppUrlPath());
   auto observer = GetTestNavigationObserver(app_url);
   Browser* app_browser = LaunchAppBrowser(test_bookmark_app_);
-  observer->WaitForNavigationFinished();
+  observer->Wait();
 
   return app_browser;
 }

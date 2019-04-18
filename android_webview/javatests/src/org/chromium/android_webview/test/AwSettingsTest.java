@@ -38,7 +38,6 @@ import org.chromium.android_webview.test.util.JSUtils;
 import org.chromium.android_webview.test.util.VideoTestUtil;
 import org.chromium.android_webview.test.util.VideoTestWebServer;
 import org.chromium.base.Callback;
-import org.chromium.base.ThreadUtils;
 import org.chromium.base.test.util.CallbackHelper;
 import org.chromium.base.test.util.CommandLineFlags;
 import org.chromium.base.test.util.DisabledTest;
@@ -50,6 +49,7 @@ import org.chromium.content_public.browser.WebContents;
 import org.chromium.content_public.browser.WebContentsObserver;
 import org.chromium.content_public.browser.test.util.DOMUtils;
 import org.chromium.content_public.browser.test.util.HistoryUtils;
+import org.chromium.content_public.browser.test.util.TestThreadUtils;
 import org.chromium.content_public.common.ContentSwitches;
 import org.chromium.content_public.common.ContentUrlConstants;
 import org.chromium.net.test.EmbeddedTestServer;
@@ -1464,13 +1464,13 @@ public class AwSettingsTest {
         }
     }
 
-    class AwSettingsShouldSuppressErrorPageTestHelper extends AwSettingsTestHelper<Boolean> {
+    class AwSettingsWillSuppressErrorPageTestHelper extends AwSettingsTestHelper<Boolean> {
         private static final String BAD_SCHEME_URL = "htt://nonsense";
         private static final String PREV_TITLE = "cuencpobgjhfdmdovhmfdkjf";
         private static final int MAX_TIME_LOADING_ERROR_PAGE = 1000;
         private final AwContents mAwContents;
 
-        AwSettingsShouldSuppressErrorPageTestHelper(AwTestContainerView containerView,
+        AwSettingsWillSuppressErrorPageTestHelper(AwTestContainerView containerView,
                 TestAwContentsClient contentViewClient) throws Throwable {
             super(containerView, contentViewClient, true);
             mAwContents = containerView.getAwContents();
@@ -1488,12 +1488,12 @@ public class AwSettingsTest {
 
         @Override
         protected Boolean getCurrentValue() {
-            return mAwSettings.getShouldSuppressErrorPage();
+            return mAwSettings.getWillSuppressErrorPage();
         }
 
         @Override
         protected void setCurrentValue(Boolean value) {
-            mAwSettings.setShouldSuppressErrorPage(value);
+            mAwSettings.setWillSuppressErrorPage(value);
         }
 
         @Override
@@ -1503,8 +1503,8 @@ public class AwSettingsTest {
 
             final WebContents webContents = mAwContents.getWebContents();
             final CallbackHelper onTitleUpdatedHelper = new CallbackHelper();
-            final WebContentsObserver observer =
-                    ThreadUtils.runOnUiThreadBlocking(() -> new WebContentsObserver(webContents) {
+            final WebContentsObserver observer = TestThreadUtils.runOnUiThreadBlocking(
+                    () -> new WebContentsObserver(webContents) {
                         @Override
                         public void titleWasSet(String title) {
                             onTitleUpdatedHelper.notifyCalled();
@@ -1516,7 +1516,7 @@ public class AwSettingsTest {
 
             // Verify the state in settings reflect what we expect
             AwSettings settings = mActivityTestRule.getAwSettingsOnUiThread(mAwContents);
-            Assert.assertEquals(value, settings.getShouldSuppressErrorPage());
+            Assert.assertEquals(value, settings.getWillSuppressErrorPage());
 
             // Verify the error page is shown / suppressed
             if (value == DISABLED) {
@@ -1540,7 +1540,7 @@ public class AwSettingsTest {
                         PREV_TITLE, getTitleOnUiThread());
             }
 
-            ThreadUtils.runOnUiThreadBlocking(() -> webContents.removeObserver(observer));
+            TestThreadUtils.runOnUiThreadBlocking(() -> webContents.removeObserver(observer));
         }
 
         private String getData() {
@@ -1550,7 +1550,7 @@ public class AwSettingsTest {
     }
 
     public static int calcDisplayWidthDp(Context context) {
-        return ThreadUtils.runOnUiThreadBlockingNoException(() -> {
+        return TestThreadUtils.runOnUiThreadBlockingNoException(() -> {
             DisplayAndroid displayAndroid = DisplayAndroid.getNonMultiDisplay(context);
             return DisplayUtil.pxToDp(displayAndroid, displayAndroid.getDisplayWidth());
         });
@@ -1725,11 +1725,11 @@ public class AwSettingsTest {
     @Test
     @MediumTest
     @Feature({"AndroidWebView", "Preferences"})
-    public void testShouldSuppressErrorPage() throws Throwable {
+    public void testWillSuppressErrorPage() throws Throwable {
         ViewPair views = createViews();
-        runPerViewSettingsTest(new AwSettingsShouldSuppressErrorPageTestHelper(
+        runPerViewSettingsTest(new AwSettingsWillSuppressErrorPageTestHelper(
                                        views.getContainer0(), views.getClient0()),
-                new AwSettingsShouldSuppressErrorPageTestHelper(
+                new AwSettingsWillSuppressErrorPageTestHelper(
                         views.getContainer1(), views.getClient1()));
     }
 
@@ -3365,8 +3365,7 @@ public class AwSettingsTest {
         final int y = (webView.getBottom() - webView.getTop()) / 2;
         final AwContents awContents = webView.getAwContents();
         InstrumentationRegistry.getInstrumentation().runOnMainSync(
-                ()
-                        -> awContents.getWebContents().getEventForwarder().doubleTapForTest(
+                () -> awContents.getWebContents().getEventForwarder().doubleTapForTest(
                                 SystemClock.uptimeMillis(), x, y));
     }
 }

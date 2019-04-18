@@ -8,6 +8,7 @@
 #include "base/macros.h"
 #include "services/resource_coordinator/public/mojom/coordination_unit.mojom-blink.h"
 #include "third_party/blink/renderer/platform/platform_export.h"
+#include "third_party/blink/renderer/platform/wtf/allocator.h"
 
 namespace service_manager {
 class Connector;
@@ -16,9 +17,12 @@ class Connector;
 namespace blink {
 
 class PLATFORM_EXPORT RendererResourceCoordinator {
+  USING_FAST_MALLOC(RendererResourceCoordinator);
+
  public:
-  static void Initialize();
-  static RendererResourceCoordinator& Get();
+  // Only initializes if the instrumentation runtime feature is enabled.
+  static void MaybeInitialize();
+  static RendererResourceCoordinator* Get();
 
   // Used to switch the current renderer resource coordinator only for testing.
   static void SetCurrentRendererResourceCoordinatorForTesting(

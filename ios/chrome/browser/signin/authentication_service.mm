@@ -18,14 +18,15 @@
 #include "components/signin/core/browser/account_info.h"
 #include "components/sync/driver/sync_service.h"
 #include "components/sync/driver/sync_user_settings.h"
+#include "components/unified_consent/feature.h"
 #include "google_apis/gaia/gaia_auth_util.h"
 #include "ios/chrome/browser/crash_report/breakpad_helper.h"
-#include "ios/chrome/browser/experimental_flags.h"
 #include "ios/chrome/browser/pref_names.h"
 #import "ios/chrome/browser/signin/authentication_service_delegate.h"
 #include "ios/chrome/browser/signin/constants.h"
 #include "ios/chrome/browser/signin/signin_util.h"
 #include "ios/chrome/browser/sync/sync_setup_service.h"
+#include "ios/chrome/browser/system_flags.h"
 #include "ios/public/provider/chrome/browser/chrome_browser_provider.h"
 #import "ios/public/provider/chrome/browser/signin/chrome_identity.h"
 #include "ios/public/provider/chrome/browser/signin/chrome_identity_service.h"
@@ -112,14 +113,13 @@ void AuthenticationService::Initialize(
   HandleForgottenIdentity(nil, true /* should_prompt */);
 
   bool is_signed_in = IsAuthenticated();
-  if (is_signed_in) {
-    if (!sync_setup_service_->HasFinishedInitialSetup()) {
-      // Sign out the user if sync was not configured after signing
-      // in (see PM comments in http://crbug.com/339831 ).
-      SignOut(signin_metrics::ABORT_SIGNIN, nil);
-      SetPromptForSignIn(true);
-      is_signed_in = false;
-    }
+  if (is_signed_in && !unified_consent::IsUnifiedConsentFeatureEnabled() &&
+      !sync_setup_service_->HasFinishedInitialSetup()) {
+    // Sign out the user if sync was not configured after signing
+    // in (see PM comments in http://crbug.com/339831 ).
+    SignOut(signin_metrics::ABORT_SIGNIN, nil);
+    SetPromptForSignIn(true);
+    is_signed_in = false;
   }
   breakpad_helper::SetCurrentlySignedIn(is_signed_in);
 
@@ -598,7 +598,12 @@ NSString* AuthenticationService::GetAuthenticatedUserEmail() {
 }
 
 bool AuthenticationService::IsAuthenticatedIdentityManaged() {
-  std::string hosted_domain =
-      identity_manager_->GetPrimaryAccountInfo().hosted_domain;
-  return !hosted_domain.empty() && hosted_domain != kNoHostedDomainFound;
+  base::Optional<AccountInfo> primary_account_info =
+      identity_manager_->FindExtendedAccountInfoForAccount(
+          identity_manager_->GetPrimaryAccountInfo());
+  if (!primary_account_info)
+    return false;
+
+  const std::string& hosted_domain = primary_account_info->hosted_domain;
+  return hosted_domain != kNoHostedDomainFound && !hosted_domain.empty();
 }

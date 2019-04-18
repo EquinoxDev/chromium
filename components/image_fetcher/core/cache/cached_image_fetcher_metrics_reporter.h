@@ -15,7 +15,7 @@ namespace image_fetcher {
 // as CachedImageFetcherEvent. New values should be added at the end and things
 // should not be renumbered.
 // GENERATED_JAVA_ENUM_PACKAGE: (
-// org.chromium.chrome.browser.cached_image_fetcher)
+// org.chromium.chrome.browser.image_fetcher)
 enum class CachedImageFetcherEvent {
   kImageRequest = 0,
   kCacheHit = 1,
@@ -46,6 +46,10 @@ class CachedImageFetcherMetricsReporter {
   // Report the time it takes to load an image from the cache in java code.
   static void ReportImageLoadFromCacheTimeJava(const std::string& client_name,
                                                base::Time start_time);
+
+  // Report the time it takes to load an image from native code.
+  static void ReportTotalFetchFromNativeTimeJava(const std::string& client_name,
+                                                 base::Time start_time);
 
   // Report the time it takes to load an image from the network.
   static void ReportImageLoadFromNetworkTime(const std::string& client_name,

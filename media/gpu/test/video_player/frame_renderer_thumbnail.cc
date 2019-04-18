@@ -6,8 +6,10 @@
 
 #include <utility>
 
+#include "base/files/file_util.h"
 #include "base/memory/ptr_util.h"
 #include "build/build_config.h"
+#include "media/base/bind_to_current_loop.h"
 #include "media/gpu/test/rendering_helper.h"
 #include "media/gpu/test/video_decode_accelerator_unittest_helpers.h"
 #include "ui/gfx/codec/png_codec.h"
@@ -131,6 +133,15 @@ FrameRendererThumbnail::~FrameRendererThumbnail() {
 
 // static
 std::unique_ptr<FrameRendererThumbnail> FrameRendererThumbnail::Create(
+    const std::vector<std::string> thumbnail_checksums) {
+  auto frame_renderer =
+      base::WrapUnique(new FrameRendererThumbnail(thumbnail_checksums));
+  frame_renderer->Initialize();
+  return frame_renderer;
+}
+
+// static
+std::unique_ptr<FrameRendererThumbnail> FrameRendererThumbnail::Create(
     const base::FilePath& video_file_path) {
   // Read thumbnail checksums from file.
   std::vector<std::string> thumbnail_checksums =
@@ -139,7 +150,7 @@ std::unique_ptr<FrameRendererThumbnail> FrameRendererThumbnail::Create(
 
   auto frame_renderer =
       base::WrapUnique(new FrameRendererThumbnail(thumbnail_checksums));
-  frame_renderer->Initialize(video_file_path);
+  frame_renderer->Initialize();
   return frame_renderer;
 }
 
@@ -188,8 +199,8 @@ scoped_refptr<VideoFrame> FrameRendererThumbnail::CreateVideoFrame(
 
   // Create a new video frame associated with the mailbox.
   base::OnceCallback<void(const gpu::SyncToken&)> mailbox_holder_release_cb =
-      base::BindOnce(&FrameRendererThumbnail::DeleteTexture,
-                     base::Unretained(this), mailbox);
+      BindToCurrentLoop(base::BindOnce(&FrameRendererThumbnail::DeleteTexture,
+                                       base::Unretained(this), mailbox));
   scoped_refptr<VideoFrame> frame = VideoFrame::WrapNativeTextures(
       pixel_format, mailbox_holders, std::move(mailbox_holder_release_cb),
       texture_size, gfx::Rect(texture_size), texture_size, base::TimeDelta());
@@ -245,7 +256,7 @@ void FrameRendererThumbnail::SaveThumbnail() {
   EXPECT_EQ(static_cast<size_t>(num_bytes), png.size());
 }
 
-void FrameRendererThumbnail::Initialize(const base::FilePath& video_file_path) {
+void FrameRendererThumbnail::Initialize() {
   DCHECK_CALLED_ON_VALID_SEQUENCE(client_sequence_checker_);
 
   // Initialize GL rendering and create GL context.
@@ -415,8 +426,9 @@ const std::vector<uint8_t> FrameRendererThumbnail::ConvertThumbnailToRGBA() {
 
 void FrameRendererThumbnail::DeleteTexture(const gpu::Mailbox& mailbox,
                                            const gpu::SyncToken&) {
-  DCHECK_CALLED_ON_VALID_SEQUENCE(client_sequence_checker_);
+  DCHECK_CALLED_ON_VALID_SEQUENCE(renderer_sequence_checker_);
 
+  AutoGLContext auto_gl_context(this);
   base::AutoLock auto_lock(renderer_lock_);
   auto it = mailbox_texture_map_.find(mailbox);
   ASSERT_NE(it, mailbox_texture_map_.end());

@@ -4,6 +4,9 @@
 
 #import "ios/chrome/test/earl_grey/chrome_actions.h"
 
+#import <EarlGrey/EarlGrey.h>
+
+#include "ios/web/public/test/element_selector.h"
 #import "base/mac/foundation_util.h"
 #import "ios/chrome/browser/ui/collection_view/cells/collection_view_switch_item.h"
 #import "ios/chrome/browser/ui/settings/cells/settings_switch_cell.h"
@@ -21,12 +24,10 @@ NSString* kChromeActionsErrorDomain = @"ChromeActionsError";
 
 namespace chrome_test_util {
 
-id<GREYAction> LongPressElementForContextMenu(
-    web::test::ElementSelector selector,
-    bool triggers_context_menu) {
+id<GREYAction> LongPressElementForContextMenu(ElementSelector* selector,
+                                              bool triggers_context_menu) {
   return WebViewLongPressElementForContextMenu(
-      chrome_test_util::GetCurrentWebState(), std::move(selector),
-      triggers_context_menu);
+      chrome_test_util::GetCurrentWebState(), selector, triggers_context_menu);
 }
 
 id<GREYAction> TurnSettingsSwitchOn(BOOL on) {
@@ -86,15 +87,15 @@ id<GREYAction> TurnSyncSwitchOn(BOOL on) {
 id<GREYAction> TapWebElement(const std::string& element_id) {
   return web::WebViewTapElement(
       chrome_test_util::GetCurrentWebState(),
-      web::test::ElementSelector::ElementSelectorId(element_id));
+      [ElementSelector selectorWithElementID:element_id]);
 }
 
 id<GREYAction> TapWebElementInFrame(const std::string& element_id,
                                     const int frame_index) {
   return web::WebViewTapElement(
       chrome_test_util::GetCurrentWebState(),
-      web::test::ElementSelector::ElementSelectorIdInFrame(element_id,
-                                                           frame_index));
+      [ElementSelector selectorWithElementID:element_id
+                            inFrameWithIndex:frame_index]);
 }
 
 }  // namespace chrome_test_util

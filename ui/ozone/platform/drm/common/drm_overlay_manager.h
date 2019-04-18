@@ -11,26 +11,24 @@
 #include "base/containers/mru_cache.h"
 #include "base/macros.h"
 #include "base/threading/thread_checker.h"
+#include "ui/gfx/native_widget_types.h"
 #include "ui/ozone/public/overlay_candidates_ozone.h"
 #include "ui/ozone/public/overlay_manager_ozone.h"
 
 namespace ui {
 class OverlaySurfaceCandidate;
 
-// Ozone DRM extension of the OverlayManagerOzone interface.
+// Ozone DRM extension of the OverlayManagerOzone interface. It queries the
+// DrmDevice to see if an overlay configuration will work and keeps an MRU cache
+// of recent configurations.
 class DrmOverlayManager : public OverlayManagerOzone {
  public:
   DrmOverlayManager();
   ~DrmOverlayManager() override;
 
-  void set_supports_overlays(bool supports_overlays) {
-    supports_overlays_ = supports_overlays;
-  }
-
   // OverlayManagerOzone:
   std::unique_ptr<OverlayCandidatesOzone> CreateOverlayCandidates(
       gfx::AcceleratedWidget w) override;
-  bool SupportsOverlays() const override;
 
   // Resets the cache of OverlaySurfaceCandidates and if they can be displayed
   // as an overlay. For use when display configuration changes.
@@ -46,7 +44,7 @@ class DrmOverlayManager : public OverlayManagerOzone {
   // should call UpdateCacheForOverlayCandidates() with the response.
   virtual void SendOverlayValidationRequest(
       const std::vector<OverlaySurfaceCandidate>& candidates,
-      gfx::AcceleratedWidget widget) const = 0;
+      gfx::AcceleratedWidget widget) = 0;
 
   // Perform basic validation to see if |candidate| is a valid request.
   virtual bool CanHandleCandidate(const OverlaySurfaceCandidate& candidate,
@@ -70,9 +68,6 @@ class DrmOverlayManager : public OverlayManagerOzone {
     int request_num = 0;
     std::vector<OverlayStatus> status;
   };
-
-  // Whether we have DRM atomic capabilities and can support HW overlays.
-  bool supports_overlays_ = false;
 
   // List of all OverlaySurfaceCandidate instances which have been requested
   // for validation and/or validated.

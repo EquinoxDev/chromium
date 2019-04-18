@@ -49,9 +49,7 @@ void SoftwareOutputSurface::BindFramebuffer() {
   NOTREACHED();
 }
 
-void SoftwareOutputSurface::SetDrawRectangle(const gfx::Rect& draw_rectangle) {
-  NOTREACHED();
-}
+void SoftwareOutputSurface::SetDrawRectangle(const gfx::Rect& draw_rectangle) {}
 
 void SoftwareOutputSurface::Reshape(const gfx::Size& size,
                                     float device_scale_factor,
@@ -139,13 +137,6 @@ void SoftwareOutputSurface::UpdateVSyncParametersCallback(
   refresh_interval_ = interval;
   synthetic_begin_frame_source_->OnUpdateVSyncParameters(timebase, interval);
 }
-
-#if BUILDFLAG(ENABLE_VULKAN)
-gpu::VulkanSurface* SoftwareOutputSurface::GetVulkanSurface() {
-  NOTIMPLEMENTED();
-  return nullptr;
-}
-#endif
 
 unsigned SoftwareOutputSurface::UpdateGpuFence() {
   return 0;

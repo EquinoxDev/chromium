@@ -15,8 +15,23 @@ cr.define('nux', function() {
 
   /** @interface */
   class NtpBackgroundProxy {
+    clearBackground() {}
+
     /** @return {!Promise<!Array<!nux.NtpBackgroundData>>} */
     getBackgrounds() {}
+
+    /**
+     * @param {string} url
+     * @return {!Promise<void>}
+     */
+    preloadImage(url) {}
+
+    recordBackgroundImageFailedToLoad() {}
+
+    /** @param {number} loadTime */
+    recordBackgroundImageLoadTime(loadTime) {}
+
+    recordBackgroundImageNeverLoaded() {}
 
     /** @param {number} id */
     setBackground(id) {}
@@ -25,8 +40,49 @@ cr.define('nux', function() {
   /** @implements {nux.NtpBackgroundProxy} */
   class NtpBackgroundProxyImpl {
     /** @override */
+    clearBackground() {
+      return cr.sendWithPromise('clearBackground');
+    }
+
+    /** @override */
     getBackgrounds() {
       return cr.sendWithPromise('getBackgrounds');
+    }
+
+    /** @override */
+    preloadImage(url) {
+      return new Promise((resolve, reject) => {
+        const preloadedImage = new Image();
+        preloadedImage.onerror = reject;
+        preloadedImage.onload = resolve;
+        preloadedImage.src = url;
+      });
+    }
+
+    /** @override */
+    recordBackgroundImageFailedToLoad() {
+      const ntpInteractions =
+          nux.NtpBackgroundMetricsProxyImpl.getInstance().getInteractions();
+      chrome.metricsPrivate.recordEnumerationValue(
+          'FirstRun.NewUserExperience.NtpBackgroundInteraction',
+          ntpInteractions.BackgroundImageFailedToLoad,
+          Object.keys(ntpInteractions).length);
+    }
+
+    /** @override */
+    recordBackgroundImageLoadTime(loadTime) {
+      chrome.metricsPrivate.recordTime(
+          'FirstRun.NewUserExperience.NtpBackgroundLoadTime', loadTime);
+    }
+
+    /** @override */
+    recordBackgroundImageNeverLoaded() {
+      const ntpInteractions =
+          nux.NtpBackgroundMetricsProxyImpl.getInstance().getInteractions();
+      chrome.metricsPrivate.recordEnumerationValue(
+          'FirstRun.NewUserExperience.NtpBackgroundInteraction',
+          ntpInteractions.BackgroundImageNeverLoaded,
+          Object.keys(ntpInteractions).length);
     }
 
     /** @override */

@@ -23,7 +23,6 @@ import org.chromium.components.offline_items_collection.OfflineItemShareInfo;
 import org.chromium.components.offline_items_collection.ShareCallback;
 import org.chromium.components.offline_items_collection.VisualsCallback;
 
-import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -109,7 +108,7 @@ public class DownloadGlue implements DownloadObserver {
     public void removeItem(OfflineItem item) {
         DownloadManagerService.getDownloadManagerService().removeDownload(
                 item.id.id, item.isOffTheRecord, item.externallyRemoved);
-        FileDeletionQueue.get().delete(new File(item.filePath));
+        FileDeletionQueue.get().delete(item.filePath);
     }
 
     /** @see OfflineContentProvider#cancelDownload(ContentId) */
@@ -170,6 +169,13 @@ public class DownloadGlue implements DownloadObserver {
         OfflineItemShareInfo info = new OfflineItemShareInfo();
         info.uri = DownloadUtils.getUriForItem(item.filePath);
         new Handler().post(() -> callback.onShareInfoAvailable(item.id, info));
+    }
+
+    /** @see OfflineContentProvider#renameItem(ContentId, String, Callback)*/
+    public void renameItem(
+            OfflineItem item, String name, Callback</*RenameResult*/ Integer> callback) {
+        DownloadManagerService.getDownloadManagerService().renameDownload(
+                item.id, name, callback, item.isOffTheRecord);
     }
 
     /**

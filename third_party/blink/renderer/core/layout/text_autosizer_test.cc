@@ -19,9 +19,6 @@
 namespace blink {
 class TextAutosizerClient : public EmptyChromeClient {
  public:
-  static TextAutosizerClient* Create() {
-    return MakeGarbageCollected<TextAutosizerClient>();
-  }
   float WindowToViewportScalar(const float value) const override {
     return value * device_scale_factor_;
   }
@@ -46,7 +43,7 @@ class TextAutosizerTest : public RenderingTest {
   }
   TextAutosizerClient& GetTextAutosizerClient() const {
     DEFINE_STATIC_LOCAL(Persistent<TextAutosizerClient>, client,
-                        (TextAutosizerClient::Create()));
+                        (MakeGarbageCollected<TextAutosizerClient>()));
     return *client;
   }
   void set_device_scale_factor(float device_scale_factor) {
@@ -1111,7 +1108,7 @@ TEST_F(TextAutosizerSimTest, CrossSiteUseCounter) {
   Compositor().BeginFrame();
   test::RunPendingTasks();
 
-  auto* child_frame = ToWebLocalFrameImpl(MainFrame().FirstChild());
+  auto* child_frame = To<WebLocalFrameImpl>(MainFrame().FirstChild());
   auto* child_doc = child_frame->GetFrame()->GetDocument();
 
   EXPECT_TRUE(UseCounter::IsCounted(*child_doc,

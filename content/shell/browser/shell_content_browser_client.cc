@@ -42,7 +42,6 @@
 #include "content/shell/browser/shell_url_request_context_getter.h"
 #include "content/shell/browser/shell_web_contents_view_delegate_creator.h"
 #include "content/shell/common/power_monitor_test.mojom.h"
-#include "content/shell/common/shell_messages.h"
 #include "content/shell/common/shell_switches.h"
 #include "content/shell/common/web_test.mojom.h"
 #include "content/shell/common/web_test/fake_bluetooth_chooser.mojom.h"
@@ -482,9 +481,9 @@ void ShellContentBrowserClient::OpenURL(
                    ->web_contents());
 }
 
-scoped_refptr<LoginDelegate> ShellContentBrowserClient::CreateLoginDelegate(
-    net::AuthChallengeInfo* auth_info,
-    content::ResourceRequestInfo::WebContentsGetter web_contents_getter,
+std::unique_ptr<LoginDelegate> ShellContentBrowserClient::CreateLoginDelegate(
+    const net::AuthChallengeInfo& auth_info,
+    content::WebContents* web_contents,
     const content::GlobalRequestID& request_id,
     bool is_main_frame,
     const GURL& url,
@@ -563,7 +562,6 @@ ShellContentBrowserClient::CreateNetworkContext(
   UpdateCorsExemptHeader(context_params.get());
   context_params->user_agent = GetUserAgent();
   context_params->accept_language = "en-us,en";
-  context_params->enable_data_url_support = true;
 
 #if BUILDFLAG(ENABLE_REPORTING)
   if (base::CommandLine::ForCurrentProcess()->HasSwitch(

@@ -3,12 +3,18 @@
 <html>
 <head>
 <title>MP4 Video Power Test</title>
-<script src="power_video_test.js"></script>
+<style type="text/css">
+.nomargin {
+  margin: 0px auto;
+}
+.relativepos {
+  position: relative;
+}
+</style>
 </head>
-<body onload="main()">
-<button id="fullscreen" onclick="goFullscreen()">Fullscreen</button>
-<div id="container">
-<video id="video" width="1280" height="720" >
+<body>
+<div id="container" class="relativepos">
+<video class="nomargin" id="video" width="1280" height="720" >
 <source src="/media/test/data/bear-1280x720.mp4" type="video/mp4">
 </video>
 </div>

@@ -6,6 +6,7 @@ import("//build/config/jumbo.gni")
 import("//build/config/ui.gni")
 import("//gpu/vulkan/features.gni")
 import("//third_party/protobuf/proto_library.gni")
+import("//ui/gl/features.gni")
 
 group("service") {
   if (is_component_build) {
@@ -107,6 +108,8 @@ target(link_target_type, "gles2_sources") {
 
   sources = [
     "abstract_texture.h",
+    "abstract_texture_impl_shared_context_state.cc",
+    "abstract_texture_impl_shared_context_state.h",
     "buffer_manager.cc",
     "buffer_manager.h",
     "client_service_map.h",
@@ -260,6 +263,13 @@ target(link_target_type, "gles2_sources") {
     "wrapped_sk_image.h",
   ]
 
+  if (use_dawn) {
+    sources += [
+      "webgpu_decoder_impl.cc",
+      "webgpu_decoder_impl.h",
+    ]
+  }
+
   configs += [
     "//build/config:precompiled_headers",
     "//gpu:gpu_gles2_implementation",
@@ -278,6 +288,7 @@ target(link_target_type, "gles2_sources") {
     "//gpu/command_buffer/common:raster_sources",
     "//gpu/command_buffer/common:webgpu_sources",
     "//skia",
+    "//third_party/dawn/src/dawn:dawn_headers",
   ]
   deps = [
     ":disk_cache_proto",
@@ -301,8 +312,13 @@ target(link_target_type, "gles2_sources") {
     "//ui/gfx/geometry",
     "//ui/gfx/ipc/color",
     "//ui/gl",
+    "//ui/gl:buildflags",
     "//ui/gl/init",
   ]
+
+  if (use_dawn) {
+    deps += [ "//third_party/dawn:libdawn_native" ]
+  }
 
   if (enable_vulkan) {
     deps += [
@@ -310,7 +326,7 @@ target(link_target_type, "gles2_sources") {
       "//gpu/vulkan",
     ]
 
-    if (is_linux) {
+    if (is_linux || is_fuchsia) {
       sources += [
         "external_vk_image_backing.cc",
         "external_vk_image_backing.h",
@@ -324,9 +340,19 @@ target(link_target_type, "gles2_sources") {
     }
   }
 
+  if (use_dawn) {
+    deps += [ "//third_party/dawn:libdawn_native" ]
+  }
+
   if (is_mac) {
+    sources += [
+      "shared_image_backing_factory_iosurface.h",
+      "shared_image_backing_factory_iosurface.mm",
+    ]
+
     # Required by gles2_cmd_decoder.cc on Mac.
     libs = [
+      "Cocoa.framework",
       "IOSurface.framework",
       "OpenGL.framework",
     ]

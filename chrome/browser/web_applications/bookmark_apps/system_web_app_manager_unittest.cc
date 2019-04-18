@@ -38,13 +38,15 @@ const char kAppUrl1[] = "chrome://system-app1";
 const char kAppUrl2[] = "chrome://system-app2";
 const char kAppUrl3[] = "chrome://system-app3";
 
-PendingAppManager::AppInfo GetWindowedAppInfo() {
-  PendingAppManager::AppInfo info(GURL(kAppUrl1), LaunchContainer::kWindow,
-                                  InstallSource::kSystemInstalled);
-  info.create_shortcuts = false;
-  info.bypass_service_worker_check = true;
-  info.always_update = true;
-  return info;
+InstallOptions GetWindowedInstallOptions() {
+  InstallOptions options(GURL(kAppUrl1), LaunchContainer::kWindow,
+                         InstallSource::kSystemInstalled);
+  options.add_to_applications_menu = false;
+  options.add_to_desktop = false;
+  options.add_to_quick_launch_bar = false;
+  options.bypass_service_worker_check = true;
+  options.always_update = true;
+  return options;
 }
 
 }  // namespace
@@ -115,8 +117,8 @@ TEST_F(SystemWebAppManagerTest, Disabled) {
   SimulatePreviouslyInstalledApp(GURL(kAppUrl1),
                                  InstallSource::kSystemInstalled);
 
-  std::vector<GURL> system_apps;
-  system_apps.push_back(GURL(kAppUrl1));
+  base::flat_map<SystemAppType, GURL> system_apps;
+  system_apps[SystemAppType::SETTINGS] = GURL(kAppUrl1);
 
   system_web_app_manager()->SetSystemApps(std::move(system_apps));
   system_web_app_manager()->Start();
@@ -133,9 +135,9 @@ TEST_F(SystemWebAppManagerTest, Disabled) {
 
 // Test that System Apps do install with the feature enabled.
 TEST_F(SystemWebAppManagerTest, Enabled) {
-  std::vector<GURL> system_apps;
-  system_apps.push_back(GURL(kAppUrl1));
-  system_apps.push_back(GURL(kAppUrl2));
+  base::flat_map<SystemAppType, GURL> system_apps;
+  system_apps[SystemAppType::SETTINGS] = GURL(kAppUrl1);
+  system_apps[SystemAppType::DISCOVER] = GURL(kAppUrl2);
 
   system_web_app_manager()->SetSystemApps(std::move(system_apps));
   system_web_app_manager()->Start();
@@ -154,8 +156,8 @@ TEST_F(SystemWebAppManagerTest, UninstallAppInstalledInPreviousSession) {
   SimulatePreviouslyInstalledApp(GURL(kAppUrl2),
                                  InstallSource::kSystemInstalled);
   SimulatePreviouslyInstalledApp(GURL(kAppUrl3), InstallSource::kInternal);
-  std::vector<GURL> system_apps;
-  system_apps.push_back(GURL(kAppUrl1));
+  base::flat_map<SystemAppType, GURL> system_apps;
+  system_apps[SystemAppType::SETTINGS] = GURL(kAppUrl1);
 
   system_web_app_manager()->SetSystemApps(std::move(system_apps));
   system_web_app_manager()->Start();
@@ -163,10 +165,10 @@ TEST_F(SystemWebAppManagerTest, UninstallAppInstalledInPreviousSession) {
   base::RunLoop().RunUntilIdle();
 
   // We should only try to install the app in the System App list.
-  std::vector<PendingAppManager::AppInfo> expected_apps_to_install;
-  expected_apps_to_install.push_back(GetWindowedAppInfo());
+  std::vector<InstallOptions> expected_install_options_list;
+  expected_install_options_list.push_back(GetWindowedInstallOptions());
   EXPECT_EQ(pending_app_manager()->install_requests(),
-            expected_apps_to_install);
+            expected_install_options_list);
 
   // We should try to uninstall the app that is no longer in the System App
   // list.

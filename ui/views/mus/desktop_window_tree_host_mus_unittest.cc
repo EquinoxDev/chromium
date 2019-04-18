@@ -21,6 +21,7 @@
 #include "ui/aura/mus/window_mus.h"
 #include "ui/aura/mus/window_tree_client.h"
 #include "ui/aura/mus/window_tree_client_test_observer.h"
+#include "ui/aura/mus/window_tree_host_mus.h"
 #include "ui/aura/test/mus/change_completion_waiter.h"
 #include "ui/aura/test/mus/test_window_tree.h"
 #include "ui/aura/test/mus/window_tree_client_test_api.h"
@@ -44,6 +45,7 @@
 #include "ui/views/widget/widget_observer.h"
 #include "ui/wm/core/shadow_types.h"
 #include "ui/wm/core/transient_window_manager.h"
+#include "ui/wm/public/activation_client.h"
 
 namespace views {
 
@@ -73,6 +75,11 @@ class DesktopWindowTreeHostMusTest : public ViewsTestBase,
     return widget;
   }
 
+  AXAuraObjCache* CreateAXAuraObjCache() {
+    ax_aura_obj_cache_ = std::make_unique<AXAuraObjCache>();
+    return ax_aura_obj_cache_.get();
+  }
+
   const Widget* widget_activated() const { return widget_activated_; }
   const Widget* widget_deactivated() const { return widget_deactivated_; }
 
@@ -89,6 +96,7 @@ class DesktopWindowTreeHostMusTest : public ViewsTestBase,
 
   Widget* widget_activated_ = nullptr;
   Widget* widget_deactivated_ = nullptr;
+  std::unique_ptr<AXAuraObjCache> ax_aura_obj_cache_;
 
   DISALLOW_COPY_AND_ASSIGN(DesktopWindowTreeHostMusTest);
 };
@@ -462,40 +470,26 @@ TEST_F(DesktopWindowTreeHostMusTest, SynchronousBoundsWhenTogglingFullscreen) {
   }
 }
 
-TEST_F(DesktopWindowTreeHostMusTest, ClientWindowHasContent) {
-  // Opaque window has content.
-  {
+TEST_F(DesktopWindowTreeHostMusTest, ClientWindowLayerDrawnSet) {
+  struct {
+    ui::LayerType layer_type;
+    bool expected_layer_drawn;
+  } kTestCases[] = {
+      {ui::LayerType::LAYER_TEXTURED, true},
+      {ui::LayerType::LAYER_SOLID_COLOR, true},
+      {ui::LayerType::LAYER_NINE_PATCH, true},
+      {ui::LayerType::LAYER_NOT_DRAWN, false},
+  };
+
+  for (const auto& test : kTestCases) {
     Widget::InitParams params(Widget::InitParams::TYPE_WINDOW);
     params.ownership = Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET;
+    params.layer_type = test.layer_type;
 
     Widget widget;
     widget.Init(params);
-    EXPECT_TRUE(widget.GetNativeWindow()->GetProperty(
-        aura::client::kClientWindowHasContent));
-  }
-
-  // Translucent window does not have content.
-  {
-    Widget::InitParams params(Widget::InitParams::TYPE_WINDOW);
-    params.ownership = Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET;
-    params.opacity = views::Widget::InitParams::TRANSLUCENT_WINDOW;
-
-    Widget widget;
-    widget.Init(params);
-    EXPECT_FALSE(widget.GetNativeWindow()->GetProperty(
-        aura::client::kClientWindowHasContent));
-  }
-
-  // Window with LAYER_NOT_DRAWN does not have content.
-  {
-    Widget::InitParams params(Widget::InitParams::TYPE_WINDOW);
-    params.ownership = Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET;
-    params.layer_type = ui::LAYER_NOT_DRAWN;
-
-    Widget widget;
-    widget.Init(params);
-    EXPECT_FALSE(widget.GetNativeWindow()->GetProperty(
-        aura::client::kClientWindowHasContent));
+    EXPECT_EQ(test.expected_layer_drawn, widget.GetNativeWindow()->GetProperty(
+                                             aura::client::kWindowLayerDrawn));
   }
 }
 
@@ -545,7 +539,7 @@ TEST_F(DesktopWindowTreeHostMusTestHighDPI, InitializeMenuWithDIPBounds) {
 
 TEST_F(DesktopWindowTreeHostMusTest, GetWindowBoundsInScreen) {
   // No ScreenMus in single process Mash.
-  if (features::IsSingleProcessMash())
+  if (::features::IsSingleProcessMash())
     return;
 
   ScreenMus* screen = MusClientTestApi::screen();
@@ -631,7 +625,8 @@ TEST_F(DesktopWindowTreeHostMusTest, WindowTitle) {
 
 TEST_F(DesktopWindowTreeHostMusTest, Accessibility) {
   // Pretend we're using the remote AX service, like shortcut_viewer.
-  MusClientTestApi::SetAXRemoteHost(std::make_unique<AXRemoteHost>());
+  AXAuraObjCache* cache = CreateAXAuraObjCache();
+  MusClientTestApi::SetAXRemoteHost(std::make_unique<AXRemoteHost>(cache));
 
   std::unique_ptr<Widget> widget = CreateWidget();
   // Widget frame views do not participate in accessibility node hierarchy
@@ -748,6 +743,7 @@ TEST_F(DesktopWindowTreeHostMusTest, MinimizeActivate) {
   EXPECT_TRUE(widget->IsActive());
   EXPECT_TRUE(widget->IsVisible());
   EXPECT_FALSE(widget->IsMinimized());
+  EXPECT_TRUE(widget->GetNativeWindow()->GetHost()->compositor()->IsVisible());
 }
 
 TEST_F(DesktopWindowTreeHostMusTest, MaximizeMinimizeRestore) {
@@ -1162,6 +1158,61 @@ TEST_F(DesktopWindowTreeHostMusTestFractionalDPI2,
   widget->SetBounds(bounds);
   EXPECT_EQ(bounds, widget->GetWindowBoundsInScreen());
   EXPECT_EQ(bounds, widget->GetNativeWindow()->GetBoundsInScreen());
+}
+
+TEST_F(DesktopWindowTreeHostMusTest, ServerBoundsChangeIngoresMinMax) {
+  gfx::Size min_size(100, 100);
+  gfx::Size max_size(200, 200);
+  auto* delegate = new StaticSizedWidgetDelegate(min_size, max_size);
+  std::unique_ptr<Widget> widget = CreateWidget(delegate);
+  widget->Show();
+
+  // Setting the bounds to a size bigger than max should result in going to
+  // max.
+  widget->SetBounds(gfx::Rect(0, 0, 250, 250));
+  EXPECT_EQ(gfx::Size(200, 200), widget->GetWindowBoundsInScreen().size());
+
+  // Changes to the bounds from the server should not consider the min/max.
+  const gfx::Rect server_bounds(1, 2, 250, 251);
+  static_cast<aura::WindowTreeHostMus*>(widget->GetNativeWindow()->GetHost())
+      ->SetBoundsFromServer(server_bounds, ui::SHOW_STATE_DEFAULT,
+                            viz::LocalSurfaceIdAllocation());
+  EXPECT_EQ(server_bounds, widget->GetWindowBoundsInScreen());
+}
+
+// Verify that focusing a child window makes the toplevel window active.
+TEST_F(DesktopWindowTreeHostMusTest, DontActivateNonToplevelWindow) {
+  std::unique_ptr<Widget> toplevel(CreateWidget());
+  toplevel->Show();
+
+  aura::Window* child = new aura::Window(nullptr);
+  child->Init(ui::LAYER_SOLID_COLOR);
+  toplevel->GetNativeView()->AddChild(child);
+  ASSERT_TRUE(child->CanFocus());
+
+  wm::ActivationClient* activation_client =
+      wm::GetActivationClient(toplevel->GetNativeView()->GetRootWindow());
+
+  // Focus |child| in normal state. |toplevel| is the active window and |child|
+  // is focused.
+  child->Focus();
+  EXPECT_EQ(toplevel->GetNativeView(), activation_client->GetActiveWindow());
+  EXPECT_TRUE(toplevel->IsActive());
+  EXPECT_TRUE(child->HasFocus());
+
+  // Minimize |toplevel|.
+  toplevel->Minimize();
+  ASSERT_TRUE(toplevel->IsMinimized());
+  EXPECT_EQ(nullptr, activation_client->GetActiveWindow());
+  EXPECT_FALSE(toplevel->IsActive());
+  EXPECT_FALSE(child->HasFocus());
+
+  // Focus |child| again. |toplevel| is the active window and |child| is
+  // focused.
+  child->Focus();
+  EXPECT_EQ(toplevel->GetNativeView(), activation_client->GetActiveWindow());
+  EXPECT_TRUE(toplevel->IsActive());
+  EXPECT_TRUE(child->HasFocus());
 }
 
 }  // namespace views

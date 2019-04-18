@@ -73,10 +73,7 @@ extern const wchar_t kDesktopFullName[];
 // Google Update related registry paths.
 extern const wchar_t kRegUpdaterClientStateAppPath[];
 extern const wchar_t kRegUpdaterClientsAppPath[];
-
-// Google MDM related registry paths.
-extern const wchar_t kRegMdmUrl[];
-extern const wchar_t kRegMdmSupportsMultiUser[];
+extern const wchar_t kRegUsageStatsName[];
 
 // These are command line switches passed to chrome to start it as a process
 // used as a logon stub.

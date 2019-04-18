@@ -104,7 +104,7 @@ ElementFragmentAnchor* ElementFragmentAnchor::TryCreate(const KURL& url,
     target->DispatchActivateInvisibleEventIfNeeded();
   }
 
-  if (doc.IsSVGDocument() && !frame.IsMainFrame())
+  if (doc.IsSVGDocument() && (!frame.IsMainFrame() || !target))
     return nullptr;
 
   if (!anchor_node)
@@ -131,16 +131,15 @@ bool ElementFragmentAnchor::Invoke() {
 
   Document& doc = *frame_->GetDocument();
 
-  if (!doc.IsRenderingReady() || !frame_->View())
+  if (!doc.HaveRenderBlockingResourcesLoaded() || !frame_->View())
     return true;
 
   Frame* boundary_frame = frame_->FindUnsafeParentScrollPropagationBoundary();
 
   // FIXME: Handle RemoteFrames
-  if (boundary_frame && boundary_frame->IsLocalFrame()) {
-    ToLocalFrame(boundary_frame)
-        ->View()
-        ->SetSafeToPropagateScrollToParent(false);
+  auto* boundary_local_frame = DynamicTo<LocalFrame>(boundary_frame);
+  if (boundary_local_frame) {
+    boundary_local_frame->View()->SetSafeToPropagateScrollToParent(false);
   }
 
   Element* element_to_scroll = anchor_node_->IsElementNode()
@@ -153,10 +152,8 @@ bool ElementFragmentAnchor::Invoke() {
     element_to_scroll->ScrollIntoViewNoVisualUpdate(options);
   }
 
-  if (boundary_frame && boundary_frame->IsLocalFrame()) {
-    ToLocalFrame(boundary_frame)
-        ->View()
-        ->SetSafeToPropagateScrollToParent(true);
+  if (boundary_local_frame) {
+    boundary_local_frame->View()->SetSafeToPropagateScrollToParent(true);
   }
 
   if (AXObjectCache* cache = doc.ExistingAXObjectCache())
@@ -174,7 +171,7 @@ void ElementFragmentAnchor::Installed() {
 
   // If rendering isn't ready yet, we'll focus and scroll as part of the
   // document lifecycle.
-  if (frame_->GetDocument()->IsRenderingReady())
+  if (frame_->GetDocument()->HaveRenderBlockingResourcesLoaded())
     ApplyFocusIfNeeded();
 
   needs_invoke_ = true;
@@ -221,7 +218,10 @@ void ElementFragmentAnchor::ApplyFocusIfNeeded() {
   if (!needs_focus_)
     return;
 
-  if (!frame_->GetDocument()->IsRenderingReady())
+  if (!frame_->GetDocument()->HaveRenderBlockingResourcesLoaded())
+    return;
+
+  if (!anchor_node_)
     return;
 
   // If the anchor accepts keyboard focus and fragment scrolling is allowed,

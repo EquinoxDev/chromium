@@ -44,11 +44,11 @@
 #include "ui/display/display_layout_builder.h"
 #include "ui/display/display_observer.h"
 #include "ui/display/display_switches.h"
+#include "ui/display/fake/fake_display_snapshot.h"
 #include "ui/display/manager/display_change_observer.h"
 #include "ui/display/manager/display_layout_store.h"
 #include "ui/display/manager/display_manager_utilities.h"
 #include "ui/display/manager/display_util.h"
-#include "ui/display/manager/fake_display_snapshot.h"
 #include "ui/display/manager/managed_display_info.h"
 #include "ui/display/manager/test/touch_device_manager_test_api.h"
 #include "ui/display/screen.h"
@@ -3264,7 +3264,7 @@ TEST_F(DisplayManagerTest, SubsequentInitializationOfDisplayZoom) {
   // display zoom enabled.
   display_manager()->RegisterDisplayProperty(id, display::Display::ROTATE_0,
                                              -1000, nullptr, gfx::Size(), 1.f,
-                                             zoom_factor);
+                                             zoom_factor, 60.f, false);
 
   const display::ManagedDisplayInfo& info =
       display_manager()->GetDisplayInfo(id);
@@ -3274,8 +3274,9 @@ TEST_F(DisplayManagerTest, SubsequentInitializationOfDisplayZoom) {
 
 TEST_F(DisplayManagerTest, CheckInitializationOfRotationProperty) {
   int64_t id = display_manager()->GetDisplayAt(0).id();
-  display_manager()->RegisterDisplayProperty(
-      id, display::Display::ROTATE_90, 1.0f, nullptr, gfx::Size(), 1.0f, 1.0f);
+  display_manager()->RegisterDisplayProperty(id, display::Display::ROTATE_90,
+                                             1.0f, nullptr, gfx::Size(), 1.0f,
+                                             1.0f, 60.f, false);
 
   const display::ManagedDisplayInfo& info =
       display_manager()->GetDisplayInfo(id);
@@ -3383,8 +3384,7 @@ TEST_F(DisplayManagerTest, DisconnectedInternalDisplayShouldUpdateDisplayInfo) {
   display::Screen* screen = display::Screen::GetScreen();
   DCHECK(screen);
   Shell* shell = Shell::Get();
-  display::DisplayChangeObserver observer(shell->display_configurator(),
-                                          display_manager());
+  display::DisplayChangeObserver observer(shell->display_manager());
   display::DisplayConfigurator::DisplayStateList outputs;
   std::unique_ptr<display::DisplaySnapshot> internal_snapshot =
       display::FakeDisplaySnapshot::Builder()
@@ -3430,9 +3430,7 @@ TEST_F(DisplayManagerTest, UpdateInternalDisplayNativeBounds) {
           .SetFirstDisplayAsInternalDisplay();
   display::Screen* screen = display::Screen::GetScreen();
   DCHECK(screen);
-  Shell* shell = Shell::Get();
-  display::DisplayChangeObserver observer(shell->display_configurator(),
-                                          display_manager());
+  display::DisplayChangeObserver observer(display_manager());
   display::DisplayConfigurator::DisplayStateList outputs;
   std::unique_ptr<display::DisplaySnapshot> internal_snapshot =
       display::FakeDisplaySnapshot::Builder()
@@ -3480,9 +3478,7 @@ TEST_F(DisplayManagerTest, ForcedMirrorMode) {
   constexpr int64_t id2 = 2;
   display::Screen* screen = display::Screen::GetScreen();
   DCHECK(screen);
-  Shell* shell = Shell::Get();
-  display::DisplayChangeObserver observer(shell->display_configurator(),
-                                          display_manager());
+  display::DisplayChangeObserver observer(display_manager());
   display::DisplayConfigurator::DisplayStateList outputs;
   std::unique_ptr<display::DisplaySnapshot> snapshot1 =
       display::FakeDisplaySnapshot::Builder()
@@ -3512,7 +3508,7 @@ TEST_F(DisplayManagerTest, ForcedMirrorMode) {
       display_manager()->GetCurrentDisplayIdList();
   display_manager()->layout_store()->UpdateDefaultUnified(current_list,
                                                           false /* unified */);
-  EXPECT_EQ(display::MULTIPLE_DISPLAY_STATE_DUAL_MIRROR,
+  EXPECT_EQ(display::MULTIPLE_DISPLAY_STATE_MULTI_MIRROR,
             observer.GetStateForDisplayIds(outputs));
 
   display_manager()->layout_store()->set_forced_mirror_mode_for_tablet(false);

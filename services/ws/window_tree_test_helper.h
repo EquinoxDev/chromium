@@ -89,6 +89,7 @@ class WindowTreeTestHelper {
   void SetHitTestInsets(aura::Window* window,
                         const gfx::Insets& mouse,
                         const gfx::Insets& touch);
+  void SetShape(aura::Window* window, const std::vector<gfx::Rect>& shape);
   bool SetWindowVisibility(aura::Window* window, bool visible);
   void SetWindowProperty(aura::Window* window,
                          const std::string& name,
@@ -124,6 +125,11 @@ class WindowTreeTestHelper {
   const std::queue<std::unique_ptr<WindowTree::InFlightEvent>>&
   in_flight_other_events() {
     return window_tree_->in_flight_other_events_;
+  }
+  void ConnectToImeEngine(ime::mojom::ImeEngineRequest engine_request,
+                          ime::mojom::ImeEngineClientPtr client) {
+    window_tree_->ConnectToImeEngine(std::move(engine_request),
+                                     std::move(client));
   }
 
  private:

@@ -58,19 +58,27 @@ NGLayoutResult::NGLayoutResult(NGLayoutResultStatus status,
       << "Use the other constructor for successful layout";
 }
 
-// We can't use =default here because RefCounted can't be copied.
 NGLayoutResult::NGLayoutResult(const NGLayoutResult& other,
+                               const NGConstraintSpace& new_space,
+                               LayoutUnit bfc_line_offset,
                                base::Optional<LayoutUnit> bfc_block_offset)
+<<<<<<< HEAD
 <<<<<<< HEAD
     : physical_fragment_(other.physical_fragment_),
 =======
     : space_(other.space_),
+=======
+    : space_(new_space),
+>>>>>>> 2d57e5b8afc6d01b344a8d95d3470d46b35845c5
       physical_fragment_(other.physical_fragment_),
 >>>>>>> 1edcc2f128d290860af09401391ae79df290b5f3
       oof_positioned_descendants_(other.oof_positioned_descendants_),
       unpositioned_list_marker_(other.unpositioned_list_marker_),
-      exclusion_space_(other.exclusion_space_),
-      bfc_line_offset_(other.bfc_line_offset_),
+      exclusion_space_(MergeExclusionSpaces(other,
+                                            new_space.ExclusionSpace(),
+                                            bfc_line_offset,
+                                            bfc_block_offset)),
+      bfc_line_offset_(bfc_line_offset),
       bfc_block_offset_(bfc_block_offset),
       end_margin_strut_(other.end_margin_strut_),
       intrinsic_block_size_(other.intrinsic_block_size_),
@@ -82,6 +90,8 @@ NGLayoutResult::NGLayoutResult(const NGLayoutResult& other,
       is_pushed_by_floats_(other.is_pushed_by_floats_),
       adjoining_floats_(other.adjoining_floats_),
       has_orthogonal_flow_roots_(other.has_orthogonal_flow_roots_),
+      may_have_descendant_above_block_start_(
+          other.may_have_descendant_above_block_start_),
       depends_on_percentage_block_size_(
           other.depends_on_percentage_block_size_),
       status_(other.status_) {}
@@ -109,6 +119,8 @@ NGLayoutResult::NGLayoutResult(NGContainerFragmentBuilder* builder,
       is_pushed_by_floats_(builder->is_pushed_by_floats_),
       adjoining_floats_(builder->adjoining_floats_),
       has_orthogonal_flow_roots_(builder->has_orthogonal_flow_roots_),
+      may_have_descendant_above_block_start_(
+          builder->may_have_descendant_above_block_start_),
       depends_on_percentage_block_size_(DependsOnPercentageBlockSize(*builder)),
       status_(kSuccess) {}
 
@@ -152,6 +164,29 @@ bool NGLayoutResult::DependsOnPercentageBlockSize(
     return true;
 
   return false;
+}
+
+NGExclusionSpace NGLayoutResult::MergeExclusionSpaces(
+    const NGLayoutResult& other,
+    const NGExclusionSpace& new_input_exclusion_space,
+    LayoutUnit bfc_line_offset,
+    base::Optional<LayoutUnit> bfc_block_offset) {
+  // If we are merging exclusion spaces we should be copying a previous layout
+  // result. It is impossible to reach a state where bfc_block_offset has a
+  // value, and the result which we are copying doesn't (or visa versa).
+  // This would imply the result has switched its "empty" state for margin
+  // collapsing, which would mean it isn't possible to reuse the result.
+  DCHECK_EQ(bfc_block_offset.has_value(), other.bfc_block_offset_.has_value());
+
+  NGBfcDelta offset_delta = {bfc_line_offset - other.bfc_line_offset_,
+                             bfc_block_offset && other.bfc_block_offset_
+                                 ? *bfc_block_offset - *other.bfc_block_offset_
+                                 : LayoutUnit()};
+
+  return NGExclusionSpace::MergeExclusionSpaces(
+      /* old_output */ other.exclusion_space_,
+      /* old_input */ other.space_.ExclusionSpace(),
+      /* new_input */ new_input_exclusion_space, offset_delta);
 }
 
 }  // namespace blink

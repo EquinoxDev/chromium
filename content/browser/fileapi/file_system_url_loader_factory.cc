@@ -28,6 +28,7 @@
 #include "content/public/common/child_process_host.h"
 #include "mojo/public/cpp/bindings/binding_set.h"
 #include "mojo/public/cpp/system/string_data_pipe_producer.h"
+#include "net/base/completion_repeating_callback.h"
 #include "net/base/directory_listing.h"
 #include "net/base/io_buffer.h"
 #include "net/base/mime_sniffer.h"
@@ -348,7 +349,7 @@ class FileSystemDirectoryURLLoader : public FileSystemEntryURLLoader {
     }
 
     network::ResourceResponseHead head;
-    head.mime_type = "text/plain";
+    head.mime_type = "text/html";
     head.charset = "utf-8";
     head.content_length = data_.size();
     head.headers = CreateHttpResponseHeaders(200);
@@ -510,7 +511,7 @@ class FileSystemFileURLLoader : public FileSystemEntryURLLoader {
       OnFileWritten(MOJO_RESULT_OK);
       return;
     }
-    net::CompletionCallback read_callback = base::BindRepeating(
+    net::CompletionRepeatingCallback read_callback = base::BindRepeating(
         &FileSystemFileURLLoader::DidReadMoreFileData, base::AsWeakPtr(this));
     const int rv =
         reader_->Read(file_data_.get(), bytes_to_read, read_callback);

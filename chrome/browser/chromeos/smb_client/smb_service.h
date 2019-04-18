@@ -25,6 +25,7 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chromeos/dbus/smb_provider_client.h"
 #include "components/keyed_service/core/keyed_service.h"
+#include "net/base/network_change_notifier.h"
 
 namespace base {
 class FilePath;
@@ -46,6 +47,7 @@ using file_system_provider::Service;
 
 // Creates and manages an smb file system.
 class SmbService : public KeyedService,
+                   public net::NetworkChangeNotifier::NetworkChangeObserver,
                    public base::SupportsWeakPtr<SmbService> {
  public:
   using MountResponse = base::OnceCallback<void(SmbMountResult result)>;
@@ -103,6 +105,8 @@ class SmbService : public KeyedService,
                        StartReadDirIfSuccessfulCallback reply);
 
  private:
+  friend class SmbServiceTest;
+
   // Calls SmbProviderClient::Mount(). |temp_file_manager_| must be initialized
   // before this is called.
   void CallMount(const file_system_provider::MountOptions& options,
@@ -244,6 +248,11 @@ class SmbService : public KeyedService,
   // Helper function that determines if HostDiscovery can be run again. Returns
   // false if HostDiscovery was recently run.
   bool ShouldRunHostDiscoveryAgain() const;
+
+  // NetworkChangeNotifier::NetworkChangeObserver override. Runs HostDiscovery
+  // when network detects a change.
+  void OnNetworkChanged(
+      net::NetworkChangeNotifier::ConnectionType type) override;
 
   // Records metrics on the number of SMB mounts a user has.
   void RecordMountCount() const;

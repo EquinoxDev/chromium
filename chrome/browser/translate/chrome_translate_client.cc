@@ -18,7 +18,6 @@
 #include "chrome/browser/language/language_model_manager_factory.h"
 #include "chrome/browser/language/url_language_histogram_factory.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/search_engines/template_url_service_factory.h"
 #include "chrome/browser/sync/user_event_service_factory.h"
 #include "chrome/browser/translate/translate_accept_languages_factory.h"
 #include "chrome/browser/translate/translate_ranker_factory.h"
@@ -83,45 +82,12 @@ TranslateEventProto::EventType BubbleResultToTranslateEvent(
   }
 }
 
-// ========== LOG TRANSLATE EVENT ==============
-
-void LogTranslateEvent(content::WebContents* const web_contents,
-                       const metrics::TranslateEventProto& translate_event) {
-  if (!FeatureList::IsEnabled(switches::kSyncUserTranslationEvents))
-    return;
-  DCHECK(web_contents);
-  auto* const profile =
-      Profile::FromBrowserContext(web_contents->GetBrowserContext());
-
-  syncer::UserEventService* const user_event_service =
-      browser_sync::UserEventServiceFactory::GetForProfile(profile);
-
-  auto* const entry = web_contents->GetController().GetLastCommittedEntry();
-
-  // If entry is null, we don't record the page.
-  // The navigation entry can be null in situations like download or initial
-  // blank page.
-  if (entry == nullptr)
-    return;
-
-  auto specifics = std::make_unique<sync_pb::UserEventSpecifics>();
-  // We only log the event we care about.
-  const bool needs_logging = translate::ConstructTranslateEvent(
-      entry->GetTimestamp().ToInternalValue(), translate_event,
-      specifics.get());
-  if (needs_logging) {
-    user_event_service->RecordUserEvent(std::move(specifics));
-  }
-}
-
 }  // namespace
 
 ChromeTranslateClient::ChromeTranslateClient(content::WebContents* web_contents)
     : content::WebContentsObserver(web_contents),
       translate_driver_(
           &web_contents->GetController(),
-          TemplateURLServiceFactory::GetForProfile(
-              Profile::FromBrowserContext(web_contents->GetBrowserContext())),
           UrlLanguageHistogramFactory::GetForBrowserContext(
               web_contents->GetBrowserContext())),
       translate_manager_(new translate::TranslateManager(
@@ -216,9 +182,7 @@ void ChromeTranslateClient::GetTranslateLanguages(
 }
 
 void ChromeTranslateClient::RecordTranslateEvent(
-    const TranslateEventProto& translate_event) {
-  LogTranslateEvent(web_contents(), translate_event);
-}
+    const TranslateEventProto& translate_event) {}
 
 translate::TranslateManager* ChromeTranslateClient::GetTranslateManager() {
   return translate_manager_.get();
@@ -306,30 +270,14 @@ void ChromeTranslateClient::ManualTranslateWhenReady() {
 }
 #endif
 
-void ChromeTranslateClient::RecordLanguageDetectionEvent(
-    const translate::LanguageDetectionDetails& details) const {
-  if (!FeatureList::IsEnabled(switches::kSyncUserLanguageDetectionEvents))
-    return;
-
-  DCHECK(web_contents());
-  auto* const profile =
-      Profile::FromBrowserContext(web_contents()->GetBrowserContext());
-
-  syncer::UserEventService* const user_event_service =
-      browser_sync::UserEventServiceFactory::GetForProfile(profile);
-
-  auto* const entry = web_contents()->GetController().GetLastCommittedEntry();
-
-  // If entry is null, we don't record the page.
-  // The navigation entry can be null in situations like download or initial
-  // blank page.
-  if (entry != nullptr &&
-      TranslateService::IsTranslatableURL(entry->GetVirtualURL())) {
-    user_event_service->RecordUserEvent(
-        translate::ConstructLanguageDetectionEvent(
-            entry->GetTimestamp().ToInternalValue(), details));
-  }
+void ChromeTranslateClient::SetPredefinedTargetLanguage(
+    const std::string& translate_language_code) {
+  translate::TranslateManager* manager = GetTranslateManager();
+  manager->SetPredefinedTargetLanguage(translate_language_code);
 }
+
+void ChromeTranslateClient::RecordLanguageDetectionEvent(
+    const translate::LanguageDetectionDetails& details) const {}
 
 bool ChromeTranslateClient::IsTranslatableURL(const GURL& url) {
   return TranslateService::IsTranslatableURL(url);

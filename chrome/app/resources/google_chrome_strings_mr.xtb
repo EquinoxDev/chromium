@@ -104,6 +104,7 @@
 <translation id="3479552764303398839">सध्या नाही</translation>
 <translation id="34857402635545079">Chrome (<ph name="URL" />) वरील डेटा देखील साफ करा</translation>
 <translation id="3503306920980160878">तुमचे स्थान या साइटसोबत शेअर करण्यासाठी Chrome ला तुमच्या स्थानाचा अ‍ॅक्सेस हवा आहे</translation>
+<translation id="3576528680708590453">तुमच्या सिस्टम अ‍ॅडमिनिस्ट्रेटरने <ph name="TARGET_URL_HOSTNAME" /> अॅक्‍सेस करण्याकरिता पर्यायी ब्राउझर उघडण्यासाठी Google Chrome कॉन्फिगर केले आहे.</translation>
 <translation id="3582972582564653026">तुमच्या डिव्हाइसवर Chrome सिंक आणि पर्सनलाइझ करा</translation>
 <translation id="3622797965165704966">आता आपल्या Google खात्यावर आणि शेअर केलेल्या संगणकांवर Chrome वापरणे अधिक सुलभ आहे.</translation>
 <translation id="3637702109597584617">Google Chrome OS <ph name="TERMS_OF_SERVICE_LINK" />सेवा अटी<ph name="END_TERMS_OF_SERVICE_LINK" /></translation>
@@ -140,7 +141,6 @@
 <translation id="4600710005438004015">Chrome नवीनतम आवृत्तीवर अपडेट होऊ शकले नाही, त्यामुळे तुम्ही नवीन वैशिष्ट्ये आणि सीक्युरिटी निराकरणे गमावत आहात.</translation>
 <translation id="4631713731678262610">Chrome मेनूमध्‍ये लपवा</translation>
 <translation id="4633000520311261472">Chrome ला अधिक सुरक्षित करण्यासाठी, आम्ही <ph name="IDS_EXTENSION_WEB_STORE_TITLE" /> मध्ये सूचीबद्ध नसलेले काही विस्तार अक्षम केले आणि ते कदाचित आपल्या माहिती शिवाय जोडले गेले असावेत.</translation>
-<translation id="4700157086864140907">तुम्ही ब्राउझरमध्‍ये जे टाइप करता ते Google सर्व्हरला पाठवून Google Chrome चाणाक्ष शब्दलेखन-तपासणी प्रदान करु शकते, जेणेकरुन तुम्हाला Google शोधात जे शब्दलेखन-तपासणी तंत्रज्ञान वापरले जाते तेच तुम्हाला वापरण्‍याची अनुमती मिळते.</translation>
 <translation id="4728575227883772061">अनिर्दिष्ट त्रुटीमुळे स्थापना अयशस्वी. जर Google Chrome सध्या चालू असेल तर, कृपया त्यास बंद करा आणि पुन्हा प्रयत्न करा.</translation>
 <translation id="4750550185319565338"><ph name="PLUGIN_NAME" /> सक्षम करण्‍यासाठी Chrome रीस्टार्ट करा</translation>
 <translation id="4754614261631455953">Google Chrome कॅनरी (mDNS-मध्ये)</translation>
@@ -198,7 +198,6 @@ Google Chrome तुमची सेटिंग्ज पुन्हा मि
 <translation id="6566149418543181476">Google Chrome अपडेट करीत आहे (<ph name="PROGRESS_PERCENT" />)</translation>
 <translation id="6598387184982954187">तुम्ही तुमची Chrome आशय सिंक करण्यासाठी <ph name="PROFILE_EMAIL" /> वापरत आहात. तुमचे सिंक प्राधान्य अपडेट करण्यासाठी किंवा Google खात्याशिवाय Chrome वापरण्यासाठी, <ph name="SETTINGS_LINK" /> ला भेट द्या.</translation>
 <translation id="6600954340915313787">Chrome वर कॉपी केले</translation>
-<translation id="6609605543612238677">तुमच्या सिस्टम अ‍ॅडमिनिस्ट्रेटरने <ph name="URL" /> अ‍ॅक्सेस करण्यासाठी Google Chrome पर्यायी ब्राउझर उघडण्यासाठी कॉन्फिगर केले आहे.</translation>
 <translation id="6634887557811630702">Google Chrome अद्ययावत आहे.</translation>
 <translation id="6676384891291319759">इंटरनेटमध्ये प्रवेश करा</translation>
 <translation id="6679975945624592337">Google Chrome बॅकग्राउंडमध्ये चालू द्या</translation>
@@ -233,14 +232,16 @@ Google Chrome तुमची सेटिंग्ज पुन्हा मि
 <translation id="7589360514048265910">यापुढे Mac OS X 10.9 ला सपोर्ट नसल्यामुळे, या कॉंप्युटरला इथून पुढे Google Chrome चे अपडेट मिळणार नाहीत.</translation>
 <translation id="7592736734348559088">तुमचे खाते साइन इन तपशील कालबाह्य झाल्यामुळे Google Chrome तुमचा डेटा संकालित करू शकले नाही.</translation>
 <translation id="7626032353295482388">Chrome मध्ये स्वागत आहे</translation>
+<translation id="7641148173327520642">तुमच्या सिस्टम अ‍ॅडमिनिस्ट्रेटरने <ph name="TARGET_URL_HOSTNAME" /> अ‍ॅक्सेस करण्यासाठी <ph name="ALTERNATIVE_BROWSER_NAME" /> उघडण्याकरिता Google Chrome कॉन्फिगर केले आहे.</translation>
 <translation id="7651907282515937834">Chrome एंटरप्राइझ लोगो</translation>
 <translation id="7747138024166251722">इन्स्टॉलर तात्पुरती निर्देशिका तयार करू शकत नाही. कृपया सॉफ्टवेअर स्थापन करण्यासाठी रिक्त डिस्क स्थान आणि परवानगी करिता पहा.</translation>
 <translation id="7761834446675418963">Chrome उघडण्यासाठी तुमचे नाव क्लिक करा आणि ब्राउझिंग प्रारंभ करा.</translation>
+<translation id="7777080907402804672">इमेजचे उपयोगी वर्णन नसल्यास, Chrome तुमच्यासाठी ते देण्याचा प्रयत्न करेल. वर्णने तयार करण्यासाठी, इमेज Google ला पाठवल्या जातात. तुम्ही हे सेटिंग्जमध्ये कधीही बंद करू शकता.</translation>
 <translation id="7781002470561365167">Google Chrome ची नवी आवृत्ती उपलब्ध आहे. </translation>
 <translation id="7787950393032327779">प्रोफाईल दुसर्‍या संगणकावरील (<ph name="HOST_NAME" />) दुसर्‍या Google Chrome प्रक्रियेद्वारे (<ph name="PROCESS_ID" />) वापरले जात असल्याचे दिसते. Chrome ने प्रोफाईल लॉक केले आहे जेणेकरून ते दूषित होत नाही. कोणत्याही इतर प्रक्रिया हे प्रोफाईल वापरत नसल्याची तुम्हाला खात्री असल्यास, तुम्ही प्रोफाईल अनलॉक करू शकता आणि Chrome रीलाँच करू शकता.</translation>
 <translation id="7808348361785373670">Chrome मधून काढून टाका...</translation>
 <translation id="7825851276765848807">अनिर्दिष्ट त्रुटीमुळे स्थापना अयशस्वी. कृपया Google Chrome पुन्हा डाउनलोड करा.</translation>
-<translation id="7855730255114109580">Google Chrome अद्ययावत झाले आहे</translation>
+<translation id="7855730255114109580">Google Chrome अपडेट झाले आहे</translation>
 <translation id="7888186132678118370">Chrome ला आपल्या टास्कबार वर पिन करा</translation>
 <translation id="7890208801193284374">तुम्ही कॉंप्युटर शेअर केल्यास, मित्र आणि कुटुंब स्वतंत्रपणे ब्राउझ करू शकतात आणि त्यांना पाहिजे तसे Chrome सेट अप करू शकतात.</translation>
 <translation id="7896673875602241923">कोणीतरी यापूर्वी <ph name="ACCOUNT_EMAIL_LAST" /> म्हणून या संंगणकावरील Chrome मध्ये साइन इन केले आहे. कृपया तुमची माहिती स्वतंत्र ठेवण्यासाठी एक नवीन Chrome वापरकर्ता तयार करा.</translation>
@@ -248,6 +249,7 @@ Google Chrome तुमची सेटिंग्ज पुन्हा मि
 <translation id="7962410387636238736">Windows XP आणि Windows Vista ला आता सपोर्ट नसल्याने या कॉंप्युटरला यापुढे Google Chrome अपडेट मिळणार नाहीत</translation>
 <translation id="8005540215158006229">Chrome जवळजवळ तयार आहे.</translation>
 <translation id="8008534537613507642">Chrome पुनर्स्थापित करा</translation>
+<translation id="8013993649590906847">इमेजचे उपयोगी वर्णन नसल्यास, Chrome तुमच्यासाठी ते देण्याचा प्रयत्न करेल. वर्णने तयार करण्यासाठी, इमेज Google ला पाठवल्या जातात.</translation>
 <translation id="8030318113982266900"><ph name="CHANNEL_NAME" /> चॅनेलवर तुमचे डिव्हाइस अपडेट करत आहे...</translation>
 <translation id="8032142183999901390">Chrome वरून तुमचे खाते काढल्यानंतर, तुम्हाला हे प्रभावी होण्यासाठी तुमचे उघडे टॅब रीलोड करण्याची आवश्यकता असू शकते.</translation>
 <translation id="8077352834923175128">हे अपडेट लागू करण्यासाठी तुमचा अॅडमिनिस्ट्रेटर तुम्हाला Chrome OS रीस्टार्ट करण्यास सांगेल</translation>

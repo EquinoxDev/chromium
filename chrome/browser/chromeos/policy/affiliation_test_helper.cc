@@ -22,11 +22,11 @@
 #include "chrome/browser/chromeos/policy/device_policy_cros_browser_test.h"
 #include "chromeos/constants/chromeos_switches.h"
 #include "chromeos/cryptohome/cryptohome_parameters.h"
+#include "chromeos/dbus/auth_policy/fake_auth_policy_client.h"
 #include "chromeos/dbus/constants/dbus_paths.h"
-#include "chromeos/dbus/cryptohome_client.h"
-#include "chromeos/dbus/fake_auth_policy_client.h"
-#include "chromeos/dbus/fake_session_manager_client.h"
-#include "chromeos/dbus/session_manager_client.h"
+#include "chromeos/dbus/cryptohome/cryptohome_client.h"
+#include "chromeos/dbus/session_manager/fake_session_manager_client.h"
+#include "chromeos/dbus/session_manager/session_manager_client.h"
 #include "chromeos/login/auth/key.h"
 #include "chromeos/login/auth/user_context.h"
 #include "components/account_id/account_id.h"
@@ -100,7 +100,9 @@ AffiliationTestHelper::AffiliationTestHelper(
     chromeos::FakeAuthPolicyClient* fake_auth_policy_client)
     : management_type_(management_type),
       fake_session_manager_client_(fake_session_manager_client),
-      fake_auth_policy_client_(fake_auth_policy_client) {}
+      fake_auth_policy_client_(fake_auth_policy_client) {
+  DCHECK(fake_session_manager_client);
+}
 
 void AffiliationTestHelper::CheckPreconditions() {
   ASSERT_TRUE(fake_session_manager_client_);

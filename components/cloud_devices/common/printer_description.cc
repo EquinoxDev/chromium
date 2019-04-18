@@ -60,6 +60,9 @@ extern const char kOptionRangeCapability[] = "range_cap";
 extern const char kOptionSelectCapability[] = "select_cap";
 extern const char kOptionTypedValueCapability[] = "typed_value_cap";
 extern const char kOptionVendorCapability[] = "vendor_capability";
+#if defined(OS_CHROMEOS)
+extern const char kOptionPin[] = "pin";
+#endif  // defined(OS_CHROMEOS)
 
 const char kMarginBottom[] = "bottom_microns";
 const char kMarginLeft[] = "left_microns";
@@ -85,6 +88,10 @@ const char kPwgRasterRotateAllPages[] = "rotate_all_pages";
 const char kVendorCapabilityMinValue[] = "min";
 const char kVendorCapabilityMaxValue[] = "max";
 const char kVendorCapabilityDefaultValue[] = "default";
+
+#if defined(OS_CHROMEOS)
+const char kPinSupported[] = "supported";
+#endif  // defined(OS_CHROMEOS)
 
 const char kTypeRangeVendorCapabilityFloat[] = "FLOAT";
 const char kTypeRangeVendorCapabilityInteger[] = "INTEGER";
@@ -672,30 +679,27 @@ void TypedValueVendorCapability::SaveTo(base::Value* dict) const {
 
 VendorCapability::VendorCapability() = default;
 
-VendorCapability::VendorCapability(Type type,
-                                   const std::string& id,
+VendorCapability::VendorCapability(const std::string& id,
                                    const std::string& display_name,
                                    RangeVendorCapability range_capability)
-    : type_(type),
+    : type_(Type::RANGE),
       id_(id),
       display_name_(display_name),
       range_capability_(std::move(range_capability)) {}
 
-VendorCapability::VendorCapability(Type type,
-                                   const std::string& id,
+VendorCapability::VendorCapability(const std::string& id,
                                    const std::string& display_name,
                                    SelectVendorCapability select_capability)
-    : type_(type),
+    : type_(Type::SELECT),
       id_(id),
       display_name_(display_name),
       select_capability_(std::move(select_capability)) {}
 
 VendorCapability::VendorCapability(
-    Type type,
     const std::string& id,
     const std::string& display_name,
     TypedValueVendorCapability typed_value_capability)
-    : type_(type),
+    : type_(Type::TYPED_VALUE),
       id_(id),
       display_name_(display_name),
       typed_value_capability_(std::move(typed_value_capability)) {}
@@ -1349,6 +1353,23 @@ class ReverseTraits : public NoValueValidation,
   }
 };
 
+#if defined(OS_CHROMEOS)
+class PinTraits : public NoValueValidation, public ItemsTraits<kOptionPin> {
+ public:
+  static bool Load(const base::Value& dict, bool* option) {
+    base::Optional<bool> supported = dict.FindBoolKey(kPinSupported);
+    if (!supported)
+      return false;
+    *option = supported.value();
+    return true;
+  }
+
+  static void Save(bool option, base::Value* dict) {
+    dict->SetKey(kPinSupported, base::Value(option));
+  }
+};
+#endif  // defined(OS_CHROMEOS)
+
 }  // namespace printer
 
 using namespace printer;
@@ -1369,6 +1390,9 @@ template class EmptyCapability<class CopiesTraits>;
 template class EmptyCapability<class PageRangeTraits>;
 template class BooleanCapability<class CollateTraits>;
 template class BooleanCapability<class ReverseTraits>;
+#if defined(OS_CHROMEOS)
+template class ValueCapability<bool, class PinTraits>;
+#endif  // defined(OS_CHROMEOS)
 
 template class TicketItem<PwgRasterConfig, PwgRasterConfigTraits>;
 template class TicketItem<Color, ColorTraits>;

@@ -50,6 +50,15 @@ void IntersectionObservation::Compute(unsigned flags) {
     // Compute() method will be called again after the delay period has passed.
     return;
   }
+  if (Observer()->trackVisibility()) {
+    FrameOcclusionState occlusion_state =
+        target_->GetDocument().GetFrame()->GetOcclusionState();
+    // If we're tracking visibility, and we don't have occlusion information
+    // from our parent frame, then postpone computing intersections until a
+    // later lifecycle when the occlusion information is known.
+    if (occlusion_state == FrameOcclusionState::kUnknown)
+      return;
+  }
   last_run_time_ = timestamp;
   needs_update_ = 0;
   Vector<Length> root_margin(4);
@@ -60,7 +69,7 @@ void IntersectionObservation::Compute(unsigned flags) {
   bool report_root_bounds = observer_->AlwaysReportRootBounds() ||
                             (flags & kReportImplicitRootBounds) ||
                             !observer_->RootIsImplicit();
-  unsigned geometry_flags = 0;
+  unsigned geometry_flags = IntersectionGeometry::kShouldConvertToCSSPixels;
   if (report_root_bounds)
     geometry_flags |= IntersectionGeometry::kShouldReportRootBounds;
   if (Observer()->trackVisibility())
@@ -76,10 +85,9 @@ void IntersectionObservation::Compute(unsigned flags) {
 
   if (last_threshold_index_ != geometry.ThresholdIndex() ||
       last_is_visible_ != geometry.IsVisible()) {
-    entries_.push_back(geometry.CreateEntry(Target(), timestamp));
-    To<Document>(Observer()->GetExecutionContext())
-        ->EnsureIntersectionObserverController()
-        .ScheduleIntersectionObserverForDelivery(*Observer());
+    entries_.push_back(MakeGarbageCollected<IntersectionObserverEntry>(
+        geometry, timestamp, Target()));
+    Observer()->SetNeedsDelivery();
     SetLastThresholdIndex(geometry.ThresholdIndex());
     SetWasVisible(geometry.IsVisible());
   }
@@ -93,8 +101,14 @@ void IntersectionObservation::TakeRecords(
 
 void IntersectionObservation::Disconnect() {
   DCHECK(Observer());
-  if (target_)
+  if (target_) {
     Target()->EnsureIntersectionObserverData().RemoveObservation(*Observer());
+    if (target_->isConnected()) {
+      target_->GetDocument()
+          .EnsureIntersectionObserverController()
+          .RemoveTrackedTarget(*target_);
+    }
+  }
   entries_.clear();
   observer_.Clear();
 }

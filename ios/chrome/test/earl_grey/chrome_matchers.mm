@@ -36,7 +36,6 @@
 #import "ios/chrome/browser/ui/util/uikit_ui_util.h"
 #include "ios/chrome/grit/ios_strings.h"
 #import "ios/chrome/test/app/chrome_test_util.h"
-#import "ios/web/public/block_types.h"
 #import "ios/web/public/test/earl_grey/web_view_matchers.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/test/ios/ui_image_test_utils.h"
@@ -213,7 +212,8 @@ UIView* SubviewWithAccessibilityIdentifier(NSString* accessibilityID,
 }
 
 + (id<GREYMatcher>)omnibox {
-  return grey_kindOfClass([OmniboxTextFieldIOS class]);
+  return grey_allOf(grey_kindOfClass([OmniboxTextFieldIOS class]),
+                    grey_userInteractionEnabled(), nil);
 }
 
 + (id<GREYMatcher>)defocusedLocationView {
@@ -364,19 +364,19 @@ UIView* SubviewWithAccessibilityIdentifier(NSString* accessibilityID,
 }
 
 + (id<GREYMatcher>)clearBrowsingDataButton {
-  return [ChromeMatchers buttonWithAccessibilityLabelId:(IDS_IOS_CLEAR_BUTTON)];
+  return grey_accessibilityID(kClearBrowsingDataButtonIdentifier);
 }
 
-+ (id<GREYMatcher>)clearBrowsingDataCollectionView {
-  return grey_accessibilityID(
-      kClearBrowsingDataCollectionViewAccessibilityIdentifier);
++ (id<GREYMatcher>)clearBrowsingDataView {
+  return grey_accessibilityID(kClearBrowsingDataViewAccessibilityIdentifier);
 }
 
 + (id<GREYMatcher>)confirmClearBrowsingDataButton {
   return grey_allOf(
       grey_accessibilityLabel(l10n_util::GetNSString(IDS_IOS_CLEAR_BUTTON)),
       grey_accessibilityTrait(UIAccessibilityTraitButton),
-      grey_not(grey_accessibilityID(kClearBrowsingDataButtonIdentifier)), nil);
+      grey_not(grey_accessibilityID(kClearBrowsingDataButtonIdentifier)),
+      grey_userInteractionEnabled(), nil);
 }
 
 + (id<GREYMatcher>)settingsMenuButton {
@@ -434,8 +434,14 @@ UIView* SubviewWithAccessibilityIdentifier(NSString* accessibilityID,
 }
 
 + (id<GREYMatcher>)googleServicesSettingsButton {
-  return [ChromeMatchers
-      buttonWithAccessibilityLabelId:(IDS_IOS_GOOGLE_SERVICES_SETTINGS_TITLE)];
+  NSString* syncAndGoogleServicesTitle =
+      l10n_util::GetNSStringWithFixup(IDS_IOS_GOOGLE_SERVICES_SETTINGS_TITLE);
+  id<GREYMatcher> mainTextLabelMatcher =
+      grey_allOf(grey_accessibilityLabel(syncAndGoogleServicesTitle),
+                 grey_sufficientlyVisible(), nil);
+  return grey_allOf(grey_kindOfClass([UITableViewCell class]),
+                    grey_sufficientlyVisible(),
+                    grey_descendant(mainTextLabelMatcher), nil);
 }
 
 + (id<GREYMatcher>)settingsMenuBackButton {
@@ -478,7 +484,9 @@ UIView* SubviewWithAccessibilityIdentifier(NSString* accessibilityID,
 }
 
 + (id<GREYMatcher>)clearBrowsingHistoryButton {
-  return grey_accessibilityID(kClearBrowsingHistoryCellAccessibilityIdentifier);
+  return grey_allOf(
+      grey_accessibilityID(kClearBrowsingHistoryCellAccessibilityIdentifier),
+      grey_sufficientlyVisible(), nil);
 }
 
 + (id<GREYMatcher>)clearCookiesButton {
@@ -486,7 +494,9 @@ UIView* SubviewWithAccessibilityIdentifier(NSString* accessibilityID,
 }
 
 + (id<GREYMatcher>)clearCacheButton {
-  return grey_accessibilityID(kClearCacheCellAccessibilityIdentifier);
+  return grey_allOf(
+      grey_accessibilityID(kClearCacheCellAccessibilityIdentifier),
+      grey_sufficientlyVisible(), nil);
 }
 
 + (id<GREYMatcher>)clearSavedPasswordsButton {

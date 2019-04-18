@@ -2,10 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// Chromium cannot upgrade to ATK 2.12 API as it still needs to run
-// valid builds for Ubuntu Trusty.
-#define ATK_DISABLE_DEPRECATION_WARNINGS
-
 #include <atk/atk.h>
 
 #include <utility>
@@ -66,7 +62,7 @@ static void EnsureAtkObjectHasAttributeWithValue(
 
     if (0 == strcmp(attribute_name, attribute->name)) {
       // Ensure that we only see this attribute once.
-      ASSERT_FALSE(saw_attribute);
+      ASSERT_FALSE(saw_attribute) << attribute_name;
 
       EXPECT_STREQ(attribute_value, attribute->value);
       saw_attribute = true;
@@ -86,7 +82,7 @@ static void EnsureAtkObjectDoesNotHaveAttribute(
   AtkAttributeSet* current = attributes;
   while (current) {
     AtkAttribute* attribute = static_cast<AtkAttribute*>(current->data);
-    ASSERT_NE(0, strcmp(attribute_name, attribute->name)) << attribute_name;
+    ASSERT_STRNE(attribute_name, attribute->name) << attribute_name;
     current = current->next;
   }
   atk_attribute_set_free(attributes);
@@ -578,7 +574,6 @@ TEST_F(AXPlatformNodeAuraLinuxTest, TestAtkObjectBoolAttributes) {
 TEST_F(AXPlatformNodeAuraLinuxTest, DISABLED_TestAtkObjectIntAttributes) {
   AXNodeData root_data;
   root_data.id = 1;
-
   Init(root_data);
 
   AXNode* root_node = GetRootNode();
@@ -916,8 +911,8 @@ TEST_F(AXPlatformNodeAuraLinuxTest, TestAtkTextCharacterGranularity) {
   };
 
   verify_text_at_offset("d", 2, 2, 3);
-  verify_text_at_offset("A", -1, 0, 1);
-  verify_text_at_offset("", 42342, 39, 39);
+  verify_text_at_offset(nullptr, -1, -1, -1);
+  verify_text_at_offset(nullptr, 42342, -1, -1);
   verify_text_at_offset("\xE2\x98\xBA", 23, 23, 24);
   verify_text_at_offset(" ", 24, 24, 25);
 
@@ -930,7 +925,7 @@ TEST_F(AXPlatformNodeAuraLinuxTest, TestAtkTextCharacterGranularity) {
   };
 
   verify_text_after_offset("d", 1, 2, 3);
-  verify_text_after_offset("", 42342, 39, 39);
+  verify_text_after_offset(nullptr, 42342, -1, -1);
   verify_text_after_offset("\xE2\x98\xBA", 22, 23, 24);
   verify_text_after_offset(" ", 23, 24, 25);
 
@@ -946,11 +941,9 @@ TEST_F(AXPlatformNodeAuraLinuxTest, TestAtkTextCharacterGranularity) {
   };
 
   verify_text_before_offset("d", 3, 2, 3);
-  verify_text_before_offset("", 42342, 39, 39);
+  verify_text_before_offset(nullptr, 42342, -1, -1);
   verify_text_before_offset("\xE2\x98\xBA", 24, 23, 24);
   verify_text_before_offset(" ", 25, 24, 25);
-
-  // This boundary condition is enforced by ATK for some reason.
   verify_text_after_offset(nullptr, -1, 0, 0);
 
   g_object_unref(root_obj);
@@ -1038,9 +1031,13 @@ TEST_F(AXPlatformNodeAuraLinuxTest, TestAtkTextSentenceGranularity) {
   AtkText* atk_text = ATK_TEXT(root_obj);
 
   static GetTextSegmentTest tests[] = {
-      {0, "A short sentence. ", 0, 18}, {20, "Another sentence.     ", 18, 40},
-      {37, "A third...", 40, 50},       {-1, nullptr, -1, -1},
-      {-1000, nullptr, -1, -1},         {1000, nullptr, -1, -1},
+      {0, "A short sentence. ", 0, 18},
+      {20, "Another sentence.     ", 18, 40},
+      {37, "Another sentence.     ", 18, 40},
+      {49, "A third...", 40, 50},
+      {-1, nullptr, -1, -1},
+      {-1000, nullptr, -1, -1},
+      {1000, nullptr, -1, -1},
   };
 
   for (unsigned i = 0; i < G_N_ELEMENTS(tests); i++) {
@@ -1119,6 +1116,132 @@ TEST_F(AXPlatformNodeAuraLinuxTest, TestAtkTextParagraphGranularity) {
 #endif
 
   g_object_unref(root_obj);
+}
+
+TEST_F(AXPlatformNodeAuraLinuxTest, TestAtkTextWithNonBMPCharacters) {
+  AXNodeData root;
+  root.id = 1;
+  root.role = ax::mojom::Role::kTextField;
+
+  // The playing card emoji in this string should be considered a single
+  // character offset for all AtkText API calls.
+  static const char root_text[] =
+      "\xF0\x9F\x83\x8f a decently long \xF0\x9F\x83\x8f string "
+      "\xF0\x9F\x83\x8f.";
+  root.AddStringAttribute(ax::mojom::StringAttribute::kValue, root_text);
+  Init(root);
+
+  AtkObject* root_obj(GetRootAtkObject());
+  ASSERT_TRUE(ATK_IS_OBJECT(root_obj));
+  g_object_ref(root_obj);
+
+  ASSERT_TRUE(ATK_IS_TEXT(root_obj));
+  AtkText* atk_text = ATK_TEXT(root_obj);
+
+  int root_text_length = g_utf8_strlen(root_text, -1);
+  ASSERT_EQ(atk_text_get_character_count(atk_text), root_text_length);
+
+  for (int i = 0; i < root_text_length; i++) {
+    testing::Message message;
+    message << "Checking character at offset " << i;
+    SCOPED_TRACE(message);
+
+    gunichar character = atk_text_get_character_at_offset(atk_text, i);
+    gunichar expected_character =
+        g_utf8_get_char_validated(g_utf8_offset_to_pointer(root_text, i), -1);
+    ASSERT_EQ(character, expected_character);
+
+    int start_offset = -1, end_offset = -1;
+    char* char_string = atk_text_get_text_at_offset(
+        atk_text, i, ATK_TEXT_BOUNDARY_CHAR, &start_offset, &end_offset);
+    character = g_utf8_get_char_validated(char_string, -1);
+    ASSERT_EQ(character, expected_character);
+    ASSERT_EQ(start_offset, i);
+    ASSERT_EQ(end_offset, i + 1);
+    g_free(char_string);
+
+#if ATK_CHECK_VERSION(2, 10, 0)
+    start_offset = -1;
+    end_offset = -1;
+    char_string = atk_text_get_string_at_offset(
+        atk_text, i, ATK_TEXT_GRANULARITY_CHAR, &start_offset, &end_offset);
+
+    character = g_utf8_get_char_validated(char_string, -1);
+    ASSERT_EQ(character, expected_character);
+    ASSERT_EQ(start_offset, i);
+    ASSERT_EQ(end_offset, i + 1);
+    g_free(char_string);
+#endif
+  }
+
+  static GetTextSegmentTest tests[] = {{0, "\xF0\x9F\x83\x8f ", 0, 2},
+                                       {6, "decently ", 4, 13}};
+
+  for (unsigned i = 0; i < G_N_ELEMENTS(tests); i++) {
+    int start_offset = -1, end_offset = -1;
+    char* word = atk_text_get_text_at_offset(atk_text, tests[i].offset,
+                                             ATK_TEXT_BOUNDARY_WORD_START,
+                                             &start_offset, &end_offset);
+    testing::Message message;
+    message << "Checking test with index=" << i << " and expected text=\'"
+            << tests[i].content << "\' at " << tests[1].start_offset << '-'
+            << tests[1].end_offset << '.';
+    SCOPED_TRACE(message);
+
+    ASSERT_STREQ(word, tests[i].content);
+    ASSERT_EQ(start_offset, tests[i].start_offset);
+    ASSERT_EQ(end_offset, tests[i].end_offset);
+
+    g_free(word);
+  }
+
+  g_object_unref(root_obj);
+}
+
+TEST_F(AXPlatformNodeAuraLinuxTest, TestAtkTextCaretMoved) {
+  Init(BuildTextField());
+
+  AtkObject* root_atk_object(GetRootAtkObject());
+  EXPECT_TRUE(ATK_IS_OBJECT(root_atk_object));
+  g_object_ref(root_atk_object);
+
+  ASSERT_TRUE(ATK_IS_TEXT(root_atk_object));
+  AtkText* atk_text = ATK_TEXT(root_atk_object);
+
+  int caret_position_from_event = -1;
+  g_signal_connect(atk_text, "text-caret-moved",
+                   G_CALLBACK(+[](AtkText*, int new_position, gpointer data) {
+                     int* caret_position_from_event = static_cast<int*>(data);
+                     *caret_position_from_event = new_position;
+                   }),
+                   &caret_position_from_event);
+
+  atk_text_set_caret_offset(atk_text, 4);
+  ASSERT_EQ(atk_text_get_caret_offset(atk_text), 4);
+  ASSERT_EQ(caret_position_from_event, 4);
+
+  caret_position_from_event = -1;
+  int character_count = atk_text_get_character_count(atk_text);
+  atk_text_set_caret_offset(atk_text, -1);
+  ASSERT_EQ(atk_text_get_caret_offset(atk_text), character_count);
+  ASSERT_EQ(caret_position_from_event, character_count);
+
+  caret_position_from_event = -1;
+  atk_text_set_caret_offset(atk_text, -1000);
+  ASSERT_EQ(atk_text_get_caret_offset(atk_text), character_count);
+  ASSERT_EQ(caret_position_from_event, character_count);
+
+  caret_position_from_event = -1;
+  atk_text_set_caret_offset(atk_text, 1000);
+  ASSERT_EQ(atk_text_get_caret_offset(atk_text), character_count);
+  ASSERT_EQ(caret_position_from_event, character_count);
+
+  caret_position_from_event = -1;
+  atk_text_set_caret_offset(atk_text, character_count - 1);
+  ASSERT_EQ(atk_text_get_caret_offset(atk_text), character_count - 1);
+  ASSERT_EQ(caret_position_from_event, character_count - 1);
+
+  g_object_unref(root_atk_object);
 }
 
 class ActivationTester {
@@ -1675,6 +1798,165 @@ TEST_F(AXPlatformNodeAuraLinuxTest, TestAllReverseAtkRelations) {
                          ATK_RELATION_FLOWS_TO, ATK_RELATION_FLOWS_FROM);
   test_int_list_relation(ax::mojom::IntListAttribute::kLabelledbyIds,
                          ATK_RELATION_LABELLED_BY, ATK_RELATION_LABEL_FOR);
+}
+
+TEST_F(AXPlatformNodeAuraLinuxTest, TestAtkTextTextFieldGetNSelectionsZero) {
+  Init(BuildTextField());
+  AtkObject* root_atk_object(GetRootAtkObject());
+  g_object_ref(root_atk_object);
+
+  AtkText* atk_text = ATK_TEXT(root_atk_object);
+  ASSERT_NE(nullptr, atk_text);
+  EXPECT_EQ(0, atk_text_get_n_selections(atk_text));
+
+  g_object_unref(root_atk_object);
+}
+
+TEST_F(AXPlatformNodeAuraLinuxTest,
+       TestAtkTextContentEditableGetNSelectionsZero) {
+  Init(BuildContentEditable());
+  AtkObject* root_atk_object(GetRootAtkObject());
+  g_object_ref(root_atk_object);
+
+  AtkText* atk_text = ATK_TEXT(root_atk_object);
+  ASSERT_NE(nullptr, atk_text);
+  EXPECT_EQ(0, atk_text_get_n_selections(atk_text));
+
+  g_object_unref(root_atk_object);
+}
+
+TEST_F(AXPlatformNodeAuraLinuxTest, TestAtkTextContentEditableGetNSelections) {
+  Init(BuildContentEditableWithSelectionRange(1, 2));
+  AtkObject* root_atk_object(GetRootAtkObject());
+  g_object_ref(root_atk_object);
+
+  AtkText* atk_text = ATK_TEXT(root_atk_object);
+  ASSERT_NE(nullptr, atk_text);
+  EXPECT_EQ(1, atk_text_get_n_selections(atk_text));
+
+  g_object_unref(root_atk_object);
+}
+
+TEST_F(AXPlatformNodeAuraLinuxTest, TestAtkTextTextFieldSetSelection) {
+  Init(BuildTextField());
+  AtkObject* root_atk_object(GetRootAtkObject());
+  g_object_ref(root_atk_object);
+
+  AtkText* atk_text = ATK_TEXT(root_atk_object);
+  ASSERT_NE(nullptr, atk_text);
+
+  bool saw_selection_change = false;
+  g_signal_connect(
+      atk_text, "text-selection-changed",
+      G_CALLBACK(+[](AtkObject* atkobject, bool* flag) { *flag = true; }),
+      &saw_selection_change);
+
+  EXPECT_TRUE(atk_text_set_selection(atk_text, 0, 0, 1));
+  EXPECT_TRUE(saw_selection_change);
+
+  saw_selection_change = false;
+  EXPECT_TRUE(atk_text_set_selection(atk_text, 0, 1, 0));
+  EXPECT_TRUE(saw_selection_change);
+
+  saw_selection_change = false;
+  EXPECT_TRUE(atk_text_set_selection(atk_text, 0, 2, 2));
+  EXPECT_TRUE(saw_selection_change);
+
+  saw_selection_change = false;
+  EXPECT_FALSE(atk_text_set_selection(atk_text, 1, 0, 0));
+  EXPECT_FALSE(saw_selection_change);
+
+  saw_selection_change = false;
+  EXPECT_FALSE(atk_text_set_selection(atk_text, 0, 0, 50));
+  EXPECT_FALSE(saw_selection_change);
+
+  saw_selection_change = false;
+  EXPECT_TRUE(atk_text_set_selection(atk_text, 0, 0, 1));
+  EXPECT_EQ(1, atk_text_get_n_selections(atk_text));
+  EXPECT_TRUE(atk_text_remove_selection(atk_text, 0));
+  EXPECT_TRUE(saw_selection_change);
+  EXPECT_EQ(0, atk_text_get_n_selections(atk_text));
+
+  saw_selection_change = false;
+  EXPECT_TRUE(atk_text_set_selection(atk_text, 0, 0, 1));
+  EXPECT_EQ(1, atk_text_get_n_selections(atk_text));
+  EXPECT_FALSE(atk_text_remove_selection(atk_text, 1));
+  EXPECT_TRUE(saw_selection_change);
+  EXPECT_EQ(1, atk_text_get_n_selections(atk_text));
+
+  g_object_unref(root_atk_object);
+}
+
+TEST_F(AXPlatformNodeAuraLinuxTest, TestAtkTextTextFieldGetSelection) {
+  Init(BuildTextField());
+  AtkObject* root_atk_object(GetRootAtkObject());
+  g_object_ref(root_atk_object);
+
+  AtkText* atk_text = ATK_TEXT(root_atk_object);
+  ASSERT_NE(nullptr, atk_text);
+
+  int selection_start = 0, selection_end = 0;
+  EXPECT_TRUE(atk_text_set_selection(atk_text, 0, 0, 3));
+  gchar* selected_text =
+      atk_text_get_selection(atk_text, 0, &selection_start, &selection_end);
+  EXPECT_STREQ("How", selected_text);
+  EXPECT_EQ(selection_start, 0);
+  EXPECT_EQ(selection_end, 3);
+  g_free(selected_text);
+
+  selection_start = 0;
+  selection_end = 0;
+
+  EXPECT_TRUE(atk_text_remove_selection(atk_text, 0));
+  selected_text =
+      atk_text_get_selection(atk_text, 0, &selection_start, &selection_end);
+  EXPECT_EQ(nullptr, selected_text);
+  EXPECT_EQ(selection_start, 0);
+  EXPECT_EQ(selection_end, 0);
+
+  EXPECT_TRUE(atk_text_set_selection(atk_text, 0, 0, 3));
+
+  selected_text =
+      atk_text_get_selection(atk_text, 1, &selection_start, &selection_end);
+  EXPECT_EQ(nullptr, selected_text);
+  EXPECT_EQ(selection_start, 0);
+  EXPECT_EQ(selection_end, 0);
+
+  selected_text =
+      atk_text_get_selection(atk_text, -1, &selection_start, &selection_end);
+  EXPECT_EQ(nullptr, selected_text);
+  EXPECT_EQ(selection_start, 0);
+  EXPECT_EQ(selection_end, 0);
+
+  g_object_unref(root_atk_object);
+}
+
+TEST_F(AXPlatformNodeAuraLinuxTest, TestAtkObjectExpandRebuildsPlatformNode) {
+  AXNodeData root_data;
+  root_data.id = 1;
+  root_data.role = ax::mojom::Role::kUnknown;
+
+  Init(root_data);
+
+  AtkObject* original_atk_object = GetRootAtkObject();
+  ASSERT_TRUE(ATK_IS_OBJECT(original_atk_object));
+  ASSERT_FALSE(ATK_IS_SELECTION(original_atk_object));
+  g_object_ref(original_atk_object);
+
+  root_data = AXNodeData();
+  root_data.role = ax::mojom::Role::kListBox;
+  GetRootNode()->SetData(root_data);
+
+  ASSERT_EQ(original_atk_object, GetRootAtkObject());
+
+  GetRootPlatformNode()->NotifyAccessibilityEvent(
+      ax::mojom::Event::kExpandedChanged);
+
+  AtkObject* new_atk_object = GetRootAtkObject();
+  ASSERT_NE(original_atk_object, new_atk_object);
+  ASSERT_TRUE(ATK_IS_SELECTION(new_atk_object));
+
+  g_object_unref(original_atk_object);
 }
 
 }  // namespace ui

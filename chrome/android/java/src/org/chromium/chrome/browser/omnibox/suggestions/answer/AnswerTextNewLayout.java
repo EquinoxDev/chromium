@@ -11,6 +11,8 @@ import android.text.style.TextAppearanceSpan;
 
 import org.chromium.base.Log;
 import org.chromium.chrome.R;
+import org.chromium.chrome.browser.omnibox.OmniboxSuggestionType;
+import org.chromium.chrome.browser.omnibox.suggestions.OmniboxSuggestion;
 import org.chromium.components.omnibox.AnswerTextType;
 import org.chromium.components.omnibox.AnswerType;
 import org.chromium.components.omnibox.SuggestionAnswer;
@@ -21,43 +23,100 @@ import org.chromium.components.omnibox.SuggestionAnswer;
 class AnswerTextNewLayout extends AnswerText {
     private static final String TAG = "AnswerTextNewLayout";
     private final boolean mIsAnswer;
+    private final @AnswerType int mAnswerType;
 
     /**
      * Convert SuggestionAnswer to array of elements that directly translate to user-presented
      * content.
      *
      * @param context Current context.
-     * @param answer Specifies answer to be converted.
+     * @param suggestion Suggestion to be converted.
+     * @param query Query that triggered the suggestion.
      * @return array of AnswerText elements to use to construct suggestion item.
      */
-    static AnswerText[] from(Context context, SuggestionAnswer answer) {
+    static AnswerText[] from(Context context, OmniboxSuggestion suggestion, String query) {
         AnswerText[] result = new AnswerText[2];
 
-        if (answer.getType() == AnswerType.DICTIONARY) {
-            result[0] = new AnswerTextNewLayout(context, answer.getFirstLine(), true);
-            result[1] = new AnswerTextNewLayout(context, answer.getSecondLine(), false);
+        SuggestionAnswer answer = suggestion.getAnswer();
+        if (answer == null) {
+            // As an exception, we handle calculation suggestions, too, considering them an Answer,
+            // even if these are not one.
+            assert suggestion.getType() == OmniboxSuggestionType.CALCULATOR;
+            result[0] = new AnswerTextNewLayout(context, query, true);
+            result[1] = new AnswerTextNewLayout(context, suggestion.getDisplayText(), false);
+        } else if (answer.getType() == AnswerType.DICTIONARY) {
+            result[0] =
+                    new AnswerTextNewLayout(context, answer.getType(), answer.getFirstLine(), true);
+            result[1] = new AnswerTextNewLayout(
+                    context, answer.getType(), answer.getSecondLine(), false);
             result[0].mMaxLines = 1;
-
         } else {
-            result[0] = new AnswerTextNewLayout(context, answer.getSecondLine(), true);
-            result[1] = new AnswerTextNewLayout(context, answer.getFirstLine(), false);
+            // Construct the Answer card presenting AiS in Answer > Query order.
+            // Note: Despite AiS being presented in reverse order (first answer, then query)
+            // we want to ensure that the query is announced first to visually impaired people
+            // to avoid confusion.
+            result[0] = new AnswerTextNewLayout(
+                    context, answer.getType(), answer.getSecondLine(), true);
+            result[1] = new AnswerTextNewLayout(
+                    context, answer.getType(), answer.getFirstLine(), false);
             result[1].mMaxLines = 1;
+
+            String temp = result[1].mAccessibilityDescription;
+            result[1].mAccessibilityDescription = result[0].mAccessibilityDescription;
+            result[0].mAccessibilityDescription = temp;
         }
 
         return result;
     }
 
     /**
-     * Create new instance of AnswerTextNewLayout.
+     * Create new instance of AnswerTextNewLayout for answer suggestions.
      *
      * @param context Current context.
+     * @param type Answer type, eg. AnswerType.WEATHER.
      * @param line Suggestion line that will be converted to Answer Text.
-     * @param isAnswerLine True, whether this instance holds answer.
+     * @param isAnswerLine True, if this instance holds answer.
      */
-    AnswerTextNewLayout(Context context, SuggestionAnswer.ImageLine line, boolean isAnswerLine) {
+    AnswerTextNewLayout(Context context, @AnswerType int type, SuggestionAnswer.ImageLine line,
+            boolean isAnswerLine) {
         super(context);
         mIsAnswer = isAnswerLine;
+        mAnswerType = type;
         build(line);
+    }
+
+    /**
+     * Create new instance of AnswerTextNewLayout for non-answer suggestions.
+     * @param context Current context.
+     * @param text Suggestion text.
+     * @param isAnswerLine True, if this instance holds answer.
+     */
+    AnswerTextNewLayout(Context context, String text, boolean isAnswerLine) {
+        super(context);
+        mIsAnswer = isAnswerLine;
+        mAnswerType = AnswerType.INVALID;
+        appendAndStyleText(text, getAppearanceForText(AnswerTextType.SUGGESTION));
+    }
+
+    /**
+     * Process (if desired) content of the answer text.
+     *
+     * @param text Source text.
+     * @return Either original or modified text.
+     */
+    @Override
+    protected String processAnswerText(String text) {
+        if (mIsAnswer && mAnswerType == AnswerType.CURRENCY) {
+            // Modify the content of answer to present only the value after conversion, that is:
+            //    1,000 United State Dollar = 1,330.75 Canadian Dollar
+            // becomes
+            //    1,330.75 Canadian Dollar
+            int offset = text.indexOf(" = ");
+            if (offset > 0) {
+                text = text.substring(offset + 3);
+            }
+        }
+        return text;
     }
 
     /**
@@ -78,9 +137,13 @@ class AnswerTextNewLayout extends AnswerText {
      * @return array of TextAppearanceSpan objects defining style for the text.
      */
     private MetricAffectingSpan[] getAppearanceForAnswerText(@AnswerTextType int type) {
+        if (mAnswerType != AnswerType.DICTIONARY && mAnswerType != AnswerType.FINANCE) {
+            return new TextAppearanceSpan[] {
+                    new TextAppearanceSpan(mContext, R.style.TextAppearance_BlackTitle1)};
+        }
+
         @StyleRes
         int res = 0;
-
         switch (type) {
             case AnswerTextType.DESCRIPTION_NEGATIVE:
                 res = R.style.TextAppearance_OmniboxAnswerDescriptionNegativeSmall;

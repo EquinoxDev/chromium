@@ -57,7 +57,6 @@
 #include "third_party/blink/renderer/core/loader/document_loader.h"
 #include "third_party/blink/renderer/core/loader/frame_loader.h"
 #include "third_party/blink/renderer/core/loader/mixed_content_checker.h"
-#include "third_party/blink/renderer/core/loader/threadable_loader_client.h"
 #include "third_party/blink/renderer/core/page/page.h"
 #include "third_party/blink/renderer/core/probe/core_probes.h"
 #include "third_party/blink/renderer/core/workers/worker_global_scope.h"
@@ -81,7 +80,7 @@
 #include "third_party/blink/renderer/platform/weborigin/kurl.h"
 #include "third_party/blink/renderer/platform/weborigin/security_origin.h"
 #include "third_party/blink/renderer/platform/wtf/text/base64.h"
-#include "third_party/blink/renderer/platform/wtf/time.h"
+#include "third_party/blink/renderer/platform/wtf/text/string_builder.h"
 
 namespace blink {
 
@@ -263,10 +262,10 @@ class InspectorPostBodyParser
   ~InspectorPostBodyParser() {
     if (error_)
       return;
-    String result;
+    StringBuilder result;
     for (const auto& part : parts_)
-      result.append(part);
-    callback_->sendSuccess(result);
+      result.Append(part);
+    callback_->sendSuccess(result.ToString());
   }
 
   void BlobReadCallback(String* destination,
@@ -441,7 +440,7 @@ void InspectorNetworkAgent::Restore() {
 static std::unique_ptr<protocol::Network::ResourceTiming> BuildObjectForTiming(
     const ResourceLoadTiming& timing) {
   return protocol::Network::ResourceTiming::create()
-      .setRequestTime(TimeTicksInSeconds(timing.RequestTime()))
+      .setRequestTime(timing.RequestTime().since_origin().InSecondsF())
       .setProxyStart(timing.CalculateMillisecondDelta(timing.ProxyStart()))
       .setProxyEnd(timing.CalculateMillisecondDelta(timing.ProxyEnd()))
       .setDnsStart(timing.CalculateMillisecondDelta(timing.DnsStart()))
@@ -456,8 +455,8 @@ static std::unique_ptr<protocol::Network::ResourceTiming> BuildObjectForTiming(
       .setSendEnd(timing.CalculateMillisecondDelta(timing.SendEnd()))
       .setReceiveHeadersEnd(
           timing.CalculateMillisecondDelta(timing.ReceiveHeadersEnd()))
-      .setPushStart(TimeTicksInSeconds(timing.PushStart()))
-      .setPushEnd(TimeTicksInSeconds(timing.PushEnd()))
+      .setPushStart(timing.PushStart().since_origin().InSecondsF())
+      .setPushEnd(timing.PushEnd().since_origin().InSecondsF())
       .build();
 }
 
@@ -510,7 +509,7 @@ BuildObjectForResourceRequest(const ResourceRequest& request,
 
 static std::unique_ptr<protocol::Network::Response>
 BuildObjectForResourceResponse(const ResourceResponse& response,
-                               Resource* cached_resource = nullptr,
+                               const Resource* cached_resource = nullptr,
                                bool* is_empty = nullptr) {
   if (response.IsNull())
     return nullptr;
@@ -685,9 +684,7 @@ void InspectorNetworkAgent::Trace(blink::Visitor* visitor) {
   visitor->Trace(inspected_frames_);
   visitor->Trace(worker_global_scope_);
   visitor->Trace(resources_data_);
-  visitor->Trace(pending_request_);
   visitor->Trace(replay_xhrs_);
-  visitor->Trace(replay_xhrs_to_be_deleted_);
   visitor->Trace(pending_xhr_replay_data_);
   InspectorBaseAgent::Trace(visitor);
 }
@@ -711,17 +708,17 @@ void InspectorNetworkAgent::ShouldBypassServiceWorker(bool* result) {
 }
 
 void InspectorNetworkAgent::DidBlockRequest(
-    ExecutionContext* execution_context,
     const ResourceRequest& request,
     DocumentLoader* loader,
+    const KURL& fetch_context_url,
     const FetchInitiatorInfo& initiator_info,
     ResourceRequestBlockedReason reason,
     ResourceType resource_type) {
-  unsigned long identifier = CreateUniqueIdentifier();
+  uint64_t identifier = CreateUniqueIdentifier();
   InspectorPageAgent::ResourceType type =
       InspectorPageAgent::ToResourceType(resource_type);
 
-  WillSendRequestInternal(execution_context, identifier, loader, request,
+  WillSendRequestInternal(identifier, loader, fetch_context_url, request,
                           ResourceResponse(), initiator_info, type);
 
   String request_id = IdentifiersFactory::RequestId(loader, identifier);
@@ -735,7 +732,7 @@ void InspectorNetworkAgent::DidBlockRequest(
 
 void InspectorNetworkAgent::DidChangeResourcePriority(
     DocumentLoader* loader,
-    unsigned long identifier,
+    uint64_t identifier,
     ResourceLoadPriority load_priority) {
   String request_id = IdentifiersFactory::RequestId(loader, identifier);
   GetFrontend()->resourceChangedPriority(request_id,
@@ -744,9 +741,9 @@ void InspectorNetworkAgent::DidChangeResourcePriority(
 }
 
 void InspectorNetworkAgent::WillSendRequestInternal(
-    ExecutionContext* execution_context,
-    unsigned long identifier,
+    uint64_t identifier,
     DocumentLoader* loader,
+    const KURL& fetch_context_url,
     const ResourceRequest& request,
     const ResourceResponse& redirect_response,
     const FetchInitiatorInfo& initiator_info,
@@ -769,8 +766,8 @@ void InspectorNetworkAgent::WillSendRequestInternal(
   else if (initiator_info.name == fetch_initiator_type_names::kFetch)
     type = InspectorPageAgent::kFetchResource;
 
-  if (pending_request_)
-    type = pending_request_type_;
+  if (pending_request_type_)
+    type = *pending_request_type_;
   resources_data_->SetResourceType(request_id, type);
 
   String frame_id = loader && loader->GetFrame()
@@ -800,9 +797,9 @@ void InspectorNetworkAgent::WillSendRequestInternal(
     request_info->setIsLinkPreload(true);
 
   String resource_type = InspectorPageAgent::ResourceTypeJson(type);
-  String documentURL =
-      loader ? UrlWithoutFragment(loader->Url()).GetString()
-             : UrlWithoutFragment(execution_context->Url()).GetString();
+  String documentURL = loader
+                           ? UrlWithoutFragment(loader->Url()).GetString()
+                           : UrlWithoutFragment(fetch_context_url).GetString();
   Maybe<String> maybe_frame_id;
   if (!frame_id.IsEmpty())
     maybe_frame_id = frame_id;
@@ -819,12 +816,11 @@ void InspectorNetworkAgent::WillSendRequestInternal(
       GetFrontend()->flush();
     pending_xhr_replay_data_.Clear();
   }
-  pending_request_ = nullptr;
+  pending_request_type_ = base::nullopt;
 }
 
 void InspectorNetworkAgent::WillSendNavigationRequest(
-    ExecutionContext* execution_context,
-    unsigned long identifier,
+    uint64_t identifier,
     DocumentLoader* loader,
     const KURL& url,
     const AtomicString& http_method,
@@ -845,7 +841,6 @@ void InspectorNetworkAgent::WillSendNavigationRequest(
 }
 
 void InspectorNetworkAgent::PrepareRequest(
-    ExecutionContext* execution_context,
     DocumentLoader* loader,
     ResourceRequest& request,
     const FetchInitiatorInfo& initiator_info,
@@ -865,10 +860,10 @@ void InspectorNetworkAgent::PrepareRequest(
       // seems to require storing the referrer info that is currently stored
       // inside state_'s kExtraRequestHeaders, somewhere else.
       if (header_name.LowerASCII() == http_names::kReferer.LowerASCII()) {
-        request.SetHTTPReferrer(
+        request.SetHttpReferrer(
             Referrer(value, network::mojom::ReferrerPolicy::kAlways));
       } else {
-        request.SetHTTPHeaderField(header_name, AtomicString(value));
+        request.SetHttpHeaderField(header_name, AtomicString(value));
       }
     }
   }
@@ -888,12 +883,18 @@ void InspectorNetworkAgent::PrepareRequest(
   }
   if (bypass_service_worker_.Get())
     request.SetSkipServiceWorker(true);
+
+  // The loader parameter is for generating a browser generated ID for a browser
+  // initiated request. We pass it null here because we are reporting a renderer
+  // generated ID for a renderer initiated request.
+  request.SetDevToolsId(IdentifiersFactory::RequestId(/* loader */ nullptr,
+                                                      request.InspectorId()));
 }
 
 void InspectorNetworkAgent::WillSendRequest(
-    ExecutionContext* execution_context,
-    unsigned long identifier,
+    uint64_t identifier,
     DocumentLoader* loader,
+    const KURL& fetch_context_url,
     const ResourceRequest& request,
     const ResourceResponse& redirect_response,
     const FetchInitiatorInfo& initiator_info,
@@ -905,21 +906,21 @@ void InspectorNetworkAgent::WillSendRequest(
   InspectorPageAgent::ResourceType type =
       InspectorPageAgent::ToResourceType(resource_type);
 
-  WillSendRequestInternal(execution_context, identifier, loader, request,
+  WillSendRequestInternal(identifier, loader, fetch_context_url, request,
                           redirect_response, initiator_info, type);
 }
 
 void InspectorNetworkAgent::MarkResourceAsCached(DocumentLoader* loader,
-                                                 unsigned long identifier) {
+                                                 uint64_t identifier) {
   GetFrontend()->requestServedFromCache(
       IdentifiersFactory::RequestId(loader, identifier));
 }
 
 void InspectorNetworkAgent::DidReceiveResourceResponse(
-    unsigned long identifier,
+    uint64_t identifier,
     DocumentLoader* loader,
     const ResourceResponse& response,
-    Resource* cached_resource) {
+    const Resource* cached_resource) {
   String request_id = IdentifiersFactory::RequestId(loader, identifier);
   bool is_not_modified = response.HttpStatusCode() == 304;
 
@@ -989,7 +990,7 @@ static bool IsErrorStatusCode(int status_code) {
   return status_code >= 400;
 }
 
-void InspectorNetworkAgent::DidReceiveData(unsigned long identifier,
+void InspectorNetworkAgent::DidReceiveData(uint64_t identifier,
                                            DocumentLoader* loader,
                                            const char* data,
                                            uint64_t data_length) {
@@ -1012,7 +1013,7 @@ void InspectorNetworkAgent::DidReceiveData(unsigned long identifier,
           resources_data_->GetAndClearPendingEncodedDataLength(request_id)));
 }
 
-void InspectorNetworkAgent::DidReceiveBlob(unsigned long identifier,
+void InspectorNetworkAgent::DidReceiveBlob(uint64_t identifier,
                                            DocumentLoader* loader,
                                            scoped_refptr<BlobDataHandle> blob) {
   String request_id = IdentifiersFactory::RequestId(loader, identifier);
@@ -1021,13 +1022,13 @@ void InspectorNetworkAgent::DidReceiveBlob(unsigned long identifier,
 
 void InspectorNetworkAgent::DidReceiveEncodedDataLength(
     DocumentLoader* loader,
-    unsigned long identifier,
+    uint64_t identifier,
     size_t encoded_data_length) {
   String request_id = IdentifiersFactory::RequestId(loader, identifier);
   resources_data_->AddPendingEncodedDataLength(request_id, encoded_data_length);
 }
 
-void InspectorNetworkAgent::DidFinishLoading(unsigned long identifier,
+void InspectorNetworkAgent::DidFinishLoading(uint64_t identifier,
                                              DocumentLoader* loader,
                                              TimeTicks monotonic_finish_time,
                                              int64_t encoded_data_length,
@@ -1058,12 +1059,12 @@ void InspectorNetworkAgent::DidFinishLoading(unsigned long identifier,
 
   // TODO(npm): Use TimeTicks in Network.h.
   GetFrontend()->loadingFinished(
-      request_id, TimeTicksInSeconds(monotonic_finish_time),
+      request_id, monotonic_finish_time.since_origin().InSecondsF(),
       encoded_data_length, should_report_corb_blocking);
 }
 
 void InspectorNetworkAgent::DidReceiveCorsRedirectResponse(
-    unsigned long identifier,
+    uint64_t identifier,
     DocumentLoader* loader,
     const ResourceResponse& response,
     Resource* resource) {
@@ -1073,7 +1074,7 @@ void InspectorNetworkAgent::DidReceiveCorsRedirectResponse(
                    WebURLLoaderClient::kUnknownEncodedDataLength, 0, false);
 }
 
-void InspectorNetworkAgent::DidFailLoading(unsigned long identifier,
+void InspectorNetworkAgent::DidFailLoading(uint64_t identifier,
                                            DocumentLoader* loader,
                                            const ResourceError& error) {
   String request_id = IdentifiersFactory::RequestId(loader, identifier);
@@ -1092,13 +1093,13 @@ void InspectorNetworkAgent::DidFailLoading(unsigned long identifier,
       error.LocalizedDescription(), canceled, std::move(blocked_reason));
 }
 
-void InspectorNetworkAgent::ScriptImported(unsigned long identifier,
+void InspectorNetworkAgent::ScriptImported(uint64_t identifier,
                                            const String& source_string) {
   resources_data_->SetResourceContent(
       IdentifiersFactory::SubresourceRequestId(identifier), source_string);
 }
 
-void InspectorNetworkAgent::DidReceiveScriptResponse(unsigned long identifier) {
+void InspectorNetworkAgent::DidReceiveScriptResponse(uint64_t identifier) {
   resources_data_->SetResourceType(
       IdentifiersFactory::SubresourceRequestId(identifier),
       InspectorPageAgent::kScriptResource);
@@ -1106,7 +1107,7 @@ void InspectorNetworkAgent::DidReceiveScriptResponse(unsigned long identifier) {
 
 // static
 bool InspectorNetworkAgent::IsNavigation(DocumentLoader* loader,
-                                         unsigned long identifier) {
+                                         uint64_t identifier) {
   return loader && loader->MainResourceIdentifier() == identifier;
 }
 
@@ -1117,7 +1118,7 @@ void InspectorNetworkAgent::WillLoadXHR(ExecutionContext* execution_context,
                                         EncodedFormData* form_data,
                                         const HTTPHeaderMap& headers,
                                         bool include_credentials) {
-  DCHECK(!pending_request_);
+  DCHECK(!pending_request_type_);
   pending_xhr_replay_data_ = XHRReplayData::Create(
       execution_context, method, UrlWithoutFragment(url), async,
       form_data ? form_data->DeepCopy() : nullptr, include_credentials);
@@ -1126,24 +1127,16 @@ void InspectorNetworkAgent::WillLoadXHR(ExecutionContext* execution_context,
 }
 
 void InspectorNetworkAgent::DidFinishXHR(XMLHttpRequest* xhr) {
-  // This method will be called from the XHR.
-  // We delay deleting the replay XHR, as deleting here may delete the caller.
-  if (!replay_xhrs_.Contains(xhr))
-    return;
-  replay_xhrs_to_be_deleted_.insert(xhr);
   replay_xhrs_.erase(xhr);
-  remove_finished_replay_xhr_timer_.StartOneShot(TimeDelta(), FROM_HERE);
 }
 
-void InspectorNetworkAgent::WillSendEventSourceRequest(
-    ThreadableLoaderClient* event_source) {
-  DCHECK(!pending_request_);
-  pending_request_ = event_source;
+void InspectorNetworkAgent::WillSendEventSourceRequest() {
+  DCHECK(!pending_request_type_);
   pending_request_type_ = InspectorPageAgent::kEventSourceResource;
 }
 
 void InspectorNetworkAgent::WillDispatchEventSourceEvent(
-    unsigned long identifier,
+    uint64_t identifier,
     const AtomicString& event_name,
     const AtomicString& event_id,
     const String& data) {
@@ -1205,7 +1198,7 @@ InspectorNetworkAgent::BuildInitiatorObject(
 
 void InspectorNetworkAgent::DidCreateWebSocket(
     ExecutionContext* execution_context,
-    unsigned long identifier,
+    uint64_t identifier,
     const KURL& request_url,
     const String&) {
   std::unique_ptr<v8_inspector::protocol::Runtime::API::StackTrace>
@@ -1230,7 +1223,7 @@ void InspectorNetworkAgent::DidCreateWebSocket(
 
 void InspectorNetworkAgent::WillSendWebSocketHandshakeRequest(
     ExecutionContext*,
-    unsigned long identifier,
+    uint64_t identifier,
     network::mojom::blink::WebSocketHandshakeRequest* request) {
   DCHECK(request);
   HTTPHeaderMap headers;
@@ -1247,7 +1240,7 @@ void InspectorNetworkAgent::WillSendWebSocketHandshakeRequest(
 
 void InspectorNetworkAgent::DidReceiveWebSocketHandshakeResponse(
     ExecutionContext*,
-    unsigned long identifier,
+    uint64_t identifier,
     network::mojom::blink::WebSocketHandshakeRequest* request,
     network::mojom::blink::WebSocketHandshakeResponse* response) {
   DCHECK(response);
@@ -1289,13 +1282,13 @@ void InspectorNetworkAgent::DidReceiveWebSocketHandshakeResponse(
 }
 
 void InspectorNetworkAgent::DidCloseWebSocket(ExecutionContext*,
-                                              unsigned long identifier) {
+                                              uint64_t identifier) {
   GetFrontend()->webSocketClosed(
       IdentifiersFactory::SubresourceRequestId(identifier),
       CurrentTimeTicksInSeconds());
 }
 
-void InspectorNetworkAgent::DidReceiveWebSocketMessage(unsigned long identifier,
+void InspectorNetworkAgent::DidReceiveWebSocketMessage(uint64_t identifier,
                                                        int op_code,
                                                        bool masked,
                                                        const char* payload,
@@ -1306,7 +1299,7 @@ void InspectorNetworkAgent::DidReceiveWebSocketMessage(unsigned long identifier,
       WebSocketMessageToProtocol(op_code, masked, payload, payload_length));
 }
 
-void InspectorNetworkAgent::DidSendWebSocketMessage(unsigned long identifier,
+void InspectorNetworkAgent::DidSendWebSocketMessage(uint64_t identifier,
                                                     int op_code,
                                                     bool masked,
                                                     const char* payload,
@@ -1318,7 +1311,7 @@ void InspectorNetworkAgent::DidSendWebSocketMessage(unsigned long identifier,
 }
 
 void InspectorNetworkAgent::DidReceiveWebSocketMessageError(
-    unsigned long identifier,
+    uint64_t identifier,
     const String& error_message) {
   GetFrontend()->webSocketFrameError(
       IdentifiersFactory::RequestId(nullptr, identifier),
@@ -1342,12 +1335,12 @@ void InspectorNetworkAgent::Enable() {
   enabled_.Set(true);
   resources_data_->SetResourcesDataSizeLimits(total_buffer_size_.Get(),
                                               resource_buffer_size_.Get());
-  instrumenting_agents_->addInspectorNetworkAgent(this);
+  instrumenting_agents_->AddInspectorNetworkAgent(this);
 }
 
 Response InspectorNetworkAgent::disable() {
-  DCHECK(!pending_request_);
-  instrumenting_agents_->removeInspectorNetworkAgent(this);
+  DCHECK(!pending_request_type_);
+  instrumenting_agents_->RemoveInspectorNetworkAgent(this);
   agent_state_.ClearAllFields();
   resources_data_->Clear();
   return Response::OK();
@@ -1657,10 +1650,6 @@ String InspectorNetworkAgent::NavigationInitiatorInfo(LocalFrame* frame) {
       ->toJSON();
 }
 
-void InspectorNetworkAgent::RemoveFinishedReplayXHRFired(TimerBase*) {
-  replay_xhrs_to_be_deleted_.clear();
-}
-
 InspectorNetworkAgent::InspectorNetworkAgent(
     InspectedFrames* inspected_frames,
     WorkerGlobalScope* worker_global_scope,
@@ -1673,14 +1662,6 @@ InspectorNetworkAgent::InspectorNetworkAgent(
       devtools_token_(worker_global_scope_
                           ? worker_global_scope_->GetParentDevToolsToken()
                           : inspected_frames->Root()->GetDevToolsFrameToken()),
-      pending_request_(nullptr),
-      remove_finished_replay_xhr_timer_(
-          worker_global_scope_
-              ? worker_global_scope->GetTaskRunner(TaskType::kInternalLoading)
-              : inspected_frames->Root()->GetTaskRunner(
-                    TaskType::kInternalLoading),
-          this,
-          &InspectorNetworkAgent::RemoveFinishedReplayXHRFired),
       enabled_(&agent_state_, /*default_value=*/false),
       cache_disabled_(&agent_state_, /*default_value=*/false),
       bypass_service_worker_(&agent_state_, /*default_value=*/false),

@@ -4,6 +4,7 @@
 
 #include "services/viz/public/cpp/compositing/quads_struct_traits.h"
 
+#include "ui/gfx/mojo/color_space_mojom_traits.h"
 #include "ui/gfx/mojo/transform_struct_traits.h"
 
 namespace mojo {
@@ -178,7 +179,7 @@ bool StructTraits<viz::mojom::VideoHoleQuadStateDataView, viz::DrawQuad>::Read(
     viz::DrawQuad* out) {
   viz::VideoHoleDrawQuad* video_hole_quad =
       static_cast<viz::VideoHoleDrawQuad*>(out);
-  return data.ReadOverlayId(&video_hole_quad->overlay_id);
+  return data.ReadOverlayPlaneId(&video_hole_quad->overlay_plane_id);
 }
 
 // static

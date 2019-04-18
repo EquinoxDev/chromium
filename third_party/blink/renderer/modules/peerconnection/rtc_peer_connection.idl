@@ -116,7 +116,7 @@ enum RTCPeerConnectionState {
     // optionally be used to filter the results only to return metrics relevant
     // for the selector.
     // TODO(hbos): Deprecate and remove this API. https://crbug.com/822696
-    [CallWith=ScriptState, LegacyInterfaceTypeChecking] Promise<void> getStats(RTCStatsCallback successCallback, MediaStreamTrack? selector);
+    [CallWith=ScriptState] Promise<void> getStats(RTCStatsCallback successCallback, MediaStreamTrack? selector);
     // Due to a limitation of generated V8 bindings (https://crbug.com/828401),
     // it is not possible to express both legacy and spec-compliant versions of
     // getStats() in IDL. This version implements two different APIs with custom
@@ -155,6 +155,7 @@ enum RTCPeerConnectionState {
     attribute EventHandler ontrack;
 
     // https://w3c.github.io/webrtc-pc/#peer-to-peer-data-api
+    [RuntimeEnabled=RTCSctpTransport] readonly attribute RTCSctpTransport? sctp;
     [CallWith=ScriptState, RaisesException] RTCDataChannel createDataChannel(USVString label, optional RTCDataChannelInit dataChannelDict);
     attribute EventHandler ondatachannel;
 
@@ -171,8 +172,6 @@ enum RTCPeerConnectionState {
     [Measure, RaisesException] RTCDTMFSender createDTMFSender(MediaStreamTrack track);
     attribute EventHandler onaddstream;
     attribute EventHandler onremovestream;
-
-    [OriginTrialEnabled=RtcPeerConnectionId, CallWith=ScriptState, MeasureAs=RtcPeerConnectionId] readonly attribute DOMString id;
 };
 
 // https://w3c.github.io/webrtc-pc/#dom-rtcpeerconnectionerrorcallback

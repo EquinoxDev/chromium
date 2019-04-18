@@ -121,7 +121,9 @@ SmbService::SmbService(Profile* profile,
   }
 }
 
-SmbService::~SmbService() {}
+SmbService::~SmbService() {
+  net::NetworkChangeNotifier::RemoveNetworkChangeObserver(this);
+}
 
 // static
 SmbService* SmbService::Get(content::BrowserContext* context) {
@@ -219,10 +221,18 @@ void SmbService::CallMount(const file_system_provider::MountOptions& options,
                            bool use_chromad_kerberos,
                            bool should_open_file_manager_after_mount,
                            MountResponse callback) {
+  SmbUrl parsed_url(share_path.value());
+  if (!parsed_url.IsValid() || parsed_url.GetShare().empty()) {
+    // Handle invalid URLs early to avoid having unaccounted for UMA counts for
+    // authentication method.
+    std::move(callback).Run(
+        TranslateErrorToMountResult(base::File::Error::FILE_ERROR_INVALID_URL));
+    return;
+  }
+
   std::string username;
   std::string password;
   std::string workgroup;
-
   if (use_chromad_kerberos) {
     RecordAuthenticationMethod(AuthMethod::kSSOKerberos);
     // Get the user's username and workgroup from their email address to be used
@@ -250,14 +260,6 @@ void SmbService::CallMount(const file_system_provider::MountOptions& options,
     if (ContainsAt(username)) {
       ParseUserPrincipalName(username_input, &username, &workgroup);
     }
-  }
-
-  SmbUrl parsed_url(share_path.value());
-  if (!parsed_url.IsValid()) {
-    FireMountCallback(
-        std::move(callback),
-        TranslateErrorToMountResult(base::File::Error::FILE_ERROR_INVALID_URL));
-    return;
   }
 
   // If using kerberos, the hostname should not be resolved since kerberos
@@ -525,6 +527,7 @@ void SmbService::CompleteSetup(
       base::BindRepeating(&SmbService::RequestUpdatedSharePath,
                           base::Unretained(this))));
   RestoreMounts();
+  net::NetworkChangeNotifier::AddNetworkChangeObserver(this);
 }
 
 void SmbService::FireMountCallback(MountResponse callback,
@@ -660,6 +663,22 @@ void SmbService::RequestUpdatedSharePath(
 bool SmbService::ShouldRunHostDiscoveryAgain() const {
   return tick_clock_->NowTicks() >
          previous_host_discovery_time_ + kHostDiscoveryInterval;
+}
+
+void SmbService::OnNetworkChanged(
+    net::NetworkChangeNotifier::ConnectionType type) {
+  user_manager::User* user =
+      chromeos::ProfileHelper::Get()->GetUserByProfile(profile_);
+
+  if (!user) {
+    // If a network change occurs on the lockscreen, do nothing.
+    return;
+  }
+
+  // Run host discovery to refresh list of cached hosts for subsequent name
+  // resolution attempts.
+  share_finder_->DiscoverHostsInNetwork(base::DoNothing()
+                                        /* HostDiscoveryResponse */);
 }
 
 void SmbService::RecordMountCount() const {

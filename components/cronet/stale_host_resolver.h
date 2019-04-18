@@ -12,18 +12,21 @@
 #include "base/time/default_tick_clock.h"
 #include "net/base/completion_once_callback.h"
 #include "net/dns/host_resolver.h"
-#include "net/dns/host_resolver_impl.h"
 
 namespace base {
 class TickClock;
 }  // namespace base
+
+namespace net {
+class ContextHostResolver;
+}  // namespace net
 
 namespace cronet {
 namespace {
 class StaleHostResolverTest;
 }  // namespace
 
-// A HostResolver that wraps a HostResolverImpl and uses it to make requests,
+// A HostResolver that wraps a ContextHostResolver and uses it to make requests,
 // but "impatiently" returns stale data (if available and usable) after a delay,
 // to reduce DNS latency at the expense of accuracy.
 class StaleHostResolver : public net::HostResolver {
@@ -60,18 +63,12 @@ class StaleHostResolver : public net::HostResolver {
   // Creates a StaleHostResolver that uses |inner_resolver| for actual
   // resolution, but potentially returns stale data according to
   // |stale_options|.
-  StaleHostResolver(std::unique_ptr<net::HostResolverImpl> inner_resolver,
+  StaleHostResolver(std::unique_ptr<net::ContextHostResolver> inner_resolver,
                     const StaleOptions& stale_options);
 
   ~StaleHostResolver() override;
 
   // HostResolver implementation:
-
-  std::unique_ptr<ResolveHostRequest> CreateRequest(
-      const net::HostPortPair& host,
-      const net::NetLogWithSource& net_log,
-      const base::Optional<ResolveHostParameters>& optional_parameters)
-      override;
 
   // Resolves as a regular HostResolver, but if stale data is available and
   // usable (according to the options passed to the constructor), and fresh data
@@ -79,29 +76,22 @@ class StaleHostResolver : public net::HostResolver {
   //
   // If stale data is returned, the StaleHostResolver allows the underlying
   // request to continue in order to repopulate the cache.
-  int Resolve(const RequestInfo& info,
-              net::RequestPriority priority,
-              net::AddressList* addresses,
-              net::CompletionOnceCallback callback,
-              std::unique_ptr<Request>* out_req,
-              const net::NetLogWithSource& net_log) override;
+  std::unique_ptr<ResolveHostRequest> CreateRequest(
+      const net::HostPortPair& host,
+      const net::NetLogWithSource& net_log,
+      const base::Optional<ResolveHostParameters>& optional_parameters)
+      override;
 
   // The remaining public methods pass through to the inner resolver:
 
-  int ResolveFromCache(const RequestInfo& info,
-                       net::AddressList* addresses,
-                       const net::NetLogWithSource& net_log) override;
-  int ResolveStaleFromCache(
-      const RequestInfo& info,
-      net::AddressList* addresses,
-      net::HostCache::EntryStaleness* stale_info,
-      const net::NetLogWithSource& source_net_log) override;
   void SetDnsClientEnabled(bool enabled) override;
   net::HostCache* GetHostCache() override;
   bool HasCached(base::StringPiece hostname,
                  net::HostCache::Entry::Source* source_out,
-                 net::HostCache::EntryStaleness* stale_out) const override;
+                 net::HostCache::EntryStaleness* stale_out,
+                 bool* secure_out) const override;
   std::unique_ptr<base::Value> GetDnsConfigAsValue() const override;
+  void SetRequestContext(net::URLRequestContext* request_context) override;
 
  private:
   class RequestImpl;
@@ -121,9 +111,9 @@ class StaleHostResolver : public net::HostResolver {
   // Set |tick_clock_| for testing. Must be set before issuing any requests.
   void SetTickClockForTesting(const base::TickClock* tick_clock);
 
-  // The underlying HostResolverImpl that will be used to make cache and network
-  // requests.
-  std::unique_ptr<net::HostResolverImpl> inner_resolver_;
+  // The underlying ContextHostResolver that will be used to make cache and
+  // network requests.
+  std::unique_ptr<net::ContextHostResolver> inner_resolver_;
 
   // Shared instance of tick clock, overridden for testing.
   const base::TickClock* tick_clock_ = base::DefaultTickClock::GetInstance();

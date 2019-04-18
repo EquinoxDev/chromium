@@ -25,8 +25,8 @@ struct EnumTraits<ash::mojom::AppListState, ash::AppListState> {
         return ash::mojom::AppListState::kStateApps;
       case ash::AppListState::kStateSearchResults:
         return ash::mojom::AppListState::kStateSearchResults;
-      case ash::AppListState::kStateStart:
-        return ash::mojom::AppListState::kStateStart;
+      case ash::AppListState::kStateStart_DEPRECATED:
+        return ash::mojom::AppListState::kStateStart_DEPRECATED;
       case ash::AppListState::kStateEmbeddedAssistant:
         return ash::mojom::AppListState::kStateEmbeddedAssistant;
       case ash::AppListState::kInvalidState:
@@ -45,8 +45,8 @@ struct EnumTraits<ash::mojom::AppListState, ash::AppListState> {
       case ash::mojom::AppListState::kStateSearchResults:
         *out = ash::AppListState::kStateSearchResults;
         return true;
-      case ash::mojom::AppListState::kStateStart:
-        *out = ash::AppListState::kStateStart;
+      case ash::mojom::AppListState::kStateStart_DEPRECATED:
+        *out = ash::AppListState::kStateStart_DEPRECATED;
         return true;
       case ash::mojom::AppListState::kStateEmbeddedAssistant:
         *out = ash::AppListState::kStateEmbeddedAssistant;
@@ -115,6 +115,8 @@ struct EnumTraits<ash::mojom::SearchResultType, ash::SearchResultType> {
         return ash::mojom::SearchResultType::kAnswerCard;
       case ash::SearchResultType::kPlayStoreReinstallApp:
         return ash::mojom::SearchResultType::kPlayStoreReinstallApp;
+      case ash::SearchResultType::kArcAppShortcut:
+        return ash::mojom::SearchResultType::kArcAppShortcut;
       case ash::SearchResultType::kUnknown:
         break;
     }
@@ -154,6 +156,9 @@ struct EnumTraits<ash::mojom::SearchResultType, ash::SearchResultType> {
         return true;
       case ash::mojom::SearchResultType::kPlayStoreReinstallApp:
         *out = ash::SearchResultType::kPlayStoreReinstallApp;
+        return true;
+      case ash::mojom::SearchResultType::kArcAppShortcut:
+        *out = ash::SearchResultType::kArcAppShortcut;
         return true;
     }
     NOTREACHED();

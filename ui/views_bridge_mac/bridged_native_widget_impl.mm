@@ -7,6 +7,7 @@
 #import <objc/runtime.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <cmath>
 
 #include "base/bind.h"
 #include "base/command_line.h"
@@ -386,6 +387,19 @@ void BridgedNativeWidgetImpl::SetParent(uint64_t new_parent_id) {
     [parent_->ns_window() addChildWindow:window_ ordered:NSWindowAbove];
 }
 
+void BridgedNativeWidgetImpl::StackAbove(uint64_t sibling_id) {
+  BridgedNativeWidgetImpl* sibling_bridge =
+      BridgedNativeWidgetImpl::GetFromId(sibling_id);
+  DCHECK(sibling_bridge);
+
+  NSInteger sibling = sibling_bridge->ns_window().windowNumber;
+  [window_ orderWindow:NSWindowAbove relativeTo:sibling];
+}
+
+void BridgedNativeWidgetImpl::StackAtTop() {
+  [window_ setOrderedIndex:0];
+}
+
 void BridgedNativeWidgetImpl::ShowEmojiPanel() {
   ui::ShowEmojiPanel();
 }
@@ -554,6 +568,9 @@ void BridgedNativeWidgetImpl::CreateContentView(uint64_t ns_view_id,
 }
 
 void BridgedNativeWidgetImpl::CloseWindow() {
+  if (has_deferred_window_close_)
+    return;
+
   // Keep |window| on the stack so that the ObjectiveC block below can capture
   // it and properly increment the reference count bound to the posted task.
   NSWindow* window = ns_window();
@@ -588,6 +605,12 @@ void BridgedNativeWidgetImpl::CloseWindow() {
   // like -performClose:, first remove the window from AppKit's display
   // list to avoid crashes like http://crbug.com/156101.
   [window orderOut:nil];
+
+  // Defer closing windows until after fullscreen transitions complete.
+  if (in_fullscreen_transition_) {
+    has_deferred_window_close_ = true;
+    return;
+  }
 
   // Many tests assume that base::RunLoop().RunUntilIdle() is always sufficient
   // to execute a close. However, in rare cases, -performSelector:..afterDelay:0
@@ -776,6 +799,14 @@ void BridgedNativeWidgetImpl::SetCursor(NSCursor* cursor) {
 }
 
 void BridgedNativeWidgetImpl::OnWindowWillClose() {
+  // If a window closes while in a fullscreen transition, then the window will
+  // hang in a zombie-like state.
+  // https://crbug.com/945237
+  if (in_fullscreen_transition_) {
+    DLOG(ERROR) << "-[NSWindow close] while in fullscreen transition will "
+                   "trigger zombie windows.";
+  }
+
   [window_ setCommandHandler:nil];
   [window_ setCommandDispatcherDelegate:nil];
 
@@ -815,10 +846,6 @@ void BridgedNativeWidgetImpl::OnWindowWillClose() {
 
 void BridgedNativeWidgetImpl::OnFullscreenTransitionStart(
     bool target_fullscreen_state) {
-  // Note: This can fail for fullscreen changes started externally, but a user
-  // shouldn't be able to do that if the window is invisible to begin with.
-  DCHECK(window_visible_);
-
   DCHECK_NE(target_fullscreen_state, target_fullscreen_state_);
   target_fullscreen_state_ = target_fullscreen_state;
   in_fullscreen_transition_ = true;
@@ -829,6 +856,11 @@ void BridgedNativeWidgetImpl::OnFullscreenTransitionStart(
 void BridgedNativeWidgetImpl::OnFullscreenTransitionComplete(
     bool actual_fullscreen_state) {
   in_fullscreen_transition_ = false;
+
+  if (has_deferred_window_close_) {
+    [ns_window() close];
+    return;
+  }
 
   if (target_fullscreen_state_ == actual_fullscreen_state) {
     host_->OnWindowFullscreenTransitionComplete(actual_fullscreen_state);
@@ -1055,6 +1087,10 @@ bool BridgedNativeWidgetImpl::RedispatchKeyEvent(NSEvent* event) {
   return [[window_ commandDispatcher] redispatchKeyEvent:event];
 }
 
+void BridgedNativeWidgetImpl::SaveKeyEventForRedispatch(NSEvent* event) {
+  saved_redispatch_event_.reset([event retain]);
+}
+
 NSWindow* BridgedNativeWidgetImpl::ns_window() {
   return window_.get();
 }
@@ -1116,6 +1152,19 @@ void BridgedNativeWidgetImpl::SetFullscreen(bool fullscreen) {
   if (fullscreen == target_fullscreen_state_)
     return;
   ToggleDesiredFullscreenState();
+}
+
+void BridgedNativeWidgetImpl::SetCanAppearInExistingFullscreenSpaces(
+    bool can_appear_in_existing_fullscreen_spaces) {
+  NSWindow* window = window_.get();
+  NSWindowCollectionBehavior collectionBehavior = window.collectionBehavior;
+  if (can_appear_in_existing_fullscreen_spaces) {
+    collectionBehavior |= NSWindowCollectionBehaviorFullScreenAuxiliary;
+    collectionBehavior &= ~NSWindowCollectionBehaviorFullScreenPrimary;
+  } else {
+    collectionBehavior &= ~NSWindowCollectionBehaviorFullScreenAuxiliary;
+  }
+  window.collectionBehavior = collectionBehavior;
 }
 
 void BridgedNativeWidgetImpl::SetMiniaturized(bool miniaturized) {
@@ -1199,6 +1248,23 @@ void BridgedNativeWidgetImpl::RedispatchKeyEvent(
     const base::string16& characters,
     const base::string16& characters_ignoring_modifiers,
     uint32_t key_code) {
+  // If we saved an event for redispatch, and that event looks similar to the
+  // (potentially mangled) event parameters that we received, then use the saved
+  // event.
+  // https://crbug.com/942690
+  if (saved_redispatch_event_) {
+    // Consider two events to have the same timestamp if they are within 0.1 ms.
+    constexpr double kTimestampThreshold = 0.0001;
+    if ([saved_redispatch_event_ type] == type &&
+        base::SysNSStringToUTF16([saved_redispatch_event_ characters]) ==
+            characters &&
+        std::fabs([saved_redispatch_event_ timestamp] - timestamp) <
+            kTimestampThreshold) {
+      RedispatchKeyEvent(saved_redispatch_event_.autorelease());
+      return;
+    }
+    saved_redispatch_event_.reset();
+  }
   NSEvent* event =
       [NSEvent keyEventWithType:static_cast<NSEventType>(type)
                              location:NSZeroPoint

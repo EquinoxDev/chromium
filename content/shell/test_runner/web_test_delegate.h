@@ -28,7 +28,6 @@ namespace blink {
 struct Manifest;
 class WebInputEvent;
 class WebLocalFrame;
-class WebMediaStream;
 class WebPlugin;
 struct WebPluginParams;
 struct WebSize;
@@ -44,6 +43,8 @@ constexpr int kDefaultDatabaseQuota = -1;
 
 class WebTestDelegate {
  public:
+  virtual ~WebTestDelegate() = default;
+
   // Set and clear the edit command to execute on the next call to
   // WebViewClient::handleCurrentKeyboardEvent().
   virtual void ClearEditCommand() = 0;
@@ -229,12 +230,6 @@ class WebTestDelegate {
   // Clear all the permissions set via SetPermission().
   virtual void ResetPermissions() = 0;
 
-  // Add content MediaStream classes to the Blink MediaStream ones.
-  virtual bool AddMediaStreamVideoSourceAndTrack(
-      blink::WebMediaStream* stream) = 0;
-  virtual bool AddMediaStreamAudioSourceAndTrack(
-      blink::WebMediaStream* stream) = 0;
-
   // Causes the beforeinstallprompt event to be sent to the renderer.
   // |event_platforms| are the platforms to be sent with the event. Once the
   // event listener completes, |callback| will be called with a boolean
@@ -260,9 +255,6 @@ class WebTestDelegate {
   // Forces a text input state update for the client of WebFrameWidget
   // associated with |frame|.
   virtual void ForceTextInputStateUpdate(blink::WebLocalFrame* frame) = 0;
-
- protected:
-  virtual ~WebTestDelegate() {}
 };
 
 }  // namespace test_runner

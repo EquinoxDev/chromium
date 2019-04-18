@@ -159,7 +159,8 @@ bool CSSLayoutDefinition::Instance::Layout(
       CustomLayoutFragment* fragment = fragment_request->PerformLayout(isolate);
       if (!fragment) {
         execution_context->AddConsoleMessage(ConsoleMessage::Create(
-            kJSMessageSource, kInfoMessageLevel,
+            mojom::ConsoleMessageSource::kJavaScript,
+            mojom::ConsoleMessageLevel::kInfo,
             "Unable to perform layout request due to an invalid child, "
             "falling back to block layout."));
         return false;
@@ -186,7 +187,8 @@ bool CSSLayoutDefinition::Instance::Layout(
 
         if (!fragment) {
           execution_context->AddConsoleMessage(ConsoleMessage::Create(
-              kJSMessageSource, kInfoMessageLevel,
+              mojom::ConsoleMessageSource::kJavaScript,
+              mojom::ConsoleMessageLevel::kInfo,
               "Unable to perform layout request due to an invalid child, "
               "falling back to block layout."));
           return false;
@@ -209,7 +211,8 @@ bool CSSLayoutDefinition::Instance::Layout(
     // We recieved something that wasn't either a CustomLayoutFragmentRequest,
     // or a sequence of CustomLayoutFragmentRequests. Fallback to block layout.
     execution_context->AddConsoleMessage(
-        ConsoleMessage::Create(kJSMessageSource, kInfoMessageLevel,
+        ConsoleMessage::Create(mojom::ConsoleMessageSource::kJavaScript,
+                               mojom::ConsoleMessageLevel::kInfo,
                                "Unable to parse the layout request, "
                                "falling back to block layout."));
     return false;
@@ -232,7 +235,8 @@ bool CSSLayoutDefinition::Instance::Layout(
     V8ScriptRunner::ReportException(isolate, exception_state.GetException());
     exception_state.ClearException();
     execution_context->AddConsoleMessage(
-        ConsoleMessage::Create(kJSMessageSource, kInfoMessageLevel,
+        ConsoleMessage::Create(mojom::ConsoleMessageSource::kJavaScript,
+                               mojom::ConsoleMessageLevel::kInfo,
                                "Unable to parse the layout function "
                                "result, falling back to block layout."));
     return false;
@@ -254,7 +258,8 @@ bool CSSLayoutDefinition::Instance::Layout(
     V8ScriptRunner::ReportException(isolate, exception_state.GetException());
     exception_state.ClearException();
     execution_context->AddConsoleMessage(
-        ConsoleMessage::Create(kJSMessageSource, kInfoMessageLevel,
+        ConsoleMessage::Create(mojom::ConsoleMessageSource::kJavaScript,
+                               mojom::ConsoleMessageLevel::kInfo,
                                "Unable to serialize the data provided in the "
                                "result, falling back to block layout."));
     return false;
@@ -274,7 +279,8 @@ void CSSLayoutDefinition::Instance::ReportException(
   V8ScriptRunner::ReportException(isolate, exception_state->GetException());
   exception_state->ClearException();
   execution_context->AddConsoleMessage(ConsoleMessage::Create(
-      kJSMessageSource, kInfoMessageLevel,
+      mojom::ConsoleMessageSource::kJavaScript,
+      mojom::ConsoleMessageLevel::kInfo,
       "The layout function failed, falling back to block layout."));
 }
 

@@ -30,6 +30,7 @@
 #include "third_party/blink/renderer/core/style/svg_computed_style_defs.h"
 #include "third_party/blink/renderer/platform/geometry/length.h"
 #include "third_party/blink/renderer/platform/graphics/graphics_types.h"
+#include "third_party/blink/renderer/platform/wtf/allocator.h"
 #include "third_party/blink/renderer/platform/wtf/forward.h"
 #include "third_party/blink/renderer/platform/wtf/ref_counted.h"
 
@@ -41,6 +42,8 @@ class StyleDifference;
 // all methods on it, merging them into copy/creation methods on ComputedStyle
 // instead. Keep the allocation logic, only allocating a new object if needed.
 class SVGComputedStyle : public RefCounted<SVGComputedStyle> {
+  USING_FAST_MALLOC(SVGComputedStyle);
+
  public:
   static scoped_refptr<SVGComputedStyle> Create() {
     return base::AdoptRef(new SVGComputedStyle);
@@ -52,10 +55,10 @@ class SVGComputedStyle : public RefCounted<SVGComputedStyle> {
 
   bool InheritedEqual(const SVGComputedStyle&) const;
   bool NonInheritedEqual(const SVGComputedStyle&) const;
-  void InheritFrom(const SVGComputedStyle*);
-  void CopyNonInheritedFromCached(const SVGComputedStyle*);
+  void InheritFrom(const SVGComputedStyle&);
+  void CopyNonInheritedFromCached(const SVGComputedStyle&);
 
-  CORE_EXPORT StyleDifference Diff(const SVGComputedStyle*) const;
+  CORE_EXPORT StyleDifference Diff(const SVGComputedStyle&) const;
 
   bool operator==(const SVGComputedStyle&) const;
   bool operator!=(const SVGComputedStyle& o) const { return !(*this == o); }
@@ -89,10 +92,10 @@ class SVGComputedStyle : public RefCounted<SVGComputedStyle> {
     return UnzoomedLength(Length::Fixed(1));
   }
   static float InitialStopOpacity() { return 1; }
-  static Color InitialStopColor() { return Color(0, 0, 0); }
+  static Color InitialStopColor() { return Color::kBlack; }
   static float InitialFloodOpacity() { return 1; }
-  static Color InitialFloodColor() { return Color(0, 0, 0); }
-  static Color InitialLightingColor() { return Color(255, 255, 255); }
+  static Color InitialFloodColor() { return Color::kBlack; }
+  static Color InitialLightingColor() { return Color::kWhite; }
   static StyleSVGResource* InitialMaskerResource() { return nullptr; }
   static StyleSVGResource* InitialMarkerStartResource() { return nullptr; }
   static StyleSVGResource* InitialMarkerMidResource() { return nullptr; }
@@ -465,8 +468,8 @@ class SVGComputedStyle : public RefCounted<SVGComputedStyle> {
   SVGComputedStyle(
       CreateInitialType);  // Used to create the initial style singleton.
 
-  bool DiffNeedsLayoutAndPaintInvalidation(const SVGComputedStyle* other) const;
-  bool DiffNeedsPaintInvalidation(const SVGComputedStyle* other) const;
+  bool DiffNeedsLayoutAndPaintInvalidation(const SVGComputedStyle& other) const;
+  bool DiffNeedsPaintInvalidation(const SVGComputedStyle& other) const;
 
   void SetBitDefaults() {
     svg_inherited_flags.clip_rule = InitialClipRule();

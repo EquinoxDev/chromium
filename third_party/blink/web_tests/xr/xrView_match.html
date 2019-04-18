@@ -4,8 +4,8 @@
 <script src="file:///gen/layout_test_data/mojo/public/js/mojo_bindings.js"></script>
 <script src="file:///gen/device/vr/public/mojom/vr_service.mojom.js"></script>
 <script src="../external/wpt/resources/chromium/webxr-test.js"></script>
+<script src="../external/wpt/webxr/resources/webxr_test_constants.js"></script>
 <script src="../xr/resources/xr-test-utils.js"></script>
-<script src="../xr/resources/test-constants.js"></script>
 <canvas id="webgl-canvas"></canvas>
 
 <script>
@@ -38,6 +38,20 @@ let testFunction = function(session, t, fakeDeviceController) {
       assert_not_equals(pose, null);
       assert_not_equals(pose.views, null);
       assert_equals(pose.views.length, 2);
+
+      {
+        let pose2 = xrFrame.getPose(session.viewerSpace, referenceSpace);
+        assert_not_equals(pose2, null);
+
+        // This pose should have the same transform as the viewer pose, but without
+        // the views array. It should be an XRPose instead of the XRViewerPose derived
+        // class.
+        assert_true(pose2 instanceof XRPose);
+        assert_false(pose2 instanceof XRViewerPose);
+        assert_not_equals(pose2.transform, null);
+        assert_not_equals(pose2.transform.matrix, null);
+        assert_matrices_approx_equal(pose.transform.matrix, pose2.transform.matrix);
+      }
 
       // Ensure that two views are provided.
       let leftView = pose.views[0];

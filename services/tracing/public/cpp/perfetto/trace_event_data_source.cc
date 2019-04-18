@@ -11,18 +11,19 @@
 #include "base/base64.h"
 #include "base/bind.h"
 #include "base/bind_helpers.h"
+#include "base/command_line.h"
 #include "base/json/json_writer.h"
 #include "base/memory/ref_counted_memory.h"
 #include "base/metrics/histogram_samples.h"
 #include "base/metrics/statistics_recorder.h"
 #include "base/no_destructor.h"
 #include "base/pickle.h"
-#include "base/process/process_handle.h"
-#include "base/trace_event/common/trace_event_common.h"
-#include "base/trace_event/trace_buffer.h"
 #include "base/trace_event/trace_event.h"
-#include "build/build_config.h"
+#include "components/tracing/common/tracing_switches.h"
+#include "services/tracing/public/cpp/perfetto/thread_local_event_sink.h"
 #include "services/tracing/public/cpp/perfetto/traced_value_proto_writer.h"
+#include "services/tracing/public/cpp/perfetto/track_event_thread_local_event_sink.h"
+#include "services/tracing/public/cpp/trace_event_args_whitelist.h"
 #include "services/tracing/public/mojom/constants.mojom.h"
 #include "third_party/perfetto/include/perfetto/tracing/core/shared_memory_arbiter.h"
 #include "third_party/perfetto/include/perfetto/tracing/core/startup_trace_writer.h"
@@ -35,18 +36,6 @@ using TraceLog = base::trace_event::TraceLog;
 using TraceEvent = base::trace_event::TraceEvent;
 using TraceConfig = base::trace_event::TraceConfig;
 
-namespace {
-static const size_t kMaxEventsPerMessage = 100;
-static const size_t kMaxCompleteEventDepth = 20;
-
-// To mark TraceEvent handles that have been added by Perfetto,
-// we use the chunk index so high that TraceLog would've asserted
-// at this point anyway.
-static const uint32_t kMagicChunkIndex =
-    base::trace_event::TraceBufferChunk::kMaxChunkIndex;
-
-}  // namespace
-
 namespace tracing {
 
 using ChromeEventBundleHandle =
@@ -54,7 +43,11 @@ using ChromeEventBundleHandle =
 
 TraceEventMetadataSource::TraceEventMetadataSource()
     : DataSourceBase(mojom::kMetaDataSourceName),
-      origin_task_runner_(base::SequencedTaskRunnerHandle::Get()) {}
+      origin_task_runner_(base::SequencedTaskRunnerHandle::Get()) {
+  AddGeneratorFunction(base::BindRepeating(
+      &TraceEventMetadataSource::GenerateTraceConfigMetadataDict,
+      base::Unretained(this)));
+}
 
 TraceEventMetadataSource::~TraceEventMetadataSource() = default;
 
@@ -62,6 +55,30 @@ void TraceEventMetadataSource::AddGeneratorFunction(
     MetadataGeneratorFunction generator) {
   DCHECK(origin_task_runner_->RunsTasksInCurrentSequence());
   generator_functions_.push_back(generator);
+}
+
+std::unique_ptr<base::DictionaryValue>
+TraceEventMetadataSource::GenerateTraceConfigMetadataDict() {
+  if (chrome_config_.empty()) {
+    return nullptr;
+  }
+
+  base::trace_event::TraceConfig parsed_chrome_config(chrome_config_);
+
+  auto metadata_dict = std::make_unique<base::DictionaryValue>();
+  // If argument filtering is enabled, we need to check if the trace config is
+  // whitelisted before emitting it.
+  // TODO(eseckler): Figure out a way to solve this without calling directly
+  // into IsMetadataWhitelisted().
+  if (!parsed_chrome_config.IsArgumentFilterEnabled() ||
+      IsMetadataWhitelisted("trace-config")) {
+    metadata_dict->SetString("trace-config", chrome_config_);
+  } else {
+    metadata_dict->SetString("trace-config", "__stripped__");
+  }
+
+  chrome_config_ = std::string();
+  return metadata_dict;
 }
 
 void TraceEventMetadataSource::GenerateMetadata(
@@ -101,13 +118,16 @@ void TraceEventMetadataSource::StartTracing(
     const perfetto::DataSourceConfig& data_source_config) {
   // TODO(eseckler): Once we support streaming of trace data, it would make
   // sense to emit the metadata on startup, so the UI can display it right away.
+  privacy_filtering_enabled_ =
+      data_source_config.chrome_config().privacy_filtering_enabled();
+  chrome_config_ = data_source_config.chrome_config().trace_config();
   trace_writer_ =
       producer_client->CreateTraceWriter(data_source_config.target_buffer());
 }
 
 void TraceEventMetadataSource::StopTracing(
     base::OnceClosure stop_complete_callback) {
-  if (trace_writer_) {
+  if (trace_writer_ && !privacy_filtering_enabled_) {
     // Write metadata at the end of tracing to make it less likely that it is
     // overridden by other trace data in perfetto's ring buffer.
     origin_task_runner_->PostTaskAndReply(
@@ -116,6 +136,8 @@ void TraceEventMetadataSource::StopTracing(
                        base::Unretained(this), std::move(trace_writer_)),
         std::move(stop_complete_callback));
   } else {
+    trace_writer_.reset();
+    chrome_config_ = std::string();
     std::move(stop_complete_callback).Run();
   }
 }
@@ -126,329 +148,40 @@ void TraceEventMetadataSource::Flush(
                                         std::move(flush_complete_callback));
 }
 
-class TraceEventDataSource::ThreadLocalEventSink {
+namespace {
+
+class AutoThreadLocalBoolean {
  public:
-  ThreadLocalEventSink(
-      std::unique_ptr<perfetto::StartupTraceWriter> trace_writer,
-      uint32_t session_id,
-      bool thread_will_flush)
-      : trace_writer_(std::move(trace_writer)),
-        session_id_(session_id),
-        thread_will_flush_(thread_will_flush) {}
-
-  ~ThreadLocalEventSink() {
-    // Finalize the current message before posting the |trace_writer_| for
-    // destruction, to avoid data races.
-    event_bundle_ = ChromeEventBundleHandle();
-    trace_packet_handle_ = perfetto::TraceWriter::TracePacketHandle();
-
-    TraceEventDataSource::GetInstance()->ReturnTraceWriter(
-        std::move(trace_writer_));
+  explicit AutoThreadLocalBoolean(
+      base::ThreadLocalBoolean* thread_local_boolean)
+      : thread_local_boolean_(thread_local_boolean) {
+    DCHECK(!thread_local_boolean_->Get());
+    thread_local_boolean_->Set(true);
   }
-
-  void EnsureValidHandles() {
-    if (trace_packet_handle_) {
-      return;
-    }
-
-    trace_packet_handle_ = trace_writer_->NewTracePacket();
-    event_bundle_ =
-        ChromeEventBundleHandle(trace_packet_handle_->set_chrome_events());
-    string_table_.clear();
-    next_string_table_index_ = 0;
-    current_eventcount_for_message_ = 0;
-  }
-
-  int GetStringTableIndexForString(const char* str_value) {
-    EnsureValidHandles();
-
-    auto it = string_table_.find(reinterpret_cast<intptr_t>(str_value));
-    if (it != string_table_.end()) {
-      CHECK_EQ(std::string(reinterpret_cast<const char*>(it->first)),
-               std::string(str_value));
-
-      return it->second;
-    }
-
-    int string_table_index = ++next_string_table_index_;
-    string_table_[reinterpret_cast<intptr_t>(str_value)] = string_table_index;
-
-    auto* new_string_table_entry = event_bundle_->add_string_table();
-    new_string_table_entry->set_value(str_value);
-    new_string_table_entry->set_index(string_table_index);
-
-    return string_table_index;
-  }
-
-  void AddConvertableToTraceFormat(
-      base::trace_event::ConvertableToTraceFormat* value,
-      perfetto::protos::pbzero::ChromeTraceEvent_Arg* arg) {
-    PerfettoProtoAppender proto_appender(arg);
-    if (value->AppendToProto(&proto_appender)) {
-      return;
-    }
-
-    std::string json = value->ToString();
-    arg->set_json_value(json.c_str());
-  }
-
-  void AddTraceEvent(TraceEvent* trace_event,
-                     base::trace_event::TraceEventHandle* handle) {
-    // TODO(oysteine): Adding trace events to Perfetto will
-    // stall in some situations, specifically when we overflow
-    // the buffer and need to make a sync call to flush it, and we're
-    // running on the same thread as the service. The short-term fix (while
-    // we're behind a flag) is to run the service on its own thread, the longer
-    // term fix is most likely to not go via Mojo in that specific case.
-
-    if (handle && trace_event->phase() == TRACE_EVENT_PHASE_COMPLETE) {
-      // 'X' phase events are added through a scoped object and
-      // will have its duration updated when said object drops off
-      // the stack; keep a copy of the event around instead of
-      // writing it into SHM, until we have the duration.
-      // We can't keep the TraceEvent around in the scoped object
-      // itself as that causes a lot more codegen in the callsites
-      // and bloats the binary size too much (due to the increased
-      // sizeof() of the scoped object itself).
-      DCHECK_LT(current_stack_depth_, kMaxCompleteEventDepth);
-      if (current_stack_depth_ >= kMaxCompleteEventDepth) {
-        return;
-      }
-
-      complete_event_stack_[current_stack_depth_] = std::move(*trace_event);
-      handle->event_index = ++current_stack_depth_;
-      handle->chunk_index = kMagicChunkIndex;
-      handle->chunk_seq = session_id_;
-      return;
-    }
-
-    EnsureValidHandles();
-
-    uint32_t name_index = 0;
-    uint32_t category_name_index = 0;
-    const size_t kMaxSize = base::trace_event::TraceArguments::kMaxSize;
-    uint32_t arg_name_indices[kMaxSize] = {0};
-
-    // By default, we bundle multiple events into a single TracePacket, e.g. to
-    // avoid repeating strings by interning them into a string table. However,
-    // we shouldn't bundle events in two situations:
-    // 1) If the thread we're executing on is unable to flush events on demand
-    //    (threads without a MessageLoop), the service will only be able to
-    //    recover completed TracePackets. For these threads, bundling events
-    //    would increase the number of events that are lost at the end of
-    //    tracing.
-    // 2) During startup tracing, the StartupTraceWriter buffers TracePackets in
-    //    a temporary local buffer until it is bound to the SMB when it becomes
-    //    available. While a TracePacket is written to this temporary buffer,
-    //    the writer cannot be bound to the SMB. Bundling events would increase
-    //    the time during which binding the writer is blocked.
-    bool bundle_events = thread_will_flush_ && trace_writer_->was_bound();
-
-    // Populate any new string table parts first; has to be done before
-    // the add_trace_events() call (as the string table is part of the outer
-    // proto message).
-    // If the TRACE_EVENT_FLAG_COPY flag is set, the char* pointers aren't
-    // necessarily valid after the TRACE_EVENT* call, and so we need to store
-    // the string every time.
-    bool string_table_enabled =
-        !(trace_event->flags() & TRACE_EVENT_FLAG_COPY) && bundle_events;
-    if (string_table_enabled) {
-      name_index = GetStringTableIndexForString(trace_event->name());
-      category_name_index =
-          GetStringTableIndexForString(TraceLog::GetCategoryGroupName(
-              trace_event->category_group_enabled()));
-
-      for (size_t i = 0;
-           i < trace_event->arg_size() && trace_event->arg_name(i); ++i) {
-        arg_name_indices[i] =
-            GetStringTableIndexForString(trace_event->arg_name(i));
-      }
-    }
-
-    auto* new_trace_event = event_bundle_->add_trace_events();
-
-    if (name_index) {
-      new_trace_event->set_name_index(name_index);
-    } else {
-      new_trace_event->set_name(trace_event->name());
-    }
-
-    if (category_name_index) {
-      new_trace_event->set_category_group_name_index(category_name_index);
-    } else {
-      new_trace_event->set_category_group_name(TraceLog::GetCategoryGroupName(
-          trace_event->category_group_enabled()));
-    }
-
-    new_trace_event->set_timestamp(
-        trace_event->timestamp().since_origin().InMicroseconds());
-
-    uint32_t flags = trace_event->flags();
-    new_trace_event->set_flags(flags);
-
-    int process_id;
-    int thread_id;
-    if ((flags & TRACE_EVENT_FLAG_HAS_PROCESS_ID) &&
-        trace_event->process_id() != base::kNullProcessId) {
-      process_id = trace_event->process_id();
-      thread_id = -1;
-    } else {
-      process_id = TraceLog::GetInstance()->process_id();
-      thread_id = trace_event->thread_id();
-    }
-
-    new_trace_event->set_process_id(process_id);
-    new_trace_event->set_thread_id(thread_id);
-
-    char phase = trace_event->phase();
-    new_trace_event->set_phase(phase);
-
-    for (size_t i = 0; i < trace_event->arg_size() && trace_event->arg_name(i);
-         ++i) {
-      auto type = trace_event->arg_type(i);
-      auto* new_arg = new_trace_event->add_args();
-
-      if (arg_name_indices[i]) {
-        new_arg->set_name_index(arg_name_indices[i]);
-      } else {
-        new_arg->set_name(trace_event->arg_name(i));
-      }
-
-      if (type == TRACE_VALUE_TYPE_CONVERTABLE) {
-        AddConvertableToTraceFormat(trace_event->arg_convertible_value(i),
-                                    new_arg);
-        continue;
-      }
-
-      auto& value = trace_event->arg_value(i);
-      switch (type) {
-        case TRACE_VALUE_TYPE_BOOL:
-          new_arg->set_bool_value(value.as_bool);
-          break;
-        case TRACE_VALUE_TYPE_UINT:
-          new_arg->set_uint_value(value.as_uint);
-          break;
-        case TRACE_VALUE_TYPE_INT:
-          new_arg->set_int_value(value.as_int);
-          break;
-        case TRACE_VALUE_TYPE_DOUBLE:
-          new_arg->set_double_value(value.as_double);
-          break;
-        case TRACE_VALUE_TYPE_POINTER:
-          new_arg->set_pointer_value(static_cast<uint64_t>(
-              reinterpret_cast<uintptr_t>(value.as_pointer)));
-          break;
-        case TRACE_VALUE_TYPE_STRING:
-        case TRACE_VALUE_TYPE_COPY_STRING:
-          new_arg->set_string_value(value.as_string ? value.as_string : "NULL");
-          break;
-        default:
-          NOTREACHED() << "Don't know how to print this value";
-          break;
-      }
-    }
-
-    if (phase == TRACE_EVENT_PHASE_COMPLETE) {
-      new_trace_event->set_duration(trace_event->duration().InMicroseconds());
-
-      if (!trace_event->thread_timestamp().is_null()) {
-        int64_t thread_duration =
-            trace_event->thread_duration().InMicroseconds();
-        if (thread_duration != -1) {
-          new_trace_event->set_thread_duration(thread_duration);
-        }
-      }
-    }
-
-    if (!trace_event->thread_timestamp().is_null()) {
-      int64_t thread_time_int64 =
-          trace_event->thread_timestamp().since_origin().InMicroseconds();
-      new_trace_event->set_thread_timestamp(thread_time_int64);
-    }
-
-    if (trace_event->scope() != trace_event_internal::kGlobalScope) {
-      new_trace_event->set_scope(trace_event->scope());
-    }
-
-    if (flags & (TRACE_EVENT_FLAG_HAS_ID | TRACE_EVENT_FLAG_HAS_LOCAL_ID |
-                 TRACE_EVENT_FLAG_HAS_GLOBAL_ID)) {
-      new_trace_event->set_id(trace_event->id());
-    }
-
-    if ((flags & TRACE_EVENT_FLAG_FLOW_OUT) ||
-        (flags & TRACE_EVENT_FLAG_FLOW_IN)) {
-      new_trace_event->set_bind_id(trace_event->bind_id());
-    }
-
-    // See comment for |bundle_events| above. We also enforce an upper bound on
-    // how many submessages we'll add for a given TracePacket so they won't grow
-    // infinitely.
-    if (!bundle_events ||
-        current_eventcount_for_message_++ > kMaxEventsPerMessage) {
-      event_bundle_ = ChromeEventBundleHandle();
-      trace_packet_handle_ = perfetto::TraceWriter::TracePacketHandle();
-    }
-  }
-
-  void UpdateDuration(base::trace_event::TraceEventHandle handle,
-                      const base::TimeTicks& now,
-                      const base::ThreadTicks& thread_now) {
-    if (!handle.event_index || handle.chunk_index != kMagicChunkIndex ||
-        handle.chunk_seq != session_id_) {
-      return;
-    }
-
-    DCHECK_EQ(handle.event_index, current_stack_depth_);
-    DCHECK_GE(current_stack_depth_, 1u);
-    current_stack_depth_--;
-    complete_event_stack_[current_stack_depth_].UpdateDuration(now, thread_now);
-    AddTraceEvent(&complete_event_stack_[current_stack_depth_], nullptr);
-
-#if defined(OS_ANDROID)
-    complete_event_stack_[current_stack_depth_].SendToATrace();
-#endif
-  }
-
-  void Flush() {
-    // TODO(oysteine): This will break events if we flush
-    // while recording. This can't be done on destruction
-    // as this can trigger PostTasks which may not be possible
-    // if the thread is being shut down.
-    while (current_stack_depth_--) {
-      AddTraceEvent(&complete_event_stack_[current_stack_depth_], nullptr);
-    }
-
-    event_bundle_ = ChromeEventBundleHandle();
-    trace_packet_handle_ = perfetto::TraceWriter::TracePacketHandle();
-    trace_writer_->Flush();
-  }
-
-  uint32_t session_id() const { return session_id_; }
+  ~AutoThreadLocalBoolean() { thread_local_boolean_->Set(false); }
 
  private:
-  std::unique_ptr<perfetto::StartupTraceWriter> trace_writer_;
-  uint32_t session_id_;
-  const bool thread_will_flush_;
-  ChromeEventBundleHandle event_bundle_;
-  perfetto::TraceWriter::TracePacketHandle trace_packet_handle_;
-  std::map<intptr_t, int> string_table_;
-  int next_string_table_index_ = 0;
-  size_t current_eventcount_for_message_ = 0;
-  TraceEvent complete_event_stack_[kMaxCompleteEventDepth];
-  uint32_t current_stack_depth_ = 0;
+  base::ThreadLocalBoolean* thread_local_boolean_;
+  DISALLOW_COPY_AND_ASSIGN(AutoThreadLocalBoolean);
 };
 
-namespace {
+base::ThreadLocalBoolean* GetThreadIsInTraceEventTLS() {
+  static base::NoDestructor<base::ThreadLocalBoolean> thread_is_in_trace_event;
+  return thread_is_in_trace_event.get();
+}
 
 base::ThreadLocalStorage::Slot* ThreadLocalEventSinkSlot() {
   static base::NoDestructor<base::ThreadLocalStorage::Slot>
       thread_local_event_sink_tls([](void* event_sink) {
-        delete static_cast<TraceEventDataSource::ThreadLocalEventSink*>(
-            event_sink);
+        AutoThreadLocalBoolean thread_is_in_trace_event(
+            GetThreadIsInTraceEventTLS());
+        delete static_cast<ThreadLocalEventSink*>(event_sink);
       });
 
   return thread_local_event_sink_tls.get();
 }
+
+TraceEventDataSource* g_trace_event_data_source_for_testing = nullptr;
 
 }  // namespace
 
@@ -458,8 +191,20 @@ TraceEventDataSource* TraceEventDataSource::GetInstance() {
   return instance.get();
 }
 
+// static
+void TraceEventDataSource::ResetForTesting() {
+  if (!g_trace_event_data_source_for_testing)
+    return;
+  g_trace_event_data_source_for_testing->~TraceEventDataSource();
+  new (g_trace_event_data_source_for_testing) TraceEventDataSource;
+}
+
 TraceEventDataSource::TraceEventDataSource()
-    : DataSourceBase(mojom::kTraceEventDataSourceName) {}
+    : DataSourceBase(mojom::kTraceEventDataSourceName),
+      disable_interning_(base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kPerfettoDisableInterning)) {
+  g_trace_event_data_source_for_testing = this;
+}
 
 TraceEventDataSource::~TraceEventDataSource() = default;
 
@@ -479,7 +224,12 @@ void TraceEventDataSource::UnregisterFromTraceLog() {
 void TraceEventDataSource::SetupStartupTracing() {
   {
     base::AutoLock lock(lock_);
-    DCHECK(!startup_writer_registry_ && !producer_client_);
+    // No need to do anything if startup tracing has already been set,
+    // or we know Perfetto has already been setup.
+    if (startup_writer_registry_ || producer_client_) {
+      return;
+    }
+
     startup_writer_registry_ =
         std::make_unique<perfetto::StartupTraceWriterRegistry>();
   }
@@ -489,6 +239,9 @@ void TraceEventDataSource::SetupStartupTracing() {
 void TraceEventDataSource::StartTracing(
     ProducerClient* producer_client,
     const perfetto::DataSourceConfig& data_source_config) {
+  privacy_filtering_enabled_ =
+      data_source_config.chrome_config().privacy_filtering_enabled();
+
   std::unique_ptr<perfetto::StartupTraceWriterRegistry> unbound_writer_registry;
   {
     base::AutoLock lock(lock_);
@@ -503,6 +256,13 @@ void TraceEventDataSource::StartTracing(
   session_id_.fetch_add(1u, std::memory_order_relaxed);
 
   if (unbound_writer_registry) {
+    // TODO(ssid): Startup tracing should know about filtering output.
+    CHECK(!privacy_filtering_enabled_);
+
+    // TODO(oysteine): Investigate why trace events emitted by something in
+    // BindStartupTraceWriterRegistry() causes deadlocks.
+    AutoThreadLocalBoolean thread_is_in_trace_event(
+        GetThreadIsInTraceEventTLS());
     producer_client->BindStartupTraceWriterRegistry(
         std::move(unbound_writer_registry), data_source_config.target_buffer());
   } else {
@@ -513,6 +273,7 @@ void TraceEventDataSource::StartTracing(
       TraceConfig(data_source_config.chrome_config().trace_config());
   TraceLog::GetInstance()->SetEnabled(trace_config, TraceLog::RECORDING_MODE);
   ResetHistograms(trace_config);
+  ProducerClient::GetTaskRunner()->StartDeferredTasksDrainTimer();
 }
 
 void TraceEventDataSource::StopTracing(
@@ -527,6 +288,12 @@ void TraceEventDataSource::StopTracing(
           return;
         }
 
+        // It's extremely unlikely any threads are still in mid-trace-event
+        // at this point and end up posting new tasks to the PerfettoTaskRunner
+        // which end up not getting run until the next tracing session; worst
+        // case is we lose some chunk commit messages and Perfetto will
+        // scrape the chunks.
+        ProducerClient::GetTaskRunner()->StopDeferredTasksDrainTimer();
         data_source->UnregisterFromTraceLog();
 
         if (data_source->stop_complete_callback_) {
@@ -613,24 +380,36 @@ void TraceEventDataSource::Flush(
       std::move(flush_complete_callback)));
 }
 
-TraceEventDataSource::ThreadLocalEventSink*
-TraceEventDataSource::CreateThreadLocalEventSink(bool thread_will_flush) {
+void TraceEventDataSource::ResetIncrementalStateForTesting() {
+  auto* thread_local_event_sink =
+      static_cast<ThreadLocalEventSink*>(ThreadLocalEventSinkSlot()->Get());
+  if (thread_local_event_sink) {
+    thread_local_event_sink->ResetIncrementalState();
+  }
+}
+
+ThreadLocalEventSink* TraceEventDataSource::CreateThreadLocalEventSink(
+    bool thread_will_flush) {
   base::AutoLock lock(lock_);
   // |startup_writer_registry_| only exists during startup tracing before we
   // connect to the service. |producer_client_| is reset when tracing is
   // stopped.
+  std::unique_ptr<perfetto::StartupTraceWriter> trace_writer;
+  uint32_t session_id = session_id_.load(std::memory_order_relaxed);
   if (startup_writer_registry_) {
-    return new ThreadLocalEventSink(
-        startup_writer_registry_->CreateUnboundTraceWriter(),
-        session_id_.load(std::memory_order_relaxed), thread_will_flush);
+    trace_writer = startup_writer_registry_->CreateUnboundTraceWriter();
   } else if (producer_client_) {
-    return new ThreadLocalEventSink(
-        std::make_unique<perfetto::StartupTraceWriter>(
-            producer_client_->CreateTraceWriter(target_buffer_)),
-        session_id_.load(std::memory_order_relaxed), thread_will_flush);
-  } else {
+    trace_writer = std::make_unique<perfetto::StartupTraceWriter>(
+        producer_client_->CreateTraceWriter(target_buffer_));
+  }
+
+  if (!trace_writer) {
     return nullptr;
   }
+
+  return new TrackEventThreadLocalEventSink(std::move(trace_writer), session_id,
+                                            disable_interning_,
+                                            privacy_filtering_enabled_);
 }
 
 // static
@@ -638,6 +417,17 @@ void TraceEventDataSource::OnAddTraceEvent(
     TraceEvent* trace_event,
     bool thread_will_flush,
     base::trace_event::TraceEventHandle* handle) {
+  // Avoid re-entrancy, which can happen during PostTasks (the taskqueue can
+  // emit trace events). We discard the events in this case, as any PostTasking
+  // to deal with these events later would break the event ordering that the
+  // JSON traces rely on to merge 'A'/'B' events, as well as having to deal with
+  // updating duration of 'X' events which haven't been added yet.
+  if (GetThreadIsInTraceEventTLS()->Get()) {
+    return;
+  }
+
+  AutoThreadLocalBoolean thread_is_in_trace_event(GetThreadIsInTraceEventTLS());
+
   auto* thread_local_event_sink =
       static_cast<ThreadLocalEventSink*>(ThreadLocalEventSinkSlot()->Get());
 
@@ -660,14 +450,24 @@ void TraceEventDataSource::OnAddTraceEvent(
     // tracing, where the sink is created with kInvalidSessionID. Resetting the
     // sink during startup might cause data buffered in its potentially still
     // unbound StartupTraceWriter to be lost.
+    // NOTE: If the trace event we're adding disallows PostTasks (meaning
+    // events emitted while the taskqueue is locked), we can't reset the
+    // sink as the TraceWriter deletion is done through PostTask.
     if (new_session_id > kFirstSessionID &&
-        new_session_id != thread_local_event_sink->session_id()) {
+        new_session_id != thread_local_event_sink->session_id() &&
+        !(trace_event->flags() & TRACE_EVENT_FLAG_DISALLOW_POSTTASK)) {
       delete thread_local_event_sink;
       thread_local_event_sink = nullptr;
     }
   }
 
   if (!thread_local_event_sink) {
+    // Trace events emitted by the task queue itself can happen while the task
+    // queue is locked, posting to it reentrantly would deadlock so these events
+    // need to be flagged so we can avoid PostTasks while they're being emitted.
+    ScopedPerfettoPostTaskBlocker post_task_blocker(
+        !!(trace_event->flags() & TRACE_EVENT_FLAG_DISALLOW_POSTTASK));
+
     thread_local_event_sink =
         GetInstance()->CreateThreadLocalEventSink(thread_will_flush);
     ThreadLocalEventSinkSlot()->Set(thread_local_event_sink);
@@ -683,6 +483,12 @@ void TraceEventDataSource::OnUpdateDuration(
     base::trace_event::TraceEventHandle handle,
     const base::TimeTicks& now,
     const base::ThreadTicks& thread_now) {
+  if (GetThreadIsInTraceEventTLS()->Get()) {
+    return;
+  }
+
+  AutoThreadLocalBoolean thread_is_in_trace_event(GetThreadIsInTraceEventTLS());
+
   auto* thread_local_event_sink =
       static_cast<ThreadLocalEventSink*>(ThreadLocalEventSinkSlot()->Get());
   if (thread_local_event_sink) {
@@ -695,6 +501,10 @@ void TraceEventDataSource::FlushCurrentThread() {
   auto* thread_local_event_sink =
       static_cast<ThreadLocalEventSink*>(ThreadLocalEventSinkSlot()->Get());
   if (thread_local_event_sink) {
+    // Prevent any events from being emitted while we're deleting
+    // the sink (like from the TraceWriter being PostTask'ed for deletion).
+    AutoThreadLocalBoolean thread_is_in_trace_event(
+        GetThreadIsInTraceEventTLS());
     thread_local_event_sink->Flush();
     // TODO(oysteine): To support flushing while still recording, this needs to
     // be changed to not destruct the TLS object as that will emit any
@@ -718,8 +528,8 @@ void TraceEventDataSource::ReturnTraceWriter(
     // shutdown and we can't safely call TaskRunnerHandle::Get() at that point
     // (which can happen as the TraceWriter destructor might make a Mojo call
     // and trigger it).
-    ProducerClient::GetTaskRunner()->DeleteSoon(FROM_HERE,
-                                                std::move(trace_writer));
+    ProducerClient::GetTaskRunner()->task_runner()->DeleteSoon(
+        FROM_HERE, std::move(trace_writer));
   }
 }
 

@@ -23,12 +23,11 @@ SyncCycleSnapshot MakeDefaultCycleSnapshot() {
       /*num_server_conflicts=*/7, /*notifications_enabled=*/false,
       /*num_entries=*/0, /*sync_start_time=*/base::Time::Now(),
       /*poll_finish_time=*/base::Time::Now(),
-      /*num_entries_by_type=*/std::vector<int>(MODEL_TYPE_COUNT, 0),
+      /*num_entries_by_type=*/std::vector<int>(ModelType::NUM_ENTRIES, 0),
       /*num_to_delete_entries_by_type=*/
-      std::vector<int>(MODEL_TYPE_COUNT, 0),
+      std::vector<int>(ModelType::NUM_ENTRIES, 0),
       /*get_updates_origin=*/sync_pb::SyncEnums::UNKNOWN_ORIGIN,
-      /*short_poll_interval=*/base::TimeDelta::FromMinutes(30),
-      /*long_poll_interval=*/base::TimeDelta::FromMinutes(180),
+      /*poll_interval=*/base::TimeDelta::FromMinutes(30),
       /*has_remaining_local_changes=*/false);
 }
 
@@ -113,6 +112,11 @@ void TestSyncService::SetIsUsingSecondaryPassphrase(bool enabled) {
   user_settings_.SetIsUsingSecondaryPassphrase(enabled);
 }
 
+void TestSyncService::FireStateChanged() {
+  for (auto& observer : observers_)
+    observer.OnStateChanged(this);
+}
+
 SyncUserSettings* TestSyncService::GetUserSettings() {
   return &user_settings_;
 }
@@ -141,8 +145,17 @@ bool TestSyncService::IsAuthenticatedAccountPrimary() const {
   return account_is_primary_;
 }
 
-const GoogleServiceAuthError& TestSyncService::GetAuthError() const {
+GoogleServiceAuthError TestSyncService::GetAuthError() const {
   return auth_error_;
+}
+
+base::Time TestSyncService::GetAuthErrorTime() const {
+  return base::Time();
+}
+
+bool TestSyncService::RequiresClientUpgrade() const {
+  return detailed_sync_status_.sync_protocol_error.action ==
+         syncer::UPGRADE_CLIENT;
 }
 
 std::unique_ptr<SyncSetupInProgressHandle>
@@ -176,27 +189,18 @@ void TestSyncService::OnDataTypeRequestsSyncStartup(ModelType type) {}
 
 void TestSyncService::TriggerRefresh(const ModelTypeSet& types) {}
 
-void TestSyncService::ReenableDatatype(ModelType type) {}
-
 void TestSyncService::ReadyForStartChanged(ModelType type) {}
 
-void TestSyncService::AddObserver(SyncServiceObserver* observer) {}
-
-void TestSyncService::RemoveObserver(SyncServiceObserver* observer) {}
-
-bool TestSyncService::HasObserver(const SyncServiceObserver* observer) const {
-  return false;
+void TestSyncService::AddObserver(SyncServiceObserver* observer) {
+  observers_.AddObserver(observer);
 }
 
-void TestSyncService::AddPreferenceProvider(
-    SyncTypePreferenceProvider* provider) {}
+void TestSyncService::RemoveObserver(SyncServiceObserver* observer) {
+  observers_.RemoveObserver(observer);
+}
 
-void TestSyncService::RemovePreferenceProvider(
-    SyncTypePreferenceProvider* provider) {}
-
-bool TestSyncService::HasPreferenceProvider(
-    SyncTypePreferenceProvider* provider) const {
-  return false;
+bool TestSyncService::HasObserver(const SyncServiceObserver* observer) const {
+  return observers_.HasObserver(observer);
 }
 
 UserShare* TestSyncService::GetUserShare() const {
@@ -215,7 +219,8 @@ SyncTokenStatus TestSyncService::GetSyncTokenStatus() const {
   return token;
 }
 
-bool TestSyncService::QueryDetailedSyncStatus(SyncStatus* result) const {
+bool TestSyncService::QueryDetailedSyncStatusForDebugging(
+    SyncStatus* result) const {
   *result = detailed_sync_status_;
   return detailed_sync_status_engine_available_;
 }
@@ -228,7 +233,7 @@ SyncCycleSnapshot TestSyncService::GetLastCycleSnapshot() const {
   return last_cycle_snapshot_;
 }
 
-std::unique_ptr<base::Value> TestSyncService::GetTypeStatusMap() {
+std::unique_ptr<base::Value> TestSyncService::GetTypeStatusMapForDebugging() {
   return std::make_unique<base::ListValue>();
 }
 

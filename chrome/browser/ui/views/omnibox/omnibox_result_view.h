@@ -85,6 +85,9 @@ class OmniboxResultView : public views::View,
   // Called to indicate tab switch button has been focused.
   void ProvideButtonFocusHint();
 
+  // Removes the shown |match_| from history, if possible.
+  void RemoveSuggestion() const;
+
   // views::View:
   void Layout() override;
   bool OnMousePressed(const ui::MouseEvent& event) override;
@@ -97,9 +100,9 @@ class OmniboxResultView : public views::View,
   void OnNativeThemeChanged(const ui::NativeTheme* theme) override;
 
   // views::ContextMenuController:
-  void ShowContextMenuForView(views::View* source,
-                              const gfx::Point& point,
-                              ui::MenuSourceType source_type) override;
+  void ShowContextMenuForViewImpl(views::View* source,
+                                  const gfx::Point& point,
+                                  ui::MenuSourceType source_type) override;
 
   // ui::SimpleMenuModel::Delegate overrides:
   bool IsCommandIdEnabled(int command_id) const override;

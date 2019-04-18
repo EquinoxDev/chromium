@@ -18,7 +18,8 @@ namespace {
 // Gets the version number to use for variations seed simulation. Must be called
 // on a thread where IO is allowed.
 base::Version GetVersionForSimulation() {
-  base::ScopedBlockingCall scoped_blocking_call(base::BlockingType::MAY_BLOCK);
+  base::ScopedBlockingCall scoped_blocking_call(FROM_HERE,
+                                                base::BlockingType::MAY_BLOCK);
   return version_info::GetVersion();
 }
 
@@ -48,13 +49,6 @@ Channel AwVariationsServiceClient::GetChannel() {
   // variations. This simplifies experiment design, since stand-alone WebView
   // need not be considered separately when choosing channels.
   return android_webview::GetChannelOrStable();
-}
-
-// True is the default, but keep this override so we can revert permanent
-// consistency support with a 1-line change.
-// TODO(crbug/866722): Remove this, along with the rest of commit bbac4d2c4c.
-bool AwVariationsServiceClient::GetSupportsPermanentConsistency() {
-  return true;
 }
 
 bool AwVariationsServiceClient::OverridesRestrictParameter(

@@ -34,7 +34,6 @@
 #include "base/memory/ptr_util.h"
 #include "media/base/logging_override_if_enabled.h"
 #include "third_party/blink/public/platform/modules/remoteplayback/web_remote_playback_client.h"
-#include "third_party/blink/public/platform/modules/remoteplayback/web_remote_playback_state.h"
 #include "third_party/blink/public/platform/platform.h"
 #include "third_party/blink/public/platform/task_type.h"
 #include "third_party/blink/public/platform/web_audio_source_provider.h"
@@ -53,7 +52,6 @@
 #include "third_party/blink/renderer/core/dom/dom_exception.h"
 #include "third_party/blink/renderer/core/dom/dom_node_ids.h"
 #include "third_party/blink/renderer/core/dom/element_traversal.h"
-#include "third_party/blink/renderer/core/dom/element_visibility_observer.h"
 #include "third_party/blink/renderer/core/dom/events/event.h"
 #include "third_party/blink/renderer/core/dom/events/event_queue.h"
 #include "third_party/blink/renderer/core/dom/shadow_root.h"
@@ -84,6 +82,8 @@
 #include "third_party/blink/renderer/core/html/track/video_track_list.h"
 #include "third_party/blink/renderer/core/html_names.h"
 #include "third_party/blink/renderer/core/inspector/console_message.h"
+#include "third_party/blink/renderer/core/intersection_observer/intersection_observer.h"
+#include "third_party/blink/renderer/core/intersection_observer/intersection_observer_entry.h"
 #include "third_party/blink/renderer/core/layout/layout_media.h"
 #include "third_party/blink/renderer/core/layout/layout_view.h"
 #include "third_party/blink/renderer/core/page/chrome_client.h"
@@ -129,8 +129,6 @@ using DocumentElementSetMap =
     HeapHashMap<WeakMember<Document>, Member<WeakMediaElementSet>>;
 
 namespace {
-
-constexpr float kMostlyFillViewportThreshold = 0.85f;
 
 // This enum is used to record histograms. Do not reorder.
 enum MediaControlsShow {
@@ -465,8 +463,9 @@ HTMLMediaElement::HTMLMediaElement(const QualifiedName& tag_name,
           this,
           &HTMLMediaElement::OnRemovedFromDocumentTimerFired),
       played_time_ranges_(),
-      async_event_queue_(EventQueue::Create(GetExecutionContext(),
-                                            TaskType::kMediaElementEvent)),
+      async_event_queue_(
+          MakeGarbageCollected<EventQueue>(GetExecutionContext(),
+                                           TaskType::kMediaElementEvent)),
       playback_rate_(1.0f),
       default_playback_rate_(1.0f),
       network_state_(kNetworkEmpty),
@@ -504,16 +503,15 @@ HTMLMediaElement::HTMLMediaElement(const QualifiedName& tag_name,
       should_perform_automatic_track_selection_(true),
       tracks_are_ready_(true),
       processing_preference_change_(false),
-      mostly_filling_viewport_(false),
       was_always_muted_(true),
-      audio_tracks_(AudioTrackList::Create(*this)),
-      video_tracks_(VideoTrackList::Create(*this)),
+      audio_tracks_(MakeGarbageCollected<AudioTrackList>(*this)),
+      video_tracks_(MakeGarbageCollected<VideoTrackList>(*this)),
       audio_source_node_(nullptr),
       autoplay_policy_(MakeGarbageCollected<AutoplayPolicy>(this)),
       remote_playback_client_(nullptr),
       media_controls_(nullptr),
-      controls_list_(HTMLMediaElementControlsList::Create(this)),
-      lazy_load_visibility_observer_(nullptr) {
+      controls_list_(MakeGarbageCollected<HTMLMediaElementControlsList>(this)),
+      lazy_load_intersection_observer_(nullptr) {
   DVLOG(1) << "HTMLMediaElement(" << (void*)this << ")";
 
   LocalFrame* frame = document.GetFrame();
@@ -530,12 +528,6 @@ HTMLMediaElement::HTMLMediaElement(const QualifiedName& tag_name,
 
 HTMLMediaElement::~HTMLMediaElement() {
   DVLOG(1) << "~HTMLMediaElement(" << (void*)this << ")";
-
-  // audio_source_node_ is explicitly cleared by AudioNode::dispose().
-  // Since AudioNode::dispose() is guaranteed to be always called before
-  // the AudioNode is destructed, audio_source_node_ is explicitly cleared
-  // even if the AudioNode and the HTMLMediaElement die together.
-  DCHECK(!audio_source_node_);
 }
 
 void HTMLMediaElement::Dispose() {
@@ -560,10 +552,6 @@ void HTMLMediaElement::DidMoveToNewDocument(Document& old_document) {
       GetDocument().GetTaskRunner(TaskType::kInternalMedia));
   audio_tracks_timer_.MoveToNewTaskRunner(
       GetDocument().GetTaskRunner(TaskType::kInternalMedia));
-  if (viewport_intersection_observer_) {
-    ActivateViewportIntersectionMonitoring(false);
-    ActivateViewportIntersectionMonitoring(true);
-  }
   deferred_load_timer_.MoveToNewTaskRunner(
       GetDocument().GetTaskRunner(TaskType::kInternalMedia));
   removed_from_document_timer_.MoveToNewTaskRunner(
@@ -614,7 +602,7 @@ bool HTMLMediaElement::SupportsFocus() const {
 }
 
 bool HTMLMediaElement::IsMouseFocusable() const {
-  return !IsFullscreen();
+  return !IsFullscreen() && SupportsFocus();
 }
 
 void HTMLMediaElement::ParseAttribute(
@@ -690,7 +678,8 @@ bool HTMLMediaElement::LayoutObjectIsNeeded(const ComputedStyle& style) const {
   return ShouldShowControls() && HTMLElement::LayoutObjectIsNeeded(style);
 }
 
-LayoutObject* HTMLMediaElement::CreateLayoutObject(const ComputedStyle&) {
+LayoutObject* HTMLMediaElement::CreateLayoutObject(const ComputedStyle&,
+                                                   LegacyLayout) {
   return new LayoutMedia(this);
 }
 
@@ -1308,7 +1297,7 @@ void HTMLMediaElement::StartPlayerLoad() {
   if (IsFullscreen())
     web_media_player_->EnteredFullscreen();
 
-  web_media_player_->BecameDominantVisibleContent(mostly_filling_viewport_);
+  OnLoadStarted();
 }
 
 void HTMLMediaElement::SetPlayerPreload() {
@@ -1469,7 +1458,8 @@ bool HTMLMediaElement::IsSafeToLoadURL(const KURL& url,
   if (!frame || !GetDocument().GetSecurityOrigin()->CanDisplay(url)) {
     if (action_if_invalid == kComplain) {
       GetDocument().AddConsoleMessage(ConsoleMessage::Create(
-          kSecurityMessageSource, kErrorMessageLevel,
+          mojom::ConsoleMessageSource::kSecurity,
+          mojom::ConsoleMessageLevel::kError,
           "Not allowed to load local resource: " + url.ElidedString()));
     }
     DVLOG(3) << "isSafeToLoadURL(" << (void*)this << ", "
@@ -1549,7 +1539,8 @@ void HTMLMediaElement::NoneSupported(const String& input_message) {
 
   // 1 - Set the error attribute to a new MediaError object whose code attribute
   // is set to MEDIA_ERR_SRC_NOT_SUPPORTED.
-  error_ = MediaError::Create(MediaError::kMediaErrSrcNotSupported, message);
+  error_ = MakeGarbageCollected<MediaError>(
+      MediaError::kMediaErrSrcNotSupported, message);
 
   // 2 - Forget the media element's media-resource-specific text tracks.
   ForgetResourceSpecificTracks();
@@ -1669,9 +1660,11 @@ void HTMLMediaElement::MediaLoadingFailed(WebMediaPlayer::NetworkState error,
 
   if (error == WebMediaPlayer::kNetworkStateNetworkError &&
       ready_state_ >= kHaveMetadata) {
-    MediaEngineError(MediaError::Create(MediaError::kMediaErrNetwork, message));
+    MediaEngineError(MakeGarbageCollected<MediaError>(
+        MediaError::kMediaErrNetwork, message));
   } else if (error == WebMediaPlayer::kNetworkStateDecodeError) {
-    MediaEngineError(MediaError::Create(MediaError::kMediaErrDecode, message));
+    MediaEngineError(
+        MakeGarbageCollected<MediaError>(MediaError::kMediaErrDecode, message));
   } else if ((error == WebMediaPlayer::kNetworkStateFormatError ||
               error == WebMediaPlayer::kNetworkStateNetworkError) &&
              load_state_ == kLoadingFromSrcAttr) {
@@ -1863,17 +1856,7 @@ void HTMLMediaElement::SetReadyState(ReadyState state) {
     ScheduleEvent(event_type_names::kLoadeddata);
     SetShouldDelayLoadEvent(false);
 
-    // If the player did a lazy load, it's expecting to be called when the
-    // element actually becomes visible to complete the load.
-    if (IsHTMLVideoElement() && web_media_player_->DidLazyLoad() &&
-        !is_potentially_playing) {
-      lazy_load_visibility_observer_ =
-          MakeGarbageCollected<ElementVisibilityObserver>(
-              this, WTF::BindRepeating(
-                        &HTMLMediaElement::OnVisibilityChangedForLazyLoad,
-                        WrapWeakPersistent(this)));
-      lazy_load_visibility_observer_->Start();
-    }
+    OnLoadFinished();
   }
 
   if (ready_state_ == kHaveFutureData && old_state <= kHaveCurrentData &&
@@ -2390,7 +2373,7 @@ ScriptPromise HTMLMediaElement::playForBindings(ScriptState* script_state) {
   // is called, |play_promise_resolvers_| needs to be populated. What this code
   // does is to populate |play_promise_resolvers_| before calling ::play() and
   // remove the Promise if ::play() failed.
-  ScriptPromiseResolver* resolver = ScriptPromiseResolver::Create(script_state);
+  auto* resolver = MakeGarbageCollected<ScriptPromiseResolver>(script_state);
   ScriptPromise promise = resolver->Promise();
   play_promise_resolvers_.push_back(resolver);
 
@@ -2452,9 +2435,9 @@ void HTMLMediaElement::PlayInternal() {
   DVLOG(3) << "playInternal(" << (void*)this << ")";
 
   // Playback aborts any lazy loading.
-  if (lazy_load_visibility_observer_) {
-    lazy_load_visibility_observer_->Stop();
-    lazy_load_visibility_observer_ = nullptr;
+  if (lazy_load_intersection_observer_) {
+    lazy_load_intersection_observer_->disconnect();
+    lazy_load_intersection_observer_ = nullptr;
   }
 
   // 4.8.12.8. Playing the media resource
@@ -2480,6 +2463,8 @@ void HTMLMediaElement::PlayInternal() {
   }
 
   can_autoplay_ = false;
+
+  OnPlay();
 
   SetIgnorePreloadNone();
   UpdatePlayState();
@@ -2806,8 +2791,8 @@ WebMediaPlayer::TrackId HTMLMediaElement::AddVideoTrack(
   if (selected && videoTracks().selectedIndex() != -1)
     selected = false;
 
-  VideoTrack* video_track =
-      VideoTrack::Create(id, kind_string, label, language, selected);
+  auto* video_track = MakeGarbageCollected<VideoTrack>(id, kind_string, label,
+                                                       language, selected);
   videoTracks().Add(video_track);
 
   return video_track->id();
@@ -2823,7 +2808,7 @@ void HTMLMediaElement::AddTextTrack(WebInbandTextTrack* web_track) {
   // 4.8.12.11.2 Sourcing in-band text tracks
   // 1. Associate the relevant data with a new text track and its corresponding
   // new TextTrack object.
-  InbandTextTrack* text_track = InbandTextTrack::Create(web_track);
+  auto* text_track = MakeGarbageCollected<InbandTextTrack>(web_track);
 
   // 2. Set the new text track's kind, label, and language based on the
   // semantics of the relevant data, as defined by the relevant specification.
@@ -2925,7 +2910,7 @@ TextTrack* HTMLMediaElement::addTextTrack(const AtomicString& kind,
 
 TextTrackList* HTMLMediaElement::textTracks() {
   if (!text_tracks_)
-    text_tracks_ = TextTrackList::Create(this);
+    text_tracks_ = MakeGarbageCollected<TextTrackList>(this);
 
   return text_tracks_.Get();
 }
@@ -3463,9 +3448,9 @@ void HTMLMediaElement::UpdatePlayState() {
 void HTMLMediaElement::StopPeriodicTimers() {
   progress_event_timer_.Stop();
   playback_progress_timer_.Stop();
-  if (lazy_load_visibility_observer_) {
-    lazy_load_visibility_observer_->Stop();
-    lazy_load_visibility_observer_ = nullptr;
+  if (lazy_load_intersection_observer_) {
+    lazy_load_intersection_observer_->disconnect();
+    lazy_load_intersection_observer_ = nullptr;
   }
 }
 
@@ -3901,7 +3886,7 @@ bool HTMLMediaElement::IsInteractiveContent() const {
 }
 
 void HTMLMediaElement::Trace(Visitor* visitor) {
-  visitor->Trace(viewport_intersection_observer_);
+  visitor->Trace(audio_source_node_);
   visitor->Trace(played_time_ranges_);
   visitor->Trace(async_event_queue_);
   visitor->Trace(error_);
@@ -3921,10 +3906,7 @@ void HTMLMediaElement::Trace(Visitor* visitor) {
   visitor->Trace(autoplay_policy_);
   visitor->Trace(media_controls_);
   visitor->Trace(controls_list_);
-  visitor->Trace(lazy_load_visibility_observer_);
-  visitor->template RegisterWeakMembers<HTMLMediaElement,
-                                        &HTMLMediaElement::ClearWeakMembers>(
-      this);
+  visitor->Trace(lazy_load_intersection_observer_);
   Supplementable<HTMLMediaElement>::Trace(visitor);
   HTMLElement::Trace(visitor);
   ContextLifecycleStateObserver::Trace(visitor);
@@ -4083,13 +4065,6 @@ void HTMLMediaElement::OnRemovedFromDocumentTimerFired(TimerBase*) {
   PauseInternal();
 }
 
-void HTMLMediaElement::ClearWeakMembers(Visitor* visitor) {
-  if (!ThreadHeap::IsHeapObjectAlive(audio_source_node_)) {
-    GetAudioSourceProvider().SetClient(nullptr);
-    audio_source_node_ = nullptr;
-  }
-}
-
 void HTMLMediaElement::AudioSourceProviderImpl::Wrap(
     WebAudioSourceProvider* provider) {
   MutexLocker locker(provide_input_lock);
@@ -4149,21 +4124,6 @@ void HTMLMediaElement::AudioSourceProviderImpl::Trace(Visitor* visitor) {
   visitor->Trace(client_);
 }
 
-void HTMLMediaElement::ActivateViewportIntersectionMonitoring(bool activate) {
-  if (activate && !viewport_intersection_observer_) {
-    viewport_intersection_observer_ = IntersectionObserver::Create(
-        {}, {kMostlyFillViewportThreshold}, &(GetDocument()),
-        WTF::BindRepeating(&HTMLMediaElement::OnViewportIntersectionChanged,
-                           WrapWeakPersistent(this)),
-        IntersectionObserver::kFractionOfRoot);
-    viewport_intersection_observer_->observe(this);
-  } else if (!activate && viewport_intersection_observer_) {
-    viewport_intersection_observer_->disconnect();
-    viewport_intersection_observer_ = nullptr;
-    mostly_filling_viewport_ = false;
-  }
-}
-
 bool HTMLMediaElement::HasNativeControls() {
   return ShouldShowControls(RecordMetricsBehavior::kDoRecord);
 }
@@ -4197,31 +4157,14 @@ void HTMLMediaElement::RequestPause() {
   PauseInternal();
 }
 
+void HTMLMediaElement::RequestMuted(bool muted) {
+  setMuted(muted);
+}
+
 bool HTMLMediaElement::MediaShouldBeOpaque() const {
   return !IsMediaDataCorsSameOrigin() && ready_state_ < kHaveMetadata &&
          !FastGetAttribute(kSrcAttr).IsEmpty() &&
          EffectivePreloadType() != WebMediaPlayer::kPreloadNone;
-}
-
-void HTMLMediaElement::OnViewportIntersectionChanged(
-    const HeapVector<Member<IntersectionObserverEntry>>& entries) {
-  const bool is_mostly_filling_viewport =
-      (entries.back()->intersectionRatio() >= kMostlyFillViewportThreshold);
-  if (mostly_filling_viewport_ == is_mostly_filling_viewport)
-    return;
-
-  mostly_filling_viewport_ = is_mostly_filling_viewport;
-  if (web_media_player_)
-    web_media_player_->BecameDominantVisibleContent(mostly_filling_viewport_);
-}
-
-void HTMLMediaElement::OnVisibilityChangedForLazyLoad(bool is_visible) {
-  if (!is_visible || !web_media_player_)
-    return;
-
-  web_media_player_->OnBecameVisible();
-  lazy_load_visibility_observer_->Stop();
-  lazy_load_visibility_observer_ = nullptr;
 }
 
 STATIC_ASSERT_ENUM(WebMediaPlayer::kReadyStateHaveNothing,

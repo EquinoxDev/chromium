@@ -101,13 +101,10 @@ class InstantService : public KeyedService,
   bool UndoCustomLinkAction();
   // Invoked when the Instant page wants to delete all custom links and use Most
   // Visited sites instead. Returns false and does nothing if the profile is
-  // using a non-Google search provider.
-  bool ResetCustomLinks();
+  // using a non-Google search provider. Marked virtual for mocking in tests.
+  virtual bool ResetCustomLinks();
 
-  // Invoked by the InstantController to update theme information for NTP.
-  //
-  // TODO(kmadhusu): Invoking this from InstantController shouldn't be
-  // necessary. Investigate more and remove this from here.
+  // Invoked to update theme information for the NTP.
   void UpdateThemeInfo();
 
   // Invoked when a background pref update is received via sync, triggering
@@ -134,8 +131,8 @@ class InstantService : public KeyedService,
   // Invoked when a user selected the "Upload an image" option on the NTP.
   void SelectLocalBackgroundImage(const base::FilePath& path);
 
-  // Used for testing.
-  ThemeBackgroundInfo* GetThemeInfoForTesting() { return theme_info_.get(); }
+  // Getter for |theme_info_| that will also initialize it if necessary.
+  ThemeBackgroundInfo* GetInitializedThemeInfo();
 
   // Used for testing.
   void SetDarkModeThemeForTesting(ui::NativeTheme* theme);
@@ -146,6 +143,10 @@ class InstantService : public KeyedService,
   // Check if a custom background has been set by the user.
   bool IsCustomBackgroundSet();
 
+  // Reset all NTP customizations to default. Marked virtual for mocking in
+  // tests.
+  virtual void ResetToDefault();
+
  private:
   class SearchProviderObserver;
 
@@ -155,6 +156,7 @@ class InstantService : public KeyedService,
   FRIEND_TEST_ALL_PREFIXES(InstantExtendedTest, ProcessIsolation);
   FRIEND_TEST_ALL_PREFIXES(InstantServiceTest, DeleteThumbnailDataIfExists);
   FRIEND_TEST_ALL_PREFIXES(InstantServiceTest, GetNTPTileSuggestion);
+  FRIEND_TEST_ALL_PREFIXES(InstantServiceTest, TestNoThemeInfo);
 
   // KeyedService:
   void Shutdown() override;
@@ -190,7 +192,8 @@ class InstantService : public KeyedService,
 
   void ApplyCustomBackgroundThemeInfo();
 
-  void ResetCustomBackgroundThemeInfo();
+  // Marked virtual for mocking in tests.
+  virtual void ResetCustomBackgroundThemeInfo();
 
   void FallbackToDefaultThemeInfo();
 

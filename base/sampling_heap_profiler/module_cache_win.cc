@@ -59,42 +59,96 @@ void GetDebugInfoForModule(HMODULE module_handle,
   if (result != kGUIDSize)
     return;
   RemoveChars(buffer, STRING16_LITERAL("{}-"), &buffer);
-  buffer.append(IntToString16(age));
+  buffer.append(NumberToString16(age));
   *build_id = UTF16ToUTF8(buffer);
+}
+
+// Traits class to adapt GenericScopedHandle for HMODULES.
+class ModuleHandleTraits : public win::HandleTraits {
+ public:
+  using Handle = HMODULE;
+
+  static bool CloseHandle(HMODULE handle) { return ::FreeLibrary(handle) != 0; }
+  static bool IsHandleValid(HMODULE handle) { return handle != nullptr; }
+  static HMODULE NullHandle() { return nullptr; }
+
+ private:
+  DISALLOW_IMPLICIT_CONSTRUCTORS(ModuleHandleTraits);
+};
+
+// HMODULE is not really a handle, and has reference count semantics, so the
+// standard VerifierTraits does not apply.
+using ScopedModuleHandle =
+    win::GenericScopedHandle<ModuleHandleTraits, win::DummyVerifierTraits>;
+
+class WindowsModule : public ModuleCache::Module {
+ public:
+  WindowsModule(ScopedModuleHandle module_handle,
+                const MODULEINFO module_info,
+                const std::string& id,
+                const FilePath& debug_basename)
+      : module_handle_(std::move(module_handle)),
+        module_info_(module_info),
+        id_(id),
+        debug_basename_(debug_basename) {}
+
+  WindowsModule(const WindowsModule&) = delete;
+  WindowsModule& operator=(const WindowsModule&) = delete;
+
+  // ModuleCache::Module
+  uintptr_t GetBaseAddress() const override {
+    return reinterpret_cast<uintptr_t>(module_info_.lpBaseOfDll);
+  }
+
+  std::string GetId() const override { return id_; }
+  FilePath GetDebugBasename() const override { return debug_basename_; }
+  size_t GetSize() const override { return module_info_.SizeOfImage; }
+
+ private:
+  ScopedModuleHandle module_handle_;
+  const MODULEINFO module_info_;
+  std::string id_;
+  FilePath debug_basename_;
+};
+
+ScopedModuleHandle GetModuleHandleForAddress(DWORD64 address) {
+  HMODULE module_handle = nullptr;
+  // GetModuleHandleEx() increments the module reference count, which is then
+  // managed and ultimately decremented by ScopedModuleHandle.
+  if (!::GetModuleHandleEx(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS,
+                           reinterpret_cast<LPCTSTR>(address),
+                           &module_handle)) {
+    const DWORD error = ::GetLastError();
+    DCHECK_EQ(ERROR_MOD_NOT_FOUND, static_cast<int>(error));
+  }
+  return ScopedModuleHandle(module_handle);
+}
+
+std::unique_ptr<ModuleCache::Module> CreateModuleForHandle(
+    ScopedModuleHandle module_handle) {
+  FilePath pdb_name;
+  std::string build_id;
+  GetDebugInfoForModule(module_handle.Get(), &build_id, &pdb_name);
+
+  MODULEINFO module_info;
+  if (!::GetModuleInformation(GetCurrentProcessHandle(), module_handle.Get(),
+                              &module_info, sizeof(module_info))) {
+    return nullptr;
+  }
+
+  return std::make_unique<WindowsModule>(std::move(module_handle), module_info,
+                                         build_id, pdb_name);
 }
 
 }  // namespace
 
 // static
-ModuleCache::Module ModuleCache::CreateModuleForAddress(uintptr_t address) {
-  HMODULE module_handle = nullptr;
-  if (!::GetModuleHandleEx(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS,
-                           reinterpret_cast<LPCTSTR>(address),
-                           &module_handle)) {
-    DCHECK_EQ(ERROR_MOD_NOT_FOUND, static_cast<int>(::GetLastError()));
-    return Module();
-  }
-  Module module = CreateModuleForHandle(module_handle);
-  ::CloseHandle(module_handle);
-  return module;
-}
-
-// static
-ModuleCache::Module ModuleCache::CreateModuleForHandle(HMODULE module_handle) {
-  FilePath pdb_name;
-  std::string build_id;
-  GetDebugInfoForModule(module_handle, &build_id, &pdb_name);
-  if (build_id.empty())
-    return Module();
-
-  MODULEINFO module_info;
-  if (!::GetModuleInformation(GetCurrentProcessHandle(), module_handle,
-                              &module_info, sizeof(module_info))) {
-    return Module();
-  }
-
-  return Module(reinterpret_cast<uintptr_t>(module_info.lpBaseOfDll), build_id,
-                pdb_name, module_info.SizeOfImage);
+std::unique_ptr<ModuleCache::Module> ModuleCache::CreateModuleForAddress(
+    uintptr_t address) {
+  ScopedModuleHandle module_handle = GetModuleHandleForAddress(address);
+  if (!module_handle.IsValid())
+    return nullptr;
+  return CreateModuleForHandle(std::move(module_handle));
 }
 
 }  // namespace base

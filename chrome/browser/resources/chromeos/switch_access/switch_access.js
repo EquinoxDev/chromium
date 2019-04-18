@@ -18,9 +18,9 @@ class SwitchAccess {
 
     /**
      * User preferences.
-     * @private {SwitchAccessPrefs}
+     * @private {SwitchAccessPreferences}
      */
-    this.switchAccessPrefs_ = null;
+    this.switchAccessPreferences_ = null;
 
     /**
      * Handles changes to auto-scan.
@@ -63,7 +63,7 @@ class SwitchAccess {
    */
   init_() {
     this.commands_ = new Commands(this);
-    this.switchAccessPrefs_ = new SwitchAccessPrefs(this);
+    this.switchAccessPreferences_ = new SwitchAccessPreferences(this);
     this.autoScanManager_ = new AutoScanManager(this);
     this.keyboardHandler_ = new KeyboardHandler(this);
 
@@ -73,9 +73,6 @@ class SwitchAccess {
       if (this.navReadyCallback_)
         this.navReadyCallback_();
     }.bind(this));
-
-    document.addEventListener(
-        'prefsUpdate', this.handlePrefsUpdate_.bind(this));
   }
 
   /**
@@ -178,18 +175,16 @@ class SwitchAccess {
 
   /**
    * Handle a change in user preferences.
-   * @param {!Event} event
-   * @private
+   * @param {!Object} changes
    */
-  handlePrefsUpdate_(event) {
-    const updatedPrefs = event.detail;
-    for (const key of Object.keys(updatedPrefs)) {
+  onPreferencesChanged(changes) {
+    for (const key of Object.keys(changes)) {
       switch (key) {
         case 'enableAutoScan':
-          this.autoScanManager_.setEnabled(updatedPrefs[key]);
+          this.autoScanManager_.setEnabled(changes[key]);
           break;
         case 'autoScanTime':
-          this.autoScanManager_.setScanTime(updatedPrefs[key]);
+          this.autoScanManager_.setScanTime(changes[key]);
           break;
         default:
           if (this.commands_.getCommands().includes(key))
@@ -200,14 +195,15 @@ class SwitchAccess {
 
   /**
    * Set the value of the preference |key| to |value| in chrome.storage.sync.
-   * this.prefs_ is not set until handleStorageChange_.
+   * Once the storage is set, the Switch Access preferences/behavior are
+   * updated.
    *
    * @override
    * @param {string} key
    * @param {boolean|string|number} value
    */
-  setPref(key, value) {
-    this.switchAccessPrefs_.setPref(key, value);
+  setPreference(key, value) {
+    this.switchAccessPreferences_.setPreference(key, value);
   }
 
   /**
@@ -218,8 +214,8 @@ class SwitchAccess {
    * @param  {string} key
    * @return {boolean}
    */
-  getBooleanPref(key) {
-    return this.switchAccessPrefs_.getBooleanPref(key);
+  getBooleanPreference(key) {
+    return this.switchAccessPreferences_.getBooleanPreference(key);
   }
 
   /**
@@ -230,20 +226,8 @@ class SwitchAccess {
    * @param  {string} key
    * @return {number}
    */
-  getNumberPref(key) {
-    return this.switchAccessPrefs_.getNumberPref(key);
-  }
-
-  /**
-   * Get the value of type 'string' of the preference |key|. Will throw a type
-   * error if the value of |key| is not 'string'.
-   *
-   * @override
-   * @param  {string} key
-   * @return {string}
-   */
-  getStringPref(key) {
-    return this.switchAccessPrefs_.getStringPref(key);
+  getNumberPreference(key) {
+    return this.switchAccessPreferences_.getNumberPreference(key);
   }
 
   /**
@@ -255,7 +239,7 @@ class SwitchAccess {
    * @return {boolean}
    */
   keyCodeIsUsed(keyCode) {
-    return this.switchAccessPrefs_.keyCodeIsUsed(keyCode);
+    return this.switchAccessPreferences_.keyCodeIsUsed(keyCode);
   }
 
   /**

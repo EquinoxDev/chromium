@@ -95,7 +95,7 @@ class HoverButton : public views::MenuButton, public views::MenuButtonListener {
 
  protected:
   // views::MenuButtonListener:
-  void OnMenuButtonClicked(MenuButton* source,
+  void OnMenuButtonClicked(Button* source,
                            const gfx::Point& point,
                            const ui::Event* event) override;
 
@@ -117,6 +117,8 @@ class HoverButton : public views::MenuButton, public views::MenuButtonListener {
                            SetTitleLabel);
   FRIEND_TEST_ALL_PREFIXES(media_router::CastDialogSinkButtonTest,
                            SetStatusLabel);
+  FRIEND_TEST_ALL_PREFIXES(ExtensionsMenuButtonTest,
+                           UpdatesToDisplayCorrectActionTitle);
 
   views::StyledLabel* title_;
   views::Label* subtitle_;

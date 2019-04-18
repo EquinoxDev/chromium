@@ -33,7 +33,6 @@
 #include "components/viz/service/surfaces/surface.h"
 #include "components/viz/service/surfaces/surface_manager.h"
 #include "gpu/command_buffer/client/gles2_interface.h"
-#include "gpu/vulkan/buildflags.h"
 #include "services/viz/public/interfaces/compositing/compositor_frame_sink.mojom.h"
 #include "ui/gfx/buffer_types.h"
 #include "ui/gfx/geometry/rect_conversions.h"
@@ -88,6 +87,32 @@ gfx::PresentationFeedback SanitizePresentationFeedback(
     DCHECK(false);
   }
   return feedback;
+}
+
+// Returns the bounds for the largest rect that can be inscribed in a rounded
+// rect.
+gfx::RectF GetOccludingRectForRRectF(const gfx::RRectF& bounds) {
+  if (bounds.IsEmpty())
+    return gfx::RectF();
+  if (bounds.GetType() == gfx::RRectF::Type::kRect)
+    return bounds.rect();
+  gfx::RectF occluding_rect = bounds.rect();
+
+  // Compute the radius for each corner
+  float top_left = bounds.GetCornerRadii(gfx::RRectF::Corner::kUpperLeft).x();
+  float top_right = bounds.GetCornerRadii(gfx::RRectF::Corner::kUpperRight).x();
+  float lower_right =
+      bounds.GetCornerRadii(gfx::RRectF::Corner::kLowerRight).x();
+  float lower_left = bounds.GetCornerRadii(gfx::RRectF::Corner::kLowerLeft).x();
+
+  // Get a bounding rect that does not intersect with the rounding clip.
+  // When a rect has rounded corner with radius r, then the largest rect that
+  // can be inscribed inside it has an inset of |((2 - sqrt(2)) / 2) * radius|.
+  occluding_rect.Inset(std::max(top_left, lower_left) * 0.3f,
+                       std::max(top_left, top_right) * 0.3f,
+                       std::max(top_right, lower_right) * 0.3f,
+                       std::max(lower_right, lower_left) * 0.3f);
+  return occluding_rect;
 }
 
 }  // namespace
@@ -282,34 +307,27 @@ void Display::InitializeRenderer(bool enable_shared_images) {
   resource_provider_ = std::make_unique<DisplayResourceProvider>(
       mode, output_surface_->context_provider(), bitmap_manager_,
       enable_shared_images);
-
-  if (settings_.use_skia_renderer && mode == DisplayResourceProvider::kGpu) {
+  const bool use_skia_renderer =
+      settings_.use_skia_renderer || settings_.use_skia_renderer_non_ddl;
+  if (use_skia_renderer && mode == DisplayResourceProvider::kGpu) {
     // Default to use DDL if skia_output_surface is not null.
     if (skia_output_surface_) {
       renderer_ = std::make_unique<SkiaRenderer>(
           &settings_, output_surface_.get(), resource_provider_.get(),
           skia_output_surface_, SkiaRenderer::DrawMode::DDL);
     } else {
-      // GPU compositing with GL.
+      // GPU compositing with GL to an SKP.
       DCHECK(output_surface_);
       DCHECK(output_surface_->context_provider());
-      SkiaRenderer::DrawMode mode = settings_.record_sk_picture
-                                        ? SkiaRenderer::DrawMode::SKPRECORD
-                                        : SkiaRenderer::DrawMode::GL;
+      DCHECK(settings_.record_sk_picture);
       renderer_ = std::make_unique<SkiaRenderer>(
           &settings_, output_surface_.get(), resource_provider_.get(),
-          nullptr /* skia_output_surface */, mode);
+          nullptr /* skia_output_surface */, SkiaRenderer::DrawMode::SKPRECORD);
     }
   } else if (output_surface_->context_provider()) {
     renderer_ = std::make_unique<GLRenderer>(&settings_, output_surface_.get(),
                                              resource_provider_.get(),
                                              current_task_runner_);
-#if BUILDFLAG(ENABLE_VULKAN)
-  } else if (output_surface_->vulkan_context_provider()) {
-    renderer_ = std::make_unique<SkiaRenderer>(
-        &settings_, output_surface_.get(), resource_provider_.get(),
-        nullptr /* skia_output_surface */, SkiaRenderer::DrawMode::VULKAN);
-#endif
   } else {
     auto renderer = std::make_unique<SoftwareRenderer>(
         &settings_, output_surface_.get(), resource_provider_.get());
@@ -322,10 +340,15 @@ void Display::InitializeRenderer(bool enable_shared_images) {
 
   // TODO(jbauman): Outputting an incomplete quad list doesn't work when using
   // overlays.
-  bool output_partial_list = renderer_->use_partial_swap() &&
-                             !output_surface_->GetOverlayCandidateValidator();
+  OverlayCandidateValidator* overlay_validator =
+      output_surface_->GetOverlayCandidateValidator();
+  bool output_partial_list =
+      renderer_->use_partial_swap() && !overlay_validator;
+  bool needs_surface_occluding_damage_rect =
+      overlay_validator && overlay_validator->AllowDCLayerOverlays();
   aggregator_.reset(new SurfaceAggregator(
-      surface_manager_, resource_provider_.get(), output_partial_list));
+      surface_manager_, resource_provider_.get(), output_partial_list,
+      needs_surface_occluding_damage_rect));
   aggregator_->set_output_is_secure(output_is_secure_);
   aggregator_->SetOutputColorSpace(blending_color_space_, device_color_space_);
 }
@@ -564,7 +587,10 @@ void Display::DidSwapWithSize(const gfx::Size& pixel_size) {
 
 void Display::DidReceivePresentationFeedback(
     const gfx::PresentationFeedback& feedback) {
-  DCHECK(!pending_presented_callbacks_.empty());
+  if (pending_presented_callbacks_.empty()) {
+    DLOG(ERROR) << "Received unexpected PresentationFeedback";
+    return;
+  }
   ++last_presented_trace_id_;
   TRACE_EVENT_ASYNC_END_WITH_TIMESTAMP0(
       "viz,benchmark", "Graphics.Pipeline.DrawAndSwap",
@@ -609,8 +635,8 @@ bool Display::SurfaceDamaged(const SurfaceId& surface_id,
   return display_damaged;
 }
 
-void Display::SurfaceDiscarded(const SurfaceId& surface_id) {
-  TRACE_EVENT0("viz", "Display::SurfaceDiscarded");
+void Display::SurfaceDestroyed(const SurfaceId& surface_id) {
+  TRACE_EVENT0("viz", "Display::SurfaceDestroyed");
   if (aggregator_)
     aggregator_->ReleaseResources(surface_id);
 }
@@ -733,6 +759,14 @@ void Display::RemoveOverdrawQuads(CompositorFrame* frame) {
               cc::MathUtil::MapEnclosedRectWith2dAxisAlignedTransform(
                   last_sqs->quad_to_target_transform,
                   last_sqs->visible_quad_layer_rect);
+
+          // If a rounded corner is being applied then the visible rect for the
+          // sqs is actually even smaller. Reduce the rect size to get a
+          // rounded corner adjusted occluding region.
+          if (!last_sqs->rounded_corner_bounds.IsEmpty()) {
+            sqs_rect_in_target.Intersect(gfx::ToEnclosedRect(
+                GetOccludingRectForRRectF(last_sqs->rounded_corner_bounds)));
+          }
 
           if (last_sqs->is_clipped)
             sqs_rect_in_target.Intersect(last_sqs->clip_rect);

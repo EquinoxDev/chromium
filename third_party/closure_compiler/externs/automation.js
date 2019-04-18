@@ -31,6 +31,7 @@ chrome.automation.EventType = {
   CLICKED: 'clicked',
   DOCUMENT_SELECTION_CHANGED: 'documentSelectionChanged',
   DOCUMENT_TITLE_CHANGED: 'documentTitleChanged',
+  END_OF_TEST: 'endOfTest',
   EXPANDED_CHANGED: 'expandedChanged',
   FOCUS: 'focus',
   FOCUS_CONTEXT: 'focusContext',
@@ -292,6 +293,7 @@ chrome.automation.StateType = {
  * @see https://developer.chrome.com/extensions/automation#type-ActionType
  */
 chrome.automation.ActionType = {
+  ANNOTATE_PAGE_IMAGES: 'annotatePageImages',
   BLUR: 'blur',
   CLEAR_ACCESSIBILITY_FOCUS: 'clearAccessibilityFocus',
   CUSTOM_ACTION: 'customAction',
@@ -300,6 +302,7 @@ chrome.automation.ActionType = {
   FOCUS: 'focus',
   GET_IMAGE_DATA: 'getImageData',
   GET_TEXT_LOCATION: 'getTextLocation',
+  HIDE_TOOLTIP: 'hideTooltip',
   HIT_TEST: 'hitTest',
   INCREMENT: 'increment',
   LOAD_INLINE_TEXT_BOXES: 'loadInlineTextBoxes',
@@ -318,6 +321,8 @@ chrome.automation.ActionType = {
   SET_SEQUENTIAL_FOCUS_NAVIGATION_STARTING_POINT: 'setSequentialFocusNavigationStartingPoint',
   SET_VALUE: 'setValue',
   SHOW_CONTEXT_MENU: 'showContextMenu',
+  SIGNAL_END_OF_TEST: 'signalEndOfTest',
+  SHOW_TOOLTIP: 'showTooltip',
 };
 
 /**
@@ -591,6 +596,13 @@ chrome.automation.AutomationNode.prototype.name;
  * @see https://developer.chrome.com/extensions/automation#type-nameFrom
  */
 chrome.automation.AutomationNode.prototype.nameFrom;
+
+/**
+ * The image annotation for image nodes, which may be a human-readable string that is the contextualized annotation or a status string related to annotations.
+ * @type {(string|undefined)}
+ * @see https://developer.chrome.com/extensions/automation#type-imageAnnotation
+ */
+chrome.automation.AutomationNode.prototype.imageAnnotation;
 
 /**
  * The value for this node: for example the <code>value</code> attribute of an <code>&lt;input&gt; element.
@@ -928,6 +940,48 @@ chrome.automation.AutomationNode.prototype.focusOffset;
  * @see https://developer.chrome.com/extensions/automation#type-focusAffinity
  */
 chrome.automation.AutomationNode.prototype.focusAffinity;
+
+/**
+ * The node at the start of the selection, if any.
+ * @type {(!chrome.automation.AutomationNode|undefined)}
+ * @see https://developer.chrome.com/extensions/automation#type-selectionStartObject
+ */
+chrome.automation.AutomationNode.prototype.selectionStartObject;
+
+/**
+ * The offset at the start of the selection, if any.
+ * @type {(number|undefined)}
+ * @see https://developer.chrome.com/extensions/automation#type-selectionStartOffset
+ */
+chrome.automation.AutomationNode.prototype.selectionStartOffset;
+
+/**
+ * The affinity at the start of the selection, if any.
+ * @type {(string|undefined)}
+ * @see https://developer.chrome.com/extensions/automation#type-selectionStartAffinity
+ */
+chrome.automation.AutomationNode.prototype.selectionStartAffinity;
+
+/**
+ * The node at the end of the selection, if any.
+ * @type {(!chrome.automation.AutomationNode|undefined)}
+ * @see https://developer.chrome.com/extensions/automation#type-selectionEndObject
+ */
+chrome.automation.AutomationNode.prototype.selectionEndObject;
+
+/**
+ * The offset at the end of the selection, if any.
+ * @type {(number|undefined)}
+ * @see https://developer.chrome.com/extensions/automation#type-selectionEndOffset
+ */
+chrome.automation.AutomationNode.prototype.selectionEndOffset;
+
+/**
+ * The affinity at the end of the selection, if any.
+ * @type {(string|undefined)}
+ * @see https://developer.chrome.com/extensions/automation#type-selectionEndAffinity
+ */
+chrome.automation.AutomationNode.prototype.selectionEndAffinity;
 
 /**
  * The current value for this range.
@@ -1285,6 +1339,18 @@ chrome.automation.AutomationNode.prototype.underline;
  * @see https://developer.chrome.com/extensions/automation#type-lineThrough
  */
 chrome.automation.AutomationNode.prototype.lineThrough;
+
+/**
+ * The font family of this node.
+ * @type {string|undefined}
+ */
+chrome.automation.AutomationNode.prototype.fontFamily;
+
+/**
+ * The font size of this node.
+ * @type {number|undefined}
+ */
+chrome.automation.AutomationNode.prototype.fontSize;
 
 /**
  * Indicates whether this node is selected, unselected, or neither.

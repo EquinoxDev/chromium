@@ -10,6 +10,7 @@
 #include "base/feature_list.h"
 #include "base/lazy_instance.h"
 #include "base/memory/singleton.h"
+#include "base/trace_event/common/trace_event_common.h"
 #include "build/build_config.h"
 #include "chrome/browser/vr/service/browser_xr_runtime.h"
 #include "chrome/common/chrome_features.h"
@@ -92,14 +93,12 @@ XRRuntimeManager* XRRuntimeManager::GetInstance() {
 #endif
 #endif  // ENABLE_ISOLATED_XR_SERVICE
 
-    if (base::FeatureList::IsEnabled(features::kWebXrOrientationSensorDevice)) {
-      content::ServiceManagerConnection* connection =
-          content::ServiceManagerConnection::GetForProcess();
-      if (connection) {
-        providers.emplace_back(
-            std::make_unique<device::VROrientationDeviceProvider>(
-                connection->GetConnector()));
-      }
+    content::ServiceManagerConnection* connection =
+        content::ServiceManagerConnection::GetForProcess();
+    if (connection) {
+      providers.emplace_back(
+          std::make_unique<device::VROrientationDeviceProvider>(
+              connection->GetConnector()));
     }
 
     // The constructor sets g_xr_runtime_manager, which is cleaned up when
@@ -192,8 +191,9 @@ BrowserXRRuntime* XRRuntimeManager::GetRuntimeForOptions(
       return orientation_runtime;
     }
 
-    // Otherwise fall back to immersive providers.
-    return GetImmersiveRuntime();
+    // If we don't have an orientation provider, then we don't have an explicit
+    // runtime to back a non-immersive session
+    return nullptr;
   }
 }
 
@@ -294,7 +294,7 @@ bool XRRuntimeManager::IsOtherDevicePresenting(XRDeviceImpl* device) {
 }
 
 bool XRRuntimeManager::HasAnyRuntime() {
-  return runtimes_.size() > 0;
+  return !runtimes_.empty();
 }
 
 void XRRuntimeManager::SupportsSession(
@@ -378,8 +378,10 @@ void XRRuntimeManager::AddRuntime(device::mojom::XRDeviceId id,
   DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
   DCHECK(runtimes_.find(id) == runtimes_.end());
 
-  runtimes_[id] =
-      std::make_unique<BrowserXRRuntime>(std::move(runtime), std::move(info));
+  TRACE_EVENT_INSTANT1("xr", "AddRuntime", TRACE_EVENT_SCOPE_THREAD, "id", id);
+
+  runtimes_[id] = std::make_unique<BrowserXRRuntime>(id, std::move(runtime),
+                                                     std::move(info));
 
   for (XRRuntimeManagerObserver& obs : g_xr_runtime_manager_observers.Get())
     obs.OnRuntimeAdded(runtimes_[id].get());
@@ -390,6 +392,9 @@ void XRRuntimeManager::AddRuntime(device::mojom::XRDeviceId id,
 }
 
 void XRRuntimeManager::RemoveRuntime(device::mojom::XRDeviceId id) {
+  TRACE_EVENT_INSTANT1("xr", "RemoveRuntime", TRACE_EVENT_SCOPE_THREAD, "id",
+                       id);
+
   DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
   auto it = runtimes_.find(id);
   DCHECK(it != runtimes_.end());

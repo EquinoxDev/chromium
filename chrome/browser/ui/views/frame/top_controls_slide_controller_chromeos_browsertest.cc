@@ -17,7 +17,6 @@
 #include "base/command_line.h"
 #include "base/path_service.h"
 #include "base/strings/safe_sprintf.h"
-#include "base/test/scoped_feature_list.h"
 #include "cc/base/math_util.h"
 #include "chrome/browser/chromeos/accessibility/accessibility_manager.h"
 #include "chrome/browser/permissions/permission_request_impl.h"
@@ -27,7 +26,6 @@
 #include "chrome/browser/ui/views/bookmarks/bookmark_bar_view.h"
 #include "chrome/browser/ui/views/frame/browser_view.h"
 #include "chrome/browser/ui/views/frame/top_container_view.h"
-#include "chrome/common/chrome_features.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/ui_test_utils.h"
@@ -258,13 +256,6 @@ class TopControlsSlideControllerTest : public InProcessBrowserTest {
     return test_controller_;
   }
 
-  // InProcessBrowserTest:
-  void SetUp() override {
-    scoped_feature_list_.InitAndEnableFeature(
-        features::kSlideTopChromeWithPageScrolls);
-    InProcessBrowserTest::SetUp();
-  }
-
   void SetUpDefaultCommandLine(base::CommandLine* command_line) override {
     InProcessBrowserTest::SetUpDefaultCommandLine(command_line);
 
@@ -339,30 +330,14 @@ class TopControlsSlideControllerTest : public InProcessBrowserTest {
     const int top_container_bottom = top_container_bounds.bottom();
     const gfx::Rect& contents_container_bounds =
         browser_view->contents_container()->bounds();
-    // The top of the contents depends on whether there is a detached bookmark
-    // bar as in the NTP page.
-    int detached_bookmark_bar_height = 0;
-    if (browser_view->bookmark_bar() &&
-        browser_view->bookmark_bar()->IsDetached()) {
-      // The detached bookmark bar appears to be part of the contents. It starts
-      // right after the top container, and the contents container starts right
-      // after it.
-      const gfx::Rect& bookmark_bar_bounds =
-          browser_view->bookmark_bar()->bounds();
-      detached_bookmark_bar_height = bookmark_bar_bounds.height();
-      EXPECT_EQ(top_container_bottom, bookmark_bar_bounds.y());
-      EXPECT_EQ(bookmark_bar_bounds.bottom(), contents_container_bounds.y());
-    } else {
-      EXPECT_EQ(top_container_bottom, contents_container_bounds.y());
-    }
+    EXPECT_EQ(top_container_bottom, contents_container_bounds.y());
 
     if (shown_state == TopChromeShownState::kFullyHidden) {
       // Top container is shifted up.
       EXPECT_EQ(top_container_bounds.y(), -top_controls_height);
 
-      // Contents should occupy the entire height of the browser view, minus
-      // the height of a detached bookmark bar if any.
-      EXPECT_EQ(browser_view->height() - detached_bookmark_bar_height,
+      // Contents should occupy the entire height of the browser view.
+      EXPECT_EQ(browser_view->height(),
                 browser_view->contents_container()->height());
 
       // Widget should not allow things to show outside its bounds.
@@ -376,9 +351,8 @@ class TopControlsSlideControllerTest : public InProcessBrowserTest {
       EXPECT_EQ(top_container_bounds.y(), 0);
 
       // Contents should occupy the remainder of the browser view after the top
-      // container and the detached bookmark bar if any.
-      EXPECT_EQ(browser_view->height() - top_controls_height -
-                    detached_bookmark_bar_height,
+      // container.
+      EXPECT_EQ(browser_view->height() - top_controls_height,
                 browser_view->contents_container()->height());
 
       EXPECT_FALSE(browser_view->frame()->GetLayer()->GetMasksToBounds());
@@ -835,6 +809,7 @@ IN_PROC_BROWSER_TEST_F(TopControlsSlideControllerTest, DisplayRotation) {
       config_properties->rotation = ash::mojom::DisplayRotation::New(rotation);
       ash::mojom::DisplayConfigResult result;
       waiter_for.SetDisplayProperties(display_id, std::move(config_properties),
+                                      ash::mojom::DisplayConfigSource::kUser,
                                       &result);
       EXPECT_EQ(result, ash::mojom::DisplayConfigResult::kSuccess);
 

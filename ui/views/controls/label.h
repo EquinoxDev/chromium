@@ -12,6 +12,7 @@
 #include "base/macros.h"
 #include "ui/base/models/simple_menu_model.h"
 #include "ui/gfx/render_text.h"
+#include "ui/gfx/text_constants.h"
 #include "ui/views/context_menu_controller.h"
 #include "ui/views/selection_controller_delegate.h"
 #include "ui/views/style/typography.h"
@@ -54,9 +55,13 @@ class VIEWS_EXPORT Label : public View,
 
   // Construct a Label in the given |text_context|. The |text_style| can change
   // later, so provide a default. The |text_context| is fixed.
+  // By default text directionality will be derived from the label text, however
+  // it can be overriden with |directionality_mode|.
   Label(const base::string16& text,
         int text_context,
-        int text_style = style::STYLE_PRIMARY);
+        int text_style = style::STYLE_PRIMARY,
+        gfx::DirectionalityMode directionality_mode =
+            gfx::DirectionalityMode::DIRECTIONALITY_FROM_TEXT);
 
   // Construct a Label with the given |font| description.
   Label(const base::string16& text, const CustomFont& font);
@@ -184,6 +189,9 @@ class VIEWS_EXPORT Label : public View,
   // Get the text as displayed to the user, respecting the obscured flag.
   base::string16 GetDisplayTextForTesting();
 
+  // Get the text direction, as displayed to the user.
+  base::i18n::TextDirection GetTextDirectionForTesting();
+
   // Returns true if the label can be made selectable. For example, links do not
   // support text selection.
   // Subclasses should override this function in case they want to selectively
@@ -223,8 +231,7 @@ class VIEWS_EXPORT Label : public View,
   bool CanProcessEventsWithinSubtree() const override;
   WordLookupClient* GetWordLookupClient() override;
   void GetAccessibleNodeData(ui::AXNodeData* node_data) override;
-  bool GetTooltipText(const gfx::Point& p,
-                      base::string16* tooltip) const override;
+  base::string16 GetTooltipText(const gfx::Point& p) const override;
 
  protected:
   // Create a single RenderText instance to actually be painted.
@@ -267,9 +274,9 @@ class VIEWS_EXPORT Label : public View,
   friend class LabelSelectionTest;
 
   // ContextMenuController overrides:
-  void ShowContextMenuForView(View* source,
-                              const gfx::Point& point,
-                              ui::MenuSourceType source_type) override;
+  void ShowContextMenuForViewImpl(View* source,
+                                  const gfx::Point& point,
+                                  ui::MenuSourceType source_type) override;
 
   // WordLookupClient overrides:
   bool GetWordLookupDataAtPoint(const gfx::Point& point,
@@ -302,7 +309,9 @@ class VIEWS_EXPORT Label : public View,
 
   const gfx::RenderText* GetRenderTextForSelectionController() const;
 
-  void Init(const base::string16& text, const gfx::FontList& font_list);
+  void Init(const base::string16& text,
+            const gfx::FontList& font_list,
+            gfx::DirectionalityMode directionality_mode);
 
   void ResetLayout();
 

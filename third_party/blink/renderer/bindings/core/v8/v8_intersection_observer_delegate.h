@@ -11,7 +11,6 @@
 #include "third_party/blink/renderer/core/intersection_observer/intersection_observer_delegate.h"
 #include "third_party/blink/renderer/platform/bindings/dom_wrapper_world.h"
 #include "third_party/blink/renderer/platform/bindings/scoped_persistent.h"
-#include "third_party/blink/renderer/platform/bindings/trace_wrapper_member.h"
 
 namespace blink {
 
@@ -31,11 +30,15 @@ class V8IntersectionObserverDelegate final
 
   void Trace(blink::Visitor*) override;
 
+  IntersectionObserver::DeliveryBehavior GetDeliveryBehavior() const override {
+    return IntersectionObserver::kPostTaskToDeliver;
+  }
+
   void Deliver(const HeapVector<Member<IntersectionObserverEntry>>&,
                IntersectionObserver&) override;
 
  private:
-  TraceWrapperMember<V8IntersectionObserverCallback> callback_;
+  Member<V8IntersectionObserverCallback> callback_;
 };
 
 }  // namespace blink

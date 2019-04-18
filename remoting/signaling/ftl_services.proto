@@ -16,3 +16,19 @@ service PeerToPeer {
   rpc GetICEServer(remoting.ftl.GetICEServerRequest)
       returns (remoting.ftl.GetICEServerResponse) {}
 }
+
+service Registration {
+  rpc SignInGaia(remoting.ftl.SignInGaiaRequest)
+      returns (remoting.ftl.SignInGaiaResponse) {}
+}
+
+service Messaging {
+  rpc PullMessages(remoting.ftl.PullMessagesRequest)
+      returns (remoting.ftl.PullMessagesResponse) {}
+  rpc AckMessages(remoting.ftl.AckMessagesRequest)
+      returns (remoting.ftl.AckMessagesResponse) {}
+  rpc ReceiveMessages(remoting.ftl.ReceiveMessagesRequest)
+      returns (stream remoting.ftl.ReceiveMessagesResponse) {}
+  rpc SendMessage(remoting.ftl.InboxSendRequest)
+      returns (remoting.ftl.InboxSendResponse) {}
+}

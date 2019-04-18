@@ -24,6 +24,10 @@ namespace {
 const char kChildrenDictAttr[] = "children";
 }
 
+namespace base {
+class CommandLine;
+}
+
 namespace content {
 
 // A utility class for formatting platform-specific accessibility information,
@@ -38,11 +42,7 @@ class CONTENT_EXPORT AccessibilityTreeFormatter {
   // A single property filter specification. See GetAllowString() and
   // GetDenyString() for more information.
   struct PropertyFilter {
-    enum Type {
-      ALLOW,
-      ALLOW_EMPTY,
-      DENY
-    };
+    enum Type { ALLOW, ALLOW_EMPTY, DENY };
     base::string16 match_str;
     Type type;
 
@@ -67,6 +67,19 @@ class CONTENT_EXPORT AccessibilityTreeFormatter {
 
   // Create the appropriate native subclass of AccessibilityTreeFormatter.
   static std::unique_ptr<AccessibilityTreeFormatter> Create();
+
+  // Get a set of factory methods to create tree-formatters, one for each test
+  // pass; see |DumpAccessibilityTestBase|.
+  using FormatterFactory = std::unique_ptr<AccessibilityTreeFormatter> (*)();
+  using CommandLineHelper = void (*)(base::CommandLine* command_line);
+  struct TestPass {
+    const char* name;
+    FormatterFactory create_formatter;
+    CommandLineHelper set_up_command_line;
+  };
+  static std::vector<TestPass> GetTestPasses();
+
+  virtual void AddDefaultFilters(std::vector<PropertyFilter>* property_filters);
 
   static bool MatchesPropertyFilters(
       const std::vector<PropertyFilter>& property_filters,
@@ -120,8 +133,8 @@ class CONTENT_EXPORT AccessibilityTreeFormatter {
       const base::DictionaryValue& dict);
 
   // Dumps a BrowserAccessibility tree into a string.
-  void FormatAccessibilityTree(
-      BrowserAccessibility* root, base::string16* contents);
+  void FormatAccessibilityTree(BrowserAccessibility* root,
+                               base::string16* contents);
   void FormatAccessibilityTree(const base::DictionaryValue& tree_node,
                                base::string16* contents);
 
@@ -146,6 +159,11 @@ class CONTENT_EXPORT AccessibilityTreeFormatter {
   // HTML test:      test-file.html
   // Expected:       test-file-expected-mac.txt.
   virtual const base::FilePath::StringType GetExpectedFileSuffix() = 0;
+  // Some Platforms expect different outputs depending on the version.
+  // Most test outputs are identical but this allows a version specific
+  // expected file to be used.
+  virtual const base::FilePath::StringType
+  GetVersionSpecificExpectedFileSuffix();
 
   // A string that indicates a given line in a file is an allow-empty,
   // allow or deny filter. Overridden by each platform subclass. Example:
@@ -201,7 +219,9 @@ class CONTENT_EXPORT AccessibilityTreeFormatter {
   bool WriteAttribute(bool include_by_default,
                       const std::string& attr,
                       base::string16* line);
-
+  void AddPropertyFilter(std::vector<PropertyFilter>* property_filters,
+                         std::string filter,
+                         PropertyFilter::Type type = PropertyFilter::ALLOW);
   bool show_ids() { return show_ids_; }
 
  private:

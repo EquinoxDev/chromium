@@ -24,6 +24,7 @@
 #include "net/base/url_util.h"
 #include "net/dns/dns_config_service.h"
 #include "net/dns/host_resolver.h"
+#include "net/dns/host_resolver_manager.h"
 #include "net/http/http_auth_handler_factory.h"
 #include "net/http/http_auth_scheme.h"
 #include "net/net_buildflags.h"
@@ -317,6 +318,8 @@ TEST_F(NetworkServiceTest, AuthServerWhitelist) {
 }
 
 TEST_F(NetworkServiceTest, AuthDelegateWhitelist) {
+  using DelegationType = net::HttpAuth::DelegationType;
+
   // Add one server to the whitelist before creating any NetworkContexts.
   mojom::HttpAuthDynamicParamsPtr auth_params =
       mojom::HttpAuthDynamicParams::New();
@@ -331,31 +334,56 @@ TEST_F(NetworkServiceTest, AuthDelegateWhitelist) {
   net::HttpAuthHandlerFactory* auth_handler_factory =
       network_context.url_request_context()->http_auth_handler_factory();
   ASSERT_TRUE(auth_handler_factory);
-  ASSERT_TRUE(auth_handler_factory->http_auth_preferences());
-  EXPECT_TRUE(auth_handler_factory->http_auth_preferences()->CanDelegate(
-      GURL("https://server1/")));
-  EXPECT_FALSE(auth_handler_factory->http_auth_preferences()->CanDelegate(
-      GURL("https://server2/")));
+  const net::HttpAuthPreferences* auth_prefs =
+      auth_handler_factory->http_auth_preferences();
+  ASSERT_TRUE(auth_prefs);
+  EXPECT_EQ(DelegationType::kUnconstrained,
+            auth_prefs->GetDelegationType(GURL("https://server1/")));
+  EXPECT_EQ(DelegationType::kNone,
+            auth_prefs->GetDelegationType(GURL("https://server2/")));
 
   // Change whitelist to only have a different server on it. The pre-existing
   // NetworkContext should be using the new list.
   auth_params = mojom::HttpAuthDynamicParams::New();
   auth_params->delegate_whitelist = "server2";
   service()->ConfigureHttpAuthPrefs(std::move(auth_params));
-  EXPECT_FALSE(auth_handler_factory->http_auth_preferences()->CanDelegate(
-      GURL("https://server1/")));
-  EXPECT_TRUE(auth_handler_factory->http_auth_preferences()->CanDelegate(
-      GURL("https://server2/")));
+  EXPECT_EQ(DelegationType::kNone,
+            auth_prefs->GetDelegationType(GURL("https://server1/")));
+  EXPECT_EQ(DelegationType::kUnconstrained,
+            auth_prefs->GetDelegationType(GURL("https://server2/")));
 
   // Change whitelist to have multiple servers. The pre-existing NetworkContext
   // should be using the new list.
   auth_params = mojom::HttpAuthDynamicParams::New();
   auth_params->delegate_whitelist = "server1,server2";
   service()->ConfigureHttpAuthPrefs(std::move(auth_params));
-  EXPECT_TRUE(auth_handler_factory->http_auth_preferences()->CanDelegate(
-      GURL("https://server1/")));
-  EXPECT_TRUE(auth_handler_factory->http_auth_preferences()->CanDelegate(
-      GURL("https://server2/")));
+  EXPECT_EQ(DelegationType::kUnconstrained,
+            auth_prefs->GetDelegationType(GURL("https://server1/")));
+  EXPECT_EQ(DelegationType::kUnconstrained,
+            auth_prefs->GetDelegationType(GURL("https://server2/")));
+}
+
+TEST_F(NetworkServiceTest, DelegateByKdcPolicy) {
+  // Create a network context, which should use default value.
+  mojom::NetworkContextPtr network_context_ptr;
+  NetworkContext network_context(service(),
+                                 mojo::MakeRequest(&network_context_ptr),
+                                 CreateContextParams());
+  net::HttpAuthHandlerFactory* auth_handler_factory =
+      network_context.url_request_context()->http_auth_handler_factory();
+  ASSERT_TRUE(auth_handler_factory);
+  ASSERT_TRUE(auth_handler_factory->http_auth_preferences());
+  EXPECT_FALSE(
+      auth_handler_factory->http_auth_preferences()->delegate_by_kdc_policy());
+
+  // Change whitelist to only have a different server on it. The pre-existing
+  // NetworkContext should be using the new list.
+  mojom::HttpAuthDynamicParamsPtr auth_params =
+      mojom::HttpAuthDynamicParams::New();
+  auth_params->delegate_by_kdc_policy = true;
+  service()->ConfigureHttpAuthPrefs(std::move(auth_params));
+  EXPECT_TRUE(
+      auth_handler_factory->http_auth_preferences()->delegate_by_kdc_policy());
 }
 
 TEST_F(NetworkServiceTest, AuthNegotiateCnameLookup) {
@@ -437,15 +465,15 @@ TEST_F(NetworkServiceTest, AuthEnableNegotiatePort) {
 TEST_F(NetworkServiceTest, DnsClientEnableDisable) {
   // HostResolver::GetDnsConfigAsValue() returns nullptr if the stub resolver is
   // disabled.
-  EXPECT_FALSE(service()->host_resolver()->GetDnsConfigAsValue());
+  EXPECT_FALSE(service()->host_resolver_manager()->GetDnsConfigAsValue());
   service()->ConfigureStubHostResolver(
       true /* stub_resolver_enabled */,
       base::nullopt /* dns_over_https_servers */);
-  EXPECT_TRUE(service()->host_resolver()->GetDnsConfigAsValue());
+  EXPECT_TRUE(service()->host_resolver_manager()->GetDnsConfigAsValue());
   service()->ConfigureStubHostResolver(
       false /* stub_resolver_enabled */,
       base::nullopt /* dns_over_https_servers */);
-  EXPECT_FALSE(service()->host_resolver()->GetDnsConfigAsValue());
+  EXPECT_FALSE(service()->host_resolver_manager()->GetDnsConfigAsValue());
 }
 
 TEST_F(NetworkServiceTest, DnsOverHttpsEnableDisable) {
@@ -458,7 +486,7 @@ TEST_F(NetworkServiceTest, DnsOverHttpsEnableDisable) {
 
   // HostResolver::GetDnsClientForTesting() returns nullptr if the stub resolver
   // is disabled.
-  EXPECT_FALSE(service()->host_resolver()->GetDnsConfigAsValue());
+  EXPECT_FALSE(service()->host_resolver_manager()->GetDnsConfigAsValue());
 
   // Create the primary NetworkContext before enabling DNS over HTTPS.
   mojom::NetworkContextPtr network_context;
@@ -479,9 +507,9 @@ TEST_F(NetworkServiceTest, DnsOverHttpsEnableDisable) {
 
   service()->ConfigureStubHostResolver(true /* stub_resolver_enabled */,
                                        std::move(dns_over_https_servers_ptr));
-  EXPECT_TRUE(service()->host_resolver()->GetDnsConfigAsValue());
+  EXPECT_TRUE(service()->host_resolver_manager()->GetDnsConfigAsValue());
   const auto* dns_over_https_servers =
-      service()->host_resolver()->GetDnsOverHttpsServersForTesting();
+      service()->host_resolver_manager()->GetDnsOverHttpsServersForTesting();
   ASSERT_TRUE(dns_over_https_servers);
   ASSERT_EQ(1u, dns_over_https_servers->size());
   EXPECT_EQ(kServer1, (*dns_over_https_servers)[0].server_template);
@@ -502,9 +530,9 @@ TEST_F(NetworkServiceTest, DnsOverHttpsEnableDisable) {
 
   service()->ConfigureStubHostResolver(true /* stub_resolver_enabled */,
                                        std::move(dns_over_https_servers_ptr));
-  EXPECT_TRUE(service()->host_resolver()->GetDnsConfigAsValue());
+  EXPECT_TRUE(service()->host_resolver_manager()->GetDnsConfigAsValue());
   dns_over_https_servers =
-      service()->host_resolver()->GetDnsOverHttpsServersForTesting();
+      service()->host_resolver_manager()->GetDnsOverHttpsServersForTesting();
   ASSERT_TRUE(dns_over_https_servers);
   ASSERT_EQ(2u, dns_over_https_servers->size());
   EXPECT_EQ(kServer2, (*dns_over_https_servers)[0].server_template);
@@ -516,9 +544,10 @@ TEST_F(NetworkServiceTest, DnsOverHttpsEnableDisable) {
   network_context.reset();
   base::RunLoop().RunUntilIdle();
   // DnsClient is still enabled.
-  EXPECT_TRUE(service()->host_resolver()->GetDnsConfigAsValue());
+  EXPECT_TRUE(service()->host_resolver_manager()->GetDnsConfigAsValue());
   // DNS over HTTPS is not.
-  EXPECT_FALSE(service()->host_resolver()->GetDnsOverHttpsServersForTesting());
+  EXPECT_FALSE(
+      service()->host_resolver_manager()->GetDnsOverHttpsServersForTesting());
 }
 
 // Make sure that enabling DNS over HTTP without a primary NetworkContext fails.
@@ -526,7 +555,7 @@ TEST_F(NetworkServiceTest,
        DnsOverHttpsEnableDoesNothingWithoutPrimaryNetworkContext) {
   // HostResolver::GetDnsClientForTesting() returns nullptr if the stub resolver
   // is disabled.
-  EXPECT_FALSE(service()->host_resolver()->GetDnsConfigAsValue());
+  EXPECT_FALSE(service()->host_resolver_manager()->GetDnsConfigAsValue());
 
   // Try to enable DnsClient and DNS over HTTPS. Only the first should take
   // effect.
@@ -538,17 +567,19 @@ TEST_F(NetworkServiceTest,
   service()->ConfigureStubHostResolver(true /* stub_resolver_enabled */,
                                        std::move(dns_over_https_servers));
   // DnsClient is enabled.
-  EXPECT_TRUE(service()->host_resolver()->GetDnsConfigAsValue());
+  EXPECT_TRUE(service()->host_resolver_manager()->GetDnsConfigAsValue());
   // DNS over HTTPS is not.
-  EXPECT_FALSE(service()->host_resolver()->GetDnsOverHttpsServersForTesting());
+  EXPECT_FALSE(
+      service()->host_resolver_manager()->GetDnsOverHttpsServersForTesting());
 
   // Create a NetworkContext that is not the primary one.
   mojom::NetworkContextPtr network_context;
   service()->CreateNetworkContext(mojo::MakeRequest(&network_context),
                                   CreateContextParams());
   // There should be no change in host resolver state.
-  EXPECT_TRUE(service()->host_resolver()->GetDnsConfigAsValue());
-  EXPECT_FALSE(service()->host_resolver()->GetDnsOverHttpsServersForTesting());
+  EXPECT_TRUE(service()->host_resolver_manager()->GetDnsConfigAsValue());
+  EXPECT_FALSE(
+      service()->host_resolver_manager()->GetDnsOverHttpsServersForTesting());
 
   // Try to enable DNS over HTTPS again, which should not work, since there's
   // still no primary NetworkContext.
@@ -559,8 +590,9 @@ TEST_F(NetworkServiceTest,
   service()->ConfigureStubHostResolver(true /* stub_resolver_enabled */,
                                        std::move(dns_over_https_servers));
   // There should be no change in host resolver state.
-  EXPECT_TRUE(service()->host_resolver()->GetDnsConfigAsValue());
-  EXPECT_FALSE(service()->host_resolver()->GetDnsOverHttpsServersForTesting());
+  EXPECT_TRUE(service()->host_resolver_manager()->GetDnsConfigAsValue());
+  EXPECT_FALSE(
+      service()->host_resolver_manager()->GetDnsOverHttpsServersForTesting());
 }
 
 #endif  // !defined(OS_IOS)
@@ -1285,9 +1317,9 @@ class NetworkChangeTest : public testing::Test {
  public:
   NetworkChangeTest()
       : scoped_task_environment_(
-            base::test::ScopedTaskEnvironment::MainThreadType::IO) {
-    service_ = NetworkService::CreateForTesting();
-  }
+            base::test::ScopedTaskEnvironment::MainThreadType::IO),
+        network_change_notifier_(net::NetworkChangeNotifier::CreateMock()),
+        service_(NetworkService::CreateForTesting()) {}
 
   ~NetworkChangeTest() override {}
 
@@ -1295,12 +1327,13 @@ class NetworkChangeTest : public testing::Test {
 
  private:
   base::test::ScopedTaskEnvironment scoped_task_environment_;
+  std::unique_ptr<net::NetworkChangeNotifier> network_change_notifier_;
   std::unique_ptr<NetworkService> service_;
 };
 
-// mojom:NetworkChangeManager isn't supported on these platforms.
+// mojom:NetworkChangeManager isn't supported on iOS.
 // See the same ifdef in CreateNetworkChangeNotifierIfNeeded.
-#if defined(OS_CHROMEOS) || defined(OS_FUCHSIA) || defined(OS_IOS)
+#if defined(OS_IOS)
 #define MAYBE_NetworkChangeManagerRequest DISABLED_NetworkChangeManagerRequest
 #else
 #define MAYBE_NetworkChangeManagerRequest NetworkChangeManagerRequest
@@ -1317,6 +1350,7 @@ class NetworkServiceNetworkChangeTest : public testing::Test {
   NetworkServiceNetworkChangeTest()
       : task_environment_(
             base::test::ScopedTaskEnvironment::MainThreadType::IO),
+        network_change_notifier_(net::NetworkChangeNotifier::CreateMock()),
         service_(NetworkService::CreateForTesting(
             test_connector_factory_.RegisterInstance(kNetworkServiceName))) {
     test_connector_factory_.GetDefaultConnector()->BindInterface(
@@ -1327,13 +1361,10 @@ class NetworkServiceNetworkChangeTest : public testing::Test {
 
   mojom::NetworkService* service() { return network_service_.get(); }
 
-  void SimulateNetworkChange() {
-    // This posts a task to simulate a network change notification
-  }
-
  private:
   base::test::ScopedTaskEnvironment task_environment_;
   service_manager::TestConnectorFactory test_connector_factory_;
+  std::unique_ptr<net::NetworkChangeNotifier> network_change_notifier_;
   std::unique_ptr<NetworkService> service_;
 
   mojom::NetworkServicePtr network_service_;
@@ -1514,7 +1545,8 @@ TEST_F(NetworkServiceNetworkDelegateTest, ClearSiteDataNetworkServiceCient) {
   mojom::NetworkServiceClientPtr client_ptr;
   auto client_impl = std::make_unique<ClearSiteDataNetworkServiceClient>(
       mojo::MakeRequest(&client_ptr));
-  service()->SetClient(std::move(client_ptr));
+  service()->SetClient(std::move(client_ptr),
+                       network::mojom::NetworkServiceParams::New());
   url = https_server()->GetURL("/bar");
   url = AddQuery(url, "header", kClearCookiesHeader);
   EXPECT_EQ(0, client_impl->on_clear_site_data_counter());
@@ -1532,7 +1564,8 @@ TEST_F(NetworkServiceNetworkDelegateTest, HandleClearSiteDataHeaders) {
   mojom::NetworkServiceClientPtr client_ptr;
   auto client_impl = std::make_unique<ClearSiteDataNetworkServiceClient>(
       mojo::MakeRequest(&client_ptr));
-  service()->SetClient(std::move(client_ptr));
+  service()->SetClient(std::move(client_ptr),
+                       network::mojom::NetworkServiceParams::New());
 
   // |passed_header_value| are only checked if |should_call_client| is true.
   const struct TestCase {

@@ -175,35 +175,35 @@ class WebURLResponse {
   BLINK_PLATFORM_EXPORT void SetResponseTime(base::Time);
 
   BLINK_PLATFORM_EXPORT WebString MimeType() const;
-  BLINK_PLATFORM_EXPORT void SetMIMEType(const WebString&);
+  BLINK_PLATFORM_EXPORT void SetMimeType(const WebString&);
 
-  BLINK_PLATFORM_EXPORT long long ExpectedContentLength() const;
-  BLINK_PLATFORM_EXPORT void SetExpectedContentLength(long long);
+  BLINK_PLATFORM_EXPORT int64_t ExpectedContentLength() const;
+  BLINK_PLATFORM_EXPORT void SetExpectedContentLength(int64_t);
 
   BLINK_PLATFORM_EXPORT void SetTextEncodingName(const WebString&);
 
   BLINK_PLATFORM_EXPORT HTTPVersion HttpVersion() const;
-  BLINK_PLATFORM_EXPORT void SetHTTPVersion(HTTPVersion);
+  BLINK_PLATFORM_EXPORT void SetHttpVersion(HTTPVersion);
 
   BLINK_PLATFORM_EXPORT int RequestId() const;
   BLINK_PLATFORM_EXPORT void SetRequestId(int);
 
   BLINK_PLATFORM_EXPORT int HttpStatusCode() const;
-  BLINK_PLATFORM_EXPORT void SetHTTPStatusCode(int);
+  BLINK_PLATFORM_EXPORT void SetHttpStatusCode(int);
 
   BLINK_PLATFORM_EXPORT WebString HttpStatusText() const;
-  BLINK_PLATFORM_EXPORT void SetHTTPStatusText(const WebString&);
+  BLINK_PLATFORM_EXPORT void SetHttpStatusText(const WebString&);
 
   BLINK_PLATFORM_EXPORT WebString HttpHeaderField(const WebString& name) const;
-  BLINK_PLATFORM_EXPORT void SetHTTPHeaderField(const WebString& name,
+  BLINK_PLATFORM_EXPORT void SetHttpHeaderField(const WebString& name,
                                                 const WebString& value);
-  BLINK_PLATFORM_EXPORT void AddHTTPHeaderField(const WebString& name,
+  BLINK_PLATFORM_EXPORT void AddHttpHeaderField(const WebString& name,
                                                 const WebString& value);
-  BLINK_PLATFORM_EXPORT void ClearHTTPHeaderField(const WebString& name);
-  BLINK_PLATFORM_EXPORT void VisitHTTPHeaderFields(WebHTTPHeaderVisitor*) const;
+  BLINK_PLATFORM_EXPORT void ClearHttpHeaderField(const WebString& name);
+  BLINK_PLATFORM_EXPORT void VisitHttpHeaderFields(WebHTTPHeaderVisitor*) const;
 
-  BLINK_PLATFORM_EXPORT long long AppCacheID() const;
-  BLINK_PLATFORM_EXPORT void SetAppCacheID(long long);
+  BLINK_PLATFORM_EXPORT int64_t AppCacheID() const;
+  BLINK_PLATFORM_EXPORT void SetAppCacheID(int64_t);
 
   BLINK_PLATFORM_EXPORT WebURL AppCacheManifestURL() const;
   BLINK_PLATFORM_EXPORT void SetAppCacheManifestURL(const WebURL&);
@@ -248,7 +248,7 @@ class WebURLResponse {
   // The URL list of the Response object the ServiceWorker passed to
   // respondWith(). See ServiceWorkerResponseInfo::url_list_via_service_worker()
   // for details.
-  BLINK_PLATFORM_EXPORT void SetURLListViaServiceWorker(
+  BLINK_PLATFORM_EXPORT void SetUrlListViaServiceWorker(
       const WebVector<WebURL>&);
   // Returns true if the URL list is not empty.
   BLINK_PLATFORM_EXPORT bool HasUrlListViaServiceWorker() const;
@@ -273,8 +273,8 @@ class WebURLResponse {
   BLINK_PLATFORM_EXPORT void SetRemoteIPAddress(const WebString&);
 
   // Remote port number of the socket which fetched this resource.
-  BLINK_PLATFORM_EXPORT unsigned short RemotePort() const;
-  BLINK_PLATFORM_EXPORT void SetRemotePort(unsigned short);
+  BLINK_PLATFORM_EXPORT uint16_t RemotePort() const;
+  BLINK_PLATFORM_EXPORT void SetRemotePort(uint16_t);
 
   // ALPN negotiated protocol of the socket which fetched this resource.
   BLINK_PLATFORM_EXPORT WebString AlpnNegotiatedProtocol() const;
@@ -287,7 +287,7 @@ class WebURLResponse {
       net::HttpResponseInfo::ConnectionInfo);
 
   // Original size of the response before decompression.
-  BLINK_PLATFORM_EXPORT void SetEncodedDataLength(long long);
+  BLINK_PLATFORM_EXPORT void SetEncodedDataLength(int64_t);
 
   BLINK_PLATFORM_EXPORT void SetIsSignedExchangeInnerResponse(bool);
 

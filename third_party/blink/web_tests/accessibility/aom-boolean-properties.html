@@ -80,14 +80,16 @@ test(function(t) {
 }, "AccessibleNode.expanded");
 </script>
 
-<div role="region" id="hidden"></div>
+<div role="region" id="will-be-hidden"></div>
 
 <script>
 test(function(t) {
-    var node = document.getElementById("hidden");
-    var axNode = accessibilityController.accessibleElementById("hidden");
+    var node = document.getElementById("will-be-hidden");
+    var axNode = accessibilityController.accessibleElementById("will-be-hidden");
     assert_true(axNode != null);
     node.accessibleNode.hidden = true;
+    node.id = "hidden";
+
     axNode = accessibilityController.accessibleElementById("hidden");
     assert_true(axNode == null);
 }, "AccessibleNode.hidden");

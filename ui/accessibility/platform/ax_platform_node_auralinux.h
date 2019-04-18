@@ -10,6 +10,8 @@
 #include <string>
 
 #include "base/macros.h"
+#include "base/optional.h"
+#include "base/strings/utf_offset_string_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "ui/accessibility/ax_export.h"
 #include "ui/accessibility/platform/ax_platform_node_base.h"
@@ -86,7 +88,12 @@ class AX_EXPORT AXPlatformNodeAuraLinux : public AXPlatformNodeBase {
   void OnMenuPopupEnd();
   void OnSelected();
   void OnSelectedChildrenChanged();
+  void OnTextSelectionChanged();
   void OnValueChanged();
+  void OnNameChanged();
+  void OnDescriptionChanged();
+  void OnInvalidStatusChanged();
+  void OnDocumentTitleChanged();
 
   bool SupportsSelectionWithAtkSelection();
   bool SelectionAndFocusAreTheSame();
@@ -98,17 +105,32 @@ class AX_EXPORT AXPlatformNodeAuraLinux : public AXPlatformNodeBase {
   // AXPlatformNodeBase overrides.
   void Init(AXPlatformNodeDelegate* delegate) override;
   int GetIndexInParent() override;
-
-  std::string GetTextForATK();
+  base::string16 GetText() const override;
 
   void UpdateHypertext();
   const AXHypertext& GetHypertext();
+  const base::OffsetAdjuster::Adjustments& GetHypertextAdjustments();
+  size_t UTF16ToUnicodeOffsetInText(size_t utf16_offset);
+  size_t UnicodeToUTF16OffsetInText(size_t unicode_offset);
 
   void SetEmbeddedDocument(AtkObject* new_document);
   void SetEmbeddingWindow(AtkObject* new_embedding_window);
 
+  int GetCaretOffset();
+  bool SetCaretOffset(int offset);
+  bool SetTextSelectionForAtkText(int start_offset, int end_offset);
+  bool HasSelection();
+  gchar* GetSelection(int* start_offset, int* end_offset);
+
+  std::string accessible_name_;
+
  protected:
-  AXHypertext hypertext_;
+  // Offsets for the AtkText API are calculated in UTF-16 code point offsets,
+  // but the ATK APIs want all offsets to be in "characters," which we
+  // understand to be Unicode character offsets. We keep a lazily generated set
+  // of Adjustments to convert between UTF-16 and Unicode character offsets.
+  base::Optional<base::OffsetAdjuster::Adjustments> text_unicode_adjustments_ =
+      base::nullopt;
 
   void AddAttributeToList(const char* name,
                           const char* value,
@@ -125,6 +147,7 @@ class AX_EXPORT AXPlatformNodeAuraLinux : public AXPlatformNodeBase {
     ATK_IMAGE_INTERFACE,
     ATK_SELECTION_INTERFACE,
     ATK_TABLE_INTERFACE,
+    ATK_TABLE_CELL_INTERFACE,
     ATK_TEXT_INTERFACE,
     ATK_VALUE_INTERFACE,
     ATK_WINDOW_INTERFACE,
@@ -137,6 +160,7 @@ class AX_EXPORT AXPlatformNodeAuraLinux : public AXPlatformNodeBase {
   void AddRelationToSet(AtkRelationSet*,
                         AtkRelationType,
                         AXPlatformNode* target);
+  bool IsInLiveRegion();
 
   // The AtkStateType for a checkable node can vary depending on the role.
   AtkStateType GetAtkStateTypeForCheckableNode();

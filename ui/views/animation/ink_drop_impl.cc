@@ -19,29 +19,29 @@ namespace {
 
 // The duration, in milliseconds for the highlight state fade in/out animations
 // when it is triggered by a hover changed event.
-const int kHighlightFadeInOnHoverChangeDurationMs = 250;
-const int kHighlightFadeOutOnHoverChangeDurationMs = 250;
+constexpr int kHighlightFadeInOnHoverChangeDurationMs = 250;
+constexpr int kHighlightFadeOutOnHoverChangeDurationMs = 250;
 
 // The duration, in milliseconds for the highlight state fade in/out animations
 // when it is triggered by a focus changed event.
-const int kHighlightFadeInOnFocusChangeDurationMs = 0;
-const int kHighlightFadeOutOnFocusChangeDurationMs = 0;
+constexpr int kHighlightFadeInOnFocusChangeDurationMs = 0;
+constexpr int kHighlightFadeOutOnFocusChangeDurationMs = 0;
 
 // The duration, in milliseconds, for showing/hiding the highlight when
 // triggered by ripple visibility changes for the HIDE_ON_RIPPLE
 // AutoHighlightMode.
-const int kHighlightFadeInOnRippleHidingDurationMs = 250;
-const int kHighlightFadeOutOnRippleShowingDurationMs = 120;
+constexpr int kHighlightFadeInOnRippleHidingDurationMs = 250;
+constexpr int kHighlightFadeOutOnRippleShowingDurationMs = 120;
 
 // The duration, in milliseconds, for showing/hiding the highlight when
 // triggered by ripple visibility changes for the SHOW_ON_RIPPLE
 // AutoHighlightMode.
-const int kHighlightFadeInOnRippleShowingDurationMs = 250;
-const int kHighlightFadeOutOnRippleHidingDurationMs = 120;
+constexpr int kHighlightFadeInOnRippleShowingDurationMs = 250;
+constexpr int kHighlightFadeOutOnRippleHidingDurationMs = 120;
 
 // The amount of time in milliseconds that |highlight_| should delay after a
 // ripple animation before fading in, for highlight due to mouse hover.
-const int kHoverFadeInAfterRippleDelayMs = 1000;
+constexpr int kHoverFadeInAfterRippleDelayMs = 1000;
 
 // Returns true if an ink drop with the given |ink_drop_state| should
 // automatically transition to the InkDropState::HIDDEN state.
@@ -351,10 +351,14 @@ void InkDropImpl::HideHighlightOnRippleHiddenState::AnimationStarted(
     // |ink_drop_ripple_|.
     // TODO(bruthig): Investigate if the animation framework can address this
     // issue instead. See https://crbug.com/663335.
-    if (GetInkDrop()->ink_drop_ripple_)
-      GetInkDrop()->ink_drop_ripple_->SnapToHidden();
-    GetInkDrop()->SetHighlightState(
-        state_factory()->CreateVisibleState(base::TimeDelta(), false));
+    InkDropImpl* ink_drop = GetInkDrop();
+    HighlightStateFactory* highlight_state_factory = state_factory();
+    if (ink_drop->ink_drop_ripple_)
+      ink_drop->ink_drop_ripple_->SnapToHidden();
+    // |this| may be destroyed after SnapToHidden(), so be sure not to access
+    // |any members.
+    ink_drop->SetHighlightState(
+        highlight_state_factory->CreateVisibleState(base::TimeDelta(), false));
   }
 }
 
@@ -376,13 +380,13 @@ void InkDropImpl::HideHighlightOnRippleHiddenState::AnimationEnded(
 
 void InkDropImpl::HideHighlightOnRippleHiddenState::
     StartHighlightAfterRippleTimer() {
-  highlight_after_ripple_timer_.reset(new base::OneShotTimer);
+  highlight_after_ripple_timer_ = std::make_unique<base::OneShotTimer>();
   highlight_after_ripple_timer_->Start(
       FROM_HERE,
       base::TimeDelta::FromMilliseconds(kHoverFadeInAfterRippleDelayMs),
-      base::Bind(&InkDropImpl::HideHighlightOnRippleHiddenState::
-                     HighlightAfterRippleTimerFired,
-                 base::Unretained(this)));
+      base::BindOnce(&InkDropImpl::HideHighlightOnRippleHiddenState::
+                         HighlightAfterRippleTimerFired,
+                     base::Unretained(this)));
 }
 
 void InkDropImpl::HideHighlightOnRippleHiddenState::
@@ -629,7 +633,9 @@ void InkDropImpl::HostSizeChanged(const gfx::Size& new_size) {
   root_layer_->SetBounds(gfx::Rect(new_size));
 
   const bool create_ink_drop_ripple = !!ink_drop_ripple_;
-  const InkDropState state = GetTargetInkDropState();
+  InkDropState state = GetTargetInkDropState();
+  if (ShouldAnimateToHidden(state))
+    state = views::InkDropState::HIDDEN;
   DestroyInkDropRipple();
 
   if (highlight_) {

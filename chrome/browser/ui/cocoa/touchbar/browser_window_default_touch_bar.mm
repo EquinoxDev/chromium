@@ -203,6 +203,10 @@ class API_AVAILABLE(macos(10.12.2)) TouchBarNotificationBridge
   DISALLOW_COPY_AND_ASSIGN(TouchBarNotificationBridge);
 };
 
+id<NSAccessibility> ToNSAccessibility(id object) {
+  return [object conformsToProtocol:@protocol(NSAccessibility)] ? object : nil;
+}
+
 }  // namespace
 
 @interface BrowserWindowDefaultTouchBar () {
@@ -408,11 +412,6 @@ class API_AVAILABLE(macos(10.12.2)) TouchBarNotificationBridge
   return touchBar.autorelease();
 }
 
-// TODO(crbug.com/921109): Migrate to the new NSAccessibility API for this
-// method.
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdeprecated-declarations"
-
 - (void)setupBackForwardControl {
   NSMutableArray* images = [NSMutableArray arrayWithArray:@[
     CreateNSImageFromIcon(vector_icons::kBackArrowIcon),
@@ -443,21 +442,17 @@ class API_AVAILABLE(macos(10.12.2)) TouchBarNotificationBridge
   // Use the accessibility protocol to get the children.
   // Use NSAccessibilityUnignoredDescendant to be sure we start with
   // the correct object.
-  id segmentElement = NSAccessibilityUnignoredDescendant(control);
-  NSArray* segments = [segmentElement
-      accessibilityAttributeValue:NSAccessibilityChildrenAttribute];
-  NSEnumerator* e = [segments objectEnumerator];
-  [[e nextObject]
-      accessibilitySetOverrideValue:l10n_util::GetNSString(IDS_ACCNAME_BACK)
-                       forAttribute:NSAccessibilityTitleAttribute];
-  [[e nextObject]
-      accessibilitySetOverrideValue:l10n_util::GetNSString(IDS_ACCNAME_FORWARD)
-                       forAttribute:NSAccessibilityTitleAttribute];
+  id<NSAccessibility> segmentElement =
+      ToNSAccessibility(NSAccessibilityUnignoredDescendant(control));
+  DCHECK(segmentElement);
+  NSArray<id<NSAccessibility>>* segments = segmentElement.accessibilityChildren;
+  ToNSAccessibility(segments[0]).accessibilityTitle =
+      l10n_util::GetNSString(IDS_ACCNAME_BACK);
+  ToNSAccessibility(segments[1]).accessibilityTitle =
+      l10n_util::GetNSString(IDS_ACCNAME_FORWARD);
 
   backForwardControl_.reset([control retain]);
 }
-
-#pragma clang diagnostic pop
 
 - (void)updateWebContents:(content::WebContents*)contents {
   notificationBridge_->UpdateWebContents(contents);
@@ -508,15 +503,18 @@ class API_AVAILABLE(macos(10.12.2)) TouchBarNotificationBridge
                : l10n_util::GetStringFUTF16(IDS_TOUCH_BAR_SEARCH,
                                             defaultProvider->short_name());
 
-  NSImage* image;
+  NSImage* image = nil;
+#if defined(GOOGLE_CHROME_BUILD)
   if (isGoogle) {
     image = NSImageFromImageSkiaWithColorSpace(
         gfx::CreateVectorIcon(kGoogleGLogoIcon, kTouchBarIconSize,
                               gfx::kPlaceholderColor),
         base::mac::GetSRGBColorSpace());
-  } else {
     image = CreateNSImageFromIcon(vector_icons::kSearchIcon);
   }
+#endif
+  if (!image)
+    image = CreateNSImageFromIcon(vector_icons::kSearchIcon);
 
   NSButton* searchButton =
       [NSButton buttonWithTitle:base::SysUTF16ToNSString(title)

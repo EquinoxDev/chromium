@@ -33,16 +33,15 @@ bool IsValidPaintShaderType(PaintShader::Type type) {
          static_cast<uint8_t>(PaintShader::Type::kShaderCount);
 }
 
-// SkShader::TileMode has no defined backing type, so read/write int32_t's.
+// SkTileMode has no defined backing type, so read/write int32_t's.
 // If read_mode is a valid tile mode, this returns true and updates mode to the
 // equivalent enum value. Otherwise false is returned and mode is not modified.
-bool ValidateAndGetSkShaderTileMode(int32_t read_mode,
-                                    SkShader::TileMode* mode) {
-  if (read_mode < 0 || read_mode >= SkShader::kTileModeCount) {
+bool ValidateAndGetSkShaderTileMode(int32_t read_mode, SkTileMode* mode) {
+  if (read_mode < 0 || read_mode >= kSkTileModeCount) {
     return false;
   }
 
-  *mode = static_cast<SkShader::TileMode>(read_mode);
+  *mode = static_cast<SkTileMode>(read_mode);
   return true;
 }
 
@@ -215,33 +214,45 @@ void PaintOpReader::Read(SkPath* path) {
   if (!valid_)
     return;
 
-  size_t path_bytes = 0u;
-  ReadSize(&path_bytes);
-  if (path_bytes > remaining_bytes_)
-    SetInvalid();
-  if (!valid_)
+  uint32_t entry_state_int = 0u;
+  ReadSimple(&entry_state_int);
+  if (entry_state_int > static_cast<uint32_t>(PaintCacheEntryState::kLast)) {
+    valid_ = false;
     return;
+  }
 
-  if (path_bytes != 0u) {
-    auto* scratch = CopyScratchSpace(path_bytes);
-    size_t bytes_read = path->readFromMemory(scratch, path_bytes);
-    if (bytes_read == 0u) {
-      SetInvalid();
+  auto entry_state = static_cast<PaintCacheEntryState>(entry_state_int);
+  switch (entry_state) {
+    case PaintCacheEntryState::kEmpty:
+      return;
+    case PaintCacheEntryState::kCached: {
+      auto* cached_path = options_.paint_cache->GetPath(path_id);
+      if (!cached_path)
+        SetInvalid();
+      else
+        *path = *cached_path;
       return;
     }
+    case PaintCacheEntryState::kInlined: {
+      size_t path_bytes = 0u;
+      ReadSize(&path_bytes);
+      if (path_bytes > remaining_bytes_ || path_bytes == 0u)
+        SetInvalid();
+      if (!valid_)
+        return;
 
-    options_.paint_cache->PutPath(path_id, *path);
-    memory_ += path_bytes;
-    remaining_bytes_ -= path_bytes;
-    return;
+      auto* scratch = CopyScratchSpace(path_bytes);
+      size_t bytes_read = path->readFromMemory(scratch, path_bytes);
+      if (bytes_read == 0u) {
+        SetInvalid();
+        return;
+      }
+      options_.paint_cache->PutPath(path_id, *path);
+      memory_ += path_bytes;
+      remaining_bytes_ -= path_bytes;
+      return;
+    }
   }
-
-  auto* cached_path = options_.paint_cache->GetPath(path_id);
-  if (!cached_path) {
-    SetInvalid();
-    return;
-  }
-  *path = *cached_path;
 }
 
 void PaintOpReader::Read(PaintFlags* flags) {
@@ -572,18 +583,16 @@ void PaintOpReader::Read(sk_sp<PaintShader>* shader) {
   auto* entry =
       options_.transfer_cache->GetEntryAs<ServiceShaderTransferCacheEntry>(
           shader_id);
-  // Only consider entries that use the same scale and color space.
-  // This limits the service side transfer cache to only having one entry
-  // per shader but this will hit the common case of enabling Skia reuse.
-  if (entry && entry->shader()->tile_ == ref.tile_ &&
-      entry->raster_color_space_id() == options_.raster_color_space_id) {
+  // Only consider entries that use the same scale.  This limits the service
+  // side transfer cache to only having one entry per shader but this will hit
+  // the common case of enabling Skia reuse.
+  if (entry && entry->shader()->tile_ == ref.tile_) {
     DCHECK(!ref.cached_shader_);
     ref.cached_shader_ = entry->shader()->GetSkShader();
   } else {
     ref.CreateSkShader();
     std::unique_ptr<ServiceShaderTransferCacheEntry> entry(
-        new ServiceShaderTransferCacheEntry(
-            *shader, options_.raster_color_space_id, shader_size));
+        new ServiceShaderTransferCacheEntry(*shader, shader_size));
     options_.transfer_cache->CreateLocalEntry(shader_id, std::move(entry));
   }
 }
@@ -1016,7 +1025,7 @@ void PaintOpReader::ReadMergePaintFilter(
     sk_sp<PaintFilter>* filter,
     const base::Optional<PaintFilter::CropRect>& crop_rect) {
   size_t input_count = 0;
-  ReadSimple(&input_count);
+  ReadSize(&input_count);
 
   // The minimum size for a serialized filter is 4 bytes (a zero uint32_t to
   // indicate a null filter). Make sure the |input_count| doesn't exceed the

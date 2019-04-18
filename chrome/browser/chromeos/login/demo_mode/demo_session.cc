@@ -20,6 +20,7 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/system/sys_info.h"
 #include "base/task/post_task.h"
+#include "base/timer/timer.h"
 #include "chrome/browser/apps/platform_apps/app_load_service.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/browser_process_platform_part.h"
@@ -44,10 +45,16 @@
 #include "components/user_manager/user.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/network_service_instance.h"
+#include "extensions/browser/app_window/app_window.h"
 #include "extensions/browser/extension_registry.h"
 #include "extensions/common/constants.h"
 #include "services/network/public/cpp/network_connection_tracker.h"
 #include "ui/base/l10n/l10n_util.h"
+
+// The splash screen should be removed either when this timeout passes or the
+// screensaver app is shown, whichever comes first.
+constexpr base::TimeDelta kRemoveSplashScreenTimeout =
+    base::TimeDelta::FromSeconds(10);
 
 namespace chromeos {
 
@@ -67,10 +74,9 @@ constexpr char kHighlightsAppPath[] = "chrome_apps/highlights";
 // contains sample photos.
 constexpr char kPhotosPath[] = "media/photos";
 
-// The absolute path of the splash image that covers the login screen.
-// TODO(crbug.com/894270): Replace this placeholder image.
-constexpr char kSplashImagePath[] =
-    "/usr/share/chromeos-assets/wallpaper/guest_large.jpg";
+// Path relative to the path at which offline demo resources are loaded that
+// contains splash screen images.
+constexpr char kSplashScreensPath[] = "media/splash_screens";
 
 bool IsDemoModeOfflineEnrolled() {
   DCHECK(DemoSession::IsDeviceInDemoMode());
@@ -194,6 +200,9 @@ std::vector<ash::mojom::LocaleInfoPtr> GetSupportedLocales() {
 }  // namespace
 
 // static
+constexpr char DemoSession::kSupportedCountries[][3];
+
+// static
 std::string DemoSession::DemoConfigToString(
     DemoSession::DemoModeConfig config) {
   switch (config) {
@@ -224,8 +233,8 @@ DemoSession::DemoModeConfig DemoSession::GetDemoConfig() {
       g_browser_process->platform_part()->browser_policy_connector_chromeos();
   bool is_demo_device_mode = connector->GetInstallAttributes()->GetMode() ==
                              policy::DeviceMode::DEVICE_MODE_DEMO;
-  bool is_demo_device_domain = connector->GetInstallAttributes()->GetDomain() ==
-                               DemoSetupController::kDemoModeDomain;
+  bool is_demo_device_domain =
+      connector->GetInstallAttributes()->GetDomain() == policy::kDemoModeDomain;
 
   // TODO(agawronska): We check device mode and domain to allow for dev/test
   // setup that is done by manual enrollment into demo domain. Device mode is
@@ -330,8 +339,30 @@ bool DemoSession::ShouldDisplayInAppLauncher(const std::string& app_id) {
 }
 
 // static
+base::Value DemoSession::GetCountryList() {
+  base::Value country_list(base::Value::Type::LIST);
+  if (!base::FeatureList::IsEnabled(
+          switches::kSupportCountryCustomizationInDemoMode)) {
+    return country_list;
+  }
+  const std::string current_country =
+      g_browser_process->local_state()->GetString(prefs::kDemoModeCountry);
+  const std::string current_locale = g_browser_process->GetApplicationLocale();
+  for (const std::string country : kSupportedCountries) {
+    base::DictionaryValue dict;
+    dict.SetString("value", country);
+    dict.SetString(
+        "title", l10n_util::GetDisplayNameForCountry(country, current_locale));
+    dict.SetBoolean("selected", current_country == country);
+    country_list.GetList().push_back(std::move(dict));
+  }
+  return country_list;
+}
+
+// static
 void DemoSession::RegisterLocalStatePrefs(PrefRegistrySimple* registry) {
   registry->RegisterStringPref(prefs::kDemoModeDefaultLocale, std::string());
+  registry->RegisterStringPref(prefs::kDemoModeCountry, kSupportedCountries[0]);
 }
 
 void DemoSession::EnsureOfflineResourcesLoaded(
@@ -371,6 +402,15 @@ void DemoSession::OverrideIgnorePinPolicyAppsForTesting(
   ignore_pin_policy_offline_apps_ = std::move(apps);
 }
 
+void DemoSession::SetTimerForTesting(
+    std::unique_ptr<base::OneShotTimer> timer) {
+  remove_splash_screen_fallback_timer_ = std::move(timer);
+}
+
+base::OneShotTimer* DemoSession::GetTimerForTesting() {
+  return remove_splash_screen_fallback_timer_.get();
+}
+
 void DemoSession::ActiveUserChanged(const user_manager::User* user) {
   const base::RepeatingClosure hide_web_store_icon = base::BindRepeating([]() {
     ProfileManager::GetActiveUserProfile()->GetPrefs()->SetBoolean(
@@ -389,9 +429,8 @@ void DemoSession::ActiveUserChanged(const user_manager::User* user) {
 DemoSession::DemoSession()
     : offline_enrolled_(IsDemoModeOfflineEnrolled()),
       ignore_pin_policy_offline_apps_(GetIgnorePinPolicyApps()),
-      session_manager_observer_(this),
-      extension_registry_observer_(this),
-      weak_ptr_factory_(this) {
+      remove_splash_screen_fallback_timer_(
+          std::make_unique<base::OneShotTimer>()) {
   // SessionManager may be unset in unit tests.
   if (session_manager::SessionManager::Get()) {
     session_manager_observer_.Add(session_manager::SessionManager::Get());
@@ -444,7 +483,14 @@ void DemoSession::InstallAppFromUpdateUrl(const std::string& id) {
   }
   Profile* profile = ProfileManager::GetActiveUserProfile();
   DCHECK(profile);
-  extension_registry_observer_.Add(extensions::ExtensionRegistry::Get(profile));
+  extensions::ExtensionRegistry* extension_registry =
+      extensions::ExtensionRegistry::Get(profile);
+  if (!extension_registry_observer_.IsObserving(extension_registry))
+    extension_registry_observer_.Add(extension_registry);
+  extensions::AppWindowRegistry* app_window_registry =
+      extensions::AppWindowRegistry::Get(profile);
+  if (!app_window_registry_observer_.IsObserving(app_window_registry))
+    app_window_registry_observer_.Add(app_window_registry);
   extensions_external_loader_->LoadApp(id);
 }
 
@@ -452,13 +498,13 @@ void DemoSession::OnSessionStateChanged() {
   switch (session_manager::SessionManager::Get()->session_state()) {
     case session_manager::SessionState::LOGIN_PRIMARY:
       if (base::FeatureList::IsEnabled(switches::kShowSplashScreenInDemoMode)) {
-        WallpaperControllerClient::Get()->ShowAlwaysOnTopWallpaper(
-            base::FilePath(kSplashImagePath));
+        EnsureOfflineResourcesLoaded(base::BindOnce(
+            &DemoSession::ShowSplashScreen, weak_ptr_factory_.GetWeakPtr()));
       }
       break;
     case session_manager::SessionState::ACTIVE:
-      if (base::FeatureList::IsEnabled(switches::kShowSplashScreenInDemoMode))
-        WallpaperControllerClient::Get()->RemoveAlwaysOnTopWallpaper();
+      if (ShouldRemoveSplashScreen())
+        RemoveSplashScreen();
 
       // SystemTrayClient may not exist in unit tests.
       if (SystemTrayClient::Get() &&
@@ -483,6 +529,40 @@ void DemoSession::OnSessionStateChanged() {
   }
 }
 
+void DemoSession::ShowSplashScreen() {
+  const std::string current_locale = g_browser_process->GetApplicationLocale();
+  base::FilePath image_path = demo_resources_->path()
+                                  .Append(kSplashScreensPath)
+                                  .Append(current_locale + ".jpg");
+  if (!base::PathExists(image_path)) {
+    image_path =
+        demo_resources_->path().Append(kSplashScreensPath).Append("en-US.jpg");
+  }
+  WallpaperControllerClient::Get()->ShowAlwaysOnTopWallpaper(image_path);
+  remove_splash_screen_fallback_timer_->Start(
+      FROM_HERE, kRemoveSplashScreenTimeout,
+      base::BindOnce(&DemoSession::RemoveSplashScreen,
+                     weak_ptr_factory_.GetWeakPtr()));
+}
+
+void DemoSession::RemoveSplashScreen() {
+  if (splash_screen_removed_)
+    return;
+  WallpaperControllerClient::Get()->RemoveAlwaysOnTopWallpaper();
+  remove_splash_screen_fallback_timer_.reset();
+  app_window_registry_observer_.RemoveAll();
+  splash_screen_removed_ = true;
+}
+
+bool DemoSession::ShouldRemoveSplashScreen() {
+  // TODO(crbug.com/934979): Launch screensaver after active session starts, so
+  // that there's no need to check session state here.
+  return base::FeatureList::IsEnabled(switches::kShowSplashScreenInDemoMode) &&
+         session_manager::SessionManager::Get()->session_state() ==
+             session_manager::SessionState::ACTIVE &&
+         screensaver_activated_;
+}
+
 void DemoSession::OnExtensionInstalled(content::BrowserContext* browser_context,
                                        const extensions::Extension* extension,
                                        bool is_update) {
@@ -493,6 +573,14 @@ void DemoSession::OnExtensionInstalled(content::BrowserContext* browser_context,
   OpenApplication(AppLaunchParams(
       profile, extension, extensions::LAUNCH_CONTAINER_WINDOW,
       WindowOpenDisposition::NEW_WINDOW, extensions::SOURCE_CHROME_INTERNAL));
+}
+
+void DemoSession::OnAppWindowActivated(extensions::AppWindow* app_window) {
+  if (app_window->extension_id() != GetScreensaverAppId())
+    return;
+  screensaver_activated_ = true;
+  if (ShouldRemoveSplashScreen())
+    RemoveSplashScreen();
 }
 
 }  // namespace chromeos

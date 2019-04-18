@@ -51,7 +51,7 @@ class AnimationMockChromeClient : public EmptyChromeClient {
 class LocalFrameViewTest : public RenderingTest {
  protected:
   LocalFrameViewTest()
-      : RenderingTest(SingleChildLocalFrameClient::Create()),
+      : RenderingTest(MakeGarbageCollected<SingleChildLocalFrameClient>()),
         chrome_client_(MakeGarbageCollected<AnimationMockChromeClient>()) {
     EXPECT_CALL(GetAnimationMockChromeClient(), AttachRootGraphicsLayer(_, _))
         .Times(AnyNumber());
@@ -290,7 +290,7 @@ TEST_F(LocalFrameViewSimTest, FragmentNavChangesFocusWhileRenderingBlocked) {
 
   // We're still waiting on the stylesheet to load so the load event shouldn't
   // yet dispatch and rendering is deferred.
-  ASSERT_FALSE(GetDocument().IsRenderingReady());
+  ASSERT_FALSE(GetDocument().HaveRenderBlockingResourcesLoaded());
   EXPECT_FALSE(GetDocument().IsLoadCompleted());
 
   // Click on the anchor element. This will cause a synchronous same-document
@@ -309,7 +309,7 @@ TEST_F(LocalFrameViewSimTest, FragmentNavChangesFocusWhileRenderingBlocked) {
   // Force a layout.
   anchor->style()->setProperty(&GetDocument(), "display", "block", String(),
                                ASSERT_NO_EXCEPTION);
-  GetDocument().UpdateStyleAndLayoutIgnorePendingStylesheets();
+  GetDocument().UpdateStyleAndLayout();
 
   EXPECT_EQ(GetDocument().body(), GetDocument().ActiveElement())
       << "Active element changed due to layout while rendering is blocked";
@@ -327,6 +327,31 @@ TEST_F(LocalFrameViewSimTest, FragmentNavChangesFocusWhileRenderingBlocked) {
       << "Active element wasn't changed after load completed.";
   EXPECT_NE(ScrollOffset(), viewport->GetScrollOffset())
       << "Scroll offset wasn't changed after load completed.";
+}
+
+TEST_F(LocalFrameViewSimTest, ForcedLayoutWithIncompleteSVGChildFrame) {
+  SimRequest main_resource("https://example.com/test.html", "text/html");
+  SimRequest svg_resource("https://example.com/file.svg", "image/svg+xml");
+
+  LoadURL("https://example.com/test.html");
+
+  main_resource.Complete(R"HTML(
+      <!DOCTYPE html>
+      <object data="file.svg"></object>
+    )HTML");
+
+  // Write the SVG document so that there is something to layout, but don't let
+  // the resource finish loading.
+  svg_resource.Write(R"SVG(
+      <svg xmlns="http://www.w3.org/2000/svg"></svg>
+    )SVG");
+
+  // Mark the top-level document for layout and then force layout. This will
+  // cause the layout tree in the <object> object to be built.
+  GetDocument().View()->SetNeedsLayout();
+  GetDocument().UpdateStyleAndLayout();
+
+  svg_resource.Finish();
 }
 
 }  // namespace

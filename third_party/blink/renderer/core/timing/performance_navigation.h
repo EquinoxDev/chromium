@@ -49,10 +49,6 @@ class CORE_EXPORT PerformanceNavigation final : public ScriptWrappable,
   USING_GARBAGE_COLLECTED_MIXIN(PerformanceNavigation);
 
  public:
-  static PerformanceNavigation* Create(LocalFrame* frame) {
-    return MakeGarbageCollected<PerformanceNavigation>(frame);
-  }
-
   explicit PerformanceNavigation(LocalFrame*);
 
   enum PerformanceNavigationType {
@@ -62,8 +58,8 @@ class CORE_EXPORT PerformanceNavigation final : public ScriptWrappable,
     kTypeReserved = 255
   };
 
-  unsigned short type() const;
-  unsigned short redirectCount() const;
+  uint8_t type() const;
+  uint16_t redirectCount() const;
 
   ScriptValue toJSONForBinding(ScriptState*) const;
 

@@ -65,6 +65,7 @@
 #include "components/autofill/core/common/autofill_constants.h"
 #include "components/autofill/core/common/autofill_data_validation.h"
 #include "components/autofill/core/common/autofill_features.h"
+#include "components/autofill/core/common/autofill_payments_features.h"
 #include "components/autofill/core/common/autofill_prefs.h"
 #include "components/autofill/core/common/autofill_switches.h"
 #include "components/autofill/core/common/autofill_util.h"
@@ -398,10 +399,11 @@ void AutofillManager::OnFormSubmittedImpl(const FormData& form,
       form_for_autocomplete, client_->IsAutocompleteEnabled());
 
   if (IsProfileAutofillEnabled()) {
-    address_form_event_logger_->OnWillSubmitForm(sync_state_);
+    address_form_event_logger_->OnWillSubmitForm(sync_state_, *submitted_form);
   }
   if (IsCreditCardAutofillEnabled()) {
-    credit_card_form_event_logger_->OnWillSubmitForm(sync_state_);
+    credit_card_form_event_logger_->OnWillSubmitForm(sync_state_,
+                                                     *submitted_form);
   }
 
   submitted_form->set_submission_source(source);
@@ -708,7 +710,7 @@ void AutofillManager::FillOrPreviewCreditCardForm(
           masked_card_, AutofillClient::UNMASK_FOR_AUTOFILL,
           weak_ptr_factory_.GetWeakPtr(), weak_ptr_factory_.GetWeakPtr());
       credit_card_form_event_logger_->OnDidSelectMaskedServerCardSuggestion(
-          form_structure->form_parsed_timestamp(), sync_state_);
+          *form_structure, sync_state_);
       return;
     }
     credit_card_form_event_logger_->OnDidFillSuggestion(
@@ -735,8 +737,7 @@ void AutofillManager::FillOrPreviewProfileForm(
         profile, *form_structure, *autofill_field, sync_state_);
 
     // Set up the information needed for an eventual refill of this form.
-    if (base::FeatureList::IsEnabled(features::kAutofillDynamicForms) &&
-        !form_structure->GetIdentifierForRefill().empty()) {
+    if (!form_structure->GetIdentifierForRefill().empty()) {
       auto& entry =
           filling_contexts_map_[form_structure->GetIdentifierForRefill()];
       auto filling_context = std::make_unique<FillingContext>();
@@ -1401,7 +1402,6 @@ void AutofillManager::FillOrPreviewDataModelForm(
   if (itr != filling_contexts_map_.end())
     filling_context = itr->second.get();
   bool could_attempt_refill =
-      base::FeatureList::IsEnabled(features::kAutofillDynamicForms) &&
       filling_context != nullptr && !filling_context->attempted_refill &&
       !is_refill && !is_credit_card;
 
@@ -1511,8 +1511,12 @@ std::unique_ptr<FormStructure> AutofillManager::ValidateSubmittedForm(
 
   auto submitted_form = std::make_unique<FormStructure>(form);
   submitted_form->RetrieveFromCache(*cached_submitted_form,
-                                    /*apply_is_autofilled=*/false,
+                                    /*should_keep_cached_value=*/false,
                                     /*only_server_and_autofill_state=*/false);
+  if (value_from_dynamic_change_form_) {
+    submitted_form->set_value_from_dynamic_change_form(true);
+  }
+
   return submitted_form;
 }
 
@@ -1656,10 +1660,10 @@ void AutofillManager::OnFormsParsed(
       }
     }
     if (card_form) {
-      credit_card_form_event_logger_->OnDidParseForm();
+      credit_card_form_event_logger_->OnDidParseForm(*form_structure);
     }
     if (address_form) {
-      address_form_event_logger_->OnDidParseForm();
+      address_form_event_logger_->OnDidParseForm(*form_structure);
     }
 
     // If a form with the same name was previously filled, and there has not
@@ -2013,16 +2017,14 @@ void AutofillManager::FillFieldWithValue(AutofillField* autofill_field,
 }
 
 bool AutofillManager::ShouldTriggerRefill(const FormStructure& form_structure) {
-  if (!base::FeatureList::IsEnabled(features::kAutofillDynamicForms))
-    return false;
-
   // Should not refill if a form with the same name has not been filled before.
   auto itr =
       filling_contexts_map_.find(form_structure.GetIdentifierForRefill());
   if (itr == filling_contexts_map_.end())
     return false;
 
-  address_form_event_logger_->OnDidSeeFillableDynamicForm(sync_state_);
+  address_form_event_logger_->OnDidSeeFillableDynamicForm(sync_state_,
+                                                          form_structure);
 
   FillingContext* filling_context = itr->second.get();
   base::TimeTicks now = base::TimeTicks::Now();
@@ -2030,7 +2032,8 @@ bool AutofillManager::ShouldTriggerRefill(const FormStructure& form_structure) {
 
   if (filling_context->attempted_refill &&
       delta.InMilliseconds() < kLimitBeforeRefillMs) {
-    address_form_event_logger_->OnSubsequentRefillAttempt(sync_state_);
+    address_form_event_logger_->OnSubsequentRefillAttempt(sync_state_,
+                                                          form_structure);
   }
 
   return !filling_context->attempted_refill &&
@@ -2044,7 +2047,7 @@ void AutofillManager::TriggerRefill(const FormData& form) {
 
   DCHECK(form_structure);
 
-  address_form_event_logger_->OnDidRefill(sync_state_);
+  address_form_event_logger_->OnDidRefill(sync_state_, *form_structure);
 
   auto itr =
       filling_contexts_map_.find(form_structure->GetIdentifierForRefill());
@@ -2110,10 +2113,10 @@ void AutofillManager::GetAvailableSuggestions(
     if (context->focused_field->Type().group() == CREDIT_CARD) {
       context->is_filling_credit_card = true;
       credit_card_form_event_logger_->OnDidInteractWithAutofillableForm(
-          context->form_structure->form_signature(), sync_state_);
+          *(context->form_structure), sync_state_);
     } else {
       address_form_event_logger_->OnDidInteractWithAutofillableForm(
-          context->form_structure->form_signature(), sync_state_);
+          *(context->form_structure), sync_state_);
     }
   }
 

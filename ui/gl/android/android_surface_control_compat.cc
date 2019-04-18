@@ -7,9 +7,12 @@
 #include <dlfcn.h>
 
 #include "base/android/build_info.h"
+#include "base/atomic_sequence_num.h"
 #include "base/bind.h"
 #include "base/memory/ptr_util.h"
 #include "base/no_destructor.h"
+#include "base/trace_event/trace_event.h"
+#include "ui/gfx/color_space.h"
 
 extern "C" {
 typedef struct ASurfaceTransactionStats ASurfaceTransactionStats;
@@ -33,6 +36,18 @@ enum {
 enum {
   ASURFACE_TRANSACTION_VISIBILITY_HIDE = 0,
   ASURFACE_TRANSACTION_VISIBILITY_SHOW = 1,
+};
+
+enum {
+  ADATASPACE_UNKNOWN = 0,
+  ADATASPACE_SCRGB_LINEAR = 406913024,
+  ADATASPACE_SRGB = 142671872,
+  ADATASPACE_DISPLAY_P3 = 143261696,
+  ADATASPACE_BT2020_PQ = 163971072,
+};
+
+enum {
+  AHARDWAREBUFFER_USAGE_COMPOSER_OVERLAY = 1ULL << 11,
 };
 
 // ASurfaceTransaction
@@ -66,6 +81,10 @@ using pASurfaceTransaction_setDamageRegion =
              ASurfaceControl* surface,
              const ARect rects[],
              uint32_t count);
+using pASurfaceTransaction_setBufferDataSpace =
+    void (*)(ASurfaceTransaction* transaction,
+             ASurfaceControl* surface,
+             uint64_t data_space);
 
 // ASurfaceTransactionStats
 using pASurfaceTransactionStats_getPresentFenceFd =
@@ -83,12 +102,20 @@ using pASurfaceTransactionStats_getPreviousReleaseFenceFd =
 namespace gl {
 namespace {
 
+base::AtomicSequenceNumber g_next_transaction_id;
+
+// Helper function to log errors from dlsym. Calling LOG(ERROR) inside a macro
+// crashes clang code coverage. https://crbug.com/843356
+void LogDlsymError(const char* func) {
+  LOG(ERROR) << "Unable to load function " << func;
+}
+
 #define LOAD_FUNCTION(lib, func)                             \
   do {                                                       \
     func##Fn = reinterpret_cast<p##func>(dlsym(lib, #func)); \
     if (!func##Fn) {                                         \
       supported = false;                                     \
-      LOG(ERROR) << "Unable to load function " << #func;     \
+      LogDlsymError(#func);                                  \
     }                                                        \
   } while (0)
 
@@ -121,6 +148,7 @@ struct SurfaceControlMethods {
     LOAD_FUNCTION(main_dl_handle, ASurfaceTransaction_setGeometry);
     LOAD_FUNCTION(main_dl_handle, ASurfaceTransaction_setBufferTransparency);
     LOAD_FUNCTION(main_dl_handle, ASurfaceTransaction_setDamageRegion);
+    LOAD_FUNCTION(main_dl_handle, ASurfaceTransaction_setBufferDataSpace);
 
     LOAD_FUNCTION(main_dl_handle, ASurfaceTransactionStats_getPresentFenceFd);
     LOAD_FUNCTION(main_dl_handle, ASurfaceTransactionStats_getASurfaceControls);
@@ -150,6 +178,8 @@ struct SurfaceControlMethods {
   pASurfaceTransaction_setBufferTransparency
       ASurfaceTransaction_setBufferTransparencyFn;
   pASurfaceTransaction_setDamageRegion ASurfaceTransaction_setDamageRegionFn;
+  pASurfaceTransaction_setBufferDataSpace
+      ASurfaceTransaction_setBufferDataSpaceFn;
 
   // TransactionStats methods.
   pASurfaceTransactionStats_getPresentFenceFd
@@ -188,6 +218,21 @@ int32_t OverlayTransformToWindowTransform(gfx::OverlayTransform transform) {
   return ANATIVEWINDOW_TRANSFORM_IDENTITY;
 }
 
+uint64_t ColorSpaceToADataSpace(const gfx::ColorSpace& color_space) {
+  if (!color_space.IsValid() || color_space == gfx::ColorSpace::CreateSRGB())
+    return ADATASPACE_SRGB;
+
+  if (color_space == gfx::ColorSpace::CreateSCRGBLinear())
+    return ADATASPACE_SCRGB_LINEAR;
+
+  if (color_space == gfx::ColorSpace::CreateDisplayP3D65())
+    return ADATASPACE_DISPLAY_P3;
+
+  // TODO(khushalsagar): Check if we can support BT2020 using
+  // ADATASPACE_BT2020_PQ.
+  return ADATASPACE_UNKNOWN;
+}
+
 SurfaceControl::TransactionStats ToTransactionStats(
     ASurfaceTransactionStats* stats) {
   SurfaceControl::TransactionStats transaction_stats;
@@ -216,6 +261,7 @@ SurfaceControl::TransactionStats ToTransactionStats(
 }
 
 struct TransactionAckCtx {
+  int id = 0;
   scoped_refptr<base::SingleThreadTaskRunner> task_runner;
   SurfaceControl::Transaction::OnCompleteCb callback;
 };
@@ -226,6 +272,8 @@ void OnTransactionCompletedOnAnyThread(void* context,
                                        ASurfaceTransactionStats* stats) {
   auto* ack_ctx = static_cast<TransactionAckCtx*>(context);
   auto transaction_stats = ToTransactionStats(stats);
+  TRACE_EVENT_ASYNC_END0("gpu,benchmark", "SurfaceControlTransaction",
+                         ack_ctx->id);
 
   if (ack_ctx->task_runner) {
     ack_ctx->task_runner->PostTask(
@@ -237,20 +285,23 @@ void OnTransactionCompletedOnAnyThread(void* context,
 
   delete ack_ctx;
 }
-};
+}  // namespace
 
 // static
 bool SurfaceControl::IsSupported() {
-#if 0
-  // TODO(khushalsagar): Enable this code when the frame is correctly reporting
-  // SDK version for P+.
-  const int sdk_int = base::android::BuildInfo::GetInstance()->sdk_int();
-  if (sdk_int < 29) {
-    LOG(ERROR) << "SurfaceControl not supported on sdk: " << sdk_int;
+  if (!base::android::BuildInfo::GetInstance()->is_at_least_q())
     return false;
-  }
-#endif
   return SurfaceControlMethods::Get().supported;
+}
+
+bool SurfaceControl::SupportsColorSpace(const gfx::ColorSpace& color_space) {
+  return ColorSpaceToADataSpace(color_space) != ADATASPACE_UNKNOWN;
+}
+
+uint64_t SurfaceControl::RequiredUsage() {
+  if (!IsSupported())
+    return 0u;
+  return AHARDWAREBUFFER_USAGE_COMPOSER_OVERLAY;
 }
 
 SurfaceControl::Surface::Surface() = default;
@@ -287,13 +338,34 @@ SurfaceControl::TransactionStats::TransactionStats(TransactionStats&& other) =
 SurfaceControl::TransactionStats& SurfaceControl::TransactionStats::operator=(
     TransactionStats&& other) = default;
 
-SurfaceControl::Transaction::Transaction() {
+SurfaceControl::Transaction::Transaction()
+    : id_(g_next_transaction_id.GetNext()) {
   transaction_ = SurfaceControlMethods::Get().ASurfaceTransaction_createFn();
   DCHECK(transaction_);
 }
 
 SurfaceControl::Transaction::~Transaction() {
-  SurfaceControlMethods::Get().ASurfaceTransaction_deleteFn(transaction_);
+  if (transaction_)
+    SurfaceControlMethods::Get().ASurfaceTransaction_deleteFn(transaction_);
+}
+
+SurfaceControl::Transaction::Transaction(Transaction&& other)
+    : id_(other.id_), transaction_(other.transaction_) {
+  other.transaction_ = nullptr;
+  other.id_ = 0;
+}
+
+SurfaceControl::Transaction& SurfaceControl::Transaction::operator=(
+    Transaction&& other) {
+  if (transaction_)
+    SurfaceControlMethods::Get().ASurfaceTransaction_deleteFn(transaction_);
+
+  transaction_ = other.transaction_;
+  id_ = other.id_;
+
+  other.transaction_ = nullptr;
+  other.id_ = 0;
+  return *this;
 }
 
 void SurfaceControl::Transaction::SetVisibility(const Surface& surface,
@@ -339,18 +411,27 @@ void SurfaceControl::Transaction::SetDamageRect(const Surface& surface,
       transaction_, surface.surface(), &a_rect, 1u);
 }
 
+void SurfaceControl::Transaction::SetColorSpace(
+    const Surface& surface,
+    const gfx::ColorSpace& color_space) {
+  SurfaceControlMethods::Get().ASurfaceTransaction_setBufferDataSpaceFn(
+      transaction_, surface.surface(), ColorSpaceToADataSpace(color_space));
+}
+
 void SurfaceControl::Transaction::SetOnCompleteCb(
     OnCompleteCb cb,
     scoped_refptr<base::SingleThreadTaskRunner> task_runner) {
   TransactionAckCtx* ack_ctx = new TransactionAckCtx;
   ack_ctx->callback = std::move(cb);
   ack_ctx->task_runner = std::move(task_runner);
+  ack_ctx->id = id_;
 
   SurfaceControlMethods::Get().ASurfaceTransaction_setOnCompleteFn(
       transaction_, ack_ctx, &OnTransactionCompletedOnAnyThread);
 }
 
 void SurfaceControl::Transaction::Apply() {
+  TRACE_EVENT_ASYNC_BEGIN0("gpu,benchmark", "SurfaceControlTransaction", id_);
   SurfaceControlMethods::Get().ASurfaceTransaction_applyFn(transaction_);
 }
 

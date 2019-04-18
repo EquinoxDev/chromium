@@ -31,6 +31,8 @@ class DECLSPEC_UUID("3710aa3a-13c7-44c2-bc38-09ba137804d8") ITestCredential
     : public IUnknown {
  public:
   virtual HRESULT STDMETHODCALLTYPE
+  SetDefaultExitCode(UiExitCodes default_exit_code) = 0;
+  virtual HRESULT STDMETHODCALLTYPE
   SetGlsEmailAddress(const std::string& email) = 0;
   virtual HRESULT STDMETHODCALLTYPE
   SetGaiaIdOverride(const std::string& gaia_id) = 0;
@@ -45,6 +47,7 @@ class DECLSPEC_UUID("3710aa3a-13c7-44c2-bc38-09ba137804d8") ITestCredential
   virtual bool STDMETHODCALLTYPE IsWindowsPasswordValidForStoredUser() = 0;
   virtual void STDMETHODCALLTYPE
   SetWindowsPassword(const CComBSTR& windows_password) = 0;
+  virtual bool STDMETHODCALLTYPE IsGlsRunning() = 0;
 };
 
 // Test implementation of an ICredentialProviderCredential backed by a Gaia
@@ -66,6 +69,7 @@ class ATL_NO_VTABLE CTestCredentialBase : public T, public ITestCredential {
   ~CTestCredentialBase();
 
   // ITestCredential.
+  IFACEMETHODIMP SetDefaultExitCode(UiExitCodes default_exit_code) override;
   IFACEMETHODIMP SetGlsEmailAddress(const std::string& email) override;
   IFACEMETHODIMP SetGaiaIdOverride(const std::string& gaia_id) override;
   IFACEMETHODIMP WaitForGls() override;
@@ -79,6 +83,7 @@ class ATL_NO_VTABLE CTestCredentialBase : public T, public ITestCredential {
   bool STDMETHODCALLTYPE IsWindowsPasswordValidForStoredUser() override;
   void STDMETHODCALLTYPE
   SetWindowsPassword(const CComBSTR& windows_password) override;
+  bool STDMETHODCALLTYPE IsGlsRunning() override;
 
   void SignalGlsCompletion();
 
@@ -104,12 +109,10 @@ class ATL_NO_VTABLE CTestCredentialBase : public T, public ITestCredential {
       CGaiaCredentialBase::UIProcessInfo* uiprocinfo) override;
 
   // Overrides to directly save to a fake scoped user profile.
-  HRESULT ForkSaveAccountInfoStub(
-      const std::unique_ptr<base::DictionaryValue>& dict,
-      BSTR* status_text) override;
+  HRESULT ForkSaveAccountInfoStub(const base::Value& dict,
+                                  BSTR* status_text) override;
 
-  void ResetInternalState() override;
-
+  UiExitCodes default_exit_code_ = kUiecSuccess;
   std::string gls_email_;
   std::string gaia_id_override_;
   base::WaitableEvent gls_done_;
@@ -127,6 +130,13 @@ CTestCredentialBase<T>::CTestCredentialBase()
 
 template <class T>
 CTestCredentialBase<T>::~CTestCredentialBase() {}
+
+template <class T>
+HRESULT CTestCredentialBase<T>::SetDefaultExitCode(
+    UiExitCodes default_exit_code) {
+  default_exit_code_ = default_exit_code;
+  return S_OK;
+}
 
 template <class T>
 HRESULT CTestCredentialBase<T>::SetGlsEmailAddress(const std::string& email) {
@@ -164,18 +174,16 @@ BSTR CTestCredentialBase<T>::GetFinalUsername() {
 
 template <class T>
 std::string CTestCredentialBase<T>::GetFinalEmail() {
-  const base::DictionaryValue* results = this->get_authentication_results();
+  auto& results = this->get_authentication_results();
 
   if (!results)
     return std::string();
 
-  const base::Value* email_value =
-      results->FindKeyOfType(kKeyEmail, base::Value::Type::STRING);
+  const std::string* email_value = results->FindStringKey(kKeyEmail);
 
   if (!email_value)
     return std::string();
-
-  return email_value->GetString();
+  return *email_value;
 }
 
 template <class T>
@@ -206,6 +214,11 @@ void CTestCredentialBase<T>::SetWindowsPassword(
 }
 
 template <class T>
+bool CTestCredentialBase<T>::IsGlsRunning() {
+  return this->IsGaiaLogonStubRunning();
+}
+
+template <class T>
 void CTestCredentialBase<T>::SignalGlsCompletion() {
   gls_done_.Signal();
 }
@@ -214,7 +227,8 @@ template <class T>
 HRESULT CTestCredentialBase<T>::GetBaseGlsCommandline(
     base::CommandLine* command_line) {
   return FakeGlsRunHelper::GetFakeGlsCommandline(
-      gls_email_, gaia_id_override_, start_gls_event_name_, command_line);
+      default_exit_code_, gls_email_, gaia_id_override_, start_gls_event_name_,
+      command_line);
 }
 
 template <class T>
@@ -234,10 +248,9 @@ HRESULT CTestCredentialBase<T>::ForkGaiaLogonStub(
 }
 
 template <class T>
-HRESULT CTestCredentialBase<T>::ForkSaveAccountInfoStub(
-    const std::unique_ptr<base::DictionaryValue>& dict,
-    BSTR* status_text) {
-  return CGaiaCredentialBase::SaveAccountInfo(*dict);
+HRESULT CTestCredentialBase<T>::ForkSaveAccountInfoStub(const base::Value& dict,
+                                                        BSTR* status_text) {
+  return CGaiaCredentialBase::SaveAccountInfo(dict);
 }
 
 template <class T>
@@ -271,12 +284,6 @@ void CTestCredentialBase<T>::DisplayErrorInUI(LONG status,
                                               BSTR status_text) {
   error_text_ = status_text;
   T::DisplayErrorInUI(status, substatus, status_text);
-}
-
-template <class T>
-void CTestCredentialBase<T>::ResetInternalState() {
-  gls_process_started_ = false;
-  T::ResetInternalState();
 }
 
 // This class is used to implement a test credential based off a fully

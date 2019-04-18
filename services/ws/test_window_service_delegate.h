@@ -47,10 +47,13 @@ class TestWindowServiceDelegate : public WindowServiceDelegate {
   void set_topmost(aura::Window* window) { topmost_ = window; }
   void set_real_topmost(aura::Window* window) { real_topmost_ = window; }
 
+  bool ime_engine_connected() const { return ime_engine_connected_; }
+
   DragDropCompletedCallback TakeDragLoopCallback();
 
   // WindowServiceDelegate:
   std::unique_ptr<aura::Window> NewTopLevel(
+      TopLevelProxyWindow* top_level_proxy_window,
       aura::PropertyConverter* property_converter,
       const base::flat_map<std::string, std::vector<uint8_t>>& properties)
       override;
@@ -73,6 +76,8 @@ class TestWindowServiceDelegate : public WindowServiceDelegate {
   aura::Window* GetTopmostWindowAtPoint(const gfx::Point& location_in_screen,
                                         const std::set<aura::Window*>& ignore,
                                         aura::Window** real_topmost) override;
+  void ConnectToImeEngine(ime::mojom::ImeEngineRequest engine_request,
+                          ime::mojom::ImeEngineClientPtr client) override;
 
  private:
   aura::Window* top_level_parent_;
@@ -92,6 +97,8 @@ class TestWindowServiceDelegate : public WindowServiceDelegate {
 
   aura::Window* topmost_ = nullptr;
   aura::Window* real_topmost_ = nullptr;
+
+  bool ime_engine_connected_ = false;
 
   DISALLOW_COPY_AND_ASSIGN(TestWindowServiceDelegate);
 };

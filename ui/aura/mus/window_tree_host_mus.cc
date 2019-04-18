@@ -8,6 +8,7 @@
 #include <utility>
 
 #include "base/bind.h"
+#include "ui/aura/client/aura_constants.h"
 #include "ui/aura/env.h"
 #include "ui/aura/mus/input_method_mus.h"
 #include "ui/aura/mus/mus_types.h"
@@ -16,6 +17,7 @@
 #include "ui/aura/mus/window_tree_host_mus_delegate.h"
 #include "ui/aura/mus/window_tree_host_mus_init_params.h"
 #include "ui/aura/window.h"
+#include "ui/aura/window_delegate.h"
 #include "ui/aura/window_event_dispatcher.h"
 #include "ui/aura/window_tracker.h"
 #include "ui/aura/window_tree_host_observer.h"
@@ -45,6 +47,44 @@ DEFINE_UI_CLASS_PROPERTY_KEY(WindowTreeHostMus*, kWindowTreeHostMusKey, nullptr)
 // and increases).
 uint32_t next_accelerated_widget_id = std::numeric_limits<uint32_t>::max();
 
+// This class handles the gesture events occurring on the root window and sends
+// them to the content window during the window move. Typically gesture events
+// will stop arriving once PerformWindowMove is invoked, but sometimes events
+// are already queued and arrive to the root window. They should be handled
+// by the content window. See https://crbug.com/943316.
+class RemainingGestureEventHandler : public ui::EventHandler, WindowObserver {
+ public:
+  RemainingGestureEventHandler(Window* content_window, Window* root)
+      : content_window_({content_window}), root_(root) {
+    root_->AddPostTargetHandler(this);
+    root_->AddObserver(this);
+  }
+  ~RemainingGestureEventHandler() override {
+    if (root_)
+      StopObserving();
+  }
+
+ private:
+  void StopObserving() {
+    root_->RemoveObserver(this);
+    root_->RemovePostTargetHandler(this);
+    root_ = nullptr;
+  }
+
+  // ui::EventHandler:
+  void OnGestureEvent(ui::GestureEvent* event) override {
+    if (!content_window_.windows().empty())
+      (*content_window_.windows().begin())->delegate()->OnGestureEvent(event);
+  }
+  // WindowObserver:
+  void OnWindowDestroying(Window* window) override { StopObserving(); }
+
+  WindowTracker content_window_;
+  Window* root_;
+
+  DISALLOW_COPY_AND_ASSIGN(RemainingGestureEventHandler);
+};
+
 // ScopedTouchTransferController controls the transfer of touch events for
 // window move loop. It transfers touches before the window move starts, and
 // then transfers them back to the original window when the window move ends.
@@ -55,6 +95,7 @@ class ScopedTouchTransferController : public ui::GestureRecognizerObserver {
  public:
   ScopedTouchTransferController(Window* source, Window* dest)
       : tracker_({source, dest}),
+        remaining_gesture_event_handler_(source, dest),
         gesture_recognizer_(source->env()->gesture_recognizer()) {
     gesture_recognizer_->TransferEventsTo(
         source, dest, ui::TransferTouchesBehavior::kDontCancel);
@@ -87,7 +128,7 @@ class ScopedTouchTransferController : public ui::GestureRecognizerObserver {
   void OnActiveTouchesCanceled(ui::GestureConsumer* consumer) override {}
 
   WindowTracker tracker_;
-
+  RemainingGestureEventHandler remaining_gesture_event_handler_;
   ui::GestureRecognizer* gesture_recognizer_;
 
   DISALLOW_COPY_AND_ASSIGN(ScopedTouchTransferController);
@@ -101,6 +142,20 @@ void OnPerformWindowMoveDone(
   std::move(callback).Run(success);
 }
 
+void OnDispatchKeyEventComplete(
+    base::OnceCallback<void(ws::mojom::EventResult)> cb,
+    bool result) {
+  std::move(cb).Run(result ? ws::mojom::EventResult::HANDLED
+                           : ws::mojom::EventResult::UNHANDLED);
+}
+
+void OnDispatchKeyEventPostIMEComplete(
+    base::OnceCallback<void(ws::mojom::EventResult)> cb,
+    bool handled,
+    bool stopped_propagation) {
+  OnDispatchKeyEventComplete(std::move(cb), handled);
+}
+
 }  // namespace
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -111,7 +166,11 @@ WindowTreeHostMus::WindowTreeHostMus(WindowTreeHostMusInitParams init_params)
           std::make_unique<Window>(nullptr,
                                    std::move(init_params.window_port))),
       display_id_(init_params.display_id),
-      delegate_(init_params.window_tree_client) {
+      delegate_(init_params.window_tree_client),
+      show_state_observer_(
+          window(),
+          base::BindRepeating(&WindowTreeHostMus::OnWindowShowStateDidChange,
+                              base::Unretained(this))) {
   gfx::Rect bounds_in_pixels;
   window()->SetProperty(kWindowTreeHostMusKey, this);
   // TODO(sky): find a cleaner way to set this! Revisit this now that
@@ -152,12 +211,12 @@ WindowTreeHostMus::WindowTreeHostMus(WindowTreeHostMusInitParams init_params)
   SetPlatformWindow(std::make_unique<ui::StubWindow>(
       this, use_default_accelerated_widget, bounds_in_pixels));
 
-  if (!init_params.use_classic_ime) {
+  if (!features::IsMojoImfEnabled()) {
     // NOTE: This creates one InputMethodMus per display, despite the
     // call to SetSharedInputMethod() below.
-    input_method_ = std::make_unique<InputMethodMus>(this, this);
-    input_method_->Init(init_params.window_tree_client->connector());
-    SetSharedInputMethod(input_method_.get());
+    input_method_mus_ = std::make_unique<InputMethodMus>(this, this);
+    input_method_mus_->Init(init_params.window_tree_client->connector());
+    SetSharedInputMethod(input_method_mus_.get());
   }
 
   compositor()->SetBackgroundColor(SK_ColorTRANSPARENT);
@@ -187,8 +246,24 @@ WindowTreeHostMus* WindowTreeHostMus::ForWindow(aura::Window* window) {
   return root->GetProperty(kWindowTreeHostMusKey);
 }
 
+void WindowTreeHostMus::DispatchKeyEventFromServer(
+    ui::KeyEvent* event,
+    base::OnceCallback<void(ws::mojom::EventResult)> cb) {
+  ui::InputMethod* input_method = GetInputMethod();
+  if (input_method) {
+    ui::AsyncKeyDispatcher* dispatcher = input_method->GetAsyncKeyDispatcher();
+    if (dispatcher) {
+      dispatcher->DispatchKeyEventAsync(
+          event, base::BindOnce(&OnDispatchKeyEventComplete, std::move(cb)));
+      return;
+    }
+  }
+  DispatchKeyEventPostIME(
+      event, base::BindOnce(&OnDispatchKeyEventPostIMEComplete, std::move(cb)));
+}
+
 void WindowTreeHostMus::SetBounds(
-    const gfx::Rect& bounds,
+    const gfx::Rect& bounds_in_dip,
     const viz::LocalSurfaceIdAllocation& local_surface_id_allocation) {
   viz::LocalSurfaceIdAllocation actual_local_surface_id_allocation =
       local_surface_id_allocation;
@@ -198,10 +273,13 @@ void WindowTreeHostMus::SetBounds(
   // Compositor).
   // Do not use ConvertRectToPixel, enclosing rects cause problems. In
   // particular, ConvertRectToPixel's result varies based on the location.
+  // This *must* match the conversion used by ClientRoot, otherwise the two will
+  // be out of sync. See // https://crbug.com/952095 for more details.
   const float dsf = ui::GetScaleFactorForNativeView(window());
-  const gfx::Rect pixel_bounds(gfx::ScaleToFlooredPoint(bounds.origin(), dsf),
-                               gfx::ScaleToCeiledSize(bounds.size(), dsf));
-  if (!in_set_bounds_from_server_) {
+  const gfx::Rect pixel_bounds(
+      gfx::ScaleToFlooredPoint(bounds_in_dip.origin(), dsf),
+      gfx::ScaleToCeiledSize(bounds_in_dip.size(), dsf));
+  if (!is_server_setting_bounds_) {
     // Update the LocalSurfaceIdAllocation here, rather than in WindowTreeHost
     // as WindowTreeClient (the delegate) needs that information before
     // OnWindowTreeHostBoundsWillChange().
@@ -212,17 +290,32 @@ void WindowTreeHostMus::SetBounds(
       actual_local_surface_id_allocation =
           window()->GetLocalSurfaceIdAllocation();
     }
-    delegate_->OnWindowTreeHostBoundsWillChange(this, bounds);
+    delegate_->OnWindowTreeHostBoundsWillChange(this, bounds_in_dip);
   }
-  bounds_in_dip_ = bounds;
+  bounds_in_dip_ = bounds_in_dip;
   WindowTreeHostPlatform::SetBoundsInPixels(pixel_bounds,
                                             actual_local_surface_id_allocation);
 }
 
 void WindowTreeHostMus::SetBoundsFromServer(
     const gfx::Rect& bounds,
+    ui::WindowShowState state,
     const viz::LocalSurfaceIdAllocation& local_surface_id_allocation) {
-  base::AutoReset<bool> resetter(&in_set_bounds_from_server_, true);
+  base::AutoReset<bool> resetter(&is_server_setting_bounds_, true);
+  // When there's a non-default |state|, we want to set that property and then
+  // the bounds, so that by the time client code observes a bounds change the
+  // show state is already updated, and by the time client code observes a state
+  // change the bounds are already updated as well. To do this, we set the state
+  // here, and as the first WindowObserver on |window()|, update the bounds.
+  if (state != ui::SHOW_STATE_DEFAULT &&
+      window()->GetProperty(aura::client::kShowStateKey) != state) {
+    server_bounds_ = &bounds;
+    server_lsia_ = &local_surface_id_allocation;
+    window()->SetProperty(aura::client::kShowStateKey, state);
+    DCHECK(!server_bounds_);
+    DCHECK(!server_lsia_);
+    return;
+  }
   SetBounds(bounds, local_surface_id_allocation);
 }
 
@@ -349,14 +442,59 @@ void WindowTreeHostMus::SetImeVisibility(bool visible,
   WindowPortMus::Get(window())->SetImeVisibility(visible, std::move(state));
 }
 
+bool WindowTreeHostMus::ConnectToImeEngine(
+    ime::mojom::ImeEngineRequest engine_request,
+    ime::mojom::ImeEngineClientPtr client) {
+  delegate_->ConnectToImeEngine(std::move(engine_request), std::move(client));
+  return true;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// WindowTreeHostMus, protected:
+
 void WindowTreeHostMus::SetBoundsInPixels(
     const gfx::Rect& bounds,
     const viz::LocalSurfaceIdAllocation& local_surface_id_allocation) {
   // As UI code operates in DIPs (as does the window-service APIs), this
-  // function is very seldomly uses, and so converts to DIPs.
+  // function is very seldomly used, and so converts to DIPs.
   SetBounds(
       gfx::ConvertRectToDIP(ui::GetScaleFactorForNativeView(window()), bounds),
       local_surface_id_allocation);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// WindowTreeHostMus, private:
+
+void WindowTreeHostMus::OnWindowShowStateDidChange() {
+  if (!server_bounds_)
+    return;
+
+  DCHECK(is_server_setting_bounds_);
+  DCHECK(server_lsia_);
+  SetBounds(*server_bounds_, *server_lsia_);
+  server_bounds_ = nullptr;
+  server_lsia_ = nullptr;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// WindowTreeHostMus::WindowShowStateChangeObserver, public:
+
+WindowTreeHostMus::WindowShowStateChangeObserver::WindowShowStateChangeObserver(
+    aura::Window* window,
+    base::RepeatingClosure show_state_changed_callback)
+    : show_state_changed_callback_(show_state_changed_callback) {
+  window->AddObserver(this);
+}
+
+WindowTreeHostMus::WindowShowStateChangeObserver::
+    ~WindowShowStateChangeObserver() = default;
+
+void WindowTreeHostMus::WindowShowStateChangeObserver::OnWindowPropertyChanged(
+    aura::Window* window,
+    const void* key,
+    intptr_t old) {
+  if (key == client::kShowStateKey)
+    show_state_changed_callback_.Run();
 }
 
 }  // namespace aura

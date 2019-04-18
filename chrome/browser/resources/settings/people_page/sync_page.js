@@ -295,7 +295,7 @@ Polymer({
       // When the user is about to cancel the sync setup, but hasn't confirmed
       // the cancellation, navigate back and show the 'Cancel sync?' dialog.
       if (this.unifiedConsentEnabled && this.syncStatus &&
-          !!this.syncStatus.setupInProgress && this.didAbort_ &&
+          this.syncStatus.setupInProgress && this.didAbort_ &&
           !this.setupCancelConfirmed_) {
         chrome.metricsPrivate.recordUserAction(
             'Signin_Signin_BackOnAdvancedSyncSettings');
@@ -346,7 +346,7 @@ Polymer({
         // When the user tries to leave the sync setup, show the 'Leave site'
         // dialog.
         if (this.unifiedConsentEnabled && this.syncStatus &&
-            !!this.syncStatus.setupInProgress) {
+            this.syncStatus.setupInProgress) {
           event.preventDefault();
           event.returnValue = '';
 
@@ -401,18 +401,6 @@ Polymer({
         !this.syncPrefs.encryptAllDataAllowed ||
         (this.syncStatus && this.syncStatus.supervisedUser)) {
       this.creatingNewPassphrase_ = false;
-    }
-
-    // Focus the password input box if password is needed to start sync.
-    if (this.syncPrefs.passphraseRequired) {
-      // Wait for the dom-if templates to render and subpage to become visible.
-      listenOnce(document, 'show-container', () => {
-        const input = /** @type {!CrInputElement} */ (
-            this.$$('#existingPassphraseInput'));
-        if (!input.matches(':focus-within')) {
-          input.focus();
-        }
-      });
     }
   },
 
@@ -528,18 +516,6 @@ Polymer({
     return this.syncPrefs.encryptAllData || this.creatingNewPassphrase_ ?
         RadioButtonNames.ENCRYPT_WITH_PASSPHRASE :
         RadioButtonNames.ENCRYPT_WITH_GOOGLE;
-  },
-
-  /**
-   * Computed binding returning text of the prompt for entering the passphrase.
-   * @private
-   */
-  enterPassphrasePrompt_: function() {
-    if (this.syncPrefs && this.syncPrefs.passphraseTypeIsCustom) {
-      return this.syncPrefs.enterPassphraseBody;
-    }
-
-    return this.syncPrefs.enterGooglePassphraseBody;
   },
 
   /**
@@ -696,6 +672,19 @@ Polymer({
           'Signin_Signin_CancelAdvancedSyncSettings');
     }
     settings.navigateTo(settings.routes.BASIC);
+  },
+
+  /**
+   * Focuses the passphrase input element if it is available and the page is
+   * visible.
+   * @private
+   */
+  focusPassphraseInput_: function() {
+    const passphraseInput =
+        /** @type {!CrInputElement} */ (this.$$('#existingPassphraseInput'));
+    if (passphraseInput && settings.getCurrentRoute() == settings.routes.SYNC) {
+      passphraseInput.focus();
+    }
   },
 });
 

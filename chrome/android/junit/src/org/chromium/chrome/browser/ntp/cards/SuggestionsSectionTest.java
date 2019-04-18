@@ -334,7 +334,7 @@ public class SuggestionsSectionTest {
         Callback<String> callback = mock(Callback.class);
         section.dismissItem(1, callback);
         verify(mDelegate).dismissSection(section);
-        verify(callback).onResult(section.getHeaderText());
+        verify(callback).onResult(section.getCategoryInfo().getTitle());
     }
 
     @Test
@@ -527,23 +527,6 @@ public class SuggestionsSectionTest {
 
     @Test
     @Feature({"Ntp"})
-    public void testViewAllAction() {
-        // When all the actions are enabled, ViewAll always has the priority and is shown.
-
-        // Spy so that VerifyAction can check methods being called.
-        SuggestionsCategoryInfo info =
-                spy(new CategoryInfoBuilder(TEST_CATEGORY_ID)
-                                .withAction(ContentSuggestionsAdditionalAction.VIEW_ALL)
-                                .showIfEmpty()
-                                .build());
-        SuggestionsSection section = createSection(info);
-
-        assertTrue(section.getActionItemForTesting().isVisible());
-        verifyAction(section, ContentSuggestionsAdditionalAction.VIEW_ALL);
-    }
-
-    @Test
-    @Feature({"Ntp"})
     public void testFetchAction() {
         // When only FetchMore is shown when enabled.
 
@@ -603,7 +586,7 @@ public class SuggestionsSectionTest {
     /**
      * Tests that the More button appends new suggestions after dismissing all items. The tricky
      * condition is that if a section is empty, we issue a fetch instead of a fetch-more. This means
-     * we are using the 'updateSuggestions()' flow to append to the list the user is looking at.
+     * we are using the 'updateModels()' flow to append to the list the user is looking at.
      */
     @Test
     @Feature({"Ntp"})
@@ -1091,10 +1074,6 @@ public class SuggestionsSectionTest {
         if (action != ContentSuggestionsAdditionalAction.NONE) {
             section.getActionItemForTesting().performAction(mUiDelegate, null, null);
         }
-
-        verify(section.getCategoryInfo(),
-                (action == ContentSuggestionsAdditionalAction.VIEW_ALL ? times(1) : never()))
-                .performViewAllAction(mUiDelegate.getNavigationDelegate());
 
         // noinspection unchecked -- See https://crbug.com/740162 for rationale.
         verify(mUiDelegate.getSuggestionsSource(),

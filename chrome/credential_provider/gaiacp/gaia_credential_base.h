@@ -30,6 +30,7 @@ enum FIELDID {
   FID_DESCRIPTION,
   FID_CURRENT_PASSWORD_FIELD,
   FID_SUBMIT,
+  FID_FORGOT_PASSWORD_LINK,
   FID_PROVIDER_LOGO,
   FID_PROVIDER_LABEL,
   FIELD_COUNT  // Must be last.
@@ -51,7 +52,7 @@ class ATL_NO_VTABLE CGaiaCredentialBase
   static HRESULT OnDllUnregisterServer();
 
   // Saves gaia information in the OS account that was just created.
-  static HRESULT SaveAccountInfo(const base::DictionaryValue& properties);
+  static HRESULT SaveAccountInfo(const base::Value& properties);
 
   // Allocates a BSTR from a DLL string resource given by |id|.
   static BSTR AllocErrorString(UINT id);
@@ -82,8 +83,8 @@ class ATL_NO_VTABLE CGaiaCredentialBase
   const CComBSTR& get_current_windows_password() const {
     return current_windows_password_;
   }
-  const base::DictionaryValue* get_authentication_results() const {
-    return authentication_results_.get();
+  const base::Optional<base::Value>& get_authentication_results() const {
+    return authentication_results_;
   }
   void set_current_windows_password(BSTR password) {
     current_windows_password_ = password;
@@ -100,12 +101,18 @@ class ATL_NO_VTABLE CGaiaCredentialBase
   // with the current credentials.
   bool CanAttemptWindowsLogon() const;
 
-  // Returns true if the specific password credential is valid for |username_|.
+  // Returns S_OK if the specific password credential is valid for |username_|,
+  // S_FALSE if not, and a FAILED hr otherwise.
   HRESULT IsWindowsPasswordValidForStoredUser(BSTR password) const;
 
   // Updates the UI so that the password field is displayed and also sets the
   // state of the credential to wait for a password.
   void DisplayPasswordField(int password_message);
+
+  // Returns true if GLS is running.
+  bool IsGaiaLogonStubRunning() {
+    return logon_ui_process_ != INVALID_HANDLE_VALUE;
+  }
 
   // IGaiaCredential
   IFACEMETHODIMP Initialize(IGaiaCredentialProvider* provider) override;
@@ -118,6 +125,10 @@ class ATL_NO_VTABLE CGaiaCredentialBase
 
   // Gets the string value for the given credential UI field.
   virtual HRESULT GetStringValueImpl(DWORD field_id, wchar_t** value);
+
+  // Can be overridden to change the icon used for anonymous tiles when they are
+  // shown in the selection list on the side and when they are selected.
+  virtual HRESULT GetBitmapValueImpl(DWORD field_id, HBITMAP* phbmp);
 
   // Resets the state of the credential, forgetting any username or password
   // that may have been set previously.  Derived classes may override to
@@ -139,9 +150,8 @@ class ATL_NO_VTABLE CGaiaCredentialBase
   virtual void DisplayErrorInUI(LONG status, LONG substatus, BSTR status_text);
 
   // Forks a stub process to save account information for a user.
-  virtual HRESULT ForkSaveAccountInfoStub(
-      const std::unique_ptr<base::DictionaryValue>& dict,
-      BSTR* status_text);
+  virtual HRESULT ForkSaveAccountInfoStub(const base::Value& dict,
+                                          BSTR* status_text);
 
   // Forks the logon stub process and waits for it to start.
   virtual HRESULT ForkGaiaLogonStub(OSProcessManager* process_manager,
@@ -249,18 +259,17 @@ class ATL_NO_VTABLE CGaiaCredentialBase
   // The caller must take ownership of this memory.
   // On failure |error_text| will be allocated and filled with an error message.
   // The caller must take ownership of this memory.
-  HRESULT ValidateOrCreateUser(const base::DictionaryValue* result,
+  HRESULT ValidateOrCreateUser(const base::Value& result,
                                BSTR* domain,
                                BSTR* username,
                                BSTR* sid,
                                BSTR* error_text);
 
   CComPtr<ICredentialProviderCredentialEvents> events_;
+  CComPtr<IGaiaCredentialProvider> provider_;
 
   // Handle to the logon UI process.
-  HANDLE logon_ui_process_;
-
-  CComPtr<IGaiaCredentialProvider> provider_;
+  HANDLE logon_ui_process_ = INVALID_HANDLE_VALUE;
 
   // Information about the just created or re-auth-ed user.
   CComBSTR username_;
@@ -268,18 +277,22 @@ class ATL_NO_VTABLE CGaiaCredentialBase
   CComBSTR password_;
   CComBSTR user_sid_;
 
+  // Indicates that the Windows password does not match the Gaia password and
+  // the user must be enter the former.  For example this is used to properly
+  // handle the password change case.
   bool needs_windows_password_ = false;
-  bool needs_to_update_windows_password_ = false;
+  bool request_force_password_change_ = false;
 
   // The password entered into the FID_CURRENT_PASSWORD_FIELD to update the
   // Windows password with the gaia password.
   CComBSTR current_windows_password_;
 
-  std::unique_ptr<base::DictionaryValue> authentication_results_;
-  // Whether success or failure, these members hold information about result.
-  NTSTATUS result_status_;
-  NTSTATUS result_substatus_;
-  base::string16 result_status_text_;
+  // Contains the information about the Gaia account that signed in.  See the
+  // kKeyXXX constants for the data that is stored here.
+  base::Optional<base::Value> authentication_results_;
+
+  // Holds information about the success or failure of the sign in.
+  NTSTATUS result_status_ = STATUS_SUCCESS;
 };
 
 }  // namespace credential_provider

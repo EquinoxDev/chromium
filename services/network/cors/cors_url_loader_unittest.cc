@@ -143,7 +143,8 @@ class CorsURLLoaderTest : public testing::Test {
  protected:
   // testing::Test implementation.
   void SetUp() override {
-    feature_list_.InitAndEnableFeature(features::kOutOfBlinkCors);
+    feature_list_.InitWithFeatures(
+        {features::kOutOfBlinkCors, features::kNetworkService}, {});
 
     network_service_ = NetworkService::CreateForTesting();
 
@@ -693,6 +694,32 @@ TEST_F(CorsURLLoaderTest, CorsCheckFailOnRedirect) {
   ASSERT_TRUE(client().completion_status().cors_error_status);
   EXPECT_EQ(client().completion_status().cors_error_status->cors_error,
             mojom::CorsError::kMissingAllowOriginHeader);
+}
+
+TEST_F(CorsURLLoaderTest, NetworkLoaderErrorDuringRedirect) {
+  const GURL origin("https://example.com");
+  const GURL url("https://other.example.com/foo.png");
+  const GURL new_url("https://other2.example.com/bar.png");
+
+  CreateLoaderAndStart(origin, url, mojom::FetchRequestMode::kCors);
+
+  EXPECT_EQ(1, num_created_loaders());
+  EXPECT_EQ(GetRequest().url, url);
+  EXPECT_EQ(GetRequest().method, "GET");
+
+  NotifyLoaderClientOnReceiveRedirect(
+      CreateRedirectInfo(301, "GET", new_url),
+      {"Access-Control-Allow-Origin: https://example.com"});
+  RunUntilRedirectReceived();
+
+  // Underlying network::URLLoader may call OnComplete with an error at anytime.
+  NotifyLoaderClientOnComplete(net::ERR_FAILED);
+  base::RunLoop().RunUntilIdle();
+
+  EXPECT_TRUE(IsNetworkLoaderStarted());
+  EXPECT_TRUE(client().has_received_completion());
+  EXPECT_FALSE(client().has_received_response());
+  EXPECT_TRUE(client().has_received_redirect());
 }
 
 TEST_F(CorsURLLoaderTest, SameOriginToSameOriginRedirect) {

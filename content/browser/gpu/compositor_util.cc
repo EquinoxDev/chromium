@@ -184,7 +184,7 @@ const GpuFeatureData GetGpuFeatureData(
        SafeGetFeatureStatus(gpu_feature_info,
                             gpu::GPU_FEATURE_TYPE_ANDROID_SURFACE_CONTROL),
 #if defined(OS_ANDROID)
-       !base::FeatureList::IsEnabled(features::kAndroidSurfaceControl),
+       !features::IsAndroidSurfaceControlEnabled(),
 #else
        false,
 #endif
@@ -203,8 +203,12 @@ const GpuFeatureData GetGpuFeatureData(
        "WebGL2 has been disabled via blacklist or the command line.", false,
        true},
       {"viz_display_compositor", gpu::kGpuFeatureStatusEnabled,
-       !base::FeatureList::IsEnabled(features::kVizDisplayCompositor),
+       !features::IsVizDisplayCompositorEnabled(),
        "Viz service display compositor is not enabled by default.", false,
+       false},
+      {"viz_hit_test_surface_layer", gpu::kGpuFeatureStatusEnabled,
+       !features::IsVizHitTestingSurfaceLayerEnabled(),
+       "Viz hit-test surface layer version is not enabled by default.", false,
        false},
       {"skia_renderer", gpu::kGpuFeatureStatusEnabled,
        !features::IsUsingSkiaRenderer(),
@@ -268,6 +272,10 @@ std::unique_ptr<base::DictionaryValue> GetFeatureStatusImpl(
       }
       if (gpu_feature_data.name == "skia_renderer") {
         if (features::IsUsingSkiaRenderer())
+          status += "_on";
+      }
+      if (gpu_feature_data.name == "viz_hit_test_surface_layer") {
+        if (features::IsVizHitTestingSurfaceLayerEnabled())
           status += "_on";
       }
     }

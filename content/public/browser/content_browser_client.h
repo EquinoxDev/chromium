@@ -18,10 +18,11 @@
 #include "base/containers/flat_map.h"
 #include "base/containers/flat_set.h"
 #include "base/optional.h"
-#include "base/task/task_scheduler/task_scheduler.h"
+#include "base/task/thread_pool/thread_pool.h"
 #include "base/time/time.h"
 #include "base/values.h"
 #include "build/build_config.h"
+#include "content/public/browser/browser_or_resource_context.h"
 #include "content/public/browser/certificate_request_result_type.h"
 #include "content/public/browser/generated_code_cache_settings.h"
 #include "content/public/browser/global_request_id.h"
@@ -53,9 +54,10 @@
 #include "third_party/blink/public/common/associated_interfaces/associated_interface_registry.h"
 #include "third_party/blink/public/common/mediastream/media_stream_request.h"
 #include "third_party/blink/public/common/user_agent/user_agent_metadata.h"
+#include "third_party/blink/public/mojom/credentialmanager/credential_manager.mojom-forward.h"
 #include "third_party/blink/public/mojom/renderer_preference_watcher.mojom-forward.h"
-#include "third_party/blink/public/platform/web_feature.mojom-forward.h"
-#include "third_party/blink/public/web/window_features.mojom-forward.h"
+#include "third_party/blink/public/mojom/web_feature/web_feature.mojom-forward.h"
+#include "third_party/blink/public/mojom/window_features/window_features.mojom-forward.h"
 #include "ui/accessibility/ax_mode.h"
 #include "ui/base/page_transition_types.h"
 #include "ui/base/window_open_disposition.h"
@@ -307,8 +309,9 @@ class CONTENT_EXPORT ContentBrowserClient {
   // enforced by the content layer. Will only be called if the content layer
   // didn't decide to isolate |effective_site_url| according to its internal
   // policy (e.g. because of --site-per-process).
-  virtual bool DoesSiteRequireDedicatedProcess(BrowserContext* browser_context,
-                                               const GURL& effective_site_url);
+  virtual bool DoesSiteRequireDedicatedProcess(
+      BrowserOrResourceContext browser_or_resource_context,
+      const GURL& effective_site_url);
 
   // Returns true unless the effective URL is part of a site that cannot live in
   // a process restricted to just that site.  This is only called if site
@@ -481,6 +484,9 @@ class CONTENT_EXPORT ContentBrowserClient {
   // Note that for correctness, the same value should be consistently returned.
   virtual bool ShouldDisableSiteIsolation();
 
+  // Retrieves names of any additional site isolation modes from the embedder.
+  virtual std::vector<std::string> GetAdditionalSiteIsolationModes();
+
   // Indicates whether a file path should be accessible via file URL given a
   // request from a browser context which lives within |profile_path|.
   virtual bool IsFileAccessAllowed(const base::FilePath& path,
@@ -548,6 +554,12 @@ class CONTENT_EXPORT ContentBrowserClient {
                                  int render_process_id,
                                  int render_frame_id);
 
+  // Allows the embedder to control whether Signed HTTP Exchanges (SXG) can be
+  // loaded. This is called on the IO thread.
+  // Relying on ResourceContext to access preferences on IO thread until we move
+  // the call sites out of the IO thread. See crbug.com/908955 for more context.
+  virtual bool AllowSignedExchange(ResourceContext* context);
+
   virtual bool IsDataSaverEnabled(BrowserContext* context);
 
   // Updates the given prefs for Service Worker and Shared Worker. The prefs
@@ -606,6 +618,14 @@ class CONTENT_EXPORT ContentBrowserClient {
   // is allowed.
   // This is called on the IO thread.
   virtual bool AllowWorkerIndexedDB(
+      const GURL& url,
+      ResourceContext* context,
+      const std::vector<GlobalFrameRoutingId>& render_frames);
+
+  // Allow the embedder to control if access to CacheStorage by a shared worker
+  // is allowed.
+  // This is called on the IO thread.
+  virtual bool AllowWorkerCacheStorage(
       const GURL& url,
       ResourceContext* context,
       const std::vector<GlobalFrameRoutingId>& render_frames);
@@ -757,8 +777,10 @@ class CONTENT_EXPORT ContentBrowserClient {
 
   // Returns the platform notification service, capable of displaying Web
   // Notifications to the user. The embedder can return a nullptr if they don't
-  // support this functionality. May be called from any thread.
-  virtual PlatformNotificationService* GetPlatformNotificationService();
+  // support this functionality. Must be called on the UI thread.
+  // TODO(knollr): move this to the BrowserContext.
+  virtual PlatformNotificationService* GetPlatformNotificationService(
+      BrowserContext* browser_context);
 
   // Returns true if the given page is allowed to open a window of the given
   // type. If true is returned, |no_javascript_access| will indicate whether
@@ -814,6 +836,11 @@ class CONTENT_EXPORT ContentBrowserClient {
   // Returns the default filename used in downloads when we have no idea what
   // else we should do with the file.
   virtual std::string GetDefaultDownloadName();
+
+  // Returns the path to the font lookup table cache directory in which - on
+  // Windows 7 & 8 - we cache font name meta information to perform @font-face {
+  // src: local() } lookups.
+  virtual base::FilePath GetFontLookupTableCacheDir();
 
   // Returns the path to the browser shader disk cache root.
   virtual base::FilePath GetShaderDiskCacheDirectory();
@@ -935,6 +962,12 @@ class CONTENT_EXPORT ContentBrowserClient {
       RenderFrameHost* render_frame_host,
       const std::string& interface_name,
       mojo::ScopedMessagePipeHandle interface_pipe) {}
+
+  // Content was unable to bind a CredentialManager request, so the embedder
+  // should try.
+  virtual void BindCredentialManagerRequest(
+      RenderFrameHost* render_frame_host,
+      blink::mojom::CredentialManagerRequest request) {}
 
   // Content was unable to bind a request for this associated interface, so the
   // embedder should try. Returns true if the |handle| was actually taken and
@@ -1141,10 +1174,10 @@ class CONTENT_EXPORT ContentBrowserClient {
   // Returns the RapporService from the browser process.
   virtual ::rappor::RapporService* GetRapporService();
 
-  // Provides parameters for initializing the global task scheduler. Default
+  // Provides parameters for initializing the global thread pool. Default
   // params are used if this returns nullptr.
-  virtual std::unique_ptr<base::TaskScheduler::InitParams>
-  GetTaskSchedulerInitParams();
+  virtual std::unique_ptr<base::ThreadPool::InitParams>
+  GetThreadPoolInitParams();
 
   // Allows the embedder to register one or more URLLoaderThrottles for a
   // navigation request.
@@ -1172,9 +1205,10 @@ class CONTENT_EXPORT ContentBrowserClient {
   // Allows the embedder to register per-scheme URLLoaderFactory implementations
   // to handle subresource URL requests for schemes not handled by the Network
   // Service. This function can also be used to make a factory for other
-  // non-subresource requests, such as for the service worker script when
-  // starting a service worker. In that case, the frame id will be
-  // MSG_ROUTING_NONE.
+  // non-subresource requests, such as:
+  //   -downloads
+  //   -service worker script when starting a service worker. In that case, the
+  //    frame id will be MSG_ROUTING_NONE
   virtual void RegisterNonNetworkSubresourceURLLoaderFactories(
       int render_process_id,
       int render_frame_id,
@@ -1218,6 +1252,7 @@ class CONTENT_EXPORT ContentBrowserClient {
       RenderFrameHost* frame,
       int render_process_id,
       bool is_navigation,
+      bool is_download,
       const url::Origin& request_initiator,
       network::mojom::URLLoaderFactoryRequest* factory_request,
       network::mojom::TrustedURLLoaderHeaderClientPtrInfo* header_client,
@@ -1232,7 +1267,9 @@ class CONTENT_EXPORT ContentBrowserClient {
   virtual void WillCreateWebSocket(
       RenderFrameHost* frame,
       network::mojom::WebSocketRequest* request,
-      network::mojom::AuthenticationHandlerPtr* authentication_handler);
+      network::mojom::AuthenticationHandlerPtr* authentication_handler,
+      network::mojom::TrustedHeaderClientPtr* header_client,
+      uint32_t* options);
 
   // Allows the embedder to returns a list of request interceptors that can
   // intercept a navigation request.
@@ -1269,6 +1306,10 @@ class CONTENT_EXPORT ContentBrowserClient {
   //
   // If |relative_partition_path| is the empty string, it means this needs to
   // create the default NetworkContext for the BrowserContext.
+  //
+  // For NetworkContexts returned from the Network Service, some requirements:
+  //   -enable data URL support (or else data URLs will fail)
+  //   -disable file URL support (for security)
   virtual network::mojom::NetworkContextPtr CreateNetworkContext(
       BrowserContext* context,
       bool in_memory,
@@ -1280,10 +1321,6 @@ class CONTENT_EXPORT ContentBrowserClient {
   virtual std::vector<base::FilePath> GetNetworkContextsParentDirectory();
 
 #if defined(OS_ANDROID)
-  // Configures whether StoragePartition needs to create a
-  // net::URLRequestContext in the browser when the network service is enabled.
-  virtual bool NeedURLRequestContext();
-
   // Only used by Android WebView.
   // Returns:
   //   true  - The check was successfully performed without throwing a
@@ -1336,22 +1373,24 @@ class CONTENT_EXPORT ContentBrowserClient {
                               int /* render_process_id */,
                               int /* render_frame_id */)> callback);
 
-  // Returns whether a base::TaskScheduler should be created when
+  // Returns whether a base::ThreadPool should be created when
   // BrowserMainLoop starts.
-  // If false, a task scheduler has been created by the embedder, and
+  // If false, a thread pool has been created by the embedder, and
   // BrowserMainLoop should skip creating a second one.
-  // Note: the embedder should *not* start the TaskScheduler for
+  // Note: the embedder should *not* start the ThreadPool for
   // BrowserMainLoop, BrowserMainLoop itself is responsible for that.
-  virtual bool ShouldCreateTaskScheduler();
+  virtual bool ShouldCreateThreadPool();
 
   // Returns an AuthenticatorRequestClientDelegate subclass instance to provide
   // embedder-specific configuration for a single Web Authentication API request
   // being serviced in a given RenderFrame. The instance is guaranteed to be
   // destroyed before the RenderFrame goes out of scope. The embedder may choose
   // to return nullptr to indicate that the request cannot be serviced right
-  // now.
+  // now. |relying_party_id| is the RP ID from Webauthn, essentially a domain
+  // name.
   virtual std::unique_ptr<AuthenticatorRequestClientDelegate>
-  GetWebAuthenticationRequestDelegate(RenderFrameHost* render_frame_host);
+  GetWebAuthenticationRequestDelegate(RenderFrameHost* render_frame_host,
+                                      const std::string& relying_party_id);
 
 #if defined(OS_MACOSX)
   // Returns whether WebAuthn supports the built-in Touch ID platform
@@ -1365,16 +1404,34 @@ class CONTENT_EXPORT ContentBrowserClient {
       ResourceContext* resource_context);
 
   // Creates a LoginDelegate that asks the user for a username and password.
-  // Caller owns the returned pointer.
+  // |web_contents| should not be null when CreateLoginDelegate is called.
   // |first_auth_attempt| is needed by AwHttpAuthHandler constructor.
   // |auth_required_callback| is used to transfer auth credentials to
   // URLRequest::SetAuth(). The credentials parameter of the callback
   // is base::nullopt if the request should be cancelled; otherwise
-  // the credentials will be used to respond to the auth challenge. This
-  // callback should be called on the IO thread task runner.
-  virtual scoped_refptr<LoginDelegate> CreateLoginDelegate(
-      net::AuthChallengeInfo* auth_info,
-      content::ResourceRequestInfo::WebContentsGetter web_contents_getter,
+  // the credentials will be used to respond to the auth challenge.
+  // This method is called on the UI thread. The callback must be
+  // called on the UI thread as well. If the LoginDelegate is destroyed
+  // before the callback, the request has been canceled and the callback
+  // should not be called.
+  //
+  // |auth_required_callback| may not be called reentrantly. If the request may
+  // be handled synchronously, CreateLoginDelegate must post the callback to a
+  // separate event loop iteration, taking care not to call it if the
+  // LoginDelegate is destroyed in the meantime.
+  //
+  // There is no guarantee that |web_contents| will outlive the
+  // LoginDelegate. The LoginDelegate implementation can use WebContentsObserver
+  // to be notified when the WebContents is destroyed.
+  //
+  // TODO(davidben): This should be guaranteed. It isn't due to asynchronous
+  // destruction between the network logic and the owning WebContents, but that
+  // should be hidden from the embedder. Ideally this method would be on
+  // WebContentsDelegate, where the lifetime ordering is more
+  // obvious. https://crbug.com/456255
+  virtual std::unique_ptr<LoginDelegate> CreateLoginDelegate(
+      const net::AuthChallengeInfo& auth_info,
+      WebContents* web_contents,
       const GlobalRequestID& request_id,
       bool is_request_for_main_frame,
       const GURL& url,
@@ -1398,7 +1455,9 @@ class CONTENT_EXPORT ContentBrowserClient {
       ui::PageTransition page_transition,
       bool has_user_gesture,
       const std::string& method,
-      const net::HttpRequestHeaders& headers);
+      const net::HttpRequestHeaders& headers,
+      network::mojom::URLLoaderFactoryRequest* factory_request,
+      network::mojom::URLLoaderFactory*& out_factory);
 
   // Creates an OverlayWindow to be used for Picture-in-Picture. This window
   // will house the content shown when in Picture-in-Picture mode. This will
@@ -1412,9 +1471,8 @@ class CONTENT_EXPORT ContentBrowserClient {
   // This is called on the IO thread.
   virtual bool IsSafeRedirectTarget(const GURL& url, ResourceContext* context);
 
-  // Registers the watcher to observe updates in RendererPreferences. The
-  // watchers are for shared workers and service workers.
-  virtual void RegisterRendererPreferenceWatcherForWorkers(
+  // Registers the watcher to observe updates in RendererPreferences.
+  virtual void RegisterRendererPreferenceWatcher(
       BrowserContext* browser_context,
       blink::mojom::RendererPreferenceWatcherPtr watcher);
 
@@ -1488,6 +1546,22 @@ class CONTENT_EXPORT ContentBrowserClient {
   // Returns the default accessibility mode for the given browser context.
   virtual ui::AXMode GetAXModeForBrowserContext(
       BrowserContext* browser_context);
+
+#if defined(OS_ANDROID)
+  // Defines the heuristics we can use to enable wide color gamut (WCG).
+  enum class WideColorGamutHeuristic {
+    kUseDisplay,  // Use WCG if display supports it.
+    kUseWindow,   // Use WCG if window is WCG.
+    kNone,        // Never use WCG.
+  };
+
+  // Returns kNone by default.
+  virtual WideColorGamutHeuristic GetWideColorGamutHeuristic() const;
+#endif
+
+  // Obtains the list of MIME types that are handled by a MimeHandlerView.
+  virtual base::flat_set<std::string> GetMimeHandlerViewMimeTypes(
+      ResourceContext* resource_context);
 };
 
 }  // namespace content

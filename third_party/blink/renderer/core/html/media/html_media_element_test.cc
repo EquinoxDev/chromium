@@ -6,7 +6,7 @@
 
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/blink/public/platform/autoplay.mojom-blink.h"
+#include "third_party/blink/public/mojom/autoplay/autoplay.mojom-blink.h"
 #include "third_party/blink/public/platform/web_media_player_source.h"
 #include "third_party/blink/renderer/core/frame/settings.h"
 #include "third_party/blink/renderer/core/html/media/html_audio_element.h"
@@ -44,13 +44,7 @@ class MockWebMediaPlayer : public EmptyWebMediaPlayer {
 
 class WebMediaStubLocalFrameClient : public EmptyLocalFrameClient {
  public:
-  static WebMediaStubLocalFrameClient* Create(
-      std::unique_ptr<WebMediaPlayer> player) {
-    return MakeGarbageCollected<WebMediaStubLocalFrameClient>(
-        std::move(player));
-  }
-
-  WebMediaStubLocalFrameClient(std::unique_ptr<WebMediaPlayer> player)
+  explicit WebMediaStubLocalFrameClient(std::unique_ptr<WebMediaPlayer> player)
       : player_(std::move(player)) {}
 
   std::unique_ptr<WebMediaPlayer> CreateWebMediaPlayer(
@@ -91,9 +85,10 @@ class HTMLMediaElementTest : public testing::TestWithParam<MediaTestParam> {
     EXPECT_CALL(*mock_media_player, DidLazyLoad)
         .WillRepeatedly(testing::Return(false));
 
-    dummy_page_holder_ = DummyPageHolder::Create(
+    dummy_page_holder_ = std::make_unique<DummyPageHolder>(
         IntSize(), nullptr,
-        WebMediaStubLocalFrameClient::Create(std::move(mock_media_player)),
+        MakeGarbageCollected<WebMediaStubLocalFrameClient>(
+            std::move(mock_media_player)),
         nullptr);
 
     if (GetParam() == MediaTestParam::kAudio)
@@ -128,7 +123,7 @@ class HTMLMediaElementTest : public testing::TestWithParam<MediaTestParam> {
   }
 
   bool HasLazyLoadObserver() const {
-    return !!Media()->lazy_load_visibility_observer_;
+    return !!Media()->lazy_load_intersection_observer_;
   }
 
   ExecutionContext* GetExecutionContext() const {
@@ -290,7 +285,7 @@ TEST_P(HTMLMediaElementTest, CouldPlayIfEnoughDataRespondsToError) {
   EXPECT_FALSE(Media()->ended());
   EXPECT_TRUE(CouldPlayIfEnoughData());
 
-  SetError(MediaError::Create(MediaError::kMediaErrDecode, ""));
+  SetError(MakeGarbageCollected<MediaError>(MediaError::kMediaErrDecode, ""));
   EXPECT_FALSE(CouldPlayIfEnoughData());
 }
 

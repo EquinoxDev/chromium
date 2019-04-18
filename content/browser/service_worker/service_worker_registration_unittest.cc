@@ -26,7 +26,6 @@
 #include "content/browser/service_worker/service_worker_context_core.h"
 #include "content/browser/service_worker/service_worker_context_core_observer.h"
 #include "content/browser/service_worker/service_worker_context_wrapper.h"
-#include "content/browser/service_worker/service_worker_dispatcher_host.h"
 #include "content/browser/service_worker/service_worker_provider_host.h"
 #include "content/browser/service_worker/service_worker_registration_object_host.h"
 #include "content/browser/service_worker/service_worker_test_utils.h"
@@ -36,7 +35,6 @@
 #include "content/test/test_content_browser_client.h"
 #include "mojo/core/embedder/embedder.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/blink/public/common/service_worker/service_worker_utils.h"
 #include "third_party/blink/public/mojom/service_worker/service_worker_object.mojom.h"
 #include "third_party/blink/public/mojom/service_worker/service_worker_registration.mojom.h"
 #include "url/gurl.h"
@@ -95,22 +93,6 @@ void RequestTermination(
   // the connection.
   (*host)->RequestTermination(base::DoNothing());
 }
-
-class ActivationTestServiceWorker : public FakeServiceWorker {
- public:
-  explicit ActivationTestServiceWorker(EmbeddedWorkerTestHelper* helper)
-      : FakeServiceWorker(helper) {}
-  ~ActivationTestServiceWorker() override = default;
-
-  bool is_zero_idle_timer_delay() const { return is_zero_idle_timer_delay_; }
-
-  void SetIdleTimerDelayToZero() override { is_zero_idle_timer_delay_ = true; }
-
- private:
-  bool is_zero_idle_timer_delay_ = false;
-
-  DISALLOW_COPY_AND_ASSIGN(ActivationTestServiceWorker);
-};
 
 class MockServiceWorkerRegistrationObject
     : public blink::mojom::ServiceWorkerRegistrationObject {
@@ -179,49 +161,13 @@ class MockServiceWorkerRegistrationObject
       binding_;
 };
 
-// We need this for NoInflightRequest test. The test expects that a worker
-// will be terminated when SetIdleTimerDelayToZero() is called.
-class RegistrationTestHelper : public EmbeddedWorkerTestHelper {
- public:
-  RegistrationTestHelper()
-      : EmbeddedWorkerTestHelper(base::FilePath()), weak_factory_(this) {}
-  ~RegistrationTestHelper() override = default;
-
-  void RequestTermination(int embedded_worker_id) {
-    GetEmbeddedWorkerInstanceHost(embedded_worker_id)
-        ->RequestTermination(
-            base::BindOnce(&RegistrationTestHelper::OnRequestedTermination,
-                           weak_factory_.GetWeakPtr()));
-  }
-
-  const base::Optional<bool>& will_be_terminated() const {
-    return will_be_terminated_;
-  }
-
-  bool is_zero_idle_timer_delay() const { return is_zero_idle_timer_delay_; }
-
- protected:
-  void OnSetIdleTimerDelayToZero(int embedded_worker_id) override {
-    is_zero_idle_timer_delay_ = true;
-  }
-
-  void OnRequestedTermination(bool will_be_terminated) {
-    will_be_terminated_ = will_be_terminated;
-  }
-
- private:
-  bool is_zero_idle_timer_delay_ = false;
-  base::Optional<bool> will_be_terminated_;
-  base::WeakPtrFactory<RegistrationTestHelper> weak_factory_;
-};
-
 class ServiceWorkerRegistrationTest : public testing::Test {
  public:
   ServiceWorkerRegistrationTest()
       : thread_bundle_(TestBrowserThreadBundle::IO_MAINLOOP) {}
 
   void SetUp() override {
-    helper_ = std::make_unique<RegistrationTestHelper>();
+    helper_ = std::make_unique<EmbeddedWorkerTestHelper>(base::FilePath());
 
     context()->storage()->LazyInitializeForTest(base::DoNothing());
     base::RunLoop().RunUntilIdle();
@@ -274,7 +220,7 @@ class ServiceWorkerRegistrationTest : public testing::Test {
 
  protected:
   TestBrowserThreadBundle thread_bundle_;
-  std::unique_ptr<RegistrationTestHelper> helper_;
+  std::unique_ptr<EmbeddedWorkerTestHelper> helper_;
 };
 
 TEST_F(ServiceWorkerRegistrationTest, SetAndUnsetVersions) {
@@ -358,9 +304,8 @@ TEST_F(ServiceWorkerRegistrationTest, FailedRegistrationNoCrash) {
       options, kRegistrationId, context()->AsWeakPtr());
   // Prepare a ServiceWorkerProviderHost.
   ServiceWorkerRemoteProviderEndpoint remote_endpoint;
-  std::unique_ptr<ServiceWorkerProviderHost> provider_host =
+  base::WeakPtr<ServiceWorkerProviderHost> provider_host =
       CreateProviderHostForWindow(helper_->mock_render_process_id(),
-                                  1 /* dummy provider_id */,
                                   true /* is_parent_frame_secure */,
                                   context()->AsWeakPtr(), &remote_endpoint);
   auto registration_object_host =
@@ -456,17 +401,17 @@ class ServiceWorkerActivationTest : public ServiceWorkerRegistrationTest,
     version_1->SetMainScriptHttpResponseInfo(
         EmbeddedWorkerTestHelper::CreateHttpResponseInfo());
     base::Optional<blink::ServiceWorkerStatusCode> status;
+    base::RunLoop run_loop;
     context()->storage()->StoreRegistration(
         registration_.get(), version_1.get(),
-        CreateReceiverOnCurrentThread(&status));
-    base::RunLoop().RunUntilIdle();
+        ReceiveServiceWorkerStatus(&status, run_loop.QuitClosure()));
+    run_loop.Run();
     ASSERT_EQ(blink::ServiceWorkerStatusCode::kOk, status.value());
 
     // Give the active version a controllee.
     host_ = CreateProviderHostForWindow(
-        helper_->mock_render_process_id(), 1 /* dummy provider_id */,
-        true /* is_parent_frame_secure */, context()->AsWeakPtr(),
-        &remote_endpoint_);
+        helper_->mock_render_process_id(), true /* is_parent_frame_secure */,
+        context()->AsWeakPtr(), &remote_endpoint_);
     DCHECK(remote_endpoint_.client_request()->is_pending());
     DCHECK(remote_endpoint_.host_ptr()->is_bound());
     version_1->AddControllee(host_.get());
@@ -477,8 +422,7 @@ class ServiceWorkerActivationTest : public ServiceWorkerRegistrationTest,
         helper_->AddNewPendingInstanceClient<FakeEmbeddedWorkerInstanceClient>(
             helper_.get());
     version_1_service_worker_ =
-        helper_->AddNewPendingServiceWorker<ActivationTestServiceWorker>(
-            helper_.get());
+        helper_->AddNewPendingServiceWorker<FakeServiceWorker>(helper_.get());
 
     // Start the active version and give it an in-flight request.
     inflight_request_id_ = CreateInflightRequest(version_1.get());
@@ -506,8 +450,7 @@ class ServiceWorkerActivationTest : public ServiceWorkerRegistrationTest,
         helper_->AddNewPendingInstanceClient<FakeEmbeddedWorkerInstanceClient>(
             helper_.get());
     version_2_service_worker_ =
-        helper_->AddNewPendingServiceWorker<ActivationTestServiceWorker>(
-            helper_.get());
+        helper_->AddNewPendingServiceWorker<FakeServiceWorker>(helper_.get());
 
     // Start the worker.
     StartWorker(version_2.get(), ServiceWorkerMetrics::EventType::INSTALL);
@@ -572,10 +515,10 @@ class ServiceWorkerActivationTest : public ServiceWorkerRegistrationTest,
   FakeEmbeddedWorkerInstanceClient* version_2_client() {
     return version_2_client_;
   }
-  ActivationTestServiceWorker* version_1_service_worker() {
+  FakeServiceWorker* version_1_service_worker() {
     return version_1_service_worker_;
   }
-  ActivationTestServiceWorker* version_2_service_worker() {
+  FakeServiceWorker* version_2_service_worker() {
     return version_2_service_worker_;
   }
 
@@ -585,11 +528,11 @@ class ServiceWorkerActivationTest : public ServiceWorkerRegistrationTest,
   // Mojo implementation fakes for the renderer-side service workers. Their
   // lifetime is bound to the Mojo connection.
   FakeEmbeddedWorkerInstanceClient* version_1_client_ = nullptr;
-  ActivationTestServiceWorker* version_1_service_worker_ = nullptr;
+  FakeServiceWorker* version_1_service_worker_ = nullptr;
   FakeEmbeddedWorkerInstanceClient* version_2_client_ = nullptr;
-  ActivationTestServiceWorker* version_2_service_worker_ = nullptr;
+  FakeServiceWorker* version_2_service_worker_ = nullptr;
 
-  std::unique_ptr<ServiceWorkerProviderHost> host_;
+  base::WeakPtr<ServiceWorkerProviderHost> host_;
   ServiceWorkerRemoteProviderEndpoint remote_endpoint_;
   int inflight_request_id_ = -1;
 
@@ -606,44 +549,20 @@ TEST_P(ServiceWorkerActivationTest, NoInflightRequest) {
 
   // Remove the controllee. Since there is an in-flight request,
   // activation should not yet happen.
-  // When S13nServiceWorker is on, the idle timer living in the renderer is
-  // requested to notify the browser the idle state ASAP.
   version_1->RemoveControllee(controllee()->client_uuid());
   base::RunLoop().RunUntilIdle();
   EXPECT_EQ(version_1.get(), reg->active_version());
-  if (blink::ServiceWorkerUtils::IsServicificationEnabled())
-    EXPECT_TRUE(version_1_service_worker()->is_zero_idle_timer_delay());
+  // The idle timer living in the renderer is requested to notify the idle state
+  // to the browser ASAP.
+  EXPECT_TRUE(version_1_service_worker()->is_zero_idle_timer_delay());
 
   // Finish the request. Activation should happen.
   version_1->FinishRequest(inflight_request_id(), true /* was_handled */);
-  if (blink::ServiceWorkerUtils::IsServicificationEnabled()) {
-    EXPECT_EQ(version_1.get(), reg->active_version());
-    RequestTermination(&version_1_client()->host());
-  }
+  EXPECT_EQ(version_1.get(), reg->active_version());
+  RequestTermination(&version_1_client()->host());
+
   TestServiceWorkerObserver observer(helper_->context_wrapper());
   observer.RunUntilActivated(version_2.get(), runner);
-  EXPECT_EQ(version_2.get(), reg->active_version());
-}
-
-// Test activation triggered by loss of controllee.
-TEST_P(ServiceWorkerActivationTest, NoControllee) {
-  // S13nServiceWorker: activation only happens when the service worker reports
-  // it's idle, so this test doesn't make sense.
-  if (blink::ServiceWorkerUtils::IsServicificationEnabled())
-    return;
-  scoped_refptr<ServiceWorkerRegistration> reg = registration();
-  scoped_refptr<ServiceWorkerVersion> version_1 = reg->active_version();
-  scoped_refptr<ServiceWorkerVersion> version_2 = reg->waiting_version();
-
-  // Finish the request. Since there is a controllee, activation should not yet
-  // happen.
-  version_1->FinishRequest(inflight_request_id(), true /* was_handled */);
-  base::RunLoop().RunUntilIdle();
-  EXPECT_EQ(version_1.get(), reg->active_version());
-
-  // Remove the controllee. Activation should happen.
-  version_1->RemoveControllee(controllee()->client_uuid());
-  base::RunLoop().RunUntilIdle();
   EXPECT_EQ(version_2.get(), reg->active_version());
 }
 
@@ -661,20 +580,15 @@ TEST_P(ServiceWorkerActivationTest, SkipWaitingWithInflightRequest) {
                                   skip_waiting_loop.QuitClosure());
   EXPECT_FALSE(result.has_value());
   EXPECT_EQ(version_1.get(), reg->active_version());
-  if (blink::ServiceWorkerUtils::IsServicificationEnabled())
-    EXPECT_TRUE(version_1_service_worker()->is_zero_idle_timer_delay());
+  EXPECT_TRUE(version_1_service_worker()->is_zero_idle_timer_delay());
 
-  // Finish the request.
-  // non-S13nServiceWorker: The service worker becomes idle.
-  // S13nServiceWorker: FinishRequest() doesn't immediately make the worker
-  // "no work" state. It needs to be notfied the idle state by
+  // Finish the request. FinishRequest() doesn't immediately make the worker
+  // reach the "no work" state. It needs to be notfied of the idle state by
   // RequestTermination().
   version_1->FinishRequest(inflight_request_id(), true /* was_handled */);
 
-  if (blink::ServiceWorkerUtils::IsServicificationEnabled()) {
-    EXPECT_EQ(version_1.get(), reg->active_version());
-    RequestTermination(&version_1_client()->host());
-  }
+  EXPECT_EQ(version_1.get(), reg->active_version());
+  RequestTermination(&version_1_client()->host());
 
   // Wait until SkipWaiting resolves.
   skip_waiting_loop.Run();
@@ -696,21 +610,16 @@ TEST_P(ServiceWorkerActivationTest, SkipWaiting) {
   base::RunLoop().RunUntilIdle();
   EXPECT_EQ(version_1.get(), reg->active_version());
 
-  // Call skipWaiting.
-  // non-S13nServiceWorker: Activation should happen.
-  // S13nServiceWorker: Activation should happen after RequestTermination is
-  // triggered.
+  // Call skipWaiting. Activation happens after RequestTermination is triggered.
   base::Optional<bool> result;
   base::RunLoop skip_waiting_loop;
   SimulateSkipWaitingWithCallback(version_2.get(), &result,
                                   skip_waiting_loop.QuitClosure());
 
-  if (blink::ServiceWorkerUtils::IsServicificationEnabled()) {
-    EXPECT_TRUE(version_1_service_worker()->is_zero_idle_timer_delay());
-    EXPECT_FALSE(result.has_value());
-    EXPECT_EQ(version_1.get(), reg->active_version());
-    RequestTermination(&version_1_client()->host());
-  }
+  EXPECT_TRUE(version_1_service_worker()->is_zero_idle_timer_delay());
+  EXPECT_FALSE(result.has_value());
+  EXPECT_EQ(version_1.get(), reg->active_version());
+  RequestTermination(&version_1_client()->host());
 
   // Wait until SkipWaiting resolves.
   skip_waiting_loop.Run();
@@ -983,16 +892,15 @@ class ServiceWorkerRegistrationObjectHostTest
   }
 
   ServiceWorkerRemoteProviderEndpoint PrepareProviderHost(
-      int64_t provider_id,
-      const GURL& document_url) {
+      const GURL& document_url,
+      base::WeakPtr<ServiceWorkerProviderHost>* out_host) {
     ServiceWorkerRemoteProviderEndpoint remote_endpoint;
-    std::unique_ptr<ServiceWorkerProviderHost> host =
-        CreateProviderHostForWindow(helper_->mock_render_process_id(),
-                                    provider_id,
-                                    true /* is_parent_frame_secure */,
-                                    context()->AsWeakPtr(), &remote_endpoint);
+    base::WeakPtr<ServiceWorkerProviderHost> host = CreateProviderHostForWindow(
+        helper_->mock_render_process_id(), true /* is_parent_frame_secure */,
+        context()->AsWeakPtr(), &remote_endpoint);
     host->UpdateUrls(document_url, document_url);
-    context()->AddProviderHost(std::move(host));
+    if (out_host)
+      *out_host = host;
     return remote_endpoint;
   }
 
@@ -1028,9 +936,8 @@ TEST_F(ServiceWorkerRegistrationObjectHostTest, BreakConnection_Destroy) {
   const GURL kScope("https://www.example.com/");
   const GURL kScriptUrl("https://www.example.com/sw.js");
   int64_t registration_id = SetUpRegistration(kScope, kScriptUrl);
-  const int64_t kProviderId = 99;  // Dummy value
   ServiceWorkerRemoteProviderEndpoint remote_endpoint =
-      PrepareProviderHost(kProviderId, kScope);
+      PrepareProviderHost(kScope, nullptr /* out_host */);
   blink::mojom::ServiceWorkerRegistrationObjectInfoPtr info =
       GetRegistrationFromRemote(remote_endpoint.host_ptr()->get(), kScope);
   blink::mojom::ServiceWorkerRegistrationObjectHostAssociatedPtr
@@ -1047,9 +954,8 @@ TEST_F(ServiceWorkerRegistrationObjectHostTest, Update_Success) {
   const GURL kScope("https://www.example.com/");
   const GURL kScriptUrl("https://www.example.com/sw.js");
   SetUpRegistration(kScope, kScriptUrl);
-  const int64_t kProviderId = 99;  // Dummy value
   ServiceWorkerRemoteProviderEndpoint remote_endpoint =
-      PrepareProviderHost(kProviderId, kScope);
+      PrepareProviderHost(kScope, nullptr /* out_host */);
   blink::mojom::ServiceWorkerRegistrationObjectHostAssociatedPtr
       registration_host_ptr;
 
@@ -1069,9 +975,9 @@ TEST_F(ServiceWorkerRegistrationObjectHostTest, Update_CrossOriginShouldFail) {
   const GURL kScope("https://www.example.com/");
   const GURL kScriptUrl("https://www.example.com/sw.js");
   SetUpRegistration(kScope, kScriptUrl);
-  const int64_t kProviderId = 99;  // Dummy value
+  base::WeakPtr<ServiceWorkerProviderHost> provider_host;
   ServiceWorkerRemoteProviderEndpoint remote_endpoint =
-      PrepareProviderHost(kProviderId, kScope);
+      PrepareProviderHost(kScope, &provider_host);
   blink::mojom::ServiceWorkerRegistrationObjectInfoPtr info =
       GetRegistrationFromRemote(remote_endpoint.host_ptr()->get(), kScope);
   blink::mojom::ServiceWorkerRegistrationObjectHostAssociatedPtr
@@ -1079,8 +985,6 @@ TEST_F(ServiceWorkerRegistrationObjectHostTest, Update_CrossOriginShouldFail) {
   registration_host_ptr.Bind(std::move(info->host_ptr_info));
 
   ASSERT_TRUE(bad_messages_.empty());
-  auto* provider_host = context()->GetProviderHost(
-      helper_->mock_render_process_id(), kProviderId);
   GURL url("https://does.not.exist/");
   provider_host->UpdateUrls(url, url);
   CallUpdate(registration_host_ptr.get());
@@ -1092,9 +996,8 @@ TEST_F(ServiceWorkerRegistrationObjectHostTest,
   const GURL kScope("https://www.example.com/");
   const GURL kScriptUrl("https://www.example.com/sw.js");
   SetUpRegistration(kScope, kScriptUrl);
-  const int64_t kProviderId = 99;  // Dummy value
   ServiceWorkerRemoteProviderEndpoint remote_endpoint =
-      PrepareProviderHost(kProviderId, kScope);
+      PrepareProviderHost(kScope, nullptr /* out_host */);
   blink::mojom::ServiceWorkerRegistrationObjectInfoPtr info =
       GetRegistrationFromRemote(remote_endpoint.host_ptr()->get(), kScope);
   blink::mojom::ServiceWorkerRegistrationObjectHostAssociatedPtr
@@ -1113,9 +1016,8 @@ TEST_F(ServiceWorkerRegistrationObjectHostTest, Update_NoDelayFromControllee) {
   const GURL kScope("https://www.example.com/");
   const GURL kScriptUrl("https://www.example.com/sw.js");
   int64_t registration_id = SetUpRegistration(kScope, kScriptUrl);
-  const int64_t kProviderId = 99;  // Dummy value
   ServiceWorkerRemoteProviderEndpoint remote_endpoint =
-      PrepareProviderHost(kProviderId, kScope);
+      PrepareProviderHost(kScope, nullptr /* out_host */);
   blink::mojom::ServiceWorkerRegistrationObjectHostAssociatedPtr
       registration_host_ptr;
 
@@ -1174,17 +1076,15 @@ TEST_F(ServiceWorkerRegistrationObjectHostTest,
        Update_NoDelayFromWorkerWithControllee) {
   const GURL kScope("https://www.example.com/");
   const GURL kScriptUrl("https://www.example.com/sw.js");
-  const int64_t kProviderId = 99;  // Dummy value
   scoped_refptr<ServiceWorkerRegistration> registration =
       CreateRegistration(kScope);
   scoped_refptr<ServiceWorkerVersion> version =
       CreateVersion(registration.get(), kScriptUrl);
   ServiceWorkerRemoteProviderEndpoint remote_endpoint;
-  std::unique_ptr<ServiceWorkerProviderHost> host = CreateProviderHostForWindow(
-      helper_->mock_render_process_id(), kProviderId,
-      true /* is_parent_frame_secure */, context()->AsWeakPtr(),
-      &remote_endpoint);
-  host.get()->UpdateUrls(kScope, kScope);
+  base::WeakPtr<ServiceWorkerProviderHost> host = CreateProviderHostForWindow(
+      helper_->mock_render_process_id(), true /* is_parent_frame_secure */,
+      context()->AsWeakPtr(), &remote_endpoint);
+  host->UpdateUrls(kScope, kScope);
   version->AddControllee(host.get());
 
   // Initially set |self_update_delay| to zero.
@@ -1209,9 +1109,8 @@ TEST_F(ServiceWorkerRegistrationObjectHostTest, Unregister_Success) {
   const GURL kScope("https://www.example.com/");
   const GURL kScriptUrl("https://www.example.com/sw.js");
   int64_t registration_id = SetUpRegistration(kScope, kScriptUrl);
-  const int64_t kProviderId = 99;  // Dummy value
   ServiceWorkerRemoteProviderEndpoint remote_endpoint =
-      PrepareProviderHost(kProviderId, kScope);
+      PrepareProviderHost(kScope, nullptr /* out_host */);
   blink::mojom::ServiceWorkerRegistrationObjectHostAssociatedPtr
       registration_host_ptr;
   blink::mojom::ServiceWorkerRegistrationObjectInfoPtr info =
@@ -1239,9 +1138,9 @@ TEST_F(ServiceWorkerRegistrationObjectHostTest,
   const GURL kScope("https://www.example.com/");
   const GURL kScriptUrl("https://www.example.com/sw.js");
   SetUpRegistration(kScope, kScriptUrl);
-  const int64_t kProviderId = 99;  // Dummy value
+  base::WeakPtr<ServiceWorkerProviderHost> provider_host;
   ServiceWorkerRemoteProviderEndpoint remote_endpoint =
-      PrepareProviderHost(kProviderId, kScope);
+      PrepareProviderHost(kScope, &provider_host);
   blink::mojom::ServiceWorkerRegistrationObjectInfoPtr info =
       GetRegistrationFromRemote(remote_endpoint.host_ptr()->get(), kScope);
   blink::mojom::ServiceWorkerRegistrationObjectHostAssociatedPtr
@@ -1249,8 +1148,6 @@ TEST_F(ServiceWorkerRegistrationObjectHostTest,
   registration_host_ptr.Bind(std::move(info->host_ptr_info));
 
   ASSERT_TRUE(bad_messages_.empty());
-  auto* provider_host = context()->GetProviderHost(
-      helper_->mock_render_process_id(), kProviderId);
   provider_host->UpdateUrls(GURL("https://does.not.exist/"),
                             GURL("https://does.not.exist/"));
   CallUnregister(registration_host_ptr.get());
@@ -1262,9 +1159,8 @@ TEST_F(ServiceWorkerRegistrationObjectHostTest,
   const GURL kScope("https://www.example.com/");
   const GURL kScriptUrl("https://www.example.com/sw.js");
   SetUpRegistration(kScope, kScriptUrl);
-  const int64_t kProviderId = 99;  // Dummy value
   ServiceWorkerRemoteProviderEndpoint remote_endpoint =
-      PrepareProviderHost(kProviderId, kScope);
+      PrepareProviderHost(kScope, nullptr /* out_host */);
   blink::mojom::ServiceWorkerRegistrationObjectInfoPtr info =
       GetRegistrationFromRemote(remote_endpoint.host_ptr()->get(), kScope);
   blink::mojom::ServiceWorkerRegistrationObjectHostAssociatedPtr
@@ -1283,9 +1179,8 @@ TEST_F(ServiceWorkerRegistrationObjectHostTest, SetVersionAttributes) {
   const GURL kScope("https://www.example.com/");
   const GURL kScriptUrl("https://www.example.com/sw.js");
   int64_t registration_id = SetUpRegistration(kScope, kScriptUrl);
-  const int64_t kProviderId = 99;  // Dummy value
   ServiceWorkerRemoteProviderEndpoint remote_endpoint =
-      PrepareProviderHost(kProviderId, kScope);
+      PrepareProviderHost(kScope, nullptr /* out_host */);
   blink::mojom::ServiceWorkerRegistrationObjectInfoPtr info =
       GetRegistrationFromRemote(remote_endpoint.host_ptr()->get(), kScope);
   EXPECT_EQ(registration_id, info->registration_id);
@@ -1368,9 +1263,8 @@ TEST_F(ServiceWorkerRegistrationObjectHostTest, SetUpdateViaCache) {
   const GURL kScope("https://www.example.com/");
   const GURL kScriptUrl("https://www.example.com/sw.js");
   int64_t registration_id = SetUpRegistration(kScope, kScriptUrl);
-  const int64_t kProviderId = 99;  // Dummy value
   ServiceWorkerRemoteProviderEndpoint remote_endpoint =
-      PrepareProviderHost(kProviderId, kScope);
+      PrepareProviderHost(kScope, nullptr /* out_host */);
   blink::mojom::ServiceWorkerRegistrationObjectInfoPtr info =
       GetRegistrationFromRemote(remote_endpoint.host_ptr()->get(), kScope);
   EXPECT_EQ(registration_id, info->registration_id);
@@ -1420,9 +1314,8 @@ TEST_F(ServiceWorkerRegistrationObjectHostTest, UpdateFound) {
   const GURL kScope("https://www.example.com/");
   const GURL kScriptUrl("https://www.example.com/sw.js");
   int64_t registration_id = SetUpRegistration(kScope, kScriptUrl);
-  const int64_t kProviderId = 99;  // Dummy value
   ServiceWorkerRemoteProviderEndpoint remote_endpoint =
-      PrepareProviderHost(kProviderId, kScope);
+      PrepareProviderHost(kScope, nullptr /* out_host */);
   blink::mojom::ServiceWorkerRegistrationObjectInfoPtr info =
       GetRegistrationFromRemote(remote_endpoint.host_ptr()->get(), kScope);
   EXPECT_EQ(registration_id, info->registration_id);

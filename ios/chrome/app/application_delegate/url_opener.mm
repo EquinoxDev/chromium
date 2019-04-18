@@ -63,12 +63,27 @@ const char* const kUMAMobileSessionStartFromAppsHistogram =
         [startupInformation setStartupParameters:nil];
       };
 
+      // TODO(crbug.com/935019): Exacly the same copy of this code is present in
+      // +[UserAcrtivityHandler
+      // handleStartupParametersWithTabOpener:startupInformation:interfaceProvider:]
+
+      GURL URL;
+      GURL virtualURL;
+      if ([params completeURL].SchemeIsFile()) {
+        // External URL will be loaded by WebState, which expects |completeURL|.
+        // Omnibox however suppose to display |externalURL|, which is used as
+        // virtual URL.
+        URL = [params completeURL];
+        virtualURL = [params externalURL];
+      } else {
+        URL = [params externalURL];
+      }
       [tabOpener
           dismissModalsAndOpenSelectedTabInMode:[params launchInIncognito]
                                                     ? ApplicationMode::INCOGNITO
                                                     : ApplicationMode::NORMAL
-                                        withURL:[params externalURL]
-                                     virtualURL:GURL::EmptyGURL()
+                                        withURL:URL
+                                     virtualURL:virtualURL
                                  dismissOmnibox:[params postOpeningAction] !=
                                                 FOCUS_OMNIBOX
                                      transition:ui::PAGE_TRANSITION_LINK

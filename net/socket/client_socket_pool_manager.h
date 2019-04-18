@@ -15,6 +15,7 @@
 #include "net/base/net_export.h"
 #include "net/base/request_priority.h"
 #include "net/http/http_network_session.h"
+#include "net/socket/client_socket_pool.h"
 
 namespace base {
 class Value;
@@ -30,13 +31,9 @@ typedef base::Callback<int(const AddressList&, const NetLogWithSource& net_log)>
 
 class ClientSocketHandle;
 class HostPortPair;
-class HttpNetworkSession;
-class HttpProxyClientSocketPool;
-class HttpRequestHeaders;
 class NetLogWithSource;
 class ProxyInfo;
 class ProxyServer;
-class TransportClientSocketPool;
 
 struct SSLConfig;
 
@@ -77,26 +74,14 @@ class NET_EXPORT_PRIVATE ClientSocketPoolManager {
 
   static base::TimeDelta unused_idle_socket_timeout(
       HttpNetworkSession::SocketPoolType pool_type);
-  static void set_unused_idle_socket_timeout(
-      HttpNetworkSession::SocketPoolType pool_type,
-      base::TimeDelta timeout);
 
   virtual void FlushSocketPoolsWithError(int error) = 0;
   virtual void CloseIdleSockets() = 0;
-  // Returns the socket pool for direct HTTP and SSL connections.
-  virtual TransportClientSocketPool* GetTransportSocketPool() = 0;
-  // Returns the socket pool used for both SOCKS and SSL over SOCKS.
-  // TODO(https://crbug.com/929714): Merge this with
-  // GetSocketPoolForHTTPLikeProxy(), once GetSocketPoolForSSLWithProxy() and
-  // GetSocketPoolForHTTPLikeProxy() have been merged.
-  virtual TransportClientSocketPool* GetSocketPoolForSOCKSProxy(
-      const ProxyServer& socks_proxy) = 0;
-  // Returns the HttpProxyClientSocketPool for a ProxyServer that uses an
-  // "HTTP-like" scheme, as defined by ProxyServer::is_http_like().
-  virtual TransportClientSocketPool* GetSocketPoolForHTTPLikeProxy(
-      const ProxyServer& http_proxy) = 0;
-  virtual TransportClientSocketPool* GetSocketPoolForSSLWithProxy(
-      const ProxyServer& proxy_server) = 0;
+
+  // Returns the socket pool for the specified ProxyServer (Which may be
+  // ProxyServer::Direct()).
+  virtual ClientSocketPool* GetSocketPool(const ProxyServer& proxy_server) = 0;
+
   // Creates a Value summary of the state of the socket pools.
   virtual std::unique_ptr<base::Value> SocketPoolInfoToValue() const = 0;
 
@@ -117,12 +102,10 @@ class NET_EXPORT_PRIVATE ClientSocketPoolManager {
 int InitSocketHandleForHttpRequest(
     ClientSocketPoolManager::SocketGroupType group_type,
     const HostPortPair& endpoint,
-    const HttpRequestHeaders& request_extra_headers,
     int request_load_flags,
     RequestPriority request_priority,
     HttpNetworkSession* session,
     const ProxyInfo& proxy_info,
-    quic::QuicTransportVersion quic_version,
     const SSLConfig& ssl_config_for_origin,
     const SSLConfig& ssl_config_for_proxy,
     PrivacyMode privacy_mode,
@@ -130,7 +113,8 @@ int InitSocketHandleForHttpRequest(
     const NetLogWithSource& net_log,
     ClientSocketHandle* socket_handle,
     const OnHostResolutionCallback& resolution_callback,
-    CompletionOnceCallback callback);
+    CompletionOnceCallback callback,
+    const ClientSocketPool::ProxyAuthCallback& proxy_auth_callback);
 
 // A helper method that uses the passed in proxy information to initialize a
 // ClientSocketHandle with the relevant socket pool. Use this method for
@@ -144,7 +128,6 @@ int InitSocketHandleForHttpRequest(
 int InitSocketHandleForWebSocketRequest(
     ClientSocketPoolManager::SocketGroupType group_type,
     const HostPortPair& endpoint,
-    const HttpRequestHeaders& request_extra_headers,
     int request_load_flags,
     RequestPriority request_priority,
     HttpNetworkSession* session,
@@ -155,50 +138,32 @@ int InitSocketHandleForWebSocketRequest(
     const NetLogWithSource& net_log,
     ClientSocketHandle* socket_handle,
     const OnHostResolutionCallback& resolution_callback,
-    CompletionOnceCallback callback);
+    CompletionOnceCallback callback,
+    const ClientSocketPool::ProxyAuthCallback& proxy_auth_callback);
 
 // Deprecated: Please do not use this outside of //net and //services/network.
-// A helper method that uses the passed in proxy information to initialize a
-// ClientSocketHandle with the relevant socket pool. Use this method for
-// a raw socket connection to a host-port pair (that needs to tunnel through
-// the proxies).
-NET_EXPORT int InitSocketHandleForRawConnect(
+// A helper method that uses the passed in proxy to initialize a ConnectJob that
+// does not use a SocketPool, but does use the passed in
+// CommonConnectJobParams's SpdySessionPool. Use this method for a raw socket
+// connection to a host-port pair (that needs to tunnel through the proxies). If
+// |use_tls| is true, will establish a TLS connection on top of the established
+// connection.
+NET_EXPORT std::unique_ptr<ConnectJob> CreateConnectJobForRawConnect(
     const HostPortPair& host_port_pair,
-    HttpNetworkSession* session,
-    int request_load_flags,
+    bool use_tls,
+    const CommonConnectJobParams* common_connect_job_params,
     RequestPriority request_priority,
     const ProxyInfo& proxy_info,
     const SSLConfig& ssl_config_for_origin,
     const SSLConfig& ssl_config_for_proxy,
-    PrivacyMode privacy_mode,
     const NetLogWithSource& net_log,
-    ClientSocketHandle* socket_handle,
-    CompletionOnceCallback callback);
-
-// Deprecated: Please do not use this outside of //net and //services/network.
-// A helper method that uses the passed in proxy information to initialize a
-// ClientSocketHandle with the relevant socket pool. Use this method for
-// a raw socket connection with TLS negotiation to a host-port pair (that needs
-// to tunnel through the proxies).
-NET_EXPORT int InitSocketHandleForTlsConnect(
-    const HostPortPair& host_port_pair,
-    HttpNetworkSession* session,
-    int request_load_flags,
-    RequestPriority request_priority,
-    const ProxyInfo& proxy_info,
-    const SSLConfig& ssl_config_for_origin,
-    const SSLConfig& ssl_config_for_proxy,
-    PrivacyMode privacy_mode,
-    const NetLogWithSource& net_log,
-    ClientSocketHandle* socket_handle,
-    CompletionOnceCallback callback);
+    ConnectJob::Delegate* connect_job_delegate);
 
 // Similar to InitSocketHandleForHttpRequest except that it initiates the
 // desired number of preconnect streams from the relevant socket pool.
 int PreconnectSocketsForHttpRequest(
     ClientSocketPoolManager::SocketGroupType group_type,
     const HostPortPair& endpoint,
-    const HttpRequestHeaders& request_extra_headers,
     int request_load_flags,
     RequestPriority request_priority,
     HttpNetworkSession* session,

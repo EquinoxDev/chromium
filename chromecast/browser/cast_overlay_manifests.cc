@@ -6,6 +6,7 @@
 
 #include "base/no_destructor.h"
 #include "build/build_config.h"
+#include "chromecast/chromecast_buildflags.h"
 #include "chromecast/common/mojom/application_media_capabilities.mojom.h"
 #include "chromecast/common/mojom/feature_manager.mojom.h"
 #include "chromecast/common/mojom/media_caps.mojom.h"
@@ -14,11 +15,19 @@
 #include "media/mojo/services/media_manifest.h"
 #include "services/service_manager/public/cpp/manifest_builder.h"
 
+#if BUILDFLAG(ENABLE_EXTERNAL_MOJO_SERVICES)
+#include "chromecast/external_mojo/broker_service/broker_service.h"
+#endif
+
 #if defined(USE_INTERNAL_OVERLAY_MANIFESTS)
 #include "chromecast/internal/shell/browser/cast_content_browser_internal_manifest_overlay.h"
 #include "chromecast/internal/shell/browser/cast_content_packaged_services_internal_manifest_overlay.h"
 #include "chromecast/internal/shell/browser/cast_content_renderer_internal_manifest_overlay.h"
 #endif
+
+#if !defined(OS_FUCHSIA)
+#include "components/services/heap_profiling/public/mojom/heap_profiling_client.mojom.h"  // nogncheck
+#endif  // !defined(OS_FUCHSIA)
 
 namespace chromecast {
 namespace shell {
@@ -26,6 +35,14 @@ namespace shell {
 const service_manager::Manifest& GetCastContentBrowserOverlayManifest() {
   static base::NoDestructor<service_manager::Manifest> manifest {
     service_manager::ManifestBuilder()
+#if !defined(OS_FUCHSIA)
+        .RequireCapability("heap_profiling", "heap_profiler")
+        .RequireCapability("heap_profiling", "profiling")
+        .RequireCapability("content_browser", "profiling_client")
+        .ExposeCapability("profiling_client",
+                          service_manager::Manifest::InterfaceList<
+                              heap_profiling::mojom::ProfilingClient>())
+#endif  // !defined(OS_FUCHSIA)
         .ExposeCapability("renderer",
                           service_manager::Manifest::InterfaceList<
                               chromecast::media::mojom::MediaCaps,
@@ -45,6 +62,11 @@ const service_manager::Manifest& GetCastContentBrowserOverlayManifest() {
 const service_manager::Manifest& GetCastContentRendererOverlayManifest() {
   static base::NoDestructor<service_manager::Manifest> manifest {
     service_manager::ManifestBuilder()
+#if !defined(OS_FUCHSIA)
+        .ExposeCapability("browser",
+                          service_manager::Manifest::InterfaceList<
+                              heap_profiling::mojom::ProfilingClient>())
+#endif  // !defined(OS_FUCHSIA)
         .ExposeInterfaceFilterCapability_Deprecated(
             "navigation:frame", "browser",
             service_manager::Manifest::InterfaceList<
@@ -62,6 +84,9 @@ GetCastContentPackagedServicesOverlayManifest() {
   static base::NoDestructor<service_manager::Manifest> manifest {
     service_manager::ManifestBuilder()
         .PackageService(::media::GetMediaManifest())
+#if BUILDFLAG(ENABLE_EXTERNAL_MOJO_SERVICES)
+        .PackageService(chromecast::external_mojo::BrokerService::GetManifest())
+#endif
         .Build()
 #if defined(USE_INTERNAL_OVERLAY_MANIFESTS)
         .Amend(cast_content_packaged_services_internal_manifest_overlay::

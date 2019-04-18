@@ -9,7 +9,7 @@
 #include <memory>
 
 #include "base/callback_forward.h"
-#include "base/md5.h"
+#include "base/hash/md5.h"
 #include "base/run_loop.h"
 #include "base/test/scoped_feature_list.h"
 #include "base/test/scoped_task_environment.h"
@@ -161,7 +161,7 @@ class PipelineIntegrationTestBase : public Pipeline::Client {
   bool fuzzing_;
 #if defined(ADDRESS_SANITIZER) || defined(UNDEFINED_SANITIZER)
   // TODO(https://crbug.com/924030): ASAN causes Run() timeouts to be reached.
-  base::RunLoop::ScopedRunTimeoutForTest disable_run_timeout_;
+  const base::RunLoop::ScopedDisableRunTimeoutForTest disable_run_timeout_;
 #endif
   std::unique_ptr<Demuxer> demuxer_;
   std::unique_ptr<DataSource> data_source_;

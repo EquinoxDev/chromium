@@ -39,16 +39,6 @@ void DidClearServiceEvents(blink::ServiceWorkerStatusCode status) {
   // TODO(rayankans): Log errors to UMA.
 }
 
-void UpdateDevToolsBackgroundServiceExpiration(
-    BrowserContext* browser_context,
-    devtools::proto::BackgroundService service,
-    base::Time expiration_time) {
-  DCHECK_CURRENTLY_ON(BrowserThread::UI);
-
-  GetContentClient()->browser()->UpdateDevToolsBackgroundServiceExpiration(
-      browser_context, service, expiration_time);
-}
-
 }  // namespace
 
 DevToolsBackgroundServicesContext::DevToolsBackgroundServicesContext(
@@ -65,50 +55,83 @@ DevToolsBackgroundServicesContext::DevToolsBackgroundServicesContext(
 
   for (const auto& expiration_time : expiration_times) {
     DCHECK(devtools::proto::BackgroundService_IsValid(expiration_time.first));
-    expiration_times_.emplace(
-        static_cast<devtools::proto::BackgroundService>(expiration_time.first),
-        expiration_time.second);
+    expiration_times_[expiration_time.first] = expiration_time.second;
+
+    auto service =
+        static_cast<devtools::proto::BackgroundService>(expiration_time.first);
+    // If the recording permission for |service| has expired, set it to null.
+    if (IsRecordingExpired(service))
+      expiration_times_[expiration_time.first] = base::Time();
   }
 }
 
 DevToolsBackgroundServicesContext::~DevToolsBackgroundServicesContext() =
     default;
 
+void DevToolsBackgroundServicesContext::AddObserver(EventObserver* observer) {
+  observers_.AddObserver(observer);
+}
+
+void DevToolsBackgroundServicesContext::RemoveObserver(
+    const EventObserver* observer) {
+  observers_.RemoveObserver(observer);
+}
+
 void DevToolsBackgroundServicesContext::StartRecording(
     devtools::proto::BackgroundService service) {
-  DCHECK_CURRENTLY_ON(BrowserThread::IO);
-
-  DCHECK(expiration_times_[service].is_null());
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
   // TODO(rayankans): Make the time delay finch configurable.
   base::Time expiration_time = base::Time::Now() + base::TimeDelta::FromDays(3);
   expiration_times_[service] = expiration_time;
 
-  base::PostTaskWithTraits(
-      FROM_HERE, {BrowserThread::UI},
-      base::BindOnce(&UpdateDevToolsBackgroundServiceExpiration,
-                     browser_context_, service, expiration_time));
+  GetContentClient()->browser()->UpdateDevToolsBackgroundServiceExpiration(
+      browser_context_, service, expiration_time);
+
+  for (EventObserver& observer : observers_)
+    observer.OnRecordingStateChanged(/* should_record= */ true, service);
 }
 
 void DevToolsBackgroundServicesContext::StopRecording(
     devtools::proto::BackgroundService service) {
-  DCHECK_CURRENTLY_ON(BrowserThread::IO);
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
-  DCHECK(!expiration_times_[service].is_null());
-  expiration_times_.erase(service);
+  expiration_times_[service] = base::Time();
+  GetContentClient()->browser()->UpdateDevToolsBackgroundServiceExpiration(
+      browser_context_, service, base::Time());
 
-  base::PostTaskWithTraits(
-      FROM_HERE, {BrowserThread::UI},
-      base::BindOnce(&UpdateDevToolsBackgroundServiceExpiration,
-                     browser_context_, service, base::Time()));
+  for (EventObserver& observer : observers_)
+    observer.OnRecordingStateChanged(/* should_record= */ false, service);
 }
 
 bool DevToolsBackgroundServicesContext::IsRecording(
     devtools::proto::BackgroundService service) {
+  // Returns whether |service| has been enabled. When the expiration time has
+  // been met it will be lazily updated to be null.
   return !expiration_times_[service].is_null();
 }
 
+bool DevToolsBackgroundServicesContext::IsRecordingExpired(
+    devtools::proto::BackgroundService service) {
+  // Copy the expiration time to avoid data races.
+  const base::Time expiration_time = expiration_times_[service];
+  return !expiration_time.is_null() && expiration_time < base::Time::Now();
+}
+
 void DevToolsBackgroundServicesContext::GetLoggedBackgroundServiceEvents(
+    devtools::proto::BackgroundService service,
+    GetLoggedBackgroundServiceEventsCallback callback) {
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
+
+  base::PostTaskWithTraits(
+      FROM_HERE, {BrowserThread::IO},
+      base::BindOnce(&DevToolsBackgroundServicesContext::
+                         GetLoggedBackgroundServiceEventsOnIO,
+                     weak_ptr_factory_.GetWeakPtr(), service,
+                     std::move(callback)));
+}
+
+void DevToolsBackgroundServicesContext::GetLoggedBackgroundServiceEventsOnIO(
     devtools::proto::BackgroundService service,
     GetLoggedBackgroundServiceEventsCallback callback) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
@@ -125,34 +148,48 @@ void DevToolsBackgroundServicesContext::DidGetUserData(
     blink::ServiceWorkerStatusCode status) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
 
-  std::vector<devtools::proto::BackgroundServiceState> service_states;
+  std::vector<devtools::proto::BackgroundServiceEvent> events;
 
   if (status != blink::ServiceWorkerStatusCode::kOk) {
     // TODO(rayankans): Log errors to UMA.
-    std::move(callback).Run(service_states);
+    std::move(callback).Run(events);
     return;
   }
 
-  service_states.reserve(user_data.size());
+  events.reserve(user_data.size());
   for (const auto& data : user_data) {
-    devtools::proto::BackgroundServiceState service_state;
-    if (!service_state.ParseFromString(data.second)) {
+    devtools::proto::BackgroundServiceEvent event;
+    if (!event.ParseFromString(data.second)) {
       // TODO(rayankans): Log errors to UMA.
       std::move(callback).Run({});
       return;
     }
-    DCHECK_EQ(data.first, service_state.service_worker_registration_id());
-    service_states.push_back(std::move(service_state));
+    DCHECK_EQ(data.first, event.service_worker_registration_id());
+    events.push_back(std::move(event));
   }
 
-  std::sort(service_states.begin(), service_states.end(),
+  std::sort(events.begin(), events.end(),
             [](const auto& state1, const auto& state2) {
               return state1.timestamp() < state2.timestamp();
             });
-  std::move(callback).Run(std::move(service_states));
+
+  base::PostTaskWithTraits(
+      FROM_HERE, {BrowserThread::UI},
+      base::BindOnce(std::move(callback), std::move(events)));
 }
 
 void DevToolsBackgroundServicesContext::ClearLoggedBackgroundServiceEvents(
+    devtools::proto::BackgroundService service) {
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
+
+  base::PostTaskWithTraits(
+      FROM_HERE, {BrowserThread::IO},
+      base::BindOnce(&DevToolsBackgroundServicesContext::
+                         ClearLoggedBackgroundServiceEventsOnIO,
+                     weak_ptr_factory_.GetWeakPtr(), service));
+}
+
+void DevToolsBackgroundServicesContext::ClearLoggedBackgroundServiceEventsOnIO(
     devtools::proto::BackgroundService service) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
 
@@ -160,42 +197,67 @@ void DevToolsBackgroundServicesContext::ClearLoggedBackgroundServiceEvents(
       CreateEntryKeyPrefix(service), base::BindOnce(&DidClearServiceEvents));
 }
 
-void DevToolsBackgroundServicesContext::LogTestBackgroundServiceEvent(
+void DevToolsBackgroundServicesContext::LogBackgroundServiceEvent(
     uint64_t service_worker_registration_id,
     const url::Origin& origin,
-    devtools::proto::TestBackgroundServiceEvent event) {
+    devtools::proto::BackgroundService service,
+    const std::string& event_name,
+    const std::string& instance_id,
+    const std::map<std::string, std::string>& event_metadata) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
 
-  devtools::proto::BackgroundServiceState service_state;
-  service_state.set_background_service(
-      devtools::proto::BackgroundService::TEST_BACKGROUND_SERVICE);
-  *service_state.mutable_test_event() = std::move(event);
-
-  LogBackgroundServiceState(service_worker_registration_id, origin,
-                            std::move(service_state));
-}
-
-void DevToolsBackgroundServicesContext::LogBackgroundServiceState(
-    uint64_t service_worker_registration_id,
-    const url::Origin& origin,
-    devtools::proto::BackgroundServiceState service_state) {
-  DCHECK_CURRENTLY_ON(BrowserThread::IO);
-
-  if (!IsRecording(service_state.background_service()))
+  if (!IsRecording(service))
     return;
 
-  // Add common metadata.
-  service_state.set_timestamp(
+  if (IsRecordingExpired(service)) {
+    // We should stop recording because of the expiration time. We should
+    // also inform the observers that we stopped recording.
+    base::PostTaskWithTraits(
+        FROM_HERE, {BrowserThread::UI},
+        base::BindOnce(
+            &DevToolsBackgroundServicesContext::OnRecordingTimeExpired,
+            weak_ptr_factory_.GetWeakPtr(), service));
+    return;
+  }
+
+  devtools::proto::BackgroundServiceEvent event;
+  event.set_timestamp(
       base::Time::Now().ToDeltaSinceWindowsEpoch().InMicroseconds());
-  service_state.set_origin(origin.GetURL().spec());
-  service_state.set_service_worker_registration_id(
-      service_worker_registration_id);
+  event.set_origin(origin.GetURL().spec());
+  event.set_service_worker_registration_id(service_worker_registration_id);
+  event.set_background_service(service);
+  event.set_event_name(event_name);
+  event.set_instance_id(instance_id);
+  event.mutable_event_metadata()->insert(event_metadata.begin(),
+                                         event_metadata.end());
 
   service_worker_context_->StoreRegistrationUserData(
       service_worker_registration_id, origin.GetURL(),
-      {{CreateEntryKey(service_state.background_service()),
-        service_state.SerializeAsString()}},
+      {{CreateEntryKey(event.background_service()), event.SerializeAsString()}},
       base::BindOnce(&DidLogServiceEvent));
+
+  base::PostTaskWithTraits(
+      FROM_HERE, {BrowserThread::UI},
+      base::BindOnce(&DevToolsBackgroundServicesContext::NotifyEventObservers,
+                     weak_ptr_factory_.GetWeakPtr(), std::move(event)));
+}
+
+void DevToolsBackgroundServicesContext::NotifyEventObservers(
+    const devtools::proto::BackgroundServiceEvent& event) {
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
+
+  for (EventObserver& observer : observers_)
+    observer.OnEventReceived(event);
+}
+
+void DevToolsBackgroundServicesContext::OnRecordingTimeExpired(
+    devtools::proto::BackgroundService service) {
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
+
+  // This could have been stopped by the user in the meanwhile, or we
+  // received duplicate time expiry events.
+  if (IsRecordingExpired(service))
+    StopRecording(service);
 }
 
 }  // namespace content

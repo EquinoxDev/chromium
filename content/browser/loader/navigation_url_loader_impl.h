@@ -27,6 +27,7 @@ class NavigationData;
 class NavigationLoaderInterceptor;
 class ResourceContext;
 class StoragePartition;
+class StoragePartitionImpl;
 struct GlobalRequestID;
 
 class CONTENT_EXPORT NavigationURLLoaderImpl : public NavigationURLLoader {
@@ -82,13 +83,26 @@ class CONTENT_EXPORT NavigationURLLoaderImpl : public NavigationURLLoader {
   static void SetBeginNavigationInterceptorForTesting(
       const BeginNavigationInterceptor& interceptor);
 
-  // Intercepts loading of frame requests when network service is enabled and a
-  // network::mojom::TrustedURLLoaderHeaderClient is being used. This must be
-  // called on the UI thread or before threads start.
+  // Intercepts loading of frame requests when network service is enabled and
+  // either a network::mojom::TrustedURLLoaderHeaderClient is being used or for
+  // schemes not handled by network service (e.g. files). This must be called on
+  // the UI thread or before threads start.
   using URLLoaderFactoryInterceptor = base::RepeatingCallback<void(
       network::mojom::URLLoaderFactoryRequest* request)>;
   static void SetURLLoaderFactoryInterceptorForTesting(
       const URLLoaderFactoryInterceptor& interceptor);
+
+  // Creates a URLLoaderFactory for a navigation. The factory uses
+  // |header_client|. This should have the same settings as the factory from the
+  // URLLoaderFactoryGetter. Called on the UI thread.
+  static void CreateURLLoaderFactoryWithHeaderClient(
+      network::mojom::TrustedURLLoaderHeaderClientPtrInfo header_client,
+      network::mojom::URLLoaderFactoryRequest factory_request,
+      StoragePartitionImpl* partition);
+
+  // Returns a Request ID for browser-initiated navigation requests. Called on
+  // the IO thread.
+  static GlobalRequestID MakeGlobalRequestID();
 
  private:
   class URLLoaderRequestController;

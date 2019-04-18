@@ -5,6 +5,7 @@
 #ifndef FUCHSIA_ENGINE_CONTEXT_PROVIDER_IMPL_H_
 #define FUCHSIA_ENGINE_CONTEXT_PROVIDER_IMPL_H_
 
+#include <fuchsia/web/cpp/fidl.h>
 #include <lib/fidl/cpp/binding_set.h>
 #include <memory>
 
@@ -20,46 +21,28 @@ class Process;
 }  // namespace base
 
 class WEB_ENGINE_EXPORT ContextProviderImpl
-    : public chromium::web::ContextProvider {
+    : public fuchsia::web::ContextProvider {
  public:
-  ContextProviderImpl();
-  ~ContextProviderImpl() override;
-
-  // Creates a ContextProviderImpl that shares its /tmp directory with its child
-  // processes. This is useful for GTest processes, which depend on a shared
-  // tmpdir for storing startup flags and retrieving test result files.
-  static std::unique_ptr<ContextProviderImpl> CreateForTest();
-
-  // Binds |this| object instance to |request|.
-  // The service will persist and continue to serve other channels in the event
-  // that a bound channel is dropped.
-  void Bind(fidl::InterfaceRequest<chromium::web::ContextProvider> request);
-
-  // chromium::web::ContextProvider implementation.
-  void Create(chromium::web::CreateContextParams params,
-              ::fidl::InterfaceRequest<chromium::web::Context> context_request)
-      override;
-
- private:
-  using LaunchContextProcessCallback = base::RepeatingCallback<base::Process(
+  using LaunchCallbackForTest = base::RepeatingCallback<base::Process(
       const base::CommandLine& command,
       const base::LaunchOptions& options)>;
 
-  friend class ContextProviderImplTest;
+  ContextProviderImpl();
+  ~ContextProviderImpl() override;
 
-  explicit ContextProviderImpl(bool use_shared_tmp);
+  // fuchsia::web::ContextProvider implementation.
+  void Create(
+      fuchsia::web::CreateContextParams params,
+      fidl::InterfaceRequest<fuchsia::web::Context> context_request) override;
 
-  // Overrides the default child process launching logic to call |launch|
-  // instead.
-  void SetLaunchCallbackForTests(const LaunchContextProcessCallback& launch);
+  // Sets a |launch| callback to use instead of calling LaunchProcess() to
+  // create Context processes.
+  void SetLaunchCallbackForTest(LaunchCallbackForTest launch);
 
-  // Spawns a Context child process.
-  LaunchContextProcessCallback launch_;
-
-  // If set, then the ContextProvider will share /tmp with its child processes.
-  bool use_shared_tmp_ = true;
-
-  fidl::BindingSet<chromium::web::ContextProvider> bindings_;
+ private:
+  // Set by tests to use to launch Context child processes, e.g. to allow a
+  // fake Context process to be launched.
+  LaunchCallbackForTest launch_for_test_;
 
   DISALLOW_COPY_AND_ASSIGN(ContextProviderImpl);
 };

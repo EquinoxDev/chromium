@@ -6,6 +6,8 @@
 """Extracts native methods from a Java file and generates the JNI bindings.
 If you change this, please run and update the tests."""
 
+from __future__ import print_function
+
 import base64
 import collections
 import errno
@@ -121,9 +123,16 @@ class NativeMethod(object):
     self.static = kwargs['static']
     self.java_class_name = kwargs['java_class_name']
     self.return_type = kwargs['return_type']
-    self.name = kwargs['name']
     self.params = kwargs['params']
     self.is_proxy = kwargs.get('is_proxy', False)
+
+    self.name = kwargs['name']
+    if self.is_proxy:
+      # Proxy methods don't have a native prefix so the first letter is
+      # lowercase. But we still want the CPP declaration to use upper camel
+      # case for the method name.
+      self.name = self.name[0].upper() + self.name[1:]
+
     self.proxy_name = kwargs.get('proxy_name', self.name)
 
     has_jcaller = False
@@ -1207,14 +1216,7 @@ $METHOD_STUBS
       # Inner class
       class_name = native.java_class_name
 
-    method_name = native.name
-    if native.is_proxy:
-      # proxy methods don't have a native prefix so the first letter is
-      # lowercase. But we still want the CPP declaration to use upper camel case
-      # for the method name.
-      method_name = method_name[0].upper() + method_name[1:]
-
-    return 'JNI_%s_%s' % (class_name, method_name)
+    return 'JNI_%s_%s' % (class_name, native.name)
 
   def GetNativeStub(self, native):
     is_method = native.type == 'method'
@@ -1534,13 +1536,13 @@ def GenerateJNIHeader(input_file, output_file, options):
           input_file, options)
       content = jni_from_java_source.GetContent()
   except ParseError, e:
-    print e
+    print(e)
     sys.exit(1)
   if output_file:
     with build_utils.AtomicOutput(output_file) as f:
       f.write(content)
   else:
-    print content
+    print(content)
 
 
 def GetScriptName():
@@ -1613,7 +1615,7 @@ See SampleForTests.java for more details.
     input_file = options.input_file
   else:
     option_parser.print_help()
-    print '\nError: Must specify --jar_file or --input_file.'
+    print('\nError: Must specify --jar_file or --input_file.')
     return 1
   output_file = None
   if options.output_dir:

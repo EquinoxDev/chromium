@@ -25,6 +25,7 @@
 
 #include "third_party/blink/renderer/core/layout/layout_box_model_object.h"
 
+#include "cc/input/main_thread_scrolling_reason.h"
 #include "third_party/blink/renderer/core/dom/node_computed_style.h"
 #include "third_party/blink/renderer/core/frame/local_frame.h"
 #include "third_party/blink/renderer/core/frame/local_frame_view.h"
@@ -41,7 +42,6 @@
 #include "third_party/blink/renderer/core/paint/paint_layer_scrollable_area.h"
 #include "third_party/blink/renderer/core/style/shadow_list.h"
 #include "third_party/blink/renderer/platform/geometry/length_functions.h"
-#include "third_party/blink/renderer/platform/scroll/main_thread_scrolling_reason.h"
 #include "third_party/blink/renderer/platform/transforms/transform_state.h"
 
 namespace blink {
@@ -134,7 +134,7 @@ BackgroundPaintLocation LayoutBoxModelObject::GetBackgroundPaintLocation(
   if (StyleRef().BoxShadow()) {
     if (main_thread_scrolling_reasons) {
       *main_thread_scrolling_reasons |=
-          MainThreadScrollingReason::kHasBoxShadowFromNonRootLayer;
+          cc::MainThreadScrollingReason::kHasBoxShadowFromNonRootLayer;
     }
     return kBackgroundPaintInGraphicsLayer;
   }
@@ -265,6 +265,9 @@ void LayoutBoxModelObject::StyleDidChange(StyleDifference diff,
   bool had_layer = HasLayer();
   bool layer_was_self_painting = had_layer && Layer()->IsSelfPaintingLayer();
   bool was_horizontal_writing_mode = IsHorizontalWritingMode();
+  bool could_contain_fixed = ComputeIsFixedContainer(old_style);
+  bool could_contain_absolute =
+      could_contain_fixed || ComputeIsAbsoluteContainer(old_style);
 
   LayoutObject::StyleDidChange(diff, old_style);
   UpdateFromStyle();
@@ -326,10 +329,8 @@ void LayoutBoxModelObject::StyleDidChange(StyleDifference diff,
   }
 
   if (old_style &&
-      (old_style->CanContainFixedPositionObjects(IsDocumentElement()) !=
-           StyleRef().CanContainFixedPositionObjects(IsDocumentElement()) ||
-       old_style->CanContainAbsolutePositionObjects() !=
-           StyleRef().CanContainAbsolutePositionObjects())) {
+      (could_contain_fixed != CanContainFixedPositionObjects() ||
+       could_contain_absolute != CanContainAbsolutePositionObjects())) {
     // If out of flow element containment changed, then we need to force a
     // subtree paint property update, since the children elements may now be
     // referencing a different container.
@@ -437,30 +438,30 @@ void LayoutBoxModelObject::StyleDidChange(StyleDifference diff,
     }
   }
 
-  if (old_style && HasLayer() && !Layer()->NeedsRepaint()) {
-    if (old_style->BackfaceVisibility() != StyleRef().BackfaceVisibility()) {
-      // We need to repaint the layer to update the backface visibility value of
-      // the paint chunk.
+  if (old_style &&
+      old_style->BackfaceVisibility() != StyleRef().BackfaceVisibility()) {
+    SetNeedsPaintPropertyUpdate();
+  }
+
+  if (old_style && HasLayer() && !Layer()->NeedsRepaint() &&
+      diff.TransformChanged() &&
+      (RuntimeEnabledFeatures::CompositeAfterPaintEnabled() ||
+       !Layer()->HasStyleDeterminedDirectCompositingReasons())) {
+    // PaintLayerPainter::PaintLayerWithAdjustedRoot skips painting of a layer
+    // whose transform is not invertible, so we need to repaint the layer when
+    // invertible status changes.
+    TransformationMatrix old_transform;
+    TransformationMatrix new_transform;
+    old_style->ApplyTransform(
+        old_transform, LayoutSize(), ComputedStyle::kExcludeTransformOrigin,
+        ComputedStyle::kExcludeMotionPath,
+        ComputedStyle::kIncludeIndependentTransformProperties);
+    StyleRef().ApplyTransform(
+        new_transform, LayoutSize(), ComputedStyle::kExcludeTransformOrigin,
+        ComputedStyle::kExcludeMotionPath,
+        ComputedStyle::kIncludeIndependentTransformProperties);
+    if (old_transform.IsInvertible() != new_transform.IsInvertible())
       Layer()->SetNeedsRepaint();
-    } else if (diff.TransformChanged() &&
-               (RuntimeEnabledFeatures::CompositeAfterPaintEnabled() ||
-                !Layer()->HasStyleDeterminedDirectCompositingReasons())) {
-      // PaintLayerPainter::PaintLayerWithAdjustedRoot skips painting of a layer
-      // whose transform is not invertible, so we need to repaint the layer when
-      // invertible status changes.
-      TransformationMatrix old_transform;
-      TransformationMatrix new_transform;
-      old_style->ApplyTransform(
-          old_transform, LayoutSize(), ComputedStyle::kExcludeTransformOrigin,
-          ComputedStyle::kExcludeMotionPath,
-          ComputedStyle::kIncludeIndependentTransformProperties);
-      StyleRef().ApplyTransform(
-          new_transform, LayoutSize(), ComputedStyle::kExcludeTransformOrigin,
-          ComputedStyle::kExcludeMotionPath,
-          ComputedStyle::kIncludeIndependentTransformProperties);
-      if (old_transform.IsInvertible() != new_transform.IsInvertible())
-        Layer()->SetNeedsRepaint();
-    }
   }
 }
 
@@ -517,34 +518,6 @@ PaintLayerScrollableArea* LayoutBoxModelObject::GetScrollableArea() const {
   return Layer() ? Layer()->GetScrollableArea() : nullptr;
 }
 
-void LayoutBoxModelObject::AddLayerHitTestRects(
-    LayerHitTestRects& rects,
-    const PaintLayer* current_layer,
-    const LayoutPoint& layer_offset,
-    TouchAction supported_fast_actions,
-    const LayoutRect& container_rect,
-    TouchAction container_whitelisted_touch_action) const {
-  if (HasLayer()) {
-    if (IsLayoutView()) {
-      // LayoutView is handled with a special fast-path, but it needs to know
-      // the current layer.
-      LayoutObject::AddLayerHitTestRects(rects, Layer(), LayoutPoint(),
-                                         supported_fast_actions, LayoutRect(),
-                                         TouchAction::kTouchActionAuto);
-    } else {
-      // Since a LayoutObject never lives outside it's container Layer, we can
-      // switch to marking entire layers instead. This may sometimes mark more
-      // than necessary (when a layer is made of disjoint objects) but in
-      // practice is a significant performance savings.
-      Layer()->AddLayerHitTestRects(rects, supported_fast_actions);
-    }
-  } else {
-    LayoutObject::AddLayerHitTestRects(rects, current_layer, layer_offset,
-                                       supported_fast_actions, container_rect,
-                                       container_whitelisted_touch_action);
-  }
-}
-
 void LayoutBoxModelObject::AddOutlineRectsForNormalChildren(
     Vector<LayoutRect>& rects,
     const LayoutPoint& additional_offset,
@@ -559,9 +532,9 @@ void LayoutBoxModelObject::AddOutlineRectsForNormalChildren(
     // Outline of an element continuation or anonymous block continuation is
     // added when we iterate the continuation chain.
     // See LayoutBlock::addOutlineRects() and LayoutInline::addOutlineRects().
+    auto* child_block_flow = DynamicTo<LayoutBlockFlow>(child);
     if (child->IsElementContinuation() ||
-        (child->IsLayoutBlockFlow() &&
-         ToLayoutBlockFlow(child)->IsAnonymousBlockContinuation()))
+        (child_block_flow && child_block_flow->IsAnonymousBlockContinuation()))
       continue;
 
     AddOutlineRectsForDescendant(*child, rects, additional_offset,
@@ -646,10 +619,11 @@ void LayoutBoxModelObject::AbsoluteQuads(Vector<FloatQuad>& quads,
   for (const LayoutBoxModelObject* continuation_object = Continuation();
        continuation_object;
        continuation_object = continuation_object->Continuation()) {
+    auto* continuation_block_flow =
+        DynamicTo<LayoutBlockFlow>(continuation_object);
     DCHECK(continuation_object->IsLayoutInline() ||
-           (continuation_object->IsLayoutBlockFlow() &&
-            ToLayoutBlockFlow(continuation_object)
-                ->IsAnonymousBlockContinuation()));
+           (continuation_block_flow &&
+            continuation_block_flow->IsAnonymousBlockContinuation()));
     continuation_object->AbsoluteQuadsForSelf(quads, mode);
   }
 }
@@ -660,6 +634,7 @@ void LayoutBoxModelObject::UpdateFromStyle() {
   SetInline(style_to_use.IsDisplayInlineType());
   SetPositionState(style_to_use.GetPosition());
   SetHorizontalWritingMode(style_to_use.IsHorizontalWritingMode());
+  SetCanContainFixedPositionObjects(ComputeIsFixedContainer(&style_to_use));
 }
 
 LayoutBlock* LayoutBoxModelObject::ContainingBlockForAutoHeightDetection(
@@ -1239,19 +1214,6 @@ void LayoutBoxModelObject::SetContinuation(LayoutBoxModelObject* continuation) {
   }
 }
 
-void LayoutBoxModelObject::ComputeLayerHitTestRects(
-    LayerHitTestRects& rects,
-    TouchAction supported_fast_actions) const {
-  LayoutObject::ComputeLayerHitTestRects(rects, supported_fast_actions);
-
-  // If there is a continuation then we need to consult it here, since this is
-  // the root of the tree walk and it wouldn't otherwise get picked up.
-  // Continuations should always be siblings in the tree, so any others should
-  // get picked up already by the tree walk.
-  if (Continuation())
-    Continuation()->ComputeLayerHitTestRects(rects, supported_fast_actions);
-}
-
 LayoutRect LayoutBoxModelObject::LocalCaretRectForEmptyElement(
     LayoutUnit width,
     LayoutUnit text_indent_offset) const {
@@ -1416,7 +1378,7 @@ void LayoutBoxModelObject::MoveChildTo(
   // moves (!fullRemoveInsert) so the positioned layoutObject maps don't become
   // stale. It would be too slow to do the map lookup on each call.
   DCHECK(!full_remove_insert || !IsLayoutBlock() ||
-         !ToLayoutBlock(this)->HasPositionedObjects());
+         !To<LayoutBlock>(this)->HasPositionedObjects());
 
   DCHECK_EQ(this, child->Parent());
   DCHECK(!before_child || to_box_model_object == before_child->Parent());
@@ -1427,10 +1389,11 @@ void LayoutBoxModelObject::MoveChildTo(
   // anonymous block. Remove all floats from their float-lists immediately as
   // markAllDescendantsWithFloatsForLayout won't attempt to remove floats from
   // parents that have inline-flow if we try later.
-  if (child->IsLayoutBlockFlow() && to_box_model_object->ChildrenInline() &&
+  auto* child_block_flow = DynamicTo<LayoutBlockFlow>(child);
+  if (child_block_flow && to_box_model_object->ChildrenInline() &&
       !ChildrenInline()) {
-    ToLayoutBlockFlow(child)->RemoveFloatingObjectsFromDescendants();
-    DCHECK(!ToLayoutBlockFlow(child)->ContainsFloats());
+    child_block_flow->RemoveFloatingObjectsFromDescendants();
+    DCHECK(!child_block_flow->ContainsFloats());
   }
 
   if (full_remove_insert && IsLayoutBlock() && child->IsBox())
@@ -1459,12 +1422,13 @@ void LayoutBoxModelObject::MoveChildrenTo(
   // This condition is rarely hit since this function is usually called on
   // anonymous blocks which can no longer carry positioned objects (see r120761)
   // or when fullRemoveInsert is false.
-  if (full_remove_insert && IsLayoutBlock()) {
-    LayoutBlock* block = ToLayoutBlock(this);
+  auto* block = DynamicTo<LayoutBlock>(this);
+  if (full_remove_insert && block) {
     block->RemovePositionedObjects(nullptr);
     block->RemoveFromPercentHeightContainer();
-    if (block->IsLayoutBlockFlow())
-      ToLayoutBlockFlow(block)->RemoveFloatingObjects();
+    auto* block_flow = DynamicTo<LayoutBlockFlow>(block);
+    if (block_flow)
+      block_flow->RemoveFloatingObjects();
   }
 
   DCHECK(!before_child || to_box_model_object == before_child->Parent());

@@ -21,7 +21,6 @@ namespace blink {
 namespace {
 
 static const wtf_size_t kMaxMutateCountToSwitch = 10u;
-static const wtf_size_t kStatefulGlobalScopeIndex = 0u;
 
 }  // end namespace
 
@@ -43,7 +42,7 @@ AnimationWorkletProxyClient::AnimationWorkletProxyClient(
     : worklet_id_(worklet_id),
       state_(RunState::kUninitialized),
       next_global_scope_switch_countdown_(0),
-      current_stateless_global_scope_index_(0) {
+      current_global_scope_index_(0) {
   DCHECK(IsMainThread());
 
   // The dispatchers are weak pointers that may come from another thread. It's
@@ -164,20 +163,14 @@ std::unique_ptr<AnimationWorkletOutput> AnimationWorkletProxyClient::Mutate(
       << worklet_id_;
 #endif
 
-  // Create or destroy instances of animators on each global scope.
-  for (auto global_scope : global_scopes_) {
-    global_scope->UpdateAnimatorsList(*input);
-  }
+  AnimationWorkletGlobalScope* global_scope =
+      SelectGlobalScopeAndUpdateAnimatorsIfNecessary();
+  DCHECK(global_scope);
+  // Create or destroy instances of animators on current global scope.
+  global_scope->UpdateAnimatorsList(*input);
 
-  // Assume animators are stateful.
-  // TODO(https://crbug.com/914918): Implement filter for detecting stateless
-  // and stateful animators. Call mutate on stateful and stateless global
-  // scopes with appropriate predicates.
-  AnimationWorkletGlobalScope* stateful_global_scope =
-      SelectStatefulGlobalScope();
-  DCHECK(stateful_global_scope);
-  stateful_global_scope->UpdateAnimators(*input, output.get(),
-                                         [](Animator*) { return true; });
+  global_scope->UpdateAnimators(*input, output.get(),
+                                [](Animator* animator) { return true; });
 
   UMA_HISTOGRAM_CUSTOM_MICROSECONDS_TIMES(
       "Animation.AnimationWorklet.MutateDuration", timer.Elapsed(),
@@ -188,21 +181,19 @@ std::unique_ptr<AnimationWorkletOutput> AnimationWorkletProxyClient::Mutate(
 }
 
 AnimationWorkletGlobalScope*
-AnimationWorkletProxyClient::SelectStatelessGlobalScope() {
+AnimationWorkletProxyClient::SelectGlobalScopeAndUpdateAnimatorsIfNecessary() {
   if (--next_global_scope_switch_countdown_ < 0) {
-    current_stateless_global_scope_index_ =
-        (++current_stateless_global_scope_index_ % global_scopes_.size());
+    int last_global_scope_index = current_global_scope_index_;
+    current_global_scope_index_ =
+        (++current_global_scope_index_ % global_scopes_.size());
+    global_scopes_[last_global_scope_index]->MigrateAnimatorsTo(
+        global_scopes_[current_global_scope_index_]);
     // Introduce an element of randomness in the switching interval to make
     // stateful dependences easier to spot.
     next_global_scope_switch_countdown_ =
         base::RandInt(0, kMaxMutateCountToSwitch - 1);
   }
-  return global_scopes_[current_stateless_global_scope_index_];
-}
-
-AnimationWorkletGlobalScope*
-AnimationWorkletProxyClient::SelectStatefulGlobalScope() {
-  return global_scopes_[kStatefulGlobalScopeIndex];
+  return global_scopes_[current_global_scope_index_];
 }
 
 void AnimationWorkletProxyClient::AddGlobalScopeForTesting(

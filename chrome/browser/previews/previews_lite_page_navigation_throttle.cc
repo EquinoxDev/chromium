@@ -11,6 +11,7 @@
 
 #include "base/bind.h"
 #include "base/callback.h"
+#include "base/command_line.h"
 #include "base/memory/weak_ptr.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/optional.h"
@@ -36,6 +37,7 @@
 #include "components/content_settings/core/common/cookie_settings_base.h"
 #include "components/data_reduction_proxy/core/browser/data_reduction_proxy_request_options.h"
 #include "components/data_reduction_proxy/core/common/data_reduction_proxy_headers.h"
+#include "components/data_reduction_proxy/core/common/data_reduction_proxy_switches.h"
 #include "components/previews/core/previews_experiments.h"
 #include "components/previews/core/previews_lite_page_redirect.h"
 #include "content/public/browser/browser_context.h"
@@ -63,22 +65,6 @@ namespace {
 constexpr char kChromeProxyHeader[] = "chrome-proxy";
 
 const base::TimeDelta kBlacklistDuration = base::TimeDelta::FromDays(30);
-
-bool IsPrivateDomain(const GURL& url) {
-  if (url.host().find(".") == base::StringPiece::npos)
-    return true;
-
-  // Allow localhost check to be skipped if needed, like in testing.
-  if (net::IsLocalhost(url))
-    return !previews::params::LitePagePreviewsTriggerOnLocalhost();
-
-  net::IPAddress ip_addr;
-  if (url.HostIsIPAddress() && ip_addr.AssignFromIPLiteral(url.host()) &&
-      !ip_addr.IsPubliclyRoutable()) {
-    return true;
-  }
-  return false;
-}
 
 content::OpenURLParams MakeOpenURLParams(content::NavigationHandle* handle,
                                          GURL url,
@@ -263,7 +249,18 @@ bool HandlePreviewsLitePageURLRewrite(
     content::BrowserContext* browser_context) {
   // Don't change the |url|, just register our interest in reversing it before
   // it is displayed to the user in |HandlePreviewsLitePageURLRewriteReverse|.
-  return previews::IsLitePageRedirectPreviewURL(*url);
+  // Without returning true here, |HandlePreviewsLitePageURLRewriteReverse|
+  // would not be called.
+
+  auto* data_reduction_proxy_settings =
+      DataReductionProxyChromeSettingsFactory::GetForBrowserContext(
+          browser_context);
+
+  if (!data_reduction_proxy_settings)
+    return false;
+
+  return data_reduction_proxy_settings->IsDataReductionProxyEnabled() &&
+         previews::params::IsLitePageServerPreviewsEnabled();
 }
 
 bool HandlePreviewsLitePageURLRewriteReverse(
@@ -291,120 +288,42 @@ PreviewsLitePageNavigationThrottle::PreviewsLitePageNavigationThrottle(
 PreviewsLitePageNavigationThrottle::~PreviewsLitePageNavigationThrottle() =
     default;
 
+// static
+void PreviewsLitePageNavigationThrottle::LogIneligibleReason(
+    IneligibleReason reason) {
+  UMA_HISTOGRAM_ENUMERATION("Previews.ServerLitePage.IneligibleReasons",
+
+                            reason);
+}
+
 bool PreviewsLitePageNavigationThrottle::IsEligibleForPreview() const {
   DCHECK(navigation_handle()->IsInMainFrame());
-  DCHECK_NE(navigation_handle()->GetReloadType(),
-            content::ReloadType::ORIGINAL_REQUEST_URL);
-  // TODO(crbug.com/921755): Move all eligibility reasons to PreviewsState
-  // decision code and remove |ineligible_reasons|.
-  std::vector<IneligibleReason> ineligible_reasons;
-
-  PreviewsUITabHelper* tab_helper = PreviewsUITabHelper::FromWebContents(
-      navigation_handle()->GetWebContents());
-  previews::PreviewsUserData* previews_data =
-      tab_helper ? tab_helper->GetPreviewsUserData(navigation_handle())
-                 : nullptr;
-  if (!previews_data || !(previews_data->allowed_previews_state() &
-                          content::LITE_PAGE_REDIRECT_ON)) {
-    ineligible_reasons.push_back(IneligibleReason::kPreviewsState);
-  }
-
-  const GURL& url = navigation_handle()->GetURL();
-  if (!url.SchemeIs(url::kHttpsScheme))
-    ineligible_reasons.push_back(IneligibleReason::kNonHttpsScheme);
-
-  if (manager_->IsServerUnavailable())
-    ineligible_reasons.push_back(IneligibleReason::kServerUnavailable);
-
-  if (g_browser_process->network_quality_tracker()
-          ->GetEffectiveConnectionType() ==
-      net::EFFECTIVE_CONNECTION_TYPE_UNKNOWN) {
-    ineligible_reasons.push_back(IneligibleReason::kECTUnknown);
-  }
-
-  if (g_browser_process->network_quality_tracker()
-          ->GetEffectiveConnectionType() >
-      previews::params::GetECTThresholdForPreview(
-          previews::PreviewsType::LITE_PAGE_REDIRECT)) {
-    ineligible_reasons.push_back(IneligibleReason::kNetworkNotSlow);
-  }
-
-  content_settings::CookieSettings* cookie_settings =
-      CookieSettingsFactory::GetForProfile(
-          Profile::FromBrowserContext(
-              navigation_handle()->GetWebContents()->GetBrowserContext()))
-          .get();
-  ContentSetting setting;
-  GURL previews_url = GetPreviewsURLForURL(url);
-  cookie_settings->GetCookieSetting(previews_url, previews_url, nullptr,
-                                    &setting);
-  if (!content_settings::CookieSettingsBase::IsAllowed(setting)) {
-    ineligible_reasons.push_back(IneligibleReason::kCookiesBlocked);
-  }
 
   if (data_reduction_proxy::HasURLRedirectCycle(
           navigation_handle()->GetRedirectChain()) ||
       (GetServerLitePageInfo() &&
        GetServerLitePageInfo()->restart_count >=
            previews::params::LitePageRedirectPreviewMaxNavigationRestarts())) {
-    ineligible_reasons.push_back(
-        IneligibleReason::kExceededMaxNavigationRestarts);
-  }
-
-  // Record UMA.
-  for (IneligibleReason reason : ineligible_reasons) {
-    UMA_HISTOGRAM_ENUMERATION("Previews.ServerLitePage.IneligibleReasons",
-                              reason);
-  }
-  if (!ineligible_reasons.empty())
-    return false;
-
-  // Check dynamic blacklists.
-  std::vector<BlacklistReason> blacklist_reasons;
-
-  if (previews::IsLitePageRedirectPreviewDomain(url))
-    blacklist_reasons.push_back(BlacklistReason::kNavigationToPreviewsDomain);
-
-  if (IsPrivateDomain(url))
-    blacklist_reasons.push_back(BlacklistReason::kNavigationToPrivateDomain);
-
-  std::vector<std::string> blacklisted_path_suffixes =
-      previews::params::LitePagePreviewsBlacklistedPathSuffixes();
-  for (const std::string& suffix : blacklisted_path_suffixes) {
-    if (base::EndsWith(url.path(), suffix,
-                       base::CompareCase::INSENSITIVE_ASCII)) {
-      blacklist_reasons.push_back(BlacklistReason::kPathSuffixBlacklisted);
-      break;
-    }
-  }
-
-  if (manager_->HostBlacklistedFromBypass(url.host()))
-    blacklist_reasons.push_back(BlacklistReason::kHostBypassBlacklisted);
-
-  // Record UMA
-  for (BlacklistReason reason : blacklist_reasons) {
-    UMA_HISTOGRAM_ENUMERATION("Previews.ServerLitePage.BlacklistReasons",
-                              reason);
-  }
-
-  if (!blacklist_reasons.empty())
-    return false;
-
-  // This should always be at the end, but before the control group check.
-  if (manager_->NeedsToNotifyUser()) {
-    manager_->NotifyUser(navigation_handle()->GetWebContents());
-    UMA_HISTOGRAM_ENUMERATION("Previews.ServerLitePage.IneligibleReasons",
-                              IneligibleReason::kInfoBarNotSeen);
+    LogIneligibleReason(IneligibleReason::kExceededMaxNavigationRestarts);
     return false;
   }
 
-  // This should always be last.
-  if (previews::params::IsInLitePageRedirectControl()) {
-    previews::PreviewsUserData::ServerLitePageInfo* info =
-        GetOrCreateServerLitePageInfo();
-    info->status = previews::ServerLitePageStatus::kControl;
+  PreviewsUITabHelper* tab_helper = PreviewsUITabHelper::FromWebContents(
+      navigation_handle()->GetWebContents());
+  previews::PreviewsUserData* previews_data =
+      tab_helper ? (tab_helper->GetPreviewsUserData(navigation_handle()))
+                 : nullptr;
+
+  if (!previews_data || !(previews_data->allowed_previews_state() &
+                          content::LITE_PAGE_REDIRECT_ON)) {
     return false;
   }
+
+  DCHECK_EQ(navigation_handle()->GetReloadType(), content::ReloadType::NONE);
+
+  if (previews::IsLitePageRedirectPreviewDomain(navigation_handle()->GetURL()))
+    return false;
+
   return true;
 }
 
@@ -414,6 +333,14 @@ GURL PreviewsLitePageNavigationThrottle::GetPreviewsURLForURL(
   DCHECK(original_url.is_valid());
   std::string experiment_id =
       previews::params::LitePageRedirectPreviewExperiment();
+
+  // Allow the command line to override any variations-provided experiment.
+  std::string cmd_line_experiment =
+      base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
+          data_reduction_proxy::switches::kDataReductionProxyExperiment);
+  if (!cmd_line_experiment.empty())
+    experiment_id = cmd_line_experiment;
+
   std::string experiment_query;
   if (!experiment_id.empty()) {
     experiment_query =
@@ -483,7 +410,7 @@ PreviewsLitePageNavigationThrottle::TriggerPreview() const {
       navigation_handle()->GetWebContents()->GetBrowserContext();
 
   previews::PreviewsUserData::ServerLitePageInfo* info =
-      GetOrCreateServerLitePageInfo();
+      GetOrCreateServerLitePageInfo(navigation_handle(), manager_);
 
   // Set DRP headers.
   DataReductionProxyChromeSettings* drp_settings =
@@ -586,11 +513,13 @@ PreviewsLitePageNavigationThrottle::WillStartRequest() {
 
     base::PostTaskWithTraits(
         FROM_HERE, {content::BrowserThread::UI},
-        base::BindOnce(&PreviewsWebContentsLifetimeHelper::PostNewNavigation,
-                       helper->GetWeakPtr(),
-                       MakeOpenURLParams(navigation_handle(),
-                                         GURL(original_url), std::string()),
-                       GetOrCreateServerLitePageInfo()->Clone()));
+        base::BindOnce(
+            &PreviewsWebContentsLifetimeHelper::PostNewNavigation,
+            helper->GetWeakPtr(),
+            MakeOpenURLParams(navigation_handle(), GURL(original_url),
+                              std::string()),
+            GetOrCreateServerLitePageInfo(navigation_handle(), manager_)
+                ->Clone()));
     return content::NavigationThrottle::CANCEL;
   }
 
@@ -674,7 +603,7 @@ PreviewsLitePageNavigationThrottle::WillFailRequest() {
   LoadAndBypass(
       navigation_handle()->GetWebContents(), manager_,
       MakeOpenURLParams(navigation_handle(), GURL(original_url), std::string()),
-      GetServerLitePageInfo() ? GetServerLitePageInfo()->Clone() : nullptr,
+      GetOrCreateServerLitePageInfo(navigation_handle(), manager_)->Clone(),
       true);
   return content::NavigationThrottle::CANCEL;
 }
@@ -710,7 +639,7 @@ PreviewsLitePageNavigationThrottle::WillProcessResponse() {
 
     UMA_HISTOGRAM_ENUMERATION("Previews.ServerLitePage.ServerResponse",
                               ServerResponse::kOk);
-    GetOrCreateServerLitePageInfo()->status =
+    GetOrCreateServerLitePageInfo(navigation_handle(), manager_)->status =
         previews::ServerLitePageStatus::kSuccess;
 
     return content::NavigationThrottle::PROCEED;
@@ -738,7 +667,7 @@ PreviewsLitePageNavigationThrottle::WillProcessResponse() {
   }
 
   previews::PreviewsUserData::ServerLitePageInfo* info =
-      GetOrCreateServerLitePageInfo();
+      GetOrCreateServerLitePageInfo(navigation_handle(), manager_);
   info->status = previews::ServerLitePageStatus::kFailure;
   LoadAndBypass(
       navigation_handle()->GetWebContents(), manager_,
@@ -771,15 +700,18 @@ void PreviewsLitePageNavigationThrottle::SetServerLitePageInfoStatus(
   info->status = status;
 }
 
+// static
 previews::PreviewsUserData::ServerLitePageInfo*
-PreviewsLitePageNavigationThrottle::GetOrCreateServerLitePageInfo() const {
-  PreviewsUITabHelper* ui_tab_helper = PreviewsUITabHelper::FromWebContents(
-      navigation_handle()->GetWebContents());
+PreviewsLitePageNavigationThrottle::GetOrCreateServerLitePageInfo(
+    content::NavigationHandle* navigation_handle,
+    PreviewsLitePageNavigationThrottleManager* manager) {
+  PreviewsUITabHelper* ui_tab_helper =
+      PreviewsUITabHelper::FromWebContents(navigation_handle->GetWebContents());
   if (!ui_tab_helper)
     return nullptr;
 
   previews::PreviewsUserData* previews_data =
-      ui_tab_helper->GetPreviewsUserData(navigation_handle());
+      ui_tab_helper->GetPreviewsUserData(navigation_handle);
   if (!previews_data)
     return nullptr;
 
@@ -792,7 +724,7 @@ PreviewsLitePageNavigationThrottle::GetOrCreateServerLitePageInfo() const {
 
   DataReductionProxyChromeSettings* drp_settings =
       DataReductionProxyChromeSettingsFactory::GetForBrowserContext(
-          navigation_handle()->GetWebContents()->GetBrowserContext());
+          navigation_handle->GetWebContents()->GetBrowserContext());
   base::Optional<std::string> session_id;
   if (drp_settings) {
     session_id = data_reduction_proxy::DataReductionProxyRequestOptions::
@@ -801,10 +733,10 @@ PreviewsLitePageNavigationThrottle::GetOrCreateServerLitePageInfo() const {
 
   previews::PreviewsUserData::ServerLitePageInfo* info =
       previews_data->server_lite_page_info();
-  info->original_navigation_start = navigation_handle()->NavigationStart();
+  info->original_navigation_start = navigation_handle->NavigationStart();
   if (session_id.has_value())
     info->drp_session_key = session_id.value();
-  info->page_id = manager_->GeneratePageID();
+  info->page_id = manager->GeneratePageID();
   return info;
 }
 

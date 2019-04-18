@@ -12,6 +12,8 @@ import android.view.View;
 
 import org.chromium.base.ThreadUtils;
 import org.chromium.chrome.browser.ChromeFeatureList;
+import org.chromium.chrome.browser.omnibox.OmniboxSuggestionType;
+import org.chromium.chrome.browser.omnibox.UrlBarEditingTextStateProvider;
 import org.chromium.chrome.browser.omnibox.suggestions.AnswersImageFetcher;
 import org.chromium.chrome.browser.omnibox.suggestions.AutocompleteCoordinator.SuggestionProcessor;
 import org.chromium.chrome.browser.omnibox.suggestions.OmniboxSuggestion;
@@ -37,22 +39,27 @@ public class AnswerSuggestionProcessor implements SuggestionProcessor {
     private final Context mContext;
     private final SuggestionHost mSuggestionHost;
     private final AnswersImageFetcher mImageFetcher;
+    private final UrlBarEditingTextStateProvider mUrlBarEditingTextProvider;
     private boolean mEnableNewAnswerLayout;
 
     /**
      * @param context An Android context.
      * @param suggestionHost A handle to the object using the suggestions.
      */
-    public AnswerSuggestionProcessor(Context context, SuggestionHost suggestionHost) {
+    public AnswerSuggestionProcessor(Context context, SuggestionHost suggestionHost,
+            UrlBarEditingTextStateProvider editingTextProvider) {
         mContext = context;
         mSuggestionHost = suggestionHost;
         mPendingAnswerRequestUrls = new HashMap<>();
         mImageFetcher = new AnswersImageFetcher();
+        mUrlBarEditingTextProvider = editingTextProvider;
     }
 
     @Override
     public boolean doesProcessSuggestion(OmniboxSuggestion suggestion) {
-        return suggestion.hasAnswer();
+        // Calculation answers are specific in a way that these are basic suggestions, but processed
+        // as answers, when new answer layout is enabled.
+        return suggestion.hasAnswer() || suggestion.getType() == OmniboxSuggestionType.CALCULATOR;
     }
 
     @Override
@@ -64,12 +71,14 @@ public class AnswerSuggestionProcessor implements SuggestionProcessor {
 
     @Override
     public int getViewTypeId() {
-        return OmniboxSuggestionUiType.DEFAULT;
+        return mEnableNewAnswerLayout ? OmniboxSuggestionUiType.ANSWER_SUGGESTION
+                                      : OmniboxSuggestionUiType.DEFAULT;
     }
 
     @Override
     public PropertyModel createModelForSuggestion(OmniboxSuggestion suggestion) {
-        return new PropertyModel(SuggestionViewProperties.ALL_KEYS);
+        return mEnableNewAnswerLayout ? new PropertyModel(AnswerSuggestionViewProperties.ALL_KEYS)
+                                      : new PropertyModel(SuggestionViewProperties.ALL_KEYS);
     }
 
     @Override
@@ -78,7 +87,11 @@ public class AnswerSuggestionProcessor implements SuggestionProcessor {
         SuggestionViewDelegate delegate =
                 mSuggestionHost.createSuggestionViewDelegate(suggestion, position);
 
-        setStateForClassicSuggestion(model, suggestion.getAnswer(), delegate);
+        if (mEnableNewAnswerLayout) {
+            setStateForNewSuggestion(model, suggestion, delegate);
+        } else {
+            setStateForClassicSuggestion(model, suggestion, delegate);
+        }
     }
 
     @Override
@@ -92,6 +105,7 @@ public class AnswerSuggestionProcessor implements SuggestionProcessor {
         // Attempting to fetch answer data before we have a profile to request it for.
         if (mSuggestionHost.getCurrentProfile() == null) return;
 
+        // Note: we also handle calculations here, which do not have answer defined.
         if (!suggestion.hasAnswer()) return;
         final String url = suggestion.getAnswer().getSecondLine().getImage();
         if (url == null) return;
@@ -117,7 +131,12 @@ public class AnswerSuggestionProcessor implements SuggestionProcessor {
                         for (int i = 0; i < models.size(); i++) {
                             PropertyModel model = models.get(i);
                             if (!mSuggestionHost.isActiveModel(model)) continue;
-                            model.set(SuggestionViewProperties.ANSWER_IMAGE, bitmap);
+
+                            if (mEnableNewAnswerLayout) {
+                                model.set(AnswerSuggestionViewProperties.ANSWER_IMAGE, bitmap);
+                            } else {
+                                model.set(SuggestionViewProperties.ANSWER_IMAGE, bitmap);
+                            }
                             didUpdate = true;
                         }
                         if (didUpdate) mSuggestionHost.notifyPropertyModelsChanged();
@@ -129,35 +148,34 @@ public class AnswerSuggestionProcessor implements SuggestionProcessor {
      * Sets both lines of the Omnibox suggestion in a basic Suggestion result.
      */
     private void setStateForClassicSuggestion(
-            PropertyModel model, SuggestionAnswer answer, SuggestionViewDelegate delegate) {
-        SuggestionAnswer.ImageLine firstLine = answer.getFirstLine();
-        SuggestionAnswer.ImageLine secondLine = answer.getSecondLine();
-        int numAnswerLines = parseNumAnswerLines(secondLine.getTextFields());
-        if (numAnswerLines == -1) numAnswerLines = 1;
+            PropertyModel model, OmniboxSuggestion suggestion, SuggestionViewDelegate delegate) {
+        AnswerText[] details = AnswerTextClassic.from(mContext, suggestion);
+
+        SuggestionAnswer answer = suggestion.getAnswer();
+        if (answer != null) {
+            model.set(SuggestionViewProperties.HAS_ANSWER_IMAGE, answer.getSecondLine().hasImage());
+        }
 
         model.set(SuggestionViewProperties.IS_ANSWER, true);
-
-        AnswerText[] details = AnswerTextClassic.from(mContext, answer);
-
         model.set(SuggestionViewProperties.DELEGATE, delegate);
 
         model.set(SuggestionViewProperties.TEXT_LINE_1_SIZING,
                 Pair.create(TypedValue.COMPLEX_UNIT_SP, details[0].mHeightSp));
-        model.set(SuggestionViewProperties.TEXT_LINE_2_SIZING,
-                Pair.create(TypedValue.COMPLEX_UNIT_SP, details[1].mHeightSp));
-
         model.set(SuggestionViewProperties.TEXT_LINE_1_TEXT,
                 new SuggestionTextContainer(details[0].mText));
-        model.set(SuggestionViewProperties.TEXT_LINE_2_TEXT,
-                new SuggestionTextContainer(details[1].mText));
-
         model.set(SuggestionViewProperties.TEXT_LINE_1_MAX_LINES, details[0].mMaxLines);
-        model.set(SuggestionViewProperties.TEXT_LINE_2_MAX_LINES, details[1].mMaxLines);
-
         model.set(SuggestionViewProperties.TEXT_LINE_1_TEXT_DIRECTION, View.TEXT_DIRECTION_INHERIT);
-        model.set(SuggestionViewProperties.TEXT_LINE_2_TEXT_DIRECTION, View.TEXT_DIRECTION_INHERIT);
 
-        model.set(SuggestionViewProperties.HAS_ANSWER_IMAGE, secondLine.hasImage());
+        if (details[1] != null) {
+            model.set(SuggestionViewProperties.TEXT_LINE_2_SIZING,
+                    Pair.create(TypedValue.COMPLEX_UNIT_SP, details[1].mHeightSp));
+            model.set(SuggestionViewProperties.TEXT_LINE_2_TEXT,
+                    new SuggestionTextContainer(details[1].mText));
+            model.set(SuggestionViewProperties.TEXT_LINE_2_MAX_LINES, details[1].mMaxLines);
+            model.set(SuggestionViewProperties.TEXT_LINE_2_TEXT_DIRECTION,
+                    View.TEXT_DIRECTION_INHERIT);
+        }
+
         model.set(SuggestionViewProperties.SUGGESTION_ICON_TYPE, SuggestionIcon.MAGNIFIER);
 
         model.set(SuggestionViewProperties.REFINABLE, true);
@@ -167,13 +185,10 @@ public class AnswerSuggestionProcessor implements SuggestionProcessor {
      * Sets both lines of the Omnibox suggestion based on an Answers in Suggest result.
      */
     private void setStateForNewSuggestion(
-            PropertyModel model, SuggestionAnswer answer, SuggestionViewDelegate delegate) {
-        SuggestionAnswer.ImageLine firstLine = answer.getFirstLine();
-        SuggestionAnswer.ImageLine secondLine = answer.getSecondLine();
-        int numAnswerLines = parseNumAnswerLines(secondLine.getTextFields());
-        if (numAnswerLines == -1) numAnswerLines = 1;
-
-        AnswerText[] details = AnswerTextNewLayout.from(mContext, answer);
+            PropertyModel model, OmniboxSuggestion suggestion, SuggestionViewDelegate delegate) {
+        SuggestionAnswer answer = suggestion.getAnswer();
+        AnswerText[] details = AnswerTextNewLayout.from(
+                mContext, suggestion, mUrlBarEditingTextProvider.getTextWithoutAutocomplete());
 
         model.set(AnswerSuggestionViewProperties.DELEGATE, delegate);
 
@@ -183,50 +198,51 @@ public class AnswerSuggestionProcessor implements SuggestionProcessor {
         model.set(AnswerSuggestionViewProperties.TEXT_LINE_1_TEXT, details[0].mText);
         model.set(AnswerSuggestionViewProperties.TEXT_LINE_2_TEXT, details[1].mText);
 
+        model.set(AnswerSuggestionViewProperties.TEXT_LINE_1_ACCESSIBILITY_DESCRIPTION,
+                details[0].mAccessibilityDescription);
+        model.set(AnswerSuggestionViewProperties.TEXT_LINE_2_ACCESSIBILITY_DESCRIPTION,
+                details[1].mAccessibilityDescription);
+
         model.set(AnswerSuggestionViewProperties.TEXT_LINE_1_MAX_LINES, details[0].mMaxLines);
         model.set(AnswerSuggestionViewProperties.TEXT_LINE_2_MAX_LINES, details[1].mMaxLines);
 
         @AnswerIcon
         int icon = AnswerIcon.UNDEFINED;
 
-        switch (answer.getType()) {
-            case AnswerType.DICTIONARY:
-                icon = AnswerIcon.DICTIONARY;
-                break;
-            case AnswerType.FINANCE:
-                icon = AnswerIcon.FINANCE;
-                break;
-            case AnswerType.KNOWLEDGE_GRAPH:
-                icon = AnswerIcon.KNOWLEDGE;
-                break;
-            case AnswerType.SUNRISE:
-                icon = AnswerIcon.SUNRISE;
-                break;
-            case AnswerType.TRANSLATION:
-                icon = AnswerIcon.TRANSLATION;
-                break;
-            case AnswerType.WEATHER:
-                icon = AnswerIcon.WEATHER;
-                break;
-            case AnswerType.WHEN_IS:
-                icon = AnswerIcon.EVENT;
-                break;
-            case AnswerType.CURRENCY:
-                icon = AnswerIcon.CURRENCY;
-                break;
-            case AnswerType.SPORTS:
-                icon = AnswerIcon.SPORTS;
+        if (answer != null) {
+            switch (answer.getType()) {
+                case AnswerType.DICTIONARY:
+                    icon = AnswerIcon.DICTIONARY;
+                    break;
+                case AnswerType.FINANCE:
+                    icon = AnswerIcon.FINANCE;
+                    break;
+                case AnswerType.KNOWLEDGE_GRAPH:
+                    icon = AnswerIcon.KNOWLEDGE;
+                    break;
+                case AnswerType.SUNRISE:
+                    icon = AnswerIcon.SUNRISE;
+                    break;
+                case AnswerType.TRANSLATION:
+                    icon = AnswerIcon.TRANSLATION;
+                    break;
+                case AnswerType.WEATHER:
+                    icon = AnswerIcon.WEATHER;
+                    break;
+                case AnswerType.WHEN_IS:
+                    icon = AnswerIcon.EVENT;
+                    break;
+                case AnswerType.CURRENCY:
+                    icon = AnswerIcon.CURRENCY;
+                    break;
+                case AnswerType.SPORTS:
+                    icon = AnswerIcon.SPORTS;
+            }
+        } else {
+            assert suggestion.getType() == OmniboxSuggestionType.CALCULATOR;
+            icon = AnswerIcon.CALCULATOR;
         }
 
         model.set(AnswerSuggestionViewProperties.ANSWER_ICON_TYPE, icon);
-    }
-
-    private static int parseNumAnswerLines(List<SuggestionAnswer.TextField> textFields) {
-        for (int i = 0; i < textFields.size(); i++) {
-            if (textFields.get(i).hasNumLines()) {
-                return Math.min(3, textFields.get(i).getNumLines());
-            }
-        }
-        return -1;
     }
 }

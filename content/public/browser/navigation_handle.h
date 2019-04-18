@@ -264,7 +264,7 @@ class CONTENT_EXPORT NavigationHandle {
   // Returns the SSLInfo for a request that succeeded or failed due to a
   // certificate error. In the case of other request failures or of a non-secure
   // scheme, returns an empty object.
-  virtual const net::SSLInfo& GetSSLInfo() = 0;
+  virtual const base::Optional<net::SSLInfo> GetSSLInfo() = 0;
 
   // Returns the ID of the URLRequest associated with this navigation. Can only
   // be called from NavigationThrottle::WillProcessResponse and
@@ -299,6 +299,24 @@ class CONTENT_EXPORT NavigationHandle {
   // Returns, if available, the origin of the document that has initiated the
   // navigation for this NavigationHandle.
   virtual const base::Optional<url::Origin>& GetInitiatorOrigin() = 0;
+
+  // Whether the new document will be hosted in the same process as the current
+  // document or not. Set only when the navigation commits.
+  virtual bool IsSameProcess() = 0;
+
+  // Returns the offset between the indices of the previous last committed and
+  // the newly committed navigation entries.
+  // (e.g. -1 for back navigations, 0 for reloads, 1 for forward navigations).
+  //
+  // Note that this value is computed when we create the navigation request
+  // and doesn't fully cover all corner cases.
+  // We try to approximate them with params.should_replace_entry, but in
+  // some cases it's inaccurate:
+  // - Main frame client redirects,
+  // - History navigation to the page with subframes. The subframe
+  //   navigations will return 1 here although they don't create a new
+  //   navigation entry.
+  virtual int GetNavigationEntryOffset() = 0;
 
   // Testing methods ----------------------------------------------------------
   //

@@ -32,9 +32,9 @@
 #define THIRD_PARTY_BLINK_RENDERER_MODULES_NOTIFICATIONS_NOTIFICATION_H_
 
 #include "mojo/public/cpp/bindings/binding.h"
-#include "third_party/blink/public/platform/modules/notifications/notification_service.mojom-blink.h"
-#include "third_party/blink/public/platform/modules/permissions/permission.mojom-blink.h"
-#include "third_party/blink/public/platform/modules/permissions/permission_status.mojom-blink.h"
+#include "third_party/blink/public/mojom/notifications/notification_service.mojom-blink.h"
+#include "third_party/blink/public/mojom/permissions/permission.mojom-blink.h"
+#include "third_party/blink/public/mojom/permissions/permission_status.mojom-blink.h"
 #include "third_party/blink/renderer/bindings/core/v8/active_script_wrappable.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_promise.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_value.h"
@@ -55,6 +55,7 @@ class NotificationOptions;
 class NotificationResourcesLoader;
 class ScriptState;
 class V8NotificationPermissionCallback;
+class TimestampTrigger;
 
 class MODULES_EXPORT Notification final
     : public EventTargetWithInlineData,
@@ -117,6 +118,7 @@ class MODULES_EXPORT Notification final
   bool requireInteraction() const;
   ScriptValue data(ScriptState* script_state);
   Vector<v8::Local<v8::Value>> actions(ScriptState* script_state) const;
+  TimestampTrigger* showTrigger() const { return show_trigger_; }
 
   static String PermissionString(mojom::blink::PermissionStatus permission);
   static String permission(ExecutionContext* context);
@@ -179,6 +181,8 @@ class MODULES_EXPORT Notification final
   State state_;
 
   mojom::blink::NotificationDataPtr data_;
+
+  Member<TimestampTrigger> show_trigger_;
 
   String notification_id_;
 

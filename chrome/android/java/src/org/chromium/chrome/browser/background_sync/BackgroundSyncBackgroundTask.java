@@ -6,12 +6,14 @@ package org.chromium.chrome.browser.background_sync;
 
 import android.content.Context;
 
+import org.chromium.base.annotations.NativeMethods;
 import org.chromium.base.metrics.RecordHistogram;
+import org.chromium.chrome.browser.DeviceConditions;
 import org.chromium.chrome.browser.background_task_scheduler.NativeBackgroundTask;
 import org.chromium.components.background_task_scheduler.BackgroundTask.TaskFinishedCallback;
-import org.chromium.components.background_task_scheduler.BackgroundTaskSchedulerPrefs;
 import org.chromium.components.background_task_scheduler.TaskIds;
 import org.chromium.components.background_task_scheduler.TaskParameters;
+import org.chromium.net.ConnectionType;
 
 /**
  * Handles servicing of Background Sync background tasks coming via
@@ -22,6 +24,14 @@ public class BackgroundSyncBackgroundTask extends NativeBackgroundTask {
     public @StartBeforeNativeResult int onStartTaskBeforeNativeLoaded(
             Context context, TaskParameters taskParameters, TaskFinishedCallback callback) {
         assert taskParameters.getTaskId() == TaskIds.BACKGROUND_SYNC_ONE_SHOT_JOB_ID;
+
+        // Check that we're called with network connectivity.
+        @ConnectionType
+        int current_network_type = DeviceConditions.getCurrentNetConnectionType(context);
+        if (current_network_type == ConnectionType.CONNECTION_NONE
+                || current_network_type == ConnectionType.CONNECTION_UNKNOWN) {
+            return StartBeforeNativeResult.RESCHEDULE;
+        }
 
         return StartBeforeNativeResult.LOAD_NATIVE;
     }
@@ -36,23 +46,15 @@ public class BackgroundSyncBackgroundTask extends NativeBackgroundTask {
         RecordHistogram.recordLongTimesHistogram(
                 "BackgroundSync.Wakeup.DelayTime", delayFromExpectedMs);
 
-        // Now that Chrome has been started, BackgroundSyncManager will
-        // eventually be created, and it'll fire any ready sync events.
-        // It'll also schedule a background task with the required delay.
-        // In case Chrome gets closed before native code gets to run,
-        // schedule a task to wake up Chrome with a delay, as a backup. This is
-        // done only if there isn't already a similar task scheduled. This'll
-        // be overwritten by a similar call from BackgroundSyncManager.
-        if (!BackgroundTaskSchedulerPrefs.getScheduledTasks().contains(
-                    BackgroundSyncBackgroundTask.class.getName())) {
-            BackgroundSyncBackgroundTaskScheduler.getInstance().scheduleOneShotTask();
-        }
-        callback.taskFinished(true);
+        // Call into native code to fire any ready background sync events, and
+        // wait for it to finish doing so.
+        BackgroundSyncBackgroundTaskJni.get().fireBackgroundSyncEvents(
+                () -> { callback.taskFinished(/* needsReschedule= */ false); });
     }
 
     @Override
     protected boolean onStopTaskBeforeNativeLoaded(Context context, TaskParameters taskParameters) {
-        assert taskParameters.getTaskId() == TaskIds.OFFLINE_PAGES_BACKGROUND_JOB_ID;
+        assert taskParameters.getTaskId() == TaskIds.BACKGROUND_SYNC_ONE_SHOT_JOB_ID;
 
         // Native didn't complete loading, but it was supposed to.
         // Presume we need to reschedule.
@@ -61,14 +63,21 @@ public class BackgroundSyncBackgroundTask extends NativeBackgroundTask {
 
     @Override
     protected boolean onStopTaskWithNative(Context context, TaskParameters taskParameters) {
-        assert taskParameters.getTaskId() == TaskIds.OFFLINE_PAGES_BACKGROUND_JOB_ID;
+        assert taskParameters.getTaskId() == TaskIds.BACKGROUND_SYNC_ONE_SHOT_JOB_ID;
 
-        // Don't reschedule again.
-        return false;
+        // The method is called when the task was interrupted due to some reason.
+        // It is not called when the task finishes successfully. Reschedule so
+        // we can attempt it again.
+        return true;
     }
 
     @Override
     public void reschedule(Context context) {
         BackgroundSyncBackgroundTaskScheduler.getInstance().reschedule();
+    }
+
+    @NativeMethods
+    interface Natives {
+        void fireBackgroundSyncEvents(Runnable callback);
     }
 }

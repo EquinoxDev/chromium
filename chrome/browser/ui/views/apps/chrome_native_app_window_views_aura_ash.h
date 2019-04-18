@@ -71,9 +71,9 @@ class ChromeNativeAppWindowViewsAuraAsh
   bool IsAlwaysOnTop() const override;
 
   // views::ContextMenuController:
-  void ShowContextMenuForView(views::View* source,
-                              const gfx::Point& p,
-                              ui::MenuSourceType source_type) override;
+  void ShowContextMenuForViewImpl(views::View* source,
+                                  const gfx::Point& p,
+                                  ui::MenuSourceType source_type) override;
 
   // WidgetDelegate:
   views::NonClientFrameView* CreateNonClientFrameView(
@@ -187,6 +187,7 @@ class ChromeNativeAppWindowViewsAuraAsh
   std::unique_ptr<ExclusiveAccessBubbleViews> exclusive_access_bubble_;
 
   bool tablet_mode_enabled_ = false;
+  bool draggable_regions_sent_ = false;
 
   // Only used in mash.
   ash::mojom::AshWindowManagerAssociatedPtr ash_window_manager_;

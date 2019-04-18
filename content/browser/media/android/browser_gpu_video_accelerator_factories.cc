@@ -106,8 +106,7 @@ bool BrowserGpuVideoAcceleratorFactories::IsDecoderConfigSupported(
 std::unique_ptr<media::VideoDecoder>
 BrowserGpuVideoAcceleratorFactories::CreateVideoDecoder(
     media::MediaLog* media_log,
-    const media::RequestOverlayInfoCB& request_overlay_info_cb,
-    const gfx::ColorSpace& target_color_space) {
+    const media::RequestOverlayInfoCB& request_overlay_info_cb) {
   return nullptr;
 }
 
@@ -170,6 +169,18 @@ BrowserGpuVideoAcceleratorFactories::VideoFrameOutputFormat(
 }
 
 gpu::gles2::GLES2Interface* BrowserGpuVideoAcceleratorFactories::ContextGL() {
+  return nullptr;
+}
+
+gpu::SharedImageInterface*
+BrowserGpuVideoAcceleratorFactories::SharedImageInterface() {
+  NOTREACHED();
+  return nullptr;
+}
+
+gpu::GpuMemoryBufferManager*
+BrowserGpuVideoAcceleratorFactories::GpuMemoryBufferManager() {
+  NOTREACHED();
   return nullptr;
 }
 

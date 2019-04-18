@@ -15,8 +15,8 @@
 #include "fuchsia/base/fit_adapter.h"
 #include "fuchsia/base/mem_buffer_util.h"
 #include "fuchsia/base/result_receiver.h"
-#include "fuchsia/engine/test/test_common.h"
-#include "fuchsia/engine/test/webrunner_browser_test.h"
+#include "fuchsia/base/test_navigation_listener.h"
+#include "fuchsia/engine/test/web_engine_browser_test.h"
 #include "fuchsia/runners/cast/cast_channel_bindings.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "url/url_constants.h"
@@ -27,32 +27,32 @@ namespace {
 // referenced frequently in this file.
 using NavigationDetails = chromium::web::NavigationEvent;
 
-void OnError() {
-  ADD_FAILURE();
-}
-
-class CastChannelBindingsTest : public cr_fuchsia::test::WebRunnerBrowserTest,
-                                public chromium::web::NavigationEventObserver,
+class CastChannelBindingsTest : public cr_fuchsia::WebEngineBrowserTest,
                                 public chromium::cast::CastChannel {
  public:
   CastChannelBindingsTest()
-      : receiver_binding_(this), run_timeout_(TestTimeouts::action_timeout()) {
+      : receiver_binding_(this),
+        run_timeout_(TestTimeouts::action_timeout(),
+                     base::MakeExpectedNotRunClosure(FROM_HERE)) {
     set_test_server_root(base::FilePath("fuchsia/runners/cast/testdata"));
+    navigation_listener_.SetBeforeAckHook(base::BindRepeating(
+        &CastChannelBindingsTest::OnBeforeAckHook, base::Unretained(this)));
   }
 
   ~CastChannelBindingsTest() override = default;
 
  protected:
   void SetUpOnMainThread() override {
-    cr_fuchsia::test::WebRunnerBrowserTest::SetUpOnMainThread();
+    cr_fuchsia::WebEngineBrowserTest::SetUpOnMainThread();
     base::ScopedAllowBlockingForTesting allow_blocking;
-    frame_ = WebRunnerBrowserTest::CreateFrame(this);
+    frame_ = WebEngineBrowserTest::CreateLegacyFrame(&navigation_listener_);
     connector_ = std::make_unique<NamedMessagePortConnector>();
   }
 
-  void OnNavigationStateChanged(
-      chromium::web::NavigationEvent change,
-      OnNavigationStateChangedCallback callback) override {
+  void OnBeforeAckHook(
+      const fuchsia::web::NavigationState& change,
+      fuchsia::web::NavigationEventListener::OnNavigationStateChangedCallback
+          callback) {
     connector_->NotifyPageLoad(frame_.get());
     if (navigate_run_loop_)
       navigate_run_loop_->Quit();
@@ -98,13 +98,16 @@ class CastChannelBindingsTest : public cr_fuchsia::test::WebRunnerBrowserTest,
     connected_channel_->ReceiveMessage(
         cr_fuchsia::CallbackToFitFunction(message.GetReceiveCallback()));
     run_loop.Run();
-    return cr_fuchsia::test::StringFromMemBufferOrDie(message->data);
+
+    std::string data;
+    CHECK(cr_fuchsia::StringFromMemBuffer(message->data, &data));
+    return data;
   }
 
   void CheckLoadUrl(const std::string& url,
                     chromium::web::NavigationController* controller) {
     navigate_run_loop_ = std::make_unique<base::RunLoop>();
-    controller->LoadUrl(url, nullptr);
+    controller->LoadUrl(url, chromium::web::LoadUrlParams());
     navigate_run_loop_->Run();
     navigate_run_loop_.reset();
   }
@@ -113,6 +116,7 @@ class CastChannelBindingsTest : public cr_fuchsia::test::WebRunnerBrowserTest,
   chromium::web::FramePtr frame_;
   std::unique_ptr<NamedMessagePortConnector> connector_;
   fidl::Binding<chromium::cast::CastChannel> receiver_binding_;
+  cr_fuchsia::TestNavigationListener navigation_listener_;
 
   // The connected Cast Channel.
   chromium::web::MessagePortPtr connected_channel_;
@@ -137,7 +141,6 @@ IN_PROC_BROWSER_TEST_F(CastChannelBindingsTest, CastChannelBufferedInput) {
   chromium::web::NavigationControllerPtr controller;
   frame_->GetNavigationController(controller.NewRequest());
 
-  testing::InSequence seq;
   CastChannelBindings cast_channel_instance(
       frame_.get(), connector_.get(), receiver_binding_.NewBinding().Bind(),
       base::MakeExpectedNotRunClosure(FROM_HERE));
@@ -164,10 +167,9 @@ IN_PROC_BROWSER_TEST_F(CastChannelBindingsTest, CastChannelReconnect) {
   chromium::web::NavigationControllerPtr controller;
   frame_->GetNavigationController(controller.NewRequest());
 
-  testing::InSequence seq;
   CastChannelBindings cast_channel_instance(
       frame_.get(), connector_.get(), receiver_binding_.NewBinding().Bind(),
-      base::BindOnce(&OnError));
+      base::MakeExpectedNotRunClosure(FROM_HERE));
 
   // Verify that CastChannelBindings can properly handle message, connect,
   // disconnect, and MessagePort disconnection events.

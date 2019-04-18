@@ -200,12 +200,12 @@ error::Error DoFramebufferTextureLayer(GLenum target,
                                        GLuint texture,
                                        GLint level,
                                        GLint layer);
-error::Error DoFramebufferTextureMultiviewLayeredANGLE(GLenum target,
-                                                       GLenum attachment,
-                                                       GLuint texture,
-                                                       GLint level,
-                                                       GLint base_view_index,
-                                                       GLsizei num_views);
+error::Error DoFramebufferTextureMultiviewOVR(GLenum target,
+                                              GLenum attachment,
+                                              GLuint texture,
+                                              GLint level,
+                                              GLint base_view_index,
+                                              GLsizei num_views);
 error::Error DoFrontFace(GLenum mode);
 error::Error DoGenBuffers(GLsizei n, volatile GLuint* buffers);
 error::Error DoGenerateMipmap(GLenum target);
@@ -877,7 +877,6 @@ error::Error DoDiscardFramebufferEXT(GLenum target,
                                      const volatile GLenum* attachments);
 error::Error DoLoseContextCHROMIUM(GLenum current, GLenum other);
 error::Error DoDescheduleUntilFinishedCHROMIUM();
-error::Error DoInsertFenceSyncCHROMIUM(GLuint64 release_count);
 error::Error DoWaitSyncTokenCHROMIUM(CommandBufferNamespace namespace_id,
                                      CommandBufferId command_buffer_id,
                                      GLuint64 release_count);
@@ -1072,8 +1071,7 @@ error::Error DoBeginRasterCHROMIUM(GLuint texture_id,
                                    GLuint sk_color,
                                    GLuint msaa_sample_count,
                                    GLboolean can_use_lcd_text,
-                                   GLint color_type,
-                                   GLuint color_space_transfer_cache_id);
+                                   GLint color_type);
 error::Error DoRasterCHROMIUM(GLuint raster_shm_id,
                               GLuint raster_shm_offset,
                               GLsizeiptr raster_shm_size,
@@ -1116,8 +1114,8 @@ error::Error DoUnlockDiscardableTextureCHROMIUM(GLuint texture_id);
 error::Error DoLockDiscardableTextureCHROMIUM(GLuint texture_id);
 error::Error DoCreateAndTexStorage2DSharedImageINTERNAL(
     GLuint client_id,
-    const volatile GLbyte* mailbox,
-    GLenum internalformat);
+    GLenum internalformat,
+    const volatile GLbyte* mailbox);
 error::Error DoBeginSharedImageAccessDirectCHROMIUM(GLuint client_id,
                                                     GLenum mode);
 error::Error DoEndSharedImageAccessDirectCHROMIUM(GLuint client_id);

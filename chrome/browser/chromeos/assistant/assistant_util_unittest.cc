@@ -26,6 +26,7 @@
 #include "content/public/test/test_browser_thread_bundle.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/icu/source/common/unicode/locid.h"
+#include "ui/events/devices/device_data_manager.h"
 
 namespace assistant {
 namespace {
@@ -80,6 +81,9 @@ class ScopedLogIn {
       case user_manager::USER_TYPE_PUBLIC_ACCOUNT:
         LogInAsPublicAccount();
         break;
+      case user_manager::USER_TYPE_KIOSK_APP:
+        LogInKioskApp();
+        break;
       case user_manager::USER_TYPE_ARC_KIOSK_APP:
         LogInArcKioskApp();
         break;
@@ -102,6 +106,11 @@ class ScopedLogIn {
 
   void LogInAsPublicAccount() {
     fake_user_manager_->AddPublicAccountUser(account_id_);
+    fake_user_manager_->LoginUser(account_id_);
+  }
+
+  void LogInKioskApp() {
+    fake_user_manager_->AddKioskAppUser(account_id_);
     fake_user_manager_->LoginUser(account_id_);
   }
 
@@ -138,11 +147,13 @@ class ChromeAssistantUtilTest : public testing::Test {
         std::make_unique<FakeUserManagerWithLocalState>(
             profile_manager_.get()));
 
+    ui::DeviceDataManager::CreateInstance();
+
     profile_ = profile_manager_->CreateTestingProfile(kTestProfileName);
   }
 
   void TearDown() override {
-    // Avoid retries, let the next test start safely.
+    ui::DeviceDataManager::DeleteInstance();
     profile_manager_->DeleteTestingProfile(kTestProfileName);
     profile_ = nullptr;
     user_manager_enabler_.reset();
@@ -231,6 +242,33 @@ TEST_F(ChromeAssistantUtilTest, IsAssistantAllowedForProfile_PublicSession) {
                     AccountId::FromUserEmail(profile()->GetProfileUserName()),
                     user_manager::USER_TYPE_PUBLIC_ACCOUNT);
   EXPECT_EQ(ash::mojom::AssistantAllowedState::DISALLOWED_BY_PUBLIC_SESSION,
+            IsAssistantAllowedForProfile(profile()));
+}
+
+TEST_F(ChromeAssistantUtilTest, IsAssistantAllowedForProfile_NonGmail) {
+  ScopedLogIn login(GetFakeUserManager(),
+                    AccountId::FromUserEmailGaiaId("user2@someotherdomain.com",
+                                                   "0123456789"));
+
+  EXPECT_EQ(ash::mojom::AssistantAllowedState::DISALLOWED_BY_ACCOUNT_TYPE,
+            IsAssistantAllowedForProfile(profile()));
+}
+
+TEST_F(ChromeAssistantUtilTest, IsAssistantAllowedForKiosk_KioskApp) {
+  ScopedLogIn login(GetFakeUserManager(),
+                    AccountId::FromUserEmail(profile()->GetProfileUserName()),
+                    user_manager::USER_TYPE_KIOSK_APP);
+
+  EXPECT_EQ(ash::mojom::AssistantAllowedState::DISALLOWED_BY_ACCOUNT_TYPE,
+            IsAssistantAllowedForProfile(profile()));
+}
+
+TEST_F(ChromeAssistantUtilTest, IsAssistantAllowedForKiosk_ArcKioskApp) {
+  ScopedLogIn login(GetFakeUserManager(),
+                    AccountId::FromUserEmail(profile()->GetProfileUserName()),
+                    user_manager::USER_TYPE_ARC_KIOSK_APP);
+
+  EXPECT_EQ(ash::mojom::AssistantAllowedState::DISALLOWED_BY_ACCOUNT_TYPE,
             IsAssistantAllowedForProfile(profile()));
 }
 

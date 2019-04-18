@@ -55,7 +55,7 @@ void OffscreenCanvasRenderingContext2D::commit() {
   // TODO(fserb): consolidate this with PushFrame
   SkIRect damage_rect(dirty_rect_for_commit_);
   dirty_rect_for_commit_.setEmpty();
-  Host()->Commit(ProduceFrame(), damage_rect);
+  Host()->Commit(ProduceCanvasResource(), damage_rect);
 }
 
 // BaseRenderingContext2D implementation
@@ -95,11 +95,11 @@ void OffscreenCanvasRenderingContext2D::Reset() {
 }
 
 scoped_refptr<CanvasResource>
-OffscreenCanvasRenderingContext2D::ProduceFrame() {
+OffscreenCanvasRenderingContext2D::ProduceCanvasResource() {
   if (!CanCreateCanvas2dResourceProvider())
     return nullptr;
   scoped_refptr<CanvasResource> frame =
-      GetCanvasResourceProvider()->ProduceFrame();
+      GetCanvasResourceProvider()->ProduceCanvasResource();
   if (!frame)
     return nullptr;
 
@@ -112,7 +112,7 @@ void OffscreenCanvasRenderingContext2D::PushFrame() {
     return;
 
   SkIRect damage_rect(dirty_rect_for_commit_);
-  Host()->PushFrame(ProduceFrame(), damage_rect);
+  Host()->PushFrame(ProduceCanvasResource(), damage_rect);
   dirty_rect_for_commit_.setEmpty();
 }
 
@@ -294,7 +294,7 @@ void OffscreenCanvasRenderingContext2D::setFont(const String& new_font) {
   }
 
   CSSParser::ParseValue(
-      style, CSSPropertyFont, new_font, true,
+      style, CSSPropertyID::kFont, new_font, true,
       Host()->GetTopExecutionContext()->GetSecureContextMode());
 
   FontDescription desc =

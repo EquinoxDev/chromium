@@ -139,7 +139,7 @@ class PasswordStoreX : public password_manager::PasswordStoreDefault {
 
  protected:
   // Implements PasswordStoreSync interface.
-  bool ReadAllLogins(
+  password_manager::FormRetrievalResult ReadAllLogins(
       password_manager::PrimaryKeyToFormMap* key_to_form_map) override;
   password_manager::PasswordStoreChangeList RemoveLoginByPrimaryKeySync(
       int primary_key) override;
@@ -174,8 +174,6 @@ class PasswordStoreX : public password_manager::PasswordStoreDefault {
       const base::Callback<bool(const GURL&)>& origin_filter) override;
   std::vector<std::unique_ptr<autofill::PasswordForm>> FillMatchingLogins(
       const FormDigest& form) override;
-  std::vector<std::unique_ptr<autofill::PasswordForm>>
-  FillLoginsForSameOrganizationName(const std::string& signon_realm) override;
   bool FillAutofillableLogins(
       std::vector<std::unique_ptr<autofill::PasswordForm>>* forms) override;
   bool FillBlacklistLogins(

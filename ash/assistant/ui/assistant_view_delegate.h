@@ -7,7 +7,6 @@
 
 #include <map>
 #include <string>
-#include <vector>
 
 #include "ash/assistant/model/assistant_cache_model.h"
 #include "ash/assistant/model/assistant_cache_model_observer.h"
@@ -26,6 +25,7 @@
 #include "base/component_export.h"
 #include "base/observer_list_types.h"
 #include "chromeos/services/assistant/public/mojom/assistant.mojom.h"
+#include "mojo/public/cpp/bindings/pending_receiver.h"
 #include "services/content/public/mojom/navigable_contents_factory.mojom.h"
 #include "ui/wm/core/cursor_manager.h"
 
@@ -40,11 +40,28 @@ enum class DeepLinkType;
 class COMPONENT_EXPORT(ASSISTANT_UI) AssistantViewDelegateObserver
     : public base::CheckedObserver {
  public:
+  using AssistantSuggestion = chromeos::assistant::mojom::AssistantSuggestion;
+
   // Invoked when Assistant has received a deep link of the specified |type|
   // with the given |params|.
   virtual void OnDeepLinkReceived(
       assistant::util::DeepLinkType type,
       const std::map<std::string, std::string>& params) {}
+
+  // Invoked when the dialog plate button identified by |id| is pressed.
+  virtual void OnDialogPlateButtonPressed(AssistantButtonId id) {}
+
+  // Invoked when the dialog plate contents have been committed.
+  virtual void OnDialogPlateContentsCommitted(const std::string& text) {}
+
+  // Invoked when the mini view is pressed.
+  virtual void OnMiniViewPressed() {}
+
+  // Invoked when the opt in button is pressed.
+  virtual void OnOptInButtonPressed() {}
+
+  // Invoked when a suggestion chip is pressed.
+  virtual void OnSuggestionChipPressed(const AssistantSuggestion* suggestion) {}
 };
 
 // A delegate of views in assistant/ui that handles views related actions e.g.
@@ -67,6 +84,10 @@ class COMPONENT_EXPORT(ASSISTANT_UI) AssistantViewDelegate {
 
   // Gets the ui model associated with the view delegate.
   virtual const AssistantUiModel* GetUiModel() const = 0;
+
+  // Adds/removes the specified view delegate observer.
+  virtual void AddObserver(AssistantViewDelegateObserver* observer) = 0;
+  virtual void RemoveObserver(AssistantViewDelegateObserver* observer) = 0;
 
   // Adds/removes the cache model observer associated with the view delegate.
   virtual void AddCacheModelObserver(AssistantCacheModelObserver* observer) = 0;
@@ -91,12 +112,6 @@ class COMPONENT_EXPORT(ASSISTANT_UI) AssistantViewDelegate {
   virtual void AddUiModelObserver(AssistantUiModelObserver* observer) = 0;
   virtual void RemoveUiModelObserver(AssistantUiModelObserver* observer) = 0;
 
-  // Adds/removes the view delegate observer.
-  virtual void AddViewDelegateObserver(
-      AssistantViewDelegateObserver* observer) = 0;
-  virtual void RemoveViewDelegateObserver(
-      AssistantViewDelegateObserver* observer) = 0;
-
   // Adds/removes the voice interaction controller observer associated with the
   // view delegate.
   virtual void AddVoiceInteractionControllerObserver(
@@ -106,15 +121,6 @@ class COMPONENT_EXPORT(ASSISTANT_UI) AssistantViewDelegate {
 
   // Gets the caption bar delegate associated with the view delegate.
   virtual CaptionBarDelegate* GetCaptionBarDelegate() = 0;
-
-  // Gets the dialog plate observers associated with the view delegate.
-  virtual std::vector<DialogPlateObserver*> GetDialogPlateObservers() = 0;
-
-  // Gets the mini view delegate associated with the view delegate.
-  virtual AssistantMiniViewDelegate* GetMiniViewDelegate() = 0;
-
-  // Gets the opt in delegate associated with the view delegate.
-  virtual AssistantOptInDelegate* GetOptInDelegate() = 0;
 
   // Downloads the image found at the specified |url|. On completion, the
   // supplied |callback| will be run with the downloaded image. If the download
@@ -132,16 +138,33 @@ class COMPONENT_EXPORT(ASSISTANT_UI) AssistantViewDelegate {
   // Acquires a NavigableContentsFactory from the Content Service to allow
   // Assistant to display embedded web contents.
   virtual void GetNavigableContentsFactoryForView(
-      content::mojom::NavigableContentsFactoryRequest request) = 0;
+      mojo::PendingReceiver<content::mojom::NavigableContentsFactory>
+          receiver) = 0;
 
+  // Returns the root window that newly created windows should be added to.
   virtual aura::Window* GetRootWindowForNewWindows() = 0;
+
+  // Returns true if user prefers to start with voice interaction.
+  virtual bool IsLaunchWithMicOpen() const = 0;
 
   // Returns true if in tablet mode.
   virtual bool IsTabletMode() const = 0;
 
+  // Invoked when the dialog plate button identified by |id| is pressed.
+  virtual void OnDialogPlateButtonPressed(AssistantButtonId id) = 0;
+
+  // Invoked when the dialog plate contents have been committed.
+  virtual void OnDialogPlateContentsCommitted(const std::string& text) = 0;
+
+  // Invoked when the mini view is pressed.
+  virtual void OnMiniViewPressed() = 0;
+
   // Invoked when an in-Assistant notification button is pressed.
   virtual void OnNotificationButtonPressed(const std::string& notification_id,
                                            int notification_button_index) = 0;
+
+  // Invoked when the opt in button is pressed.
+  virtual void OnOptInButtonPressed() {}
 
   // Invoked when suggestion chip is pressed.
   virtual void OnSuggestionChipPressed(

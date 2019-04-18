@@ -23,11 +23,15 @@
 #include "components/autofill/core/common/autofill_prefs.h"
 #include "components/autofill/core/common/form_data.h"
 #include "components/autofill/core/common/submission_source.h"
+#include "services/metrics/public/cpp/metrics_utils.h"
 #include "services/metrics/public/cpp/ukm_builders.h"
 
 namespace autofill {
 
 namespace {
+
+// Exponential bucket spacing for UKM event data.
+const double kAutofillEventDataBucketSpacing = 2.0;
 
 // Note: if adding an enum value here, update the corresponding description for
 // AutofillTypeQualityByFieldType in histograms.xml.
@@ -588,6 +592,14 @@ void AutofillMetrics::LogCreditCardSaveNotOfferedDueToMaxStrikesMetric(
 }
 
 // static
+void AutofillMetrics::LogLocalCardMigrationNotOfferedDueToMaxStrikesMetric(
+    SaveTypeMetric metric) {
+  UMA_HISTOGRAM_ENUMERATION(
+      "Autofill.StrikeDatabase.LocalCardMigrationNotOfferedDueToMaxStrikes",
+      metric);
+}
+
+// static
 void AutofillMetrics::LogUploadDisallowedForNetworkMetric(
     const std::string& network) {
   UploadDisallowedForNetworkMetric metric;
@@ -653,24 +665,35 @@ void AutofillMetrics::LogCardUploadDecisionMetrics(
 void AutofillMetrics::LogCreditCardInfoBarMetric(
     InfoBarMetric metric,
     bool is_uploading,
-    bool should_request_name_from_user,
-    bool should_request_expiration_date_from_user,
+    AutofillClient::SaveCreditCardOptions options,
     int previous_save_credit_card_prompt_user_decision) {
   DCHECK_LT(metric, NUM_INFO_BAR_METRICS);
 
   std::string destination = is_uploading ? ".Server" : ".Local";
   base::UmaHistogramEnumeration("Autofill.CreditCardInfoBar" + destination,
                                 metric, NUM_INFO_BAR_METRICS);
-  if (should_request_name_from_user) {
+  if (options.should_request_name_from_user) {
     base::UmaHistogramEnumeration("Autofill.CreditCardInfoBar" + destination +
                                       ".RequestingCardholderName",
                                   metric, NUM_INFO_BAR_METRICS);
   }
 
-  if (should_request_expiration_date_from_user) {
+  if (options.should_request_expiration_date_from_user) {
     base::UmaHistogramEnumeration("Autofill.CreditCardInfoBar" + destination +
                                       ".RequestingExpirationDate",
                                   metric, NUM_INFO_BAR_METRICS);
+  }
+
+  if (options.from_dynamic_change_form) {
+    base::UmaHistogramEnumeration(
+        "Autofill.CreditCardInfoBar" + destination + ".FromDynamicChangeForm",
+        metric, NUM_INFO_BAR_METRICS);
+  }
+
+  if (options.has_non_focusable_field) {
+    base::UmaHistogramEnumeration(
+        "Autofill.CreditCardInfoBar" + destination + ".FromNonFocusableForm",
+        metric, NUM_INFO_BAR_METRICS);
   }
 
   base::UmaHistogramEnumeration(
@@ -700,8 +723,7 @@ void AutofillMetrics::LogSaveCardPromptMetric(
     SaveCardPromptMetric metric,
     bool is_uploading,
     bool is_reshow,
-    bool is_requesting_cardholder_name,
-    bool is_requesting_expiration_date,
+    AutofillClient::SaveCreditCardOptions options,
     int previous_save_credit_card_prompt_user_decision,
     security_state::SecurityLevel security_level,
     AutofillSyncSigninState sync_state) {
@@ -715,14 +737,24 @@ void AutofillMetrics::LogSaveCardPromptMetric(
   base::UmaHistogramEnumeration(
       metric_with_destination_and_show + GetMetricsSyncStateSuffix(sync_state),
       metric, NUM_SAVE_CARD_PROMPT_METRICS);
-  if (is_requesting_cardholder_name) {
+  if (options.should_request_name_from_user) {
     base::UmaHistogramEnumeration(
         metric_with_destination_and_show + ".RequestingCardholderName", metric,
         NUM_SAVE_CARD_PROMPT_METRICS);
   }
-  if (is_requesting_expiration_date) {
+  if (options.should_request_expiration_date_from_user) {
     base::UmaHistogramEnumeration(
         metric_with_destination_and_show + ".RequestingExpirationDate", metric,
+        NUM_SAVE_CARD_PROMPT_METRICS);
+  }
+  if (options.has_non_focusable_field) {
+    base::UmaHistogramEnumeration(
+        metric_with_destination_and_show + ".FromNonFocusableForm", metric,
+        NUM_SAVE_CARD_PROMPT_METRICS);
+  }
+  if (options.from_dynamic_change_form) {
+    base::UmaHistogramEnumeration(
+        metric_with_destination_and_show + ".FromDynamicChangeForm", metric,
         NUM_SAVE_CARD_PROMPT_METRICS);
   }
   base::UmaHistogramEnumeration(
@@ -1429,6 +1461,11 @@ void AutofillMetrics::LogAutofillSuggestionAcceptedIndex(int index) {
 }
 
 // static
+void AutofillMetrics::LogAutofillFormCleared() {
+  base::RecordAction(base::UserMetricsAction("Autofill_ClearedForm"));
+}
+
+// static
 void AutofillMetrics::LogNumberOfEditedAutofilledFields(
     size_t num_edited_autofilled_fields,
     bool observed_submission) {
@@ -1659,11 +1696,13 @@ void AutofillMetrics::LogDeveloperEngagementUkm(
 AutofillMetrics::FormInteractionsUkmLogger::FormInteractionsUkmLogger(
     ukm::UkmRecorder* ukm_recorder,
     const ukm::SourceId source_id)
-    : ukm_recorder_(ukm_recorder), source_id_(source_id) {}
+    : ukm_recorder_(ukm_recorder), source_id_(source_id) {
+  UMA_HISTOGRAM_BOOLEAN("Autofill.CanLogUKM", CanLog());
+}
 
 void AutofillMetrics::FormInteractionsUkmLogger::OnFormsParsed(
     const ukm::SourceId source_id) {
-  if (ukm_recorder_ == nullptr)
+  if (!CanLog())
     return;
 
   source_id_ = source_id;
@@ -1698,17 +1737,6 @@ void AutofillMetrics::FormInteractionsUkmLogger::LogSuggestionsShown(
       .SetServerType(static_cast<int>(field.server_type()))
       .SetFormSignature(HashFormSignature(form.form_signature()))
       .SetFieldSignature(HashFieldSignature(field.GetFieldSignature()))
-      .SetMillisecondsSinceFormParsed(
-          MillisecondsSinceFormParsed(form_parsed_timestamp))
-      .Record(ukm_recorder_);
-}
-
-void AutofillMetrics::FormInteractionsUkmLogger::LogSelectedMaskedServerCard(
-    const base::TimeTicks& form_parsed_timestamp) {
-  if (!CanLog())
-    return;
-
-  ukm::builders::Autofill_SelectedMaskedServerCard(source_id_)
       .SetMillisecondsSinceFormParsed(
           MillisecondsSinceFormParsed(form_parsed_timestamp))
       .Record(ukm_recorder_);
@@ -1859,6 +1887,11 @@ void AutofillMetrics::LogWalletSyncTransportCardsOptIn(bool is_opted_in) {
       "Autofill.HadUserOptedIn_To_WalletSyncTransportServerCards", is_opted_in);
 }
 
+void AutofillMetrics::LogCardUploadEnabledMetric(
+    CardUploadEnabledMetric metric) {
+  UMA_HISTOGRAM_ENUMERATION("Autofill.CardUploadEnabled", metric);
+}
+
 // static
 const char* AutofillMetrics::GetMetricsSyncStateSuffix(
     AutofillSyncSigninState sync_state) {
@@ -1903,6 +1936,24 @@ void AutofillMetrics::FormInteractionsUkmLogger::LogFormSubmitted(
   builder.Record(ukm_recorder_);
 }
 
+void AutofillMetrics::FormInteractionsUkmLogger::LogFormEvent(
+    FormEvent form_event,
+    const std::set<FormType>& form_types,
+    const base::TimeTicks& form_parsed_timestamp) {
+  if (!CanLog())
+    return;
+
+  if (form_parsed_timestamp.is_null())
+    return;
+
+  ukm::builders::Autofill_FormEvent builder(source_id_);
+  builder.SetAutofillFormEvent(static_cast<int>(form_event))
+      .SetFormTypes(FormTypesToBitVector(form_types))
+      .SetMillisecondsSinceFormParsed(
+          MillisecondsSinceFormParsed(form_parsed_timestamp))
+      .Record(ukm_recorder_);
+}
+
 bool AutofillMetrics::FormInteractionsUkmLogger::CanLog() const {
   return ukm_recorder_ != nullptr;
 }
@@ -1913,7 +1964,10 @@ int64_t AutofillMetrics::FormInteractionsUkmLogger::MillisecondsSinceFormParsed(
   // Use the pinned timestamp as the current time if it's set.
   base::TimeTicks now =
       pinned_timestamp_.is_null() ? base::TimeTicks::Now() : pinned_timestamp_;
-  return (now - form_parsed_timestamp).InMilliseconds();
+
+  return ukm::GetExponentialBucketMin(
+      (now - form_parsed_timestamp).InMilliseconds(),
+      kAutofillEventDataBucketSpacing);
 }
 
 AutofillMetrics::UkmTimestampPin::UkmTimestampPin(

@@ -152,7 +152,7 @@ function finishEditLink() {
   }
 
   // Update the link only if a field was changed.
-  if (!!newUrl || !!newTitle) {
+  if (newUrl || newTitle) {
     chrome.embeddedSearch.newTabPage.updateCustomLink(
         prepopulatedLink.rid, newUrl, newTitle);
   }
@@ -179,7 +179,7 @@ function closeDialog() {
   // Small delay to allow the dialog to close before cleaning up.
   window.setTimeout(() => {
     $(IDS.FORM).reset();
-    $(IDS.TITLE_FIELD).dir = null;
+    $(IDS.TITLE_FIELD).dir = '';
     $(IDS.URL_FIELD_CONTAINER).classList.remove('invalid');
     $(IDS.DELETE).disabled = false;
     $(IDS.DONE).disabled = false;
@@ -210,7 +210,7 @@ function focusBackOnCancel(event) {
 
 /**
  * Handler for the 'updateTheme' message from the host page.
- * @param {object} info Data received in the message.
+ * @param {!Object} info Data received in the message.
  */
 function updateTheme(info) {
   document.documentElement.setAttribute('darkmode', info.isDarkMode);
@@ -333,6 +333,8 @@ function init() {
   // Disables the "Done" button when the URL field is empty.
   $(IDS.URL_FIELD).addEventListener('input',
       () => $(IDS.DONE).disabled = ($(IDS.URL_FIELD).value.trim() === ''));
+
+  utils.setPlatformClass(document.body);
 
   $(IDS.EDIT_DIALOG).showModal();
 

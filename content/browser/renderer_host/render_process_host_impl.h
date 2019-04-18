@@ -60,11 +60,11 @@
 #include "services/ws/public/mojom/gpu.mojom.h"
 #include "third_party/blink/public/common/associated_interfaces/associated_interface_registry.h"
 #include "third_party/blink/public/mojom/associated_interfaces/associated_interfaces.mojom.h"
+#include "third_party/blink/public/mojom/broadcastchannel/broadcast_channel.mojom.h"
 #include "third_party/blink/public/mojom/dom_storage/storage_partition_service.mojom.h"
 #include "third_party/blink/public/mojom/filesystem/file_system.mojom.h"
 #include "third_party/blink/public/mojom/indexeddb/indexeddb.mojom.h"
 #include "third_party/blink/public/mojom/mediastream/media_stream.mojom.h"
-#include "third_party/blink/public/platform/modules/broadcastchannel/broadcast_channel.mojom.h"
 #include "ui/gfx/gpu_memory_buffer.h"
 
 #if defined(OS_ANDROID)
@@ -73,7 +73,7 @@
 
 namespace base {
 class CommandLine;
-class SharedPersistentMemoryAllocator;
+class PersistentMemoryAllocator;
 }
 
 namespace viz {
@@ -97,7 +97,6 @@ class RenderFrameMessageFilter;
 class RenderProcessHostFactory;
 class RenderWidgetHelper;
 class ResourceMessageFilter;
-class ServiceWorkerDispatcherHost;
 class SiteInstance;
 class SiteInstanceImpl;
 class StoragePartition;
@@ -185,6 +184,7 @@ class CONTENT_EXPORT RenderProcessHostImpl
   void RemovePriorityClient(PriorityClient* priority_client) override;
 #if defined(OS_ANDROID)
   ChildProcessImportance GetEffectiveImportance() override;
+  void DumpProcessStack() override;
 #endif
   void SetSuddenTerminationAllowed(bool enabled) override;
   bool SuddenTerminationAllowed() override;
@@ -207,7 +207,7 @@ class CONTENT_EXPORT RenderProcessHostImpl
   void BindInterface(const std::string& interface_name,
                      mojo::ScopedMessagePipeHandle interface_pipe) override;
   const service_manager::Identity& GetChildIdentity() override;
-  std::unique_ptr<base::SharedPersistentMemoryAllocator> TakeMetricsAllocator()
+  std::unique_ptr<base::PersistentMemoryAllocator> TakeMetricsAllocator()
       override;
   const base::TimeTicks& GetInitTimeForNavigationMetrics() override;
   bool IsProcessBackgrounded() override;
@@ -217,7 +217,6 @@ class CONTENT_EXPORT RenderProcessHostImpl
       RenderProcessHost::KeepAliveClientType) override;
   void DisableKeepAliveRefCount() override;
   bool IsKeepAliveRefCountDisabled() override;
-  void PurgeAndSuspend() override;
   void Resume() override;
   mojom::Renderer* GetRendererInterface() override;
   void CreateURLLoaderFactory(
@@ -237,6 +236,7 @@ class CONTENT_EXPORT RenderProcessHostImpl
                         const url::Origin& origin) override;
   void BindIndexedDB(blink::mojom::IDBFactoryRequest request,
                      const url::Origin& origin) override;
+  void ForceCrash() override;
   void CleanupCorbExceptionForPluginUponDestruction() override;
 
   mojom::RouteProvider* GetRemoteRouteProvider();
@@ -486,6 +486,11 @@ class CONTENT_EXPORT RenderProcessHostImpl
   // destroyed (see |cleanup_corb_exception_for_plugin_upon_destruction_|).
   static void AddCorbExceptionForPlugin(int process_id);
 
+  using IpcSendWatcher = base::RepeatingCallback<void(const IPC::Message& msg)>;
+  void SetIpcSendWatcherForTesting(IpcSendWatcher watcher) {
+    ipc_send_watcher_for_testing_ = std::move(watcher);
+  }
+
  protected:
   // A proxy for our IPC::Channel that lives on the IO thread.
   std::unique_ptr<IPC::ChannelProxy> channel_;
@@ -588,6 +593,9 @@ class CONTENT_EXPORT RenderProcessHostImpl
   // change.
   void UpdateProcessPriority();
 
+  // Called if the backgrounded or visibility state of the process changes.
+  void SendProcessStateToRenderer();
+
   // Creates a PersistentMemoryAllocator and shares it with the renderer
   // process for it to store histograms from that process. The allocator is
   // available for extraction by a SubprocesMetricsProvider in order to
@@ -623,9 +631,6 @@ class CONTENT_EXPORT RenderProcessHostImpl
   static RenderProcessHost* FindReusableProcessHostForSiteInstance(
       SiteInstanceImpl* site_instance);
 
-  void CreateMediaStreamDispatcherHost(
-      MediaStreamManager* media_stream_manager,
-      blink::mojom::MediaStreamDispatcherHostRequest request);
   void CreateMediaStreamTrackMetricsHost(
       blink::mojom::MediaStreamTrackMetricsHostRequest request);
 
@@ -863,13 +868,10 @@ class CONTENT_EXPORT RenderProcessHostImpl
   std::unique_ptr<PermissionServiceContext> permission_service_context_;
 
   // The memory allocator, if any, in which the renderer will write its metrics.
-  std::unique_ptr<base::SharedPersistentMemoryAllocator> metrics_allocator_;
+  std::unique_ptr<base::PersistentMemoryAllocator> metrics_allocator_;
 
-  std::unique_ptr<IndexedDBDispatcherHost, BrowserThread::DeleteOnIOThread>
+  std::unique_ptr<IndexedDBDispatcherHost, base::OnTaskRunnerDeleter>
       indexed_db_factory_;
-
-  std::unique_ptr<ServiceWorkerDispatcherHost, BrowserThread::DeleteOnIOThread>
-      service_worker_dispatcher_host_;
 
   scoped_refptr<CacheStorageDispatcherHost> cache_storage_dispatcher_host_;
 
@@ -918,6 +920,8 @@ class CONTENT_EXPORT RenderProcessHostImpl
   // If the RenderProcessHost is being shutdown via Shutdown(), this records the
   // exit code.
   int shutdown_exit_code_;
+
+  IpcSendWatcher ipc_send_watcher_for_testing_;
 
   base::WeakPtrFactory<RenderProcessHostImpl> weak_factory_;
 

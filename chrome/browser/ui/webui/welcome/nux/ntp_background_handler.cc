@@ -25,15 +25,20 @@ namespace nux {
 enum class NtpBackgrounds {
   kArt = 0,
   kCityscape = 1,
-  kGeometricShapes = 2,
-  kLandscape = 3,
-  kLife = 4,
+  kEarth = 2,
+  kGeometricShapes = 3,
+  kLandscape = 4,
 };
 
 NtpBackgroundHandler::NtpBackgroundHandler() {}
 NtpBackgroundHandler::~NtpBackgroundHandler() {}
 
 void NtpBackgroundHandler::RegisterMessages() {
+  web_ui()->RegisterMessageCallback(
+      "clearBackground",
+      base::BindRepeating(&NtpBackgroundHandler::HandleClearBackground,
+                          base::Unretained(this)));
+
   web_ui()->RegisterMessageCallback(
       "getBackgrounds",
       base::BindRepeating(&NtpBackgroundHandler::HandleGetBackgrounds,
@@ -45,6 +50,12 @@ void NtpBackgroundHandler::RegisterMessages() {
                           base::Unretained(this)));
 }
 
+void NtpBackgroundHandler::HandleClearBackground(const base::ListValue* args) {
+  InstantService* instant_service =
+      InstantServiceFactory::GetForProfile(Profile::FromWebUI(web_ui()));
+  instant_service->SetCustomBackgroundURL(GURL(""));
+}
+
 void NtpBackgroundHandler::HandleGetBackgrounds(const base::ListValue* args) {
   AllowJavascript();
   CHECK_EQ(1U, args->GetSize());
@@ -54,14 +65,25 @@ void NtpBackgroundHandler::HandleGetBackgrounds(const base::ListValue* args) {
   base::ListValue list_value;
   std::array<GURL, kOnboardingNtpBackgroundsCount> onboardingNtpBackgrounds =
       GetOnboardingNtpBackgrounds();
+  const std::string kUrlPrefix = "preview-background.jpg?";
 
   auto element = std::make_unique<base::DictionaryValue>();
-  int id = static_cast<int>(NtpBackgrounds::kCityscape);
+  int id = static_cast<int>(NtpBackgrounds::kEarth);
+  element->SetInteger("id", id);
+  element->SetString("title",
+                     l10n_util::GetStringUTF8(
+                         IDS_ONBOARDING_WELCOME_NTP_BACKGROUND_EARTH_TITLE));
+  element->SetString("imageUrl", kUrlPrefix + std::to_string(id));
+  element->SetString("thumbnailClass", "earth");
+  list_value.Append(std::move(element));
+
+  element = std::make_unique<base::DictionaryValue>();
+  id = static_cast<int>(NtpBackgrounds::kCityscape);
   element->SetInteger("id", id);
   element->SetString(
       "title", l10n_util::GetStringUTF8(
                    IDS_ONBOARDING_WELCOME_NTP_BACKGROUND_CITYSCAPE_TITLE));
-  element->SetString("imageUrl", onboardingNtpBackgrounds[id].spec());
+  element->SetString("imageUrl", kUrlPrefix + std::to_string(id));
   element->SetString("thumbnailClass", "cityscape");
   list_value.Append(std::move(element));
 
@@ -71,7 +93,7 @@ void NtpBackgroundHandler::HandleGetBackgrounds(const base::ListValue* args) {
   element->SetString(
       "title", l10n_util::GetStringUTF8(
                    IDS_ONBOARDING_WELCOME_NTP_BACKGROUND_LANDSCAPE_TITLE));
-  element->SetString("imageUrl", onboardingNtpBackgrounds[id].spec());
+  element->SetString("imageUrl", kUrlPrefix + std::to_string(id));
   element->SetString("thumbnailClass", "landscape");
   list_value.Append(std::move(element));
 
@@ -81,7 +103,7 @@ void NtpBackgroundHandler::HandleGetBackgrounds(const base::ListValue* args) {
   element->SetString("title",
                      l10n_util::GetStringUTF8(
                          IDS_ONBOARDING_WELCOME_NTP_BACKGROUND_ART_TITLE));
-  element->SetString("imageUrl", onboardingNtpBackgrounds[id].spec());
+  element->SetString("imageUrl", kUrlPrefix + std::to_string(id));
   element->SetString("thumbnailClass", "art");
   list_value.Append(std::move(element));
 
@@ -92,18 +114,8 @@ void NtpBackgroundHandler::HandleGetBackgrounds(const base::ListValue* args) {
       "title",
       l10n_util::GetStringUTF8(
           IDS_ONBOARDING_WELCOME_NTP_BACKGROUND_GEOMETRIC_SHAPES_TITLE));
-  element->SetString("imageUrl", onboardingNtpBackgrounds[id].spec());
+  element->SetString("imageUrl", kUrlPrefix + std::to_string(id));
   element->SetString("thumbnailClass", "geometric-shapes");
-  list_value.Append(std::move(element));
-
-  element = std::make_unique<base::DictionaryValue>();
-  id = static_cast<int>(NtpBackgrounds::kLife);
-  element->SetInteger("id", id);
-  element->SetString("title",
-                     l10n_util::GetStringUTF8(
-                         IDS_ONBOARDING_WELCOME_NTP_BACKGROUND_LIFE_TITLE));
-  element->SetString("imageUrl", onboardingNtpBackgrounds[id].spec());
-  element->SetString("thumbnailClass", "life");
   list_value.Append(std::move(element));
 
   ResolveJavascriptCallback(*callback_id, list_value);
@@ -136,6 +148,14 @@ void NtpBackgroundHandler::HandleSetBackground(const base::ListValue* args) {
           GURL("https://500px.com/photo/135751035/"
                "soulseek-by-%E5%B0%A4%E9%87%91%E5%B0%BC-ev-tchebotarev"));
       break;
+    case static_cast<int>(NtpBackgrounds::kEarth):
+      instant_service->SetCustomBackgroundURLWithAttributions(
+          onboardingNtpBackgrounds[backgroundIndex],
+          l10n_util::GetStringFUTF8(
+              IDS_ONBOARDING_WELCOME_NTP_BACKGROUND_PHOTO_BY_LABEL,
+              base::UTF8ToUTF16("NASA Image Library")),
+          "", GURL("https://www.google.com/sky/"));
+      break;
     case static_cast<int>(NtpBackgrounds::kGeometricShapes):
       instant_service->SetCustomBackgroundURLWithAttributions(
           onboardingNtpBackgrounds[backgroundIndex], "Tessellation 15",
@@ -151,16 +171,6 @@ void NtpBackgroundHandler::HandleSetBackground(const base::ListValue* args) {
           "",
           GURL("https://500px.com/photo/41149196/"
                "le-piscine-sunset-by-giulio-rosso-chioso"));
-      break;
-    case static_cast<int>(NtpBackgrounds::kLife):
-      instant_service->SetCustomBackgroundURLWithAttributions(
-          onboardingNtpBackgrounds[backgroundIndex],
-          l10n_util::GetStringFUTF8(
-              IDS_ONBOARDING_WELCOME_NTP_BACKGROUND_PHOTO_BY_LABEL,
-              base::UTF8ToUTF16("Toa Heftiba on Unsplash")),
-          "",
-          GURL("https://unsplash.com/collections/1813652/"
-               "google-pixel-in-bloom-collection"));
       break;
   }
 }

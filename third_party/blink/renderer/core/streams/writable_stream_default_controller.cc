@@ -6,9 +6,9 @@
 
 #include "third_party/blink/renderer/bindings/core/v8/script_value.h"
 #include "third_party/blink/renderer/core/streams/miscellaneous_operations.h"
+#include "third_party/blink/renderer/core/streams/promise_handler.h"
 #include "third_party/blink/renderer/core/streams/queue_with_sizes.h"
 #include "third_party/blink/renderer/core/streams/stream_algorithms.h"
-#include "third_party/blink/renderer/core/streams/stream_script_function.h"
 #include "third_party/blink/renderer/core/streams/writable_stream_native.h"
 #include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/bindings/script_state.h"
@@ -33,7 +33,7 @@ void WritableStreamDefaultController::error(ScriptState* script_state,
                                             ScriptValue e) {
   // https://streams.spec.whatwg.org/#ws-default-controller-error
   //  2. Let state be this.[[controlledWritableStream]].[[state]].
-  const auto state = controlled_writable_stream_->state_;
+  const auto state = controlled_writable_stream_->GetState();
 
   //  3. If state is not "writable", return.
   if (state != WritableStreamNative::kWritable) {
@@ -41,16 +41,6 @@ void WritableStreamDefaultController::error(ScriptState* script_state,
   }
   //  4. Perform ! WritableStreamDefaultControllerError(this, e).
   Error(script_state, this, e.V8Value());
-}
-
-void WritableStreamDefaultController::Trace(Visitor* visitor) {
-  visitor->Trace(abort_algorithm_);
-  visitor->Trace(close_algorithm_);
-  visitor->Trace(controlled_writable_stream_);
-  visitor->Trace(queue_);
-  visitor->Trace(strategy_size_algorithm_);
-  visitor->Trace(write_algorithm_);
-  ScriptWrappable::Trace(visitor);
 }
 
 // Writable Stream Default Controller Internal Methods
@@ -92,13 +82,13 @@ void WritableStreamDefaultController::SetUp(
     ExceptionState& exception_state) {
   // https://streams.spec.whatwg.org/#set-up-writable-stream-default-controller
   //  2. Assert: stream.[[writableStreamController]] is undefined.
-  DCHECK(!stream->writable_stream_controller_);
+  DCHECK(!stream->Controller());
 
   //  3. Set controller.[[controlledWritableStream]] to stream.
   controller->controlled_writable_stream_ = stream;
 
   //  4. Set stream.[[writableStreamController]] to controller.
-  stream->writable_stream_controller_ = controller;
+  stream->SetController(controller);
 
   // Step not needed because queue is initialised during construction.
   //  5. Perform ! ResetQueue(controller).
@@ -146,11 +136,11 @@ void WritableStreamDefaultController::SetUp(
   }
   DCHECK(!exception_state.HadException());
 
-  class ResolvePromiseFunction final : public StreamScriptFunction {
+  class ResolvePromiseFunction final : public PromiseHandler {
    public:
     ResolvePromiseFunction(ScriptState* script_state,
                            WritableStreamNative* stream)
-        : StreamScriptFunction(script_state), stream_(stream) {}
+        : PromiseHandler(script_state), stream_(stream) {}
 
     void CallWithLocal(v8::Local<v8::Value>) override {
       // 16. Upon fulfillment of startPromise
@@ -160,8 +150,7 @@ void WritableStreamDefaultController::SetUp(
              state == WritableStreamNative::kErroring);
 
       //      b. Set controller.[[started]] to true.
-      WritableStreamDefaultController* controller =
-          stream_->writable_stream_controller_;
+      WritableStreamDefaultController* controller = stream_->Controller();
       controller->started_ = true;
 
       //      c. Perform ! WritableStreamDefaultControllerAdvanceQueueIfNeeded(
@@ -172,18 +161,18 @@ void WritableStreamDefaultController::SetUp(
 
     void Trace(Visitor* visitor) override {
       visitor->Trace(stream_);
-      StreamScriptFunction::Trace(visitor);
+      PromiseHandler::Trace(visitor);
     }
 
    private:
-    TraceWrapperMember<WritableStreamNative> stream_;
+    Member<WritableStreamNative> stream_;
   };
 
-  class RejectPromiseFunction final : public StreamScriptFunction {
+  class RejectPromiseFunction final : public PromiseHandler {
    public:
     RejectPromiseFunction(ScriptState* script_state,
                           WritableStreamNative* stream)
-        : StreamScriptFunction(script_state), stream_(stream) {}
+        : PromiseHandler(script_state), stream_(stream) {}
 
     void CallWithLocal(v8::Local<v8::Value> r) override {
       // 17. Upon rejection of startPromise with reason r,
@@ -193,8 +182,7 @@ void WritableStreamDefaultController::SetUp(
              state == WritableStreamNative::kErroring);
 
       //      b. Set controller.[[started]] to true.
-      WritableStreamDefaultController* controller =
-          stream_->writable_stream_controller_;
+      WritableStreamDefaultController* controller = stream_->Controller();
       controller->started_ = true;
 
       //      c. Perform ! WritableStreamDealWithRejection(stream, r).
@@ -203,11 +191,11 @@ void WritableStreamDefaultController::SetUp(
 
     void Trace(Visitor* visitor) override {
       visitor->Trace(stream_);
-      StreamScriptFunction::Trace(visitor);
+      PromiseHandler::Trace(visitor);
     }
 
    private:
-    TraceWrapperMember<WritableStreamNative> stream_;
+    Member<WritableStreamNative> stream_;
   };
 
   StreamThenPromise(
@@ -280,22 +268,6 @@ void WritableStreamDefaultController::SetUpFromUnderlyingSink(
         exception_state);
 }
 
-void WritableStreamDefaultController::ClearAlgorithms(
-    WritableStreamDefaultController* controller) {
-  // https://streams.spec.whatwg.org/#writable-stream-default-controller-clear-algorithms
-  //  1. Set controller.[[writeAlgorithm]] to undefined.
-  controller->write_algorithm_ = nullptr;
-
-  //  2. Set controller.[[closeAlgorithm]] to undefined.
-  controller->close_algorithm_ = nullptr;
-
-  //  3. Set controller.[[abortAlgorithm]] to undefined.
-  controller->abort_algorithm_ = nullptr;
-
-  //  4. Set controller.[[strategySizeAlgorithm]] to undefined.
-  controller->strategy_size_algorithm_ = nullptr;
-}
-
 void WritableStreamDefaultController::Close(
     ScriptState* script_state,
     WritableStreamDefaultController* controller) {
@@ -315,7 +287,7 @@ double WritableStreamDefaultController::GetChunkSize(
     WritableStreamDefaultController* controller,
     v8::Local<v8::Value> chunk) {
   if (!controller->strategy_size_algorithm_) {
-    DCHECK_NE(controller->controlled_writable_stream_->state_,
+    DCHECK_NE(controller->controlled_writable_stream_->GetState(),
               WritableStreamNative::kWritable);
     // No need to error since the stream is already stopped or stopping.
     return 1;
@@ -345,7 +317,7 @@ double WritableStreamDefaultController::GetChunkSize(
 }
 
 double WritableStreamDefaultController::GetDesiredSize(
-    WritableStreamDefaultController* controller) {
+    const WritableStreamDefaultController* controller) {
   // https://streams.spec.whatwg.org/#writable-stream-default-controller-get-desired-size
   //  1. Return controller.[[strategyHWM]] − controller.[[queueTotalSize]].
   return controller->strategy_high_water_mark_ -
@@ -387,7 +359,7 @@ void WritableStreamDefaultController::Write(
   //  5. If ! WritableStreamCloseQueuedOrInFlight(stream) is false and
   //     stream.[[state]] is "writable",
   if (!WritableStreamNative::CloseQueuedOrInFlight(stream) &&
-      stream->state_ == WritableStreamNative::kWritable) {
+      stream->GetState() == WritableStreamNative::kWritable) {
     //      a. Let backpressure be !
     //         WritableStreamDefaultControllerGetBackpressure(controller).
     const bool backpressure = GetBackpressure(controller);
@@ -400,6 +372,32 @@ void WritableStreamDefaultController::Write(
   //  6. Perform ! WritableStreamDefaultControllerAdvanceQueueIfNeeded(
   //     controller).
   AdvanceQueueIfNeeded(script_state, controller);
+}
+
+void WritableStreamDefaultController::Trace(Visitor* visitor) {
+  visitor->Trace(abort_algorithm_);
+  visitor->Trace(close_algorithm_);
+  visitor->Trace(controlled_writable_stream_);
+  visitor->Trace(queue_);
+  visitor->Trace(strategy_size_algorithm_);
+  visitor->Trace(write_algorithm_);
+  ScriptWrappable::Trace(visitor);
+}
+
+void WritableStreamDefaultController::ClearAlgorithms(
+    WritableStreamDefaultController* controller) {
+  // https://streams.spec.whatwg.org/#writable-stream-default-controller-clear-algorithms
+  //  1. Set controller.[[writeAlgorithm]] to undefined.
+  controller->write_algorithm_ = nullptr;
+
+  //  2. Set controller.[[closeAlgorithm]] to undefined.
+  controller->close_algorithm_ = nullptr;
+
+  //  3. Set controller.[[abortAlgorithm]] to undefined.
+  controller->abort_algorithm_ = nullptr;
+
+  //  4. Set controller.[[strategySizeAlgorithm]] to undefined.
+  controller->strategy_size_algorithm_ = nullptr;
 }
 
 void WritableStreamDefaultController::AdvanceQueueIfNeeded(
@@ -415,12 +413,12 @@ void WritableStreamDefaultController::AdvanceQueueIfNeeded(
   }
 
   //  3. If stream.[[inFlightWriteRequest]] is not undefined, return.
-  if (stream->in_flight_write_request_) {
+  if (stream->InFlightWriteRequest()) {
     return;
   }
 
   //  4. Let state be stream.[[state]].
-  const auto state = stream->state_;
+  const auto state = stream->GetState();
 
   //  5. If state is "closed" or "errored", return.
   if (state == WritableStreamNative::kClosed ||
@@ -466,7 +464,7 @@ void WritableStreamDefaultController::ErrorIfNeeded(
   // https://streams.spec.whatwg.org/#writable-stream-default-controller-error-if-needed
   //  1. If controller.[[controlledWritableStream]].[[state]] is "writable",
   //     perform ! WritableStreamDefaultControllerError(controller, error).
-  const auto state = controller->controlled_writable_stream_->state_;
+  const auto state = controller->controlled_writable_stream_->GetState();
   if (state == WritableStreamNative::kWritable) {
     Error(script_state, controller, error);
   }
@@ -498,10 +496,10 @@ void WritableStreamDefaultController::ProcessClose(
   //  6. Perform ! WritableStreamDefaultControllerClearAlgorithms(controller).
   ClearAlgorithms(controller);
 
-  class ResolveFunction final : public StreamScriptFunction {
+  class ResolveFunction final : public PromiseHandler {
    public:
     ResolveFunction(ScriptState* script_state, WritableStreamNative* stream)
-        : StreamScriptFunction(script_state), stream_(stream) {}
+        : PromiseHandler(script_state), stream_(stream) {}
 
     void CallWithLocal(v8::Local<v8::Value>) override {
       //  7. Upon fulfillment of sinkClosePromise,
@@ -511,17 +509,17 @@ void WritableStreamDefaultController::ProcessClose(
 
     void Trace(Visitor* visitor) override {
       visitor->Trace(stream_);
-      StreamScriptFunction::Trace(visitor);
+      PromiseHandler::Trace(visitor);
     }
 
    private:
-    TraceWrapperMember<WritableStreamNative> stream_;
+    Member<WritableStreamNative> stream_;
   };
 
-  class RejectFunction final : public StreamScriptFunction {
+  class RejectFunction final : public PromiseHandler {
    public:
     RejectFunction(ScriptState* script_state, WritableStreamNative* stream)
-        : StreamScriptFunction(script_state), stream_(stream) {}
+        : PromiseHandler(script_state), stream_(stream) {}
 
     void CallWithLocal(v8::Local<v8::Value> reason) override {
       //  8. Upon rejection of sinkClosePromise with reason reason,
@@ -533,11 +531,11 @@ void WritableStreamDefaultController::ProcessClose(
 
     void Trace(Visitor* visitor) override {
       visitor->Trace(stream_);
-      StreamScriptFunction::Trace(visitor);
+      PromiseHandler::Trace(visitor);
     }
 
    private:
-    TraceWrapperMember<WritableStreamNative> stream_;
+    Member<WritableStreamNative> stream_;
   };
 
   StreamThenPromise(script_state->GetContext(), sinkClosePromise,
@@ -561,12 +559,12 @@ void WritableStreamDefaultController::ProcessWrite(
   const auto sinkWritePromise =
       controller->write_algorithm_->Run(script_state, 1, &chunk);
 
-  class ResolveFunction : public StreamScriptFunction {
+  class ResolveFunction final : public PromiseHandler {
    public:
     ResolveFunction(ScriptState* script_state,
                     WritableStreamNative* stream,
                     WritableStreamDefaultController* controller)
-        : StreamScriptFunction(script_state),
+        : PromiseHandler(script_state),
           stream_(stream),
           controller_(controller) {}
 
@@ -577,7 +575,7 @@ void WritableStreamDefaultController::ProcessWrite(
       WritableStreamNative::FinishInFlightWrite(script_state, stream_);
 
       //      b. Let state be stream.[[state]].
-      const auto state = stream_->state_;
+      const auto state = stream_->GetState();
 
       //      c. Assert: state is "writable" or "erroring".
       DCHECK(state == WritableStreamNative::kWritable ||
@@ -610,25 +608,25 @@ void WritableStreamDefaultController::ProcessWrite(
     void Trace(Visitor* visitor) override {
       visitor->Trace(stream_);
       visitor->Trace(controller_);
-      StreamScriptFunction::Trace(visitor);
+      PromiseHandler::Trace(visitor);
     }
 
    private:
-    TraceWrapperMember<WritableStreamNative> stream_;
-    TraceWrapperMember<WritableStreamDefaultController> controller_;
+    Member<WritableStreamNative> stream_;
+    Member<WritableStreamDefaultController> controller_;
   };
 
-  class RejectFunction : public StreamScriptFunction {
+  class RejectFunction final : public PromiseHandler {
    public:
     RejectFunction(ScriptState* script_state,
                    WritableStreamNative* stream,
                    WritableStreamDefaultController* controller)
-        : StreamScriptFunction(script_state),
+        : PromiseHandler(script_state),
           stream_(stream),
           controller_(controller) {}
 
     void CallWithLocal(v8::Local<v8::Value> reason) override {
-      const auto state = stream_->state_;
+      const auto state = stream_->GetState();
       //  5. Upon rejection of sinkWritePromise with reason,
       //      a. If stream.[[state]] is "writable", perform !
       //         WritableStreamDefaultControllerClearAlgorithms(controller).
@@ -645,12 +643,12 @@ void WritableStreamDefaultController::ProcessWrite(
     void Trace(Visitor* visitor) override {
       visitor->Trace(stream_);
       visitor->Trace(controller_);
-      StreamScriptFunction::Trace(visitor);
+      PromiseHandler::Trace(visitor);
     }
 
    private:
-    TraceWrapperMember<WritableStreamNative> stream_;
-    TraceWrapperMember<WritableStreamDefaultController> controller_;
+    Member<WritableStreamNative> stream_;
+    Member<WritableStreamDefaultController> controller_;
   };
 
   StreamThenPromise(
@@ -660,7 +658,7 @@ void WritableStreamDefaultController::ProcessWrite(
 }
 
 bool WritableStreamDefaultController::GetBackpressure(
-    WritableStreamDefaultController* controller) {
+    const WritableStreamDefaultController* controller) {
   // https://streams.spec.whatwg.org/#writable-stream-default-controller-get-backpressure
   //  1. Let desiredSize be ! WritableStreamDefaultControllerGetDesiredSize(
   //     controller).
@@ -679,7 +677,7 @@ void WritableStreamDefaultController::Error(
   WritableStreamNative* stream = controller->controlled_writable_stream_;
 
   //  2. Assert: stream.[[state]] is "writable".
-  DCHECK_EQ(stream->state_, WritableStreamNative::kWritable);
+  DCHECK_EQ(stream->GetState(), WritableStreamNative::kWritable);
 
   //  3. Perform ! WritableStreamDefaultControllerClearAlgorithms(controller).
   ClearAlgorithms(controller);

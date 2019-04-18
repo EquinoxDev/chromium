@@ -36,6 +36,7 @@ class VideoWakeLockPictureInPictureService
                     const base::Optional<viz::SurfaceId>&,
                     const blink::WebSize&,
                     bool,
+                    bool,
                     StartSessionCallback callback) final {
     std::move(callback).Run(WebSize());
   }
@@ -47,6 +48,7 @@ class VideoWakeLockPictureInPictureService
   void UpdateSession(uint32_t,
                      const base::Optional<viz::SurfaceId>&,
                      const blink::WebSize&,
+                     bool,
                      bool) final {}
   void SetDelegate(mojom::blink::PictureInPictureDelegatePtr) final {}
 
@@ -62,11 +64,6 @@ class VideoWakeLockMediaPlayer final : public EmptyWebMediaPlayer {
 
 class VideoWakeLockFrameClient : public test::MediaStubLocalFrameClient {
  public:
-  static VideoWakeLockFrameClient* Create(
-      std::unique_ptr<WebMediaPlayer> player) {
-    return MakeGarbageCollected<VideoWakeLockFrameClient>(std::move(player));
-  }
-
   explicit VideoWakeLockFrameClient(std::unique_ptr<WebMediaPlayer> player)
       : test::MediaStubLocalFrameClient(std::move(player)),
         interface_provider_(new service_manager::InterfaceProvider()) {}
@@ -85,7 +82,7 @@ class VideoWakeLockTest : public PageTestBase {
  public:
   void SetUp() override {
     PageTestBase::SetupPageWithClients(
-        nullptr, VideoWakeLockFrameClient::Create(
+        nullptr, MakeGarbageCollected<VideoWakeLockFrameClient>(
                      std::make_unique<VideoWakeLockMediaPlayer>()));
 
     service_manager::InterfaceProvider::TestApi test_api(
@@ -121,16 +118,16 @@ class VideoWakeLockTest : public PageTestBase {
     PictureInPictureController::From(GetDocument())
         .EnterPictureInPicture(Video(), nullptr);
 
-    WaitForEvent::Create(video_.Get(),
-                         event_type_names::kEnterpictureinpicture);
+    MakeGarbageCollected<WaitForEvent>(
+        video_.Get(), event_type_names::kEnterpictureinpicture);
   }
 
   void SimulateLeavePictureInPicture() {
     PictureInPictureController::From(GetDocument())
         .ExitPictureInPicture(Video(), nullptr);
 
-    WaitForEvent::Create(video_.Get(),
-                         event_type_names::kLeavepictureinpicture);
+    MakeGarbageCollected<WaitForEvent>(
+        video_.Get(), event_type_names::kLeavepictureinpicture);
   }
 
  private:
@@ -193,36 +190,36 @@ TEST_F(VideoWakeLockTest, ShowingPageDoNotRequestsLockIfPaused) {
 TEST_F(VideoWakeLockTest, RemotePlaybackDisconnectedDoesNotCancelLock) {
   SimulatePlaying();
   GetVideoWakeLock()->OnRemotePlaybackStateChanged(
-      WebRemotePlaybackState::kDisconnected);
+      mojom::blink::PresentationConnectionState::CLOSED);
   EXPECT_TRUE(GetVideoWakeLock()->active_for_tests());
 }
 
 TEST_F(VideoWakeLockTest, RemotePlaybackConnectingDoesNotCancelLock) {
   SimulatePlaying();
   GetVideoWakeLock()->OnRemotePlaybackStateChanged(
-      WebRemotePlaybackState::kConnecting);
+      mojom::blink::PresentationConnectionState::CONNECTING);
   EXPECT_TRUE(GetVideoWakeLock()->active_for_tests());
 }
 
 TEST_F(VideoWakeLockTest, ActiveRemotePlaybackCancelsLock) {
   SimulatePlaying();
   GetVideoWakeLock()->OnRemotePlaybackStateChanged(
-      WebRemotePlaybackState::kDisconnected);
+      mojom::blink::PresentationConnectionState::CLOSED);
   EXPECT_TRUE(GetVideoWakeLock()->active_for_tests());
 
   GetVideoWakeLock()->OnRemotePlaybackStateChanged(
-      WebRemotePlaybackState::kConnected);
+      mojom::blink::PresentationConnectionState::CONNECTED);
   EXPECT_FALSE(GetVideoWakeLock()->active_for_tests());
 }
 
 TEST_F(VideoWakeLockTest, LeavingRemotePlaybackResumesLock) {
   SimulatePlaying();
   GetVideoWakeLock()->OnRemotePlaybackStateChanged(
-      WebRemotePlaybackState::kConnected);
+      mojom::blink::PresentationConnectionState::CONNECTED);
   EXPECT_FALSE(GetVideoWakeLock()->active_for_tests());
 
   GetVideoWakeLock()->OnRemotePlaybackStateChanged(
-      WebRemotePlaybackState::kDisconnected);
+      mojom::blink::PresentationConnectionState::CLOSED);
   EXPECT_TRUE(GetVideoWakeLock()->active_for_tests());
 }
 
@@ -287,7 +284,7 @@ TEST_F(VideoWakeLockTest, RemotingVideoInPictureInPictureDoesNotRequestLock) {
   SimulatePlaying();
   SimulateEnterPictureInPicture();
   GetVideoWakeLock()->OnRemotePlaybackStateChanged(
-      WebRemotePlaybackState::kConnected);
+      mojom::blink::PresentationConnectionState::CONNECTED);
   EXPECT_FALSE(GetVideoWakeLock()->active_for_tests());
 }
 

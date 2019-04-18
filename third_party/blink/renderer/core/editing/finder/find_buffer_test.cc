@@ -4,6 +4,7 @@
 
 #include "third_party/blink/renderer/core/editing/finder/find_buffer.h"
 
+#include "build/build_config.h"
 #include "third_party/blink/renderer/core/editing/ephemeral_range.h"
 #include "third_party/blink/renderer/core/editing/selection_template.h"
 #include "third_party/blink/renderer/core/editing/testing/editing_test_base.h"
@@ -608,6 +609,40 @@ TEST_F(FindBufferTest, DisplayContents) {
   const auto results = buffer.FindMatches("find", 0);
   ASSERT_EQ(1u, results->CountForTesting());
   EXPECT_EQ(FindBuffer::BufferMatchResult({0, 4}), results->front());
+}
+
+TEST_F(FindBufferTest, WBRTest) {
+  SetBodyContent("fi<wbr>nd and fin<wbr>d");
+  FindBuffer buffer(WholeDocumentRange());
+  const auto results = buffer.FindMatches("find", 0);
+  ASSERT_EQ(2u, results->CountForTesting());
+}
+
+TEST_F(FindBufferTest, InputTest) {
+  SetBodyContent("fi<input type='text'>nd and fin<input type='text'>d");
+  FindBuffer buffer(WholeDocumentRange());
+  const auto results = buffer.FindMatches("find", 0);
+  ASSERT_EQ(0u, results->CountForTesting());
+}
+
+TEST_F(FindBufferTest, SelectMultipleTest) {
+  SetBodyContent("<select multiple><option>find me</option></select>");
+  FindBuffer buffer(WholeDocumentRange());
+#if defined(OS_ANDROID)
+  EXPECT_EQ(0u, buffer.FindMatches("find", 0)->CountForTesting());
+#else
+  EXPECT_EQ(1u, buffer.FindMatches("find", 0)->CountForTesting());
+#endif  // defined(OS_ANDROID)
+  SetBodyContent("<select size=2><option>find me</option></select>");
+  buffer = FindBuffer(WholeDocumentRange());
+#if defined(OS_ANDROID)
+  EXPECT_EQ(0u, buffer.FindMatches("find", 0)->CountForTesting());
+#else
+  EXPECT_EQ(1u, buffer.FindMatches("find", 0)->CountForTesting());
+#endif  // defined(OS_ANDROID)
+  SetBodyContent("<select size=1><option>find me</option></select>");
+  buffer = FindBuffer(WholeDocumentRange());
+  EXPECT_EQ(0u, buffer.FindMatches("find", 0)->CountForTesting());
 }
 
 }  // namespace blink

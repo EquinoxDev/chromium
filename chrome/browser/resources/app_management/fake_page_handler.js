@@ -29,13 +29,15 @@ cr.define('app_management', function() {
     }
 
     /**
+     * @param {Array<number>=} optIds
      * @return {!Object<number, Permission>}
      */
-    static createArcPermissions() {
-      const permissionIds = [
+    static createArcPermissions(optIds) {
+      const permissionIds = optIds || [
         ArcPermissionType.CAMERA,
         ArcPermissionType.LOCATION,
         ArcPermissionType.MICROPHONE,
+        ArcPermissionType.NOTIFICATIONS,
       ];
 
       const permissions = {};
@@ -107,6 +109,9 @@ cr.define('app_management', function() {
           await this.page.$.flushForTesting();
         }
       };
+
+      /** @type {number} */
+      this.guid = 0;
     }
 
     async getApps() {
@@ -170,12 +175,16 @@ cr.define('app_management', function() {
     openNativeSettings(appId) {}
 
     /**
-     * @param {string} id
+     * @param {string} optId
      * @param {Object=} optConfig
+     * @return {!Promise<!App>}
      */
-    async addApp(id, optConfig) {
-      this.page.onAppAdded(FakePageHandler.createApp(id, optConfig));
+    async addApp(optId, optConfig) {
+      optId = optId || String(this.guid++);
+      const app = FakePageHandler.createApp(optId, optConfig);
+      this.page.onAppAdded(app);
       await this.$.flushForTesting();
+      return app;
     }
 
     /**

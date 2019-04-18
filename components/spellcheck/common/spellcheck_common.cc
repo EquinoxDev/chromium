@@ -33,6 +33,7 @@ static constexpr LanguageRegion kSupportedSpellCheckerLanguages[] = {
     {"bg", "bg-BG"},
     {"ca", "ca-ES"},
     {"cs", "cs-CZ"},
+    {"cy", "cy-GB"},
     {"da", "da-DK"},
     {"de", "de-DE"},
     {"el", "el-GR"},
@@ -54,6 +55,7 @@ static constexpr LanguageRegion kSupportedSpellCheckerLanguages[] = {
     {"hi", "hi-IN"},
     {"hr", "hr-HR"},
     {"hu", "hu-HU"},
+    {"hy", "hy"},
     {"id", "id-ID"},
     {"it", "it-IT"},
     {"ko", "ko"},
@@ -122,6 +124,12 @@ base::FilePath GetVersionedFileName(base::StringPiece input_language,
 
       // March 2016: Initial check-in of Persian
       {"fa-IR", "-7-0"},
+
+      // Feb 2019: Initial check-in of Welsh.
+      {"cy-GB", "-1-0"},
+
+      // April 2019: Initial check-in of Armenian.
+      {"hy", "-1-0"},
   };
 
   // Generate the bdict file name using default version string or special

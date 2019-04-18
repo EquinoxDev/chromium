@@ -6,10 +6,10 @@
 #define CHROME_BROWSER_CHROME_BROWSER_MAIN_H_
 
 #include <memory>
+#include <vector>
 
 #include "base/macros.h"
 #include "build/build_config.h"
-#include "chrome/browser/chrome_browser_field_trials.h"
 #include "chrome/browser/chrome_process_singleton.h"
 #include "chrome/browser/first_run/first_run.h"
 #include "chrome/browser/process_singleton.h"
@@ -31,6 +31,10 @@ class WebUsbDetector;
 
 namespace tracing {
 class TraceEventSystemStatsMonitor;
+}
+
+namespace performance_monitor {
+class SystemMonitor;
 }
 
 class ChromeBrowserMainParts : public content::BrowserMainParts {
@@ -133,8 +137,6 @@ class ChromeBrowserMainParts : public content::BrowserMainParts {
   const base::CommandLine& parsed_command_line_;
   int result_code_;
 
-  ChromeBrowserFieldTrials browser_field_trials_;
-
 #if !defined(OS_ANDROID)
   // Create StartupTimeBomb object for watching jank during startup.
   std::unique_ptr<StartupTimeBomb> startup_watcher_;
@@ -157,6 +159,10 @@ class ChromeBrowserMainParts : public content::BrowserMainParts {
   // The controller schedules UMA heap profiles collections and forwarding down
   // the reporting pipeline.
   std::unique_ptr<HeapProfilerController> heap_profiler_controller_;
+
+  // The system monitor instance, used by some subsystems to collect the system
+  // metrics they need.
+  std::unique_ptr<performance_monitor::SystemMonitor> system_monitor_;
 
   // The system stats monitor used by chrome://tracing. This doesn't do anything
   // until tracing of the |system_stats| category is enabled.

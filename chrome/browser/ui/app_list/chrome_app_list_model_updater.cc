@@ -20,7 +20,7 @@
 ChromeAppListModelUpdater::ChromeAppListModelUpdater(Profile* profile)
     : profile_(profile), weak_ptr_factory_(this) {}
 
-ChromeAppListModelUpdater::~ChromeAppListModelUpdater() {}
+ChromeAppListModelUpdater::~ChromeAppListModelUpdater() = default;
 
 void ChromeAppListModelUpdater::SetActive(bool active) {
   const bool was_active = !!app_list_controller_;
@@ -37,7 +37,9 @@ void ChromeAppListModelUpdater::SetActive(bool active) {
   std::vector<ash::mojom::AppListItemMetadataPtr> items_to_sync;
   for (auto const& item : items_)
     items_to_sync.push_back(item.second->CloneMetadata());
-  app_list_controller_->SetModelData(std::move(items_to_sync),
+
+  DCHECK(profile_);
+  app_list_controller_->SetModelData(model_id(), std::move(items_to_sync),
                                      search_engine_is_google_);
 }
 
@@ -224,6 +226,18 @@ void ChromeAppListModelUpdater::SetItemPosition(
     return;
   ash::mojom::AppListItemMetadataPtr data = item->CloneMetadata();
   data->position = new_position;
+  app_list_controller_->SetItemMetadata(id, std::move(data));
+}
+
+void ChromeAppListModelUpdater::SetItemIsPersistent(const std::string& id,
+                                                    bool is_persistent) {
+  if (!app_list_controller_)
+    return;
+  ChromeAppListItem* item = FindItem(id);
+  if (!item)
+    return;
+  ash::mojom::AppListItemMetadataPtr data = item->CloneMetadata();
+  data->is_persistent = is_persistent;
   app_list_controller_->SetItemMetadata(id, std::move(data));
 }
 

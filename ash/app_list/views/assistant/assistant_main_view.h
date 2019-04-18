@@ -5,6 +5,8 @@
 #ifndef ASH_APP_LIST_VIEWS_ASSISTANT_ASSISTANT_MAIN_VIEW_H_
 #define ASH_APP_LIST_VIEWS_ASSISTANT_ASSISTANT_MAIN_VIEW_H_
 
+#include <memory>
+
 #include "ash/app_list/app_list_export.h"
 #include "base/macros.h"
 #include "ui/views/view.h"

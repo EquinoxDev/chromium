@@ -29,7 +29,9 @@ extern const char kChromeUIAccessibilityHost[];
 extern const char kChromeUIAppIconHost[];
 extern const char kChromeUIAppIconURL[];
 extern const char kChromeUIAppLauncherPageHost[];
+extern const char kChromeUIAppManagementHost[];
 extern const char kChromeUIAppsURL[];
+extern const char kChromeUIAutofillInternalsHost[];
 extern const char kChromeUIBluetoothInternalsHost[];
 extern const char kChromeUIBookmarksHost[];
 extern const char kChromeUIBookmarksURL[];
@@ -66,8 +68,6 @@ extern const char kChromeUIDownloadsURL[];
 extern const char kChromeUIDriveInternalsHost[];
 extern const char kChromeUIExtensionIconHost[];
 extern const char kChromeUIExtensionIconURL[];
-extern const char kChromeUIExtensionsFrameHost[];
-extern const char kChromeUIExtensionsFrameURL[];
 extern const char kChromeUIExtensionsHost[];
 extern const char kChromeUIExtensionsInternalsHost[];
 extern const char kChromeUIExtensionsURL[];
@@ -146,7 +146,6 @@ extern const char kChromeUISyncHost[];
 extern const char kChromeUISyncInternalsHost[];
 extern const char kChromeUISyncResourcesHost[];
 extern const char kChromeUISystemInfoHost[];
-extern const char kChromeUITaskSchedulerInternalsHost[];
 extern const char kChromeUITermsHost[];
 extern const char kChromeUITermsURL[];
 extern const char kChromeUIThemeHost[];
@@ -162,12 +161,12 @@ extern const char kChromeUIUsbInternalsHost[];
 extern const char kChromeUIUserActionsHost[];
 extern const char kChromeUIVersionHost[];
 extern const char kChromeUIVersionURL[];
+extern const char kChromeUIPasswordChangeHost[];
+extern const char kChromeUIPasswordChangeUrl[];
 extern const char kChromeUIWelcomeHost[];
 extern const char kChromeUIWelcomeURL[];
 extern const char kChromeUIWelcomeWin10Host[];
 extern const char kChromeUIWelcomeWin10URL[];
-extern const char kDeprecatedChromeUIHistoryFrameHost[];
-extern const char kDeprecatedChromeUIHistoryFrameURL[];
 
 #if defined(OS_ANDROID)
 extern const char kChromeUIExploreSitesInternalsHost[];
@@ -190,6 +189,8 @@ extern const char kChromeUIAccountManagerWelcomeURL[];
 extern const char kChromeUIActivationMessageHost[];
 extern const char kChromeUIBluetoothPairingHost[];
 extern const char kChromeUIBluetoothPairingURL[];
+extern const char kChromeUICellularSetupHost[];
+extern const char kChromeUICellularSetupUrl[];
 extern const char kChromeUICertificateManagerDialogURL[];
 extern const char kChromeUICertificateManagerHost[];
 extern const char kChromeUICryptohomeHost[];
@@ -210,6 +211,8 @@ extern const char kChromeUIMultiDeviceSetupUrl[];
 extern const char kChromeUINetworkHost[];
 extern const char kChromeUIOSCreditsHost[];
 extern const char kChromeUIOSCreditsURL[];
+extern const char kChromeUIOSSettingsHost[];
+extern const char kChromeUIOSSettingsURL[];
 extern const char kChromeUIOobeHost[];
 extern const char kChromeUIOobeURL[];
 extern const char kChromeUIPowerHost[];
@@ -294,8 +297,12 @@ extern const char kSearchEnginesSubPage[];
 extern const char kSignOutSubPage[];
 extern const char kSyncSetupSubPage[];
 extern const char kTriggeredResetProfileSettingsSubPage[];
+
 #if defined(OS_CHROMEOS)
+// Entry points for OS settings sub-pages.
 extern const char kAccessibilitySubPage[];
+extern const char kAndroidAppsDetailsSubPage[];
+extern const char kAssistantSubPage[];
 extern const char kBluetoothSubPage[];
 extern const char kCrostiniSharedUsbDevicesSubPage[];
 extern const char kDateTimeSubPage[];
@@ -306,10 +313,17 @@ extern const char kConnectedDevicesSubPage[];
 extern const char kLockScreenSubPage[];
 extern const char kNetworkDetailSubPage[];
 extern const char kPowerSubPage[];
+extern const char kSmartLockSettingsSubPage[];
 extern const char kSmbSharesPage[];
 extern const char kSmbSharesPageAddDialog[];
+extern const char kStorageSubPage[];
 extern const char kStylusSubPage[];
-#endif
+extern const char kTetherSettingsSubPage[];
+
+// Returns true if the sub-page is one of the above.
+bool IsOSSettingsSubPage(const std::string& sub_page);
+#endif  // defined(OS_CHROMEOS)
+
 #if defined(OS_WIN)
 extern const char kCleanupSubPage[];
 #endif

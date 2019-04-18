@@ -224,7 +224,9 @@ class Generator(generator.Generator):
           mojom.IsAnyHandleKind(kind) or
           mojom.IsInterfaceKind(kind) or
           mojom.IsInterfaceRequestKind(kind) or
-          mojom.IsAssociatedKind(kind)):
+          mojom.IsAssociatedKind(kind) or
+          mojom.IsPendingRemoteKind(kind) or
+          mojom.IsPendingReceiverKind(kind)):
         pass
       elif mojom.IsArrayKind(kind):
         AddKind(kind.kind)
@@ -266,7 +268,7 @@ class Generator(generator.Generator):
                 for typename in
                 self.module.structs + all_enums + self.module.unions)
     headers = set()
-    for typename, typemap in self.typemap.iteritems():
+    for typename, typemap in self.typemap.items():
       if typename in types:
         headers.update(typemap.get("public_headers", []))
     return sorted(headers)
@@ -292,6 +294,7 @@ class Generator(generator.Generator):
       "all_enums": all_enums,
       "disallow_interfaces": self.disallow_interfaces,
       "disallow_native_types": self.disallow_native_types,
+      "enable_kythe_annotations": self.enable_kythe_annotations,
       "enums": self.module.enums,
       "export_attribute": self.export_attribute,
       "export_header": self.export_header,
@@ -335,6 +338,7 @@ class Generator(generator.Generator):
       "format_constant_declaration": self._FormatConstantDeclaration,
       "get_container_validate_params_ctor_args":
           self._GetContainerValidateParamsCtorArgs,
+      "get_full_mojom_name_for_kind": self._GetFullMojomNameForKind,
       "get_name_for_kind": self._GetNameForKind,
       "get_pad": pack.GetPad,
       "get_qualified_name_for_kind": self._GetQualifiedNameForKind,
@@ -364,6 +368,7 @@ class Generator(generator.Generator):
       "is_typemapped_kind": self._IsTypemappedKind,
       "is_union_kind": mojom.IsUnionKind,
       "passes_associated_kinds": mojom.PassesAssociatedKinds,
+      "share_message_order": mojom.FieldOrParamSharesMessageOrder,
       "struct_constructors": self._GetStructConstructors,
       "under_to_camel": generator.ToCamel,
       "unmapped_type_for_serializer": self._GetUnmappedTypeForSerializer,
@@ -585,6 +590,12 @@ class Generator(generator.Generator):
     if mojom.IsInterfaceRequestKind(kind):
       return "%sRequest" % self._GetNameForKind(
           kind.kind, add_same_module_namespaces=add_same_module_namespaces)
+    if mojom.IsPendingRemoteKind(kind):
+      return "mojo::PendingRemote<%s>" % self._GetNameForKind(
+          kind.kind, add_same_module_namespaces=add_same_module_namespaces)
+    if mojom.IsPendingReceiverKind(kind):
+      return "mojo::PendingReceiver<%s>" % self._GetNameForKind(
+          kind.kind, add_same_module_namespaces=add_same_module_namespaces)
     if mojom.IsAssociatedInterfaceKind(kind):
       return "%sAssociatedPtrInfo" % self._GetNameForKind(
           kind.kind, add_same_module_namespaces=add_same_module_namespaces)
@@ -671,9 +682,9 @@ class Generator(generator.Generator):
       return ("mojo::internal::Pointer<mojo::internal::Map_Data<%s, %s>>" %
               (self._GetCppFieldType(kind.key_kind),
                self._GetCppFieldType(kind.value_kind)))
-    if mojom.IsInterfaceKind(kind):
+    if mojom.IsInterfaceKind(kind) or mojom.IsPendingRemoteKind(kind):
       return "mojo::internal::Interface_Data"
-    if mojom.IsInterfaceRequestKind(kind):
+    if mojom.IsInterfaceRequestKind(kind) or mojom.IsPendingReceiverKind(kind):
       return "mojo::internal::Handle_Data"
     if mojom.IsAssociatedInterfaceKind(kind):
       return "mojo::internal::AssociatedInterface_Data"
@@ -740,7 +751,8 @@ class Generator(generator.Generator):
 
     # TODO(crbug.com/753433): Support lazy serialization for methods which pass
     # associated handles.
-    if mojom.MethodPassesAssociatedKinds(method):
+    if mojom.MethodPassesAssociatedKinds(method) or \
+       mojom.MethodParametersShareMessageOrder(method):
       return False
 
     return not any(self._KindMustBeSerialized(param.kind) for param in
@@ -889,6 +901,12 @@ class Generator(generator.Generator):
       return "%sPtrDataView" % _GetName(kind)
     if mojom.IsInterfaceRequestKind(kind):
       return "%sRequestDataView" % _GetName(kind.kind)
+    if mojom.IsPendingRemoteKind(kind):
+      return ("mojo::InterfacePtrDataView<%sInterfaceBase>" %
+              _GetName(kind.kind))
+    if mojom.IsPendingReceiverKind(kind):
+      return ("mojo::InterfaceRequestDataView<%sInterfaceBase>" %
+              _GetName(kind.kind))
     if mojom.IsAssociatedInterfaceKind(kind):
       return "%sAssociatedPtrInfoDataView" % _GetName(kind.kind)
     if mojom.IsAssociatedInterfaceRequestKind(kind):

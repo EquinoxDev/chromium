@@ -249,8 +249,11 @@ void NotificationPlatformBridgeMac::Display(
     [builder setIcon:notification.icon().ToNSImage()];
   }
 
-  [builder setShowSettingsButton:(notification_type !=
-                                  NotificationHandler::Type::EXTENSION)];
+  [builder
+      setShowSettingsButton:(notification_type !=
+                                 NotificationHandler::Type::EXTENSION &&
+                             notification_type !=
+                                 NotificationHandler::Type::SEND_TAB_TO_SELF)];
   std::vector<message_center::ButtonInfo> buttons = notification.buttons();
   if (!buttons.empty()) {
     DCHECK_LE(buttons.size(), blink::kWebNotificationMaxActions);
@@ -377,14 +380,14 @@ void NotificationPlatformBridgeMac::ProcessNotificationResponse(
 
   base::PostTaskWithTraits(
       FROM_HERE, {content::BrowserThread::UI},
-      base::Bind(DoProcessNotificationResponse,
-                 static_cast<NotificationCommon::Operation>(
-                     operation.unsignedIntValue),
-                 static_cast<NotificationHandler::Type>(
-                     notification_type.unsignedIntValue),
-                 profile_id, [is_incognito boolValue],
-                 GURL(notification_origin), notification_id, action_index,
-                 base::nullopt /* reply */, true /* by_user */));
+      base::BindOnce(DoProcessNotificationResponse,
+                     static_cast<NotificationCommon::Operation>(
+                         operation.unsignedIntValue),
+                     static_cast<NotificationHandler::Type>(
+                         notification_type.unsignedIntValue),
+                     profile_id, [is_incognito boolValue],
+                     GURL(notification_origin), notification_id, action_index,
+                     base::nullopt /* reply */, true /* by_user */));
 }
 
 // static

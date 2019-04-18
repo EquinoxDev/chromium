@@ -4,17 +4,19 @@
 
 #include "content/renderer/navigation_state.h"
 
+#include <memory>
 #include <utility>
 
 #include "content/common/frame_messages.h"
 #include "content/public/common/navigation_policy.h"
 #include "content/renderer/internal_document_state_data.h"
-#include "third_party/blink/public/web/commit_result.mojom.h"
+#include "third_party/blink/public/mojom/commit_result/commit_result.mojom.h"
 
 namespace content {
 
 NavigationState::~NavigationState() {
   RunCommitNavigationCallback(blink::mojom::CommitResult::Aborted);
+  navigation_client_.reset();
 }
 
 // static
@@ -25,11 +27,12 @@ std::unique_ptr<NavigationState> NavigationState::CreateBrowserInitiated(
     mojom::FrameNavigationControl::CommitNavigationCallback callback,
     mojom::NavigationClient::CommitNavigationCallback
         per_navigation_mojo_interface_callback,
-    std::unique_ptr<NavigationClient> navigation_client) {
+    std::unique_ptr<NavigationClient> navigation_client,
+    bool was_initiated_in_this_frame) {
   return base::WrapUnique(new NavigationState(
       common_params, commit_params, time_commit_requested, false,
       std::move(callback), std::move(per_navigation_mojo_interface_callback),
-      std::move(navigation_client)));
+      std::move(navigation_client), was_initiated_in_this_frame));
 }
 
 // static
@@ -37,7 +40,8 @@ std::unique_ptr<NavigationState> NavigationState::CreateContentInitiated() {
   return base::WrapUnique(new NavigationState(
       CommonNavigationParams(), CommitNavigationParams(), base::TimeTicks(),
       true, content::mojom::FrameNavigationControl::CommitNavigationCallback(),
-      content::mojom::NavigationClient::CommitNavigationCallback(), nullptr));
+      content::mojom::NavigationClient::CommitNavigationCallback(), nullptr,
+      true));
 }
 
 // static
@@ -79,9 +83,11 @@ NavigationState::NavigationState(
     mojom::FrameNavigationControl::CommitNavigationCallback callback,
     mojom::NavigationClient::CommitNavigationCallback
         per_navigation_mojo_interface_commit_callback,
-    std::unique_ptr<NavigationClient> navigation_client)
+    std::unique_ptr<NavigationClient> navigation_client,
+    bool was_initiated_in_this_frame)
     : request_committed_(false),
       was_within_same_document_(false),
+      was_initiated_in_this_frame_(was_initiated_in_this_frame),
       is_content_initiated_(is_content_initiated),
       common_params_(common_params),
       commit_params_(commit_params),

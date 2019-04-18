@@ -232,9 +232,107 @@ void TouchEventAckQueue::UpdateQueueAfterTargetDestroyed(
   ProcessAckedTouchEvents();
 }
 
+RenderWidgetHostInputEventRouter::TouchscreenPinchState::TouchscreenPinchState()
+    : state_(PinchState::NONE) {}
+
+bool RenderWidgetHostInputEventRouter::TouchscreenPinchState::IsInPinch()
+    const {
+  switch (state_) {
+    case PinchState::NONE:
+    case PinchState::EXISTING_BUBBLING_TO_ROOT:
+      return false;
+    case PinchState::PINCH_WITH_ROOT_GESTURE_TARGET:
+    case PinchState::PINCH_WHILE_BUBBLING_TO_ROOT:
+    case PinchState::PINCH_DURING_CHILD_GESTURE:
+      return true;
+  }
+}
+
+bool RenderWidgetHostInputEventRouter::TouchscreenPinchState::
+    NeedsWrappingScrollSequence() const {
+  switch (state_) {
+    case PinchState::NONE:
+    case PinchState::PINCH_DURING_CHILD_GESTURE:
+      return true;
+    case PinchState::EXISTING_BUBBLING_TO_ROOT:
+    case PinchState::PINCH_WITH_ROOT_GESTURE_TARGET:
+    case PinchState::PINCH_WHILE_BUBBLING_TO_ROOT:
+      return false;
+  }
+}
+
+void RenderWidgetHostInputEventRouter::TouchscreenPinchState::
+    DidStartBubblingToRoot() {
+  switch (state_) {
+    case PinchState::NONE:
+      state_ = PinchState::EXISTING_BUBBLING_TO_ROOT;
+      break;
+    case PinchState::PINCH_DURING_CHILD_GESTURE:
+      state_ = PinchState::PINCH_WHILE_BUBBLING_TO_ROOT;
+      break;
+    case PinchState::EXISTING_BUBBLING_TO_ROOT:
+    case PinchState::PINCH_WITH_ROOT_GESTURE_TARGET:
+    case PinchState::PINCH_WHILE_BUBBLING_TO_ROOT:
+      NOTREACHED();
+  }
+}
+
+void RenderWidgetHostInputEventRouter::TouchscreenPinchState::
+    DidStopBubblingToRoot() {
+  DCHECK_EQ(PinchState::EXISTING_BUBBLING_TO_ROOT, state_);
+  state_ = PinchState::NONE;
+}
+
+void RenderWidgetHostInputEventRouter::TouchscreenPinchState::
+    DidStartPinchInRoot() {
+  DCHECK_EQ(PinchState::NONE, state_);
+  state_ = PinchState::PINCH_WITH_ROOT_GESTURE_TARGET;
+}
+
+void RenderWidgetHostInputEventRouter::TouchscreenPinchState::
+    DidStartPinchInChild() {
+  switch (state_) {
+    case PinchState::NONE:
+      state_ = PinchState::PINCH_DURING_CHILD_GESTURE;
+      break;
+    case PinchState::EXISTING_BUBBLING_TO_ROOT:
+      state_ = PinchState::PINCH_WHILE_BUBBLING_TO_ROOT;
+      break;
+    case PinchState::PINCH_WITH_ROOT_GESTURE_TARGET:
+    case PinchState::PINCH_WHILE_BUBBLING_TO_ROOT:
+    case PinchState::PINCH_DURING_CHILD_GESTURE:
+      NOTREACHED();
+  }
+}
+
+void RenderWidgetHostInputEventRouter::TouchscreenPinchState::DidStopPinch() {
+  switch (state_) {
+    case PinchState::PINCH_WITH_ROOT_GESTURE_TARGET:
+      state_ = PinchState::NONE;
+      break;
+    case PinchState::PINCH_WHILE_BUBBLING_TO_ROOT:
+      state_ = PinchState::EXISTING_BUBBLING_TO_ROOT;
+      break;
+    case PinchState::PINCH_DURING_CHILD_GESTURE:
+      state_ = PinchState::NONE;
+      break;
+    case PinchState::NONE:
+    case PinchState::EXISTING_BUBBLING_TO_ROOT:
+      NOTREACHED();
+  }
+}
+
+bool RenderWidgetHostInputEventRouter::HasEventsPendingDispatch() const {
+  return event_targeter_->HasEventsPendingDispatch();
+}
+
 size_t RenderWidgetHostInputEventRouter::TouchEventAckQueueLengthForTesting()
     const {
   return touch_event_ack_queue_->length_for_testing();
+}
+
+size_t RenderWidgetHostInputEventRouter::RegisteredViewCountForTesting() const {
+  return owner_map_.size();
 }
 
 void RenderWidgetHostInputEventRouter::OnRenderWidgetHostViewBaseDestroyed(
@@ -351,8 +449,6 @@ RenderWidgetHostInputEventRouter::RenderWidgetHostInputEventRouter()
       last_emulated_event_root_view_(nullptr),
       last_device_scale_factor_(1.f),
       active_touches_(0),
-      in_touchscreen_gesture_pinch_(false),
-      gesture_pinch_did_send_scroll_begin_(false),
       event_targeter_(std::make_unique<RenderWidgetTargeter>(this)),
       use_viz_hit_test_(features::IsVizHitTestingEnabled()),
       touch_event_ack_queue_(new TouchEventAckQueue(this)),
@@ -371,7 +467,12 @@ RenderWidgetTargetResult RenderWidgetHostInputEventRouter::FindMouseEventTarget(
   bool needs_transform_point = true;
   bool latched_target = true;
   bool should_verify_result = false;
-  if (root_view->IsMouseLocked()) {
+  // Allow devtools to route events into the root view based on the
+  // browser-side inspector overlay state.
+  if (route_to_root_for_devtools_)
+    target = root_view;
+
+  if (!target && root_view->IsMouseLocked()) {
     target = root_view->host()->delegate()->GetMouseLockWidget()->GetView();
   }
 
@@ -405,8 +506,7 @@ RenderWidgetTargetResult RenderWidgetHostInputEventRouter::FindMouseEventTarget(
 
   if (needs_transform_point) {
     if (!root_view->TransformPointToCoordSpaceForView(
-            event.PositionInWidget(), target, &transformed_point,
-            viz::EventSource::MOUSE)) {
+            event.PositionInWidget(), target, &transformed_point)) {
       return {nullptr, false, base::nullopt, latched_target, false};
     }
   }
@@ -423,8 +523,7 @@ RenderWidgetHostInputEventRouter::FindMouseWheelEventTarget(
   if (root_view->IsMouseLocked()) {
     target = root_view->host()->delegate()->GetMouseLockWidget()->GetView();
     if (!root_view->TransformPointToCoordSpaceForView(
-            event.PositionInWidget(), target, &transformed_point,
-            viz::EventSource::MOUSE)) {
+            event.PositionInWidget(), target, &transformed_point)) {
       return {nullptr, false, base::nullopt, true, false};
     }
     return {target, false, transformed_point, true, false};
@@ -909,8 +1008,7 @@ void RenderWidgetHostInputEventRouter::SendMouseEnterOrLeaveEvents(
     // propagated to its embedding surface, which makes it impossible to
     // compute the transformation for it
     if (!root_view->TransformPointToCoordSpaceForView(
-            event.PositionInWidget(), view, &transformed_point,
-            viz::EventSource::MOUSE)) {
+            event.PositionInWidget(), view, &transformed_point)) {
       transformed_point = gfx::PointF();
     }
     mouse_leave.SetPositionInWidget(transformed_point.x(),
@@ -923,8 +1021,7 @@ void RenderWidgetHostInputEventRouter::SendMouseEnterOrLeaveEvents(
     blink::WebMouseEvent mouse_move(event);
     mouse_move.SetType(blink::WebInputEvent::kMouseMove);
     if (!root_view->TransformPointToCoordSpaceForView(
-            event.PositionInWidget(), common_ancestor, &transformed_point,
-            viz::EventSource::MOUSE)) {
+            event.PositionInWidget(), common_ancestor, &transformed_point)) {
       transformed_point = gfx::PointF();
     }
     mouse_move.SetPositionInWidget(transformed_point.x(),
@@ -939,8 +1036,7 @@ void RenderWidgetHostInputEventRouter::SendMouseEnterOrLeaveEvents(
     blink::WebMouseEvent mouse_enter(event);
     mouse_enter.SetType(blink::WebInputEvent::kMouseMove);
     if (!root_view->TransformPointToCoordSpaceForView(
-            event.PositionInWidget(), view, &transformed_point,
-            viz::EventSource::MOUSE)) {
+            event.PositionInWidget(), view, &transformed_point)) {
       transformed_point = gfx::PointF();
     }
     mouse_enter.SetPositionInWidget(transformed_point.x(),
@@ -1078,6 +1174,25 @@ bool RenderWidgetHostInputEventRouter::BubbleScrollEvent(
     return false;
   }
 
+  const bool touchscreen_bubble_to_root =
+      event.SourceDevice() == blink::kWebGestureDeviceTouchscreen &&
+      !bubbling_gesture_scroll_target_->IsRenderWidgetHostViewChildFrame();
+  if (touchscreen_bubble_to_root) {
+    if (event.GetType() == blink::WebInputEvent::kGestureScrollBegin) {
+      touchscreen_pinch_state_.DidStartBubblingToRoot();
+
+      // If a pinch's scroll sequence is sent to an OOPIF and the pinch
+      // begin event is dispatched to the root before the scroll begin is
+      // bubbled to the root, a wrapping scroll begin will have already been
+      // sent to the root.
+      if (touchscreen_pinch_state_.IsInPinch()) {
+        return true;
+      }
+    } else if (event.GetType() == blink::WebInputEvent::kGestureScrollEnd) {
+      touchscreen_pinch_state_.DidStopBubblingToRoot();
+    }
+  }
+
   bubbling_gesture_scroll_target_->ProcessGestureEvent(
       GestureEventInTarget(event, bubbling_gesture_scroll_target_),
       latency_info);
@@ -1170,6 +1285,14 @@ void RenderWidgetHostInputEventRouter::CancelScrollBubbling() {
   DCHECK(bubbling_gesture_scroll_target_);
   SendGestureScrollEnd(bubbling_gesture_scroll_target_,
                        bubbling_gesture_scroll_source_device_);
+
+  const bool touchscreen_bubble_to_root =
+      bubbling_gesture_scroll_source_device_ ==
+          blink::kWebGestureDeviceTouchscreen &&
+      !bubbling_gesture_scroll_target_->IsRenderWidgetHostViewChildFrame();
+  if (touchscreen_bubble_to_root)
+    touchscreen_pinch_state_.DidStopBubblingToRoot();
+
   // TODO(mcnee): We should also inform |bubbling_gesture_scroll_origin_| that
   // we are no longer bubbling its events, otherwise it could continue to send
   // them and interfere with a new scroll gesture being bubbled.
@@ -1297,6 +1420,25 @@ bool RenderWidgetHostInputEventRouter::ViewMapIsEmpty() const {
   return owner_map_.empty();
 }
 
+namespace {
+
+bool IsPinchCurrentlyAllowedInTarget(RenderWidgetHostViewBase* target) {
+  base::Optional<cc::TouchAction> target_allowed_touch_action(
+      cc::kTouchActionNone);
+  if (target) {
+    target_allowed_touch_action =
+        (static_cast<RenderWidgetHostImpl*>(target->GetRenderWidgetHost()))
+            ->input_router()
+            ->AllowedTouchAction();
+  }
+  if (!target_allowed_touch_action)
+    target_allowed_touch_action = cc::kTouchActionNone;
+  return (target_allowed_touch_action.value() &
+          cc::TouchAction::kTouchActionPinchZoom);
+}
+
+}  // namespace
+
 void RenderWidgetHostInputEventRouter::DispatchTouchscreenGestureEvent(
     RenderWidgetHostViewBase* root_view,
     RenderWidgetHostViewBase* target,
@@ -1304,61 +1446,50 @@ void RenderWidgetHostInputEventRouter::DispatchTouchscreenGestureEvent(
     const ui::LatencyInfo& latency,
     const base::Optional<gfx::PointF>& target_location) {
   if (gesture_event.GetType() == blink::WebInputEvent::kGesturePinchBegin) {
-    in_touchscreen_gesture_pinch_ = true;
-    // If the root view wasn't already receiving the gesture stream, then we
-    // need to wrap the diverted pinch events in a GestureScrollBegin/End.
-    // TODO(wjmaclean,kenrb,tdresser): When scroll latching lands, we can
-    // revisit how this code should work.
-    // https://crbug.com/526463
-    auto* rwhi =
-        static_cast<RenderWidgetHostImpl*>(root_view->GetRenderWidgetHost());
-    // If the root view is the current gesture target, then we explicitly don't
-    // send a GestureScrollBegin, as by the time we see GesturePinchBegin there
-    // should have been one.
-    if (root_view != touchscreen_gesture_target_ &&
-        !rwhi->is_in_touchscreen_gesture_scroll()) {
-      base::Optional<cc::TouchAction> target_allowed_touch_action(
-          cc::kTouchActionNone);
-      if (touchscreen_gesture_target_) {
-        target_allowed_touch_action =
-            (static_cast<RenderWidgetHostImpl*>(
-                 touchscreen_gesture_target_->GetRenderWidgetHost()))
-                ->input_router()
-                ->AllowedTouchAction();
-      }
-      DCHECK(target_allowed_touch_action.has_value());
-      if (target_allowed_touch_action.value() &
-          cc::TouchAction::kTouchActionPinchZoom) {
-        gesture_pinch_did_send_scroll_begin_ = true;
-        // The pinch gesture will be sent to the root view and it may not have a
-        // valid touch action yet. In this case, set the touch action to auto.
-        rwhi->input_router()->ForceSetTouchActionAuto();
+    if (root_view == touchscreen_gesture_target_) {
+      // If the root view is the current gesture target, there is no need to
+      // wrap the pinch events ourselves.
+      touchscreen_pinch_state_.DidStartPinchInRoot();
+    } else if (IsPinchCurrentlyAllowedInTarget(touchscreen_gesture_target_)) {
+      // If pinch is not allowed in the child, don't do any diverting of the
+      // pinch events to the root. Have the events go to the child whose
+      // TouchActionFilter will discard them.
+
+      auto* root_rwhi =
+          static_cast<RenderWidgetHostImpl*>(root_view->GetRenderWidgetHost());
+
+      // The pinch gesture will be sent to the root view and it may not have a
+      // valid touch action yet. In this case, set the touch action to auto.
+      root_rwhi->input_router()->ForceSetTouchActionAuto();
+
+      if (touchscreen_pinch_state_.NeedsWrappingScrollSequence()) {
+        // If the root view is not the gesture target, and a scroll gesture has
+        // not already started in the root from scroll bubbling, then we need
+        // to warp the diverted pinch events in a GestureScrollBegin/End.
+        DCHECK(!root_rwhi->is_in_touchscreen_gesture_scroll());
         SendGestureScrollBegin(root_view, gesture_event);
-      } else {
-        // When target does not allow touch-action: pinch, instead of sending
-        // pinch gestures to the root frame, we send all gesture pinch events
-        // to the subframe target so the target can look after disposing of
-        // them.
-        in_touchscreen_gesture_pinch_ = false;
       }
+
+      touchscreen_pinch_state_.DidStartPinchInChild();
     }
   }
 
-  if (in_touchscreen_gesture_pinch_) {
+  if (touchscreen_pinch_state_.IsInPinch()) {
     root_view->ProcessGestureEvent(gesture_event, latency);
+
     if (gesture_event.GetType() == blink::WebInputEvent::kGesturePinchEnd) {
-      in_touchscreen_gesture_pinch_ = false;
-      // If the root view wasn't already receiving the gesture stream, then we
-      // need to wrap the diverted pinch events in a GestureScrollBegin/End.
-      auto* rwhi =
-          static_cast<RenderWidgetHostImpl*>(root_view->GetRenderWidgetHost());
-      if (root_view != touchscreen_gesture_target_ &&
-          gesture_pinch_did_send_scroll_begin_ &&
-          rwhi->is_in_touchscreen_gesture_scroll()) {
+      const bool send_scroll_end =
+          touchscreen_pinch_state_.NeedsWrappingScrollSequence();
+      touchscreen_pinch_state_.DidStopPinch();
+
+      if (send_scroll_end) {
+        auto* root_rwhi = static_cast<RenderWidgetHostImpl*>(
+            root_view->GetRenderWidgetHost());
+        DCHECK(root_rwhi->is_in_touchscreen_gesture_scroll());
         SendGestureScrollEnd(root_view, gesture_event);
       }
-      gesture_pinch_did_send_scroll_begin_ = false;
     }
+
     return;
   }
 

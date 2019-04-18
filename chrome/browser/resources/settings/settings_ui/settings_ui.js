@@ -46,7 +46,7 @@ Polymer({
     },
 
     /**
-     * @private {!GuestModePageVisibility}
+     * @private {!PageVisibility}
      */
     pageVisibility_: {type: Object, value: settings.pageVisibility},
 
@@ -54,10 +54,13 @@ Polymer({
     showAndroidApps_: Boolean,
 
     /** @private */
-    showContainedShell_: Boolean,
+    showKioskNextShell_: Boolean,
 
     /** @private */
     showCrostini_: Boolean,
+
+    /** @private */
+    showPluginVm_: Boolean,
 
     /** @private */
     havePlayStoreApp_: Boolean,
@@ -107,7 +110,10 @@ Polymer({
       // <if expr="chromeos">
       controlledSettingShared:
           loadTimeData.getString('controlledSettingShared'),
-      controlledSettingOwner: loadTimeData.getString('controlledSettingOwner'),
+      controlledSettingWithOwner:
+          loadTimeData.getString('controlledSettingWithOwner'),
+      controlledSettingNoOwner:
+          loadTimeData.getString('controlledSettingNoOwner'),
       // </if>
     };
 
@@ -137,13 +143,23 @@ Polymer({
     };
     // </if>
 
-    this.showAndroidApps_ = loadTimeData.valueExists('androidAppsVisible') &&
+    // The SplitSettings feature hides OS settings in the browser settings page.
+    // https://crbug.com/950007
+    const showOSSettings = loadTimeData.getBoolean('showOSSettings');
+    this.showAndroidApps_ = showOSSettings &&
+        loadTimeData.valueExists('androidAppsVisible') &&
         loadTimeData.getBoolean('androidAppsVisible');
-    this.showContainedShell_ = loadTimeData.valueExists('showContainedShell') &&
-        loadTimeData.getBoolean('showContainedShell');
-    this.showCrostini_ = loadTimeData.valueExists('showCrostini') &&
+    this.showKioskNextShell_ = showOSSettings &&
+        loadTimeData.valueExists('showKioskNextShell') &&
+        loadTimeData.getBoolean('showKioskNextShell');
+    this.showCrostini_ = showOSSettings &&
+        loadTimeData.valueExists('showCrostini') &&
         loadTimeData.getBoolean('showCrostini');
-    this.havePlayStoreApp_ = loadTimeData.valueExists('havePlayStoreApp') &&
+    this.showPluginVm_ = showOSSettings &&
+        loadTimeData.valueExists('showPluginVm') &&
+        loadTimeData.getBoolean('showPluginVm');
+    this.havePlayStoreApp_ = showOSSettings &&
+        loadTimeData.valueExists('havePlayStoreApp') &&
         loadTimeData.getBoolean('havePlayStoreApp');
 
     this.addEventListener('show-container', () => {
@@ -170,7 +186,12 @@ Polymer({
     settings.setGlobalScrollTarget(this.$.container);
 
     const scrollToTop = top => new Promise(resolve => {
-      this.$.container.scrollTo({top, behavior: 'smooth'});
+      // When transitioning  back to main page from a subpage on ChromeOS, using
+      // 'smooth' scroll here results in the scroll changing to whatever is last
+      // value of |top|. This happens even after setting the scroll position the
+      // UI or programmatically.
+      const behavior = cr.isChromeOS ? 'auto' : 'smooth';
+      this.$.container.scrollTo({top: top, behavior: behavior});
       const onScroll = () => {
         this.debounce('scrollEnd', () => {
           this.$.container.removeEventListener('scroll', onScroll);
@@ -245,15 +266,7 @@ Polymer({
    * @private
    */
   onSearchChanged_: function(e) {
-    // Trim leading whitespace only, to prevent searching for empty string. This
-    // still allows the user to search for 'foo bar', while taking a long pause
-    // after typing 'foo '.
-    const query = e.detail.replace(/^\s+/, '');
-    // Prevent duplicate history entries.
-    if (query == this.lastSearchQuery_) {
-      return;
-    }
-
+    const query = e.detail;
     settings.navigateTo(
         settings.routes.BASIC,
         query.length > 0 ?

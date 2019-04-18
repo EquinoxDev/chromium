@@ -12,4 +12,17 @@ CSSStyleValue* CrossThreadKeywordValue::ToCSSStyleValue() {
   return CSSKeywordValue::Create(keyword_value_);
 }
 
+bool CrossThreadKeywordValue::operator==(
+    const CrossThreadStyleValue& other) const {
+  if (auto* o = DynamicTo<CrossThreadKeywordValue>(other))
+    return keyword_value_ == o->keyword_value_;
+  return false;
+}
+
+std::unique_ptr<CrossThreadStyleValue> CrossThreadKeywordValue::IsolatedCopy()
+    const {
+  return std::make_unique<CrossThreadKeywordValue>(
+      keyword_value_.IsolatedCopy());
+}
+
 }  // namespace blink

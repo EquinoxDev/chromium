@@ -44,6 +44,7 @@
 #include "third_party/blink/renderer/core/inspector/resolve_node.h"
 #include "third_party/blink/renderer/core/inspector/v8_inspector_string.h"
 #include "third_party/blink/renderer/core/probe/core_probes.h"
+#include "third_party/blink/renderer/platform/wtf/functional.h"
 
 namespace {
 
@@ -224,7 +225,7 @@ Response InspectorDOMDebuggerAgent::disable() {
 
 void InspectorDOMDebuggerAgent::Restore() {
   if (enabled_.Get())
-    instrumenting_agents_->addInspectorDOMDebuggerAgent(this);
+    instrumenting_agents_->AddInspectorDOMDebuggerAgent(this);
 }
 
 Response InspectorDOMDebuggerAgent::setEventListenerBreakpoint(
@@ -664,11 +665,11 @@ void InspectorDOMDebuggerAgent::Did(const probe::ExecuteScript& probe) {
 }
 
 void InspectorDOMDebuggerAgent::Will(const probe::UserCallback& probe) {
-  String name = probe.name ? String(probe.name) : probe.atomicName;
-  if (probe.eventTarget) {
-    Node* node = probe.eventTarget->ToNode();
+  String name = probe.name ? String(probe.name) : probe.atomic_name;
+  if (probe.event_target) {
+    Node* node = probe.event_target->ToNode();
     String target_name =
-        node ? node->nodeName() : probe.eventTarget->InterfaceName();
+        node ? node->nodeName() : probe.event_target->InterfaceName();
     AllowNativeBreakpoint(name, &target_name, false);
     return;
   }
@@ -756,9 +757,9 @@ void InspectorDOMDebuggerAgent::DidRemoveBreakpoint() {
 void InspectorDOMDebuggerAgent::SetEnabled(bool enabled) {
   enabled_.Set(enabled);
   if (enabled)
-    instrumenting_agents_->addInspectorDOMDebuggerAgent(this);
+    instrumenting_agents_->AddInspectorDOMDebuggerAgent(this);
   else
-    instrumenting_agents_->removeInspectorDOMDebuggerAgent(this);
+    instrumenting_agents_->RemoveInspectorDOMDebuggerAgent(this);
 }
 
 void InspectorDOMDebuggerAgent::DidCommitLoadForLocalFrame(LocalFrame*) {

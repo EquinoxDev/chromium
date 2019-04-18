@@ -70,7 +70,8 @@ InkDropRippleTest::InkDropRippleTest()
           new SquareInkDropRipple(gfx::Size(10, 10), 2, gfx::Size(8, 8), 1,
                                   gfx::Point(), SK_ColorBLACK, kVisibleOpacity);
       ink_drop_ripple_.reset(square_ink_drop_ripple);
-      test_api_.reset(new SquareInkDropRippleTestApi(square_ink_drop_ripple));
+      test_api_ =
+          std::make_unique<SquareInkDropRippleTestApi>(square_ink_drop_ripple);
       break;
     }
     case FLOOD_FILL_INK_DROP_RIPPLE: {
@@ -78,8 +79,8 @@ InkDropRippleTest::InkDropRippleTest()
           new FloodFillInkDropRipple(gfx::Size(10, 10), gfx::Point(),
                                      SK_ColorBLACK, kVisibleOpacity);
       ink_drop_ripple_.reset(flood_fill_ink_drop_ripple);
-      test_api_.reset(
-          new FloodFillInkDropRippleTestApi(flood_fill_ink_drop_ripple));
+      test_api_ = std::make_unique<FloodFillInkDropRippleTestApi>(
+          flood_fill_ink_drop_ripple);
       break;
     }
   }
@@ -88,7 +89,7 @@ InkDropRippleTest::InkDropRippleTest()
   test_api_->SetDisableAnimationTimers(true);
 }
 
-InkDropRippleTest::~InkDropRippleTest() {}
+InkDropRippleTest::~InkDropRippleTest() = default;
 
 // Note: First argument is optional and intentionally left blank.
 // (it's a prefix for the generated test cases)
@@ -264,8 +265,8 @@ TEST_P(InkDropRippleTest, SnapToHiddenWithoutActiveAnimations) {
   EXPECT_FALSE(test_api_->HasActiveAnimations());
   EXPECT_EQ(views::InkDropState::HIDDEN,
             ink_drop_ripple_->target_ink_drop_state());
-  EXPECT_EQ(1, observer_.last_animation_started_ordinal());
-  EXPECT_EQ(2, observer_.last_animation_ended_ordinal());
+  EXPECT_EQ(3, observer_.last_animation_started_ordinal());
+  EXPECT_EQ(4, observer_.last_animation_ended_ordinal());
 
   EXPECT_EQ(InkDropRipple::kHiddenOpacity, test_api_->GetCurrentOpacity());
   EXPECT_FALSE(ink_drop_ripple_->IsVisible());

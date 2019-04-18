@@ -10,33 +10,18 @@
 #include "ash/app_list/views/assistant/dialog_plate.h"
 #include "ash/assistant/ui/assistant_ui_constants.h"
 #include "ash/assistant/ui/assistant_view_delegate.h"
-#include "ash/assistant/ui/dialog_plate/dialog_plate.h"
+#include "ash/public/cpp/app_list/app_list_features.h"
+#include "ui/chromeos/search_box/search_box_constants.h"
 #include "ui/views/layout/box_layout.h"
 
 namespace app_list {
 
-namespace {
-
-constexpr int kBottomPaddingDip = 8;
-
-}  // namespace
-
 AssistantMainView::AssistantMainView(ash::AssistantViewDelegate* delegate)
     : delegate_(delegate) {
   InitLayout();
-
-  for (ash::DialogPlateObserver* observer :
-       delegate_->GetDialogPlateObservers()) {
-    dialog_plate_->AddObserver(observer);
-  }
 }
 
-AssistantMainView::~AssistantMainView() {
-  for (ash::DialogPlateObserver* observer :
-       delegate_->GetDialogPlateObservers()) {
-    dialog_plate_->RemoveObserver(observer);
-  }
-}
+AssistantMainView::~AssistantMainView() = default;
 
 const char* AssistantMainView::GetClassName() const {
   return "AssistantMainView";
@@ -70,13 +55,22 @@ views::View* AssistantMainView::FindFirstFocusableView() {
   return dialog_plate_->FindFirstFocusableView();
 }
 
+void AssistantMainView::RequestFocus() {
+  dialog_plate_->RequestFocus();
+}
+
 void AssistantMainView::InitLayout() {
+  constexpr int radius = search_box::kSearchBoxBorderCornerRadiusSearchResult;
+
+  SetPaintToLayer();
+  layer()->SetFillsBoundsOpaquely(false);
+  layer()->SetRoundedCornerRadius({radius, radius, radius, radius});
+
   views::BoxLayout* layout =
       SetLayoutManager(std::make_unique<views::BoxLayout>(
           views::BoxLayout::Orientation::kVertical));
   layout->set_cross_axis_alignment(
       views::BoxLayout::CROSS_AXIS_ALIGNMENT_CENTER);
-  SetBorder(views::CreateEmptyBorder(gfx::Insets(0, 0, kBottomPaddingDip, 0)));
 
   // Dialog plate.
   dialog_plate_ = new DialogPlate(delegate_);
@@ -87,10 +81,6 @@ void AssistantMainView::InitLayout() {
   AddChildView(main_stage_);
 
   layout->SetFlexForView(main_stage_, 1);
-}
-
-void AssistantMainView::RequestFocus() {
-  dialog_plate_->RequestFocus();
 }
 
 }  // namespace app_list

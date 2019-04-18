@@ -22,11 +22,8 @@
 #include "chrome/browser/lifetime/application_lifetime.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chromeos/constants/chromeos_switches.h"
-#include "chromeos/dbus/cryptohome_client.h"
-#include "chromeos/dbus/dbus_thread_manager.h"
-#include "chromeos/dbus/fake_cryptohome_client.h"
-#include "chromeos/dbus/fake_session_manager_client.h"
-#include "chromeos/dbus/session_manager_client.h"
+#include "chromeos/dbus/session_manager/fake_session_manager_client.h"
+#include "chromeos/dbus/session_manager/session_manager_client.h"
 #include "chromeos/settings/cros_settings_names.h"
 #include "components/policy/proto/chrome_device_policy.pb.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -263,24 +260,17 @@ class DisplayRotationBootTest
     : public InProcessBrowserTest,
       public testing::WithParamInterface<display::Display::Rotation> {
  protected:
-  DisplayRotationBootTest()
-      : fake_session_manager_client_(new chromeos::FakeSessionManagerClient) {}
-  ~DisplayRotationBootTest() override {}
+  DisplayRotationBootTest() = default;
+  ~DisplayRotationBootTest() override = default;
 
   void SetUpInProcessBrowserTestFixture() override {
-    chromeos::DBusThreadManager::GetSetterForTesting()->SetSessionManagerClient(
-        std::unique_ptr<chromeos::SessionManagerClient>(
-            fake_session_manager_client_));
-    chromeos::DBusThreadManager::GetSetterForTesting()->SetCryptohomeClient(
-        std::unique_ptr<chromeos::CryptohomeClient>(
-            new chromeos::FakeCryptohomeClient));
-
+    // Override FakeSessionManagerClient. This will be shut down by the browser.
+    chromeos::SessionManagerClient::InitializeFakeInMemory();
     test_helper_.InstallOwnerKey();
     test_helper_.MarkAsEnterpriseOwned();
     ash::DisplayConfigurationController::DisableAnimatorForTest();
   }
 
-  chromeos::FakeSessionManagerClient* fake_session_manager_client_;
   policy::DevicePolicyCrosTestHelper test_helper_;
 };
 
@@ -300,8 +290,9 @@ IN_PROC_BROWSER_TEST_P(DisplayRotationBootTest, PRE_Reboot) {
           chromeos::kDisplayRotationDefault, run_loop.QuitClosure());
   device_policy->SetDefaultSigningKey();
   device_policy->Build();
-  fake_session_manager_client_->set_device_policy(device_policy->GetBlob());
-  fake_session_manager_client_->OnPropertyChangeComplete(true);
+  chromeos::FakeSessionManagerClient::Get()->set_device_policy(
+      device_policy->GetBlob());
+  chromeos::FakeSessionManagerClient::Get()->OnPropertyChangeComplete(true);
   run_loop.Run();
   // Allow tasks posted by CrosSettings observers to complete:
   base::RunLoop().RunUntilIdle();

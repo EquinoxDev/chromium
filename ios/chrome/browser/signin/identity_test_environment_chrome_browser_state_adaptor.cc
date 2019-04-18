@@ -11,32 +11,13 @@
 #include "components/signin/core/browser/test_signin_client.h"
 #include "components/signin/ios/browser/profile_oauth2_token_service_ios_delegate.h"
 #include "ios/chrome/browser/browser_state/chrome_browser_state.h"
-#include "ios/chrome/browser/signin/account_fetcher_service_factory.h"
 #include "ios/chrome/browser/signin/account_tracker_service_factory.h"
-#include "ios/chrome/browser/signin/gaia_cookie_manager_service_factory.h"
 #include "ios/chrome/browser/signin/identity_manager_factory.h"
 #include "ios/chrome/browser/signin/profile_oauth2_token_service_factory.h"
 #include "ios/chrome/browser/signin/profile_oauth2_token_service_ios_provider_impl.h"
 #include "ios/chrome/browser/signin/signin_client_factory.h"
-#include "ios/chrome/browser/signin/signin_manager_factory.h"
 
 namespace {
-
-std::unique_ptr<KeyedService> BuildFakeSigninManager(
-    web::BrowserState* browser_state) {
-  ios::ChromeBrowserState* chrome_browser_state =
-      ios::ChromeBrowserState::FromBrowserState(browser_state);
-  std::unique_ptr<SigninManager> manager(new FakeSigninManager(
-      SigninClientFactory::GetForBrowserState(chrome_browser_state),
-      ProfileOAuth2TokenServiceFactory::GetForBrowserState(
-          chrome_browser_state),
-      ios::AccountTrackerServiceFactory::GetForBrowserState(
-          chrome_browser_state),
-      ios::GaiaCookieManagerServiceFactory::GetForBrowserState(
-          chrome_browser_state)));
-  manager->Initialize(nullptr);
-  return manager;
-}
 
 std::unique_ptr<KeyedService> BuildFakeOAuth2TokenService(
     web::BrowserState* context) {
@@ -59,19 +40,6 @@ std::unique_ptr<KeyedService> BuildFakeOAuth2TokenServiceWithIOSDelegate(
       browser_state->GetPrefs(), std::move(delegate));
 }
 
-std::unique_ptr<KeyedService> BuildFakeAccountFetcherService(
-    web::BrowserState* context) {
-  ios::ChromeBrowserState* browser_state =
-      ios::ChromeBrowserState::FromBrowserState(context);
-  auto account_fetcher_service = std::make_unique<FakeAccountFetcherService>();
-  account_fetcher_service->Initialize(
-      SigninClientFactory::GetForBrowserState(browser_state),
-      ProfileOAuth2TokenServiceFactory::GetForBrowserState(browser_state),
-      ios::AccountTrackerServiceFactory::GetForBrowserState(browser_state),
-      std::make_unique<TestImageDecoder>());
-  return account_fetcher_service;
-}
-
 std::unique_ptr<KeyedService> BuildTestSigninClient(web::BrowserState* state) {
   return std::make_unique<TestSigninClient>(
       ios::ChromeBrowserState::FromBrowserState(state)->GetPrefs());
@@ -81,14 +49,10 @@ TestChromeBrowserState::TestingFactories GetIdentityTestEnvironmentFactories(
     bool use_ios_token_service_delegate) {
   return {{SigninClientFactory::GetInstance(),
            base::BindRepeating(&BuildTestSigninClient)},
-          {ios::AccountFetcherServiceFactory::GetInstance(),
-           base::BindRepeating(&BuildFakeAccountFetcherService)},
           {ProfileOAuth2TokenServiceFactory::GetInstance(),
            base::BindRepeating(use_ios_token_service_delegate
                                    ? &BuildFakeOAuth2TokenServiceWithIOSDelegate
-                                   : &BuildFakeOAuth2TokenService)},
-          {ios::SigninManagerFactory::GetInstance(),
-           base::BindRepeating(&BuildFakeSigninManager)}};
+                                   : &BuildFakeOAuth2TokenService)}};
 }
 
 }  // namespace
@@ -155,16 +119,4 @@ IdentityTestEnvironmentChromeBrowserStateAdaptor::
     IdentityTestEnvironmentChromeBrowserStateAdaptor(
         ios::ChromeBrowserState* browser_state)
     : identity_test_env_(
-          browser_state->GetPrefs(),
-          ios::AccountTrackerServiceFactory::GetForBrowserState(browser_state),
-          static_cast<FakeAccountFetcherService*>(
-              ios::AccountFetcherServiceFactory::GetForBrowserState(
-                  browser_state)),
-          static_cast<FakeProfileOAuth2TokenService*>(
-              ProfileOAuth2TokenServiceFactory::GetForBrowserState(
-                  browser_state)),
-          static_cast<FakeSigninManager*>(
-              ios::SigninManagerFactory::GetForBrowserState(browser_state)),
-          ios::GaiaCookieManagerServiceFactory::GetForBrowserState(
-              browser_state),
           IdentityManagerFactory::GetForBrowserState(browser_state)) {}

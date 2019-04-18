@@ -38,6 +38,7 @@ class NativeControlsVideoPlayer {
     // we are confident to remove the feature flag
     this.videoElement_ =
         assertInstanceof(document.createElement('video'), HTMLVideoElement);
+    this.videoElement_.autoPictureInPicture = true;
     this.videoElement_.controls = true;
     this.videoElement_.controlsList = 'nodownload';
     this.videoElement_.style.pointerEvents = 'auto';
@@ -51,6 +52,17 @@ class NativeControlsVideoPlayer {
     getRequiredElement('cast-container').style.display = 'none';
 
     this.videoElement_.addEventListener('pause', this.onPause_.bind(this));
+
+    // Restore playback position when duration change.
+    // Duration change happens when video is loading where the duration
+    // change from NaN to the actual video duration.
+    this.videoElement_.addEventListener(
+        'durationchange', this.restorePlayState_.bind(this));
+
+    // Clear stored playback position
+    this.videoElement_.addEventListener(
+        'onmediacomplete', this.onMediaComplete_.bind(this));
+
 
     this.preparePlayList_();
     this.addKeyControls_();
@@ -268,9 +280,18 @@ class NativeControlsVideoPlayer {
    */
   onPause_() {
     this.videoElement_.loop = false;
-    if (this.videoElement_.currentTime == this.videoElement_.duration) {
+    if (this.videoElement_.ended) {
       this.advance_(true);
     }
+  }
+
+  /**
+   * Onmediacomplete handler.
+   * Clear playback position when media completes.
+   * @private
+   */
+  onMediaComplete_() {
+    this.savePosition(false);
   }
 
   /**
@@ -333,6 +354,11 @@ class NativeControlsVideoPlayer {
 
     this.videoElement_.src = videoUrl;
 
+    // Clear all tracks.
+    while (this.videoElement_.firstChild) {
+      this.videoElement_.firstChild.remove();
+    }
+
     const subtitleUrl = await this.searchSubtitle_(videoUrl);
     if (subtitleUrl) {
       const track =
@@ -341,6 +367,53 @@ class NativeControlsVideoPlayer {
       track.kind = 'subtitles';
       track.default = true;
       this.videoElement_.appendChild(track);
+    }
+  }
+
+  /**
+   * Saves the playback position to the persistent storage.
+   * @param {boolean} saveAsync True if the position must be saved
+   *     asynchronously (required when closing app windows).
+   */
+  savePosition(saveAsync) {
+    if (!this.videoElement_ || !this.videoElement_.duration ||
+        this.videoElement_.duration <
+            NativeControlsVideoPlayer.RESUME_THRESHOLD_SECONDS) {
+      return;
+    }
+
+    const resumeTime = this.videoElement_.currentTime -
+        NativeControlsVideoPlayer.RESUME_REWIND_SECONDS;
+    const ratio = resumeTime / this.videoElement_.duration;
+
+    // If we are too close to the beginning or the end,
+    // remove the resume position so that next time we start from the beginning.
+    const position = (ratio < NativeControlsVideoPlayer.RESUME_MARGIN ||
+                      ratio > (1 - NativeControlsVideoPlayer.RESUME_MARGIN)) ?
+        null :
+        resumeTime;
+
+    if (saveAsync) {
+      saveEntryAsync(this.videoElement_.src, position);
+    } else {
+      appUtil.AppCache.update(this.videoElement_.src, position);
+    }
+  }
+
+  /**
+   * Resumes the playback position saved in the persistent storage.
+   * @private
+   */
+  restorePlayState_() {
+    if (this.videoElement_ && this.videoElement_.seekable &&
+        this.videoElement_.duration >=
+            NativeControlsVideoPlayer.RESUME_THRESHOLD_SECONDS) {
+      appUtil.AppCache.getValue(
+          this.videoElement_.src, (/** number */ position) => {
+            if (position) {
+              this.videoElement_.currentTime = position;
+            }
+          });
     }
   }
 
@@ -382,6 +455,21 @@ class NativeControlsVideoPlayer {
 }
 
 /**
+ * Save an entry asynchronously when exiting app.
+ *
+ * @param {*} key Key of the entry to be saved.
+ * @param {*} value Value of the entry to be saved.
+ */
+function saveEntryAsync(key, value) {
+  // Packaged apps cannot save synchronously.
+  // Pass the data to the background page.
+  if (!window.saveOnExit) {
+    window.saveOnExit = [];
+  }
+  window.saveOnExit.push({key: key, value: value});
+}
+
+/**
  * 10 seconds should be skipped when J/L key is pressed.
  * @const {number}
  */
@@ -393,3 +481,21 @@ NativeControlsVideoPlayer.PROGRESS_MAX_SECONDS_TO_SKIP = 10;
  * @const {number}
  */
 NativeControlsVideoPlayer.PROGRESS_MAX_RATIO_TO_SKIP = 0.2;
+
+/**
+ * No resume if we are within this margin from the start or the end.
+ * @const {number}
+ */
+NativeControlsVideoPlayer.RESUME_MARGIN = 0.05;  // 5%
+
+/**
+ * No resume for videos shorter than this.
+ * @const {number}
+ */
+NativeControlsVideoPlayer.RESUME_THRESHOLD_SECONDS = 5 * 60;  // 5 min.
+
+/**
+ * When resuming rewind back this much.
+ * @const {number}
+ */
+NativeControlsVideoPlayer.RESUME_REWIND_SECONDS = 5;

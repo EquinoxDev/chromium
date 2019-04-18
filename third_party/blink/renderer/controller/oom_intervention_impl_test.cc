@@ -20,6 +20,7 @@
 #include "third_party/blink/renderer/core/page/page.h"
 #include "third_party/blink/renderer/core/testing/dummy_page_holder.h"
 #include "third_party/blink/renderer/core/testing/sim/sim_request.h"
+#include "third_party/blink/renderer/platform/testing/histogram_tester.h"
 #include "third_party/blink/renderer/platform/testing/unit_test_helpers.h"
 #include "third_party/blink/renderer/platform/testing/url_test_helpers.h"
 
@@ -270,10 +271,10 @@ TEST_F(OomInterventionImplTest, V1DetectionAdsNavigation) {
   WebFrame* non_ad_iframe = web_view_helper_.LocalMainFrame()->FindFrameByName(
       WebString::FromUTF8("non-ad"));
 
-  LocalFrame* local_adframe = ToLocalFrame(WebFrame::ToCoreFrame(*ad_iframe));
+  auto* local_adframe = To<LocalFrame>(WebFrame::ToCoreFrame(*ad_iframe));
   local_adframe->SetIsAdSubframe(blink::mojom::AdFrameType::kRootAd);
-  LocalFrame* local_non_adframe =
-      ToLocalFrame(WebFrame::ToCoreFrame(*non_ad_iframe));
+  auto* local_non_adframe =
+      To<LocalFrame>(WebFrame::ToCoreFrame(*non_ad_iframe));
 
   EXPECT_TRUE(local_adframe->IsAdSubframe());
   EXPECT_FALSE(local_non_adframe->IsAdSubframe());
@@ -298,10 +299,66 @@ TEST_F(OomInterventionImplTest, V2DetectionV8PurgeMemory) {
 
   WebViewImpl* web_view = web_view_helper_.InitializeAndLoad("about:blank");
   Page* page = web_view->MainFrameImpl()->GetFrame()->GetPage();
-  LocalFrame* frame = ToLocalFrame(page->MainFrame());
+  auto* frame = To<LocalFrame>(page->MainFrame());
   EXPECT_FALSE(frame->GetDocument()->ExecutionContext::IsContextDestroyed());
   RunDetection(true, true, true);
   EXPECT_TRUE(frame->GetDocument()->ExecutionContext::IsContextDestroyed());
+}
+
+TEST_F(OomInterventionImplTest, ReducedMemoryMetricReporting) {
+  HistogramTester histogram_tester;
+
+  uint64_t initial_blink_usage_bytes = kTestBlinkThreshold + 1024 * 1024 * 1024;
+  uint64_t initial_private_footprint_bytes = 0;
+
+  MemoryUsage usage;
+  // Set value more than the threshold to trigger intervention.
+  usage.v8_bytes = initial_blink_usage_bytes;
+  usage.blink_gc_bytes = 0;
+  usage.partition_alloc_bytes = 0;
+  usage.private_footprint_bytes = initial_private_footprint_bytes;
+  usage.swap_bytes = 0;
+  usage.vm_size_bytes = 0;
+  intervention_->mock_memory_usage_monitor()->SetMockMemoryUsage(usage);
+
+  Page* page = DetectOnceOnBlankPage();
+
+  EXPECT_TRUE(page->Paused());
+
+  usage.v8_bytes = initial_blink_usage_bytes - 2 * 1024 * 1024;
+  usage.private_footprint_bytes =
+      initial_private_footprint_bytes + 2 * 1024 * 1024;
+  intervention_->mock_memory_usage_monitor()->SetMockMemoryUsage(usage);
+  test::RunDelayedTasks(TimeDelta::FromSeconds(10));
+  histogram_tester.ExpectUniqueSample(
+      "Memory.Experimental.OomIntervention.ReducedBlinkUsageAfter10secs2", 2,
+      1);
+  histogram_tester.ExpectUniqueSample(
+      "Memory.Experimental.OomIntervention.ReducedRendererPMFAfter10secs2", -2,
+      1);
+
+  usage.v8_bytes = initial_blink_usage_bytes - 1;
+  usage.private_footprint_bytes = initial_private_footprint_bytes + 1;
+  intervention_->mock_memory_usage_monitor()->SetMockMemoryUsage(usage);
+  test::RunDelayedTasks(TimeDelta::FromSeconds(10));
+  histogram_tester.ExpectUniqueSample(
+      "Memory.Experimental.OomIntervention.ReducedBlinkUsageAfter20secs2", 0,
+      1);
+  histogram_tester.ExpectUniqueSample(
+      "Memory.Experimental.OomIntervention.ReducedRendererPMFAfter20secs2", 0,
+      1);
+
+  usage.v8_bytes = initial_blink_usage_bytes - 800 * 1024 * 1024;
+  usage.private_footprint_bytes =
+      initial_private_footprint_bytes + 800 * 1024 * 1024;
+  intervention_->mock_memory_usage_monitor()->SetMockMemoryUsage(usage);
+  test::RunDelayedTasks(TimeDelta::FromSeconds(10));
+  histogram_tester.ExpectUniqueSample(
+      "Memory.Experimental.OomIntervention.ReducedBlinkUsageAfter30secs2", 500,
+      1);
+  histogram_tester.ExpectUniqueSample(
+      "Memory.Experimental.OomIntervention.ReducedRendererPMFAfter30secs2",
+      -500, 1);
 }
 
 }  // namespace blink

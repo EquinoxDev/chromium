@@ -9,8 +9,6 @@ import android.content.ActivityNotFoundException;
 import android.content.Intent;
 import android.content.res.Resources;
 import android.net.Uri;
-import android.os.Handler;
-import android.os.Looper;
 import android.support.annotation.ColorInt;
 import android.support.annotation.DrawableRes;
 import android.support.annotation.NonNull;
@@ -24,10 +22,13 @@ import org.chromium.base.ContextUtils;
 import org.chromium.base.Log;
 import org.chromium.base.ObserverList;
 import org.chromium.base.metrics.RecordHistogram;
+import org.chromium.base.task.PostTask;
 import org.chromium.chrome.R;
+import org.chromium.chrome.browser.omaha.UpdateStatusProvider.UpdateInteractionSource;
 import org.chromium.chrome.browser.omaha.UpdateStatusProvider.UpdateState;
 import org.chromium.chrome.browser.omaha.UpdateStatusProvider.UpdateStatus;
 import org.chromium.chrome.browser.preferences.PrefServiceBridge;
+import org.chromium.content_public.browser.UiThreadTaskTraits;
 
 /**
  * Contains logic related to displaying app menu badge and a special menu item for information
@@ -117,8 +118,6 @@ public class UpdateMenuItemHelper {
 
     private final ObserverList<Runnable> mObservers = new ObserverList<>();
 
-    private final Handler mHandler = new Handler(Looper.getMainLooper());
-
     private final Callback<UpdateStatusProvider.UpdateStatus> mUpdateCallback = status -> {
         mStatus = status;
         handleStateChanged();
@@ -158,7 +157,7 @@ public class UpdateMenuItemHelper {
         if (!mObservers.addObserver(observer)) return;
 
         if (mStatus != null) {
-            mHandler.post(() -> {
+            PostTask.postTask(UiThreadTaskTraits.DEFAULT, () -> {
                 if (mObservers.hasObserver(observer)) observer.run();
             });
             return;
@@ -208,13 +207,16 @@ public class UpdateMenuItemHelper {
                 }
                 break;
             case UpdateState.INLINE_UPDATE_AVAILABLE:
-                UpdateStatusProvider.getInstance().startInlineUpdate(activity);
+                UpdateStatusProvider.getInstance().startInlineUpdate(
+                        UpdateInteractionSource.FROM_MENU, activity);
                 break;
             case UpdateState.INLINE_UPDATE_READY:
-                UpdateStatusProvider.getInstance().finishInlineUpdate();
+                UpdateStatusProvider.getInstance().finishInlineUpdate(
+                        UpdateInteractionSource.FROM_MENU);
                 break;
             case UpdateState.INLINE_UPDATE_FAILED:
-                UpdateStatusProvider.getInstance().startInlineUpdate(activity);
+                UpdateStatusProvider.getInstance().retryInlineUpdate(
+                        UpdateInteractionSource.FROM_MENU, activity);
                 break;
             case UpdateState.UNSUPPORTED_OS_VERSION:
             // Intentional fall through.

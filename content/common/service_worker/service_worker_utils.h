@@ -25,10 +25,7 @@ namespace content {
 
 class ServiceWorkerUtils {
  public:
-
-  static bool IsMainResourceType(ResourceType type) {
-    return IsResourceTypeFrame(type) || type == RESOURCE_TYPE_SHARED_WORKER;
-  }
+  static bool IsMainResourceType(ResourceType type);
 
   // Returns true if |scope| matches |url|.
   CONTENT_EXPORT static bool ScopeMatches(const GURL& scope, const GURL& url);
@@ -60,11 +57,6 @@ class ServiceWorkerUtils {
   // not performed.
   CONTENT_EXPORT static bool AllOriginsMatchAndCanAccessServiceWorkers(
       const std::vector<GURL>& urls);
-
-  // Returns true if the |provider_id| was assigned by the browser process.
-  static bool IsBrowserAssignedProviderId(int provider_id) {
-    return provider_id < kInvalidServiceWorkerProviderId;
-  }
 
   template <typename T>
   static std::string MojoEnumToString(T mojo_enum) {

@@ -8,9 +8,11 @@
 #include <utility>
 #include <vector>
 
+#include "ash/public/cpp/app_list/app_list_metrics.h"
 #include "base/strings/string16.h"
 #include "chrome/browser/apps/app_service/app_icon_factory.h"
 #include "chrome/browser/apps/app_service/launch_util.h"
+#include "chrome/browser/chromeos/extensions/gfx_utils.h"
 #include "chrome/browser/content_settings/host_content_settings_map_factory.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_util.h"
@@ -18,7 +20,6 @@
 #include "chrome/browser/ui/app_list/arc/arc_app_utils.h"
 #include "chrome/browser/ui/app_list/extension_app_utils.h"
 #include "chrome/browser/ui/app_list/extension_uninstaller.h"
-#include "chrome/browser/ui/app_list/search/search_util.h"
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/chrome_pages.h"
 #include "chrome/common/extensions/extension_metrics.h"
@@ -38,12 +39,13 @@
 // This might involve using an extensions::InstallTracker. It might also need
 // the equivalent of a LauncherExtensionAppUpdater.
 
-// TODO(crbug.com/826982): ExtensionAppItem's can be 'badged', which means that
-// it's an extension app that has its Android analog installed. We should cater
-// for that here.
-
 // TODO(crbug.com/826982): do we also need to watch prefs, the same as
 // ExtensionAppModelBuilder?
+
+// TODO(crbug.com/826982): consider that, per khmel@, "in some places Chrome
+// apps is not used and raw extension app without any effect is displayed...
+// Search where ChromeAppIcon or ChromeAppIconLoader is used compared with
+// direct loading the ExtensionIcon".
 
 namespace {
 
@@ -62,7 +64,6 @@ namespace apps {
 ExtensionApps::ExtensionApps()
     : binding_(this),
       profile_(nullptr),
-      next_u_key_(1),
       observer_(this),
       app_type_(apps::mojom::AppType::kUnknown) {}
 
@@ -119,21 +120,23 @@ void ExtensionApps::Connect(apps::mojom::SubscriberPtr subscriber,
                   apps::mojom::Readiness::kTerminated, &apps);
     // blacklisted_extensions and blocked_extensions, corresponding to
     // kDisabledByBlacklist and kDisabledByPolicy, are deliberately ignored.
+    //
+    // If making changes to which sets are consulted, also change ShouldShow.
   }
   subscriber->OnApps(std::move(apps));
   subscribers_.AddPtr(std::move(subscriber));
 }
 
-void ExtensionApps::LoadIcon(apps::mojom::IconKeyPtr icon_key,
+void ExtensionApps::LoadIcon(const std::string& app_id,
+                             apps::mojom::IconKeyPtr icon_key,
                              apps::mojom::IconCompression icon_compression,
                              int32_t size_hint_in_dip,
                              bool allow_placeholder_icon,
                              LoadIconCallback callback) {
-  if (!icon_key.is_null() &&
-      (icon_key->icon_type == apps::mojom::IconType::kExtension) &&
-      !icon_key->s_key.empty()) {
-    LoadIconFromExtension(icon_compression, size_hint_in_dip, profile_,
-                          icon_key->s_key, std::move(callback));
+  if (icon_key) {
+    LoadIconFromExtension(icon_compression, size_hint_in_dip, profile_, app_id,
+                          static_cast<IconEffects>(icon_key->icon_effects),
+                          std::move(callback));
     return;
   }
   // On failure, we still run the callback, with the zero IconValue.
@@ -158,6 +161,7 @@ void ExtensionApps::Launch(const std::string& app_id,
 
   switch (launch_source) {
     case apps::mojom::LaunchSource::kUnknown:
+    case apps::mojom::LaunchSource::kFromKioskNextHome:
       break;
     case apps::mojom::LaunchSource::kFromAppListGrid:
     case apps::mojom::LaunchSource::kFromAppListGridContextMenu:
@@ -165,7 +169,6 @@ void ExtensionApps::Launch(const std::string& app_id,
       break;
     case apps::mojom::LaunchSource::kFromAppListQuery:
     case apps::mojom::LaunchSource::kFromAppListQueryContextMenu:
-      app_list::RecordHistogram(app_list::APP_SEARCH_RESULT);
       extensions::RecordAppListSearchLaunch(extension);
       break;
     case apps::mojom::LaunchSource::kFromAppListRecommendation:
@@ -329,6 +332,7 @@ void ExtensionApps::OnExtensionUninstalled(
   app->app_id = extension->id();
   app->readiness = apps::mojom::Readiness::kUninstalledByUser;
 
+  SetShowInFields(app, extension, profile_);
   Publish(std::move(app));
 }
 
@@ -360,6 +364,42 @@ bool ExtensionApps::IsBlacklisted(const std::string& app_id) {
   // given app. In this case, the ArcApps publisher publishes the Play Store
   // app, and the ExtensionApps publisher does not.
   return app_id == arc::kPlayStoreAppId;
+}
+
+// static
+void ExtensionApps::SetShowInFields(apps::mojom::AppPtr& app,
+                                    const extensions::Extension* extension,
+                                    Profile* profile) {
+  if (ShouldShow(extension, profile)) {
+    auto show = app_list::ShouldShowInLauncher(extension, profile)
+                    ? apps::mojom::OptionalBool::kTrue
+                    : apps::mojom::OptionalBool::kFalse;
+    app->show_in_launcher = show;
+    app->show_in_search = show;
+    app->show_in_management = ShouldShowInAppManagement(extension);
+  } else {
+    app->show_in_launcher = apps::mojom::OptionalBool::kFalse;
+    app->show_in_search = apps::mojom::OptionalBool::kFalse;
+    app->show_in_management = apps::mojom::OptionalBool::kFalse;
+  }
+}
+
+// static
+bool ExtensionApps::ShouldShow(const extensions::Extension* extension,
+                               Profile* profile) {
+  if (!profile) {
+    return false;
+  }
+
+  extensions::ExtensionRegistry* registry =
+      extensions::ExtensionRegistry::Get(profile);
+  const std::string& app_id = extension->id();
+  // These three extension sets are the same three consulted by Connect.
+  // Importantly, it will exclude previously installed but currently
+  // uninstalled extensions.
+  return registry->enabled_extensions().Contains(app_id) ||
+         registry->disabled_extensions().Contains(app_id) ||
+         registry->terminated_extensions().Contains(app_id);
 }
 
 // static
@@ -426,10 +466,22 @@ apps::mojom::AppPtr ExtensionApps::Convert(
   app->name = extension->name();
   app->short_name = extension->short_name();
 
-  app->icon_key = apps::mojom::IconKey::New();
-  app->icon_key->icon_type = apps::mojom::IconType::kExtension;
-  app->icon_key->s_key = extension->id();
-  app->icon_key->u_key = next_u_key_++;
+  IconEffects icon_effects = IconEffects::kNone;
+#if defined(OS_CHROMEOS)
+  icon_effects =
+      static_cast<IconEffects>(icon_effects | IconEffects::kResizeAndPad);
+  if (extensions::util::ShouldApplyChromeBadge(profile_, extension->id())) {
+    icon_effects = static_cast<IconEffects>(icon_effects | IconEffects::kBadge);
+  }
+#endif
+  if (!extensions::util::IsAppLaunchable(extension->id(), profile_)) {
+    icon_effects = static_cast<IconEffects>(icon_effects | IconEffects::kGray);
+  }
+  if (extension->from_bookmark()) {
+    icon_effects =
+        static_cast<IconEffects>(icon_effects | IconEffects::kRoundCorners);
+  }
+  app->icon_key = icon_key_factory_.MakeIconKey(icon_effects);
 
   if (profile_) {
     auto* prefs = extensions::ExtensionPrefs::Get(profile_);
@@ -461,13 +513,7 @@ apps::mojom::AppPtr ExtensionApps::Convert(
                              ? apps::mojom::OptionalBool::kTrue
                              : apps::mojom::OptionalBool::kFalse;
 
-  auto show = app_list::ShouldShowInLauncher(extension, profile_)
-                  ? apps::mojom::OptionalBool::kTrue
-                  : apps::mojom::OptionalBool::kFalse;
-  app->show_in_launcher = show;
-  app->show_in_search = show;
-  app->show_in_management = ShouldShowInAppManagement(extension);
-
+  SetShowInFields(app, extension, profile_);
   return app;
 }
 

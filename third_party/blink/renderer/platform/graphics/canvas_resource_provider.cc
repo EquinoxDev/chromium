@@ -64,8 +64,9 @@ class CanvasResourceProviderTexture : public CanvasResourceProvider {
   }
 
  protected:
-  scoped_refptr<CanvasResource> ProduceFrame() override {
-    TRACE_EVENT0("blink", "CanvasResourceProviderTexture::ProduceFrame");
+  scoped_refptr<CanvasResource> ProduceCanvasResource() override {
+    TRACE_EVENT0("blink",
+                 "CanvasResourceProviderTexture::ProduceCanvasResource");
     DCHECK(GetSkSurface());
 
     if (IsGpuContextLost())
@@ -174,9 +175,10 @@ class CanvasResourceProviderTextureGpuMemoryBuffer final
         FilterQuality(), is_accelerated);
   }
 
-  scoped_refptr<CanvasResource> ProduceFrame() final {
-    TRACE_EVENT0("blink",
-                 "CanvasResourceProviderTextureGpuMemoreBuffer::ProduceFrame");
+  scoped_refptr<CanvasResource> ProduceCanvasResource() final {
+    TRACE_EVENT0(
+        "blink",
+        "CanvasResourceProviderTextureGpuMemoreBuffer::ProduceCanvasResource");
     DCHECK(GetSkSurface());
 
     if (IsGpuContextLost())
@@ -185,7 +187,7 @@ class CanvasResourceProviderTextureGpuMemoryBuffer final
     scoped_refptr<CanvasResource> output_resource = NewOrRecycledResource();
     if (!output_resource) {
       // GpuMemoryBuffer creation failed, fallback to Texture resource
-      return CanvasResourceProviderTexture::ProduceFrame();
+      return CanvasResourceProviderTexture::ProduceCanvasResource();
     }
 
     auto paint_image = MakeImageSnapshot();
@@ -233,7 +235,7 @@ class CanvasResourceProviderBitmap : public CanvasResourceProvider {
   bool SupportsDirectCompositing() const override { return false; }
 
  private:
-  scoped_refptr<CanvasResource> ProduceFrame() override {
+  scoped_refptr<CanvasResource> ProduceCanvasResource() override {
     return nullptr;  // Does not support direct compositing
   }
 
@@ -286,9 +288,10 @@ class CanvasResourceProviderBitmapGpuMemoryBuffer final
         FilterQuality(), is_accelerated);
   }
 
-  scoped_refptr<CanvasResource> ProduceFrame() final {
-    TRACE_EVENT0("blink",
-                 "CanvasResourceProviderBitmapGpuMemoryBuffer::ProduceFrame");
+  scoped_refptr<CanvasResource> ProduceCanvasResource() final {
+    TRACE_EVENT0(
+        "blink",
+        "CanvasResourceProviderBitmapGpuMemoryBuffer::ProduceCanvasResource");
 
     DCHECK(GetSkSurface());
 
@@ -341,7 +344,7 @@ class CanvasResourceProviderSharedBitmap : public CanvasResourceProviderBitmap {
                                               CreateWeakPtr(), FilterQuality());
   }
 
-  scoped_refptr<CanvasResource> ProduceFrame() final {
+  scoped_refptr<CanvasResource> ProduceCanvasResource() final {
     DCHECK(GetSkSurface());
     scoped_refptr<CanvasResource> output_resource = NewOrRecycledResource();
     if (!output_resource)
@@ -401,9 +404,10 @@ class CanvasResourceProviderDirectGpuMemoryBuffer final
     return resource_;
   }
 
-  scoped_refptr<CanvasResource> ProduceFrame() final {
-    TRACE_EVENT0("blink",
-                 "CanvasResourceProviderDirectGpuMemoryBuffer::ProduceFrame");
+  scoped_refptr<CanvasResource> ProduceCanvasResource() final {
+    TRACE_EVENT0(
+        "blink",
+        "CanvasResourceProviderDirectGpuMemoryBuffer::ProduceCanvasResource");
     if (IsGpuContextLost())
       return nullptr;
     FlushSkia();
@@ -422,7 +426,7 @@ class CanvasResourceProviderDirectGpuMemoryBuffer final
   }
 
   sk_sp<SkSurface> CreateSkSurface() const override {
-    if (IsGpuContextLost())
+    if (IsGpuContextLost() || !resource_)
       return nullptr;
     auto* gr = GetGrContext();
     DCHECK(gr);
@@ -495,8 +499,10 @@ class CanvasResourceProviderSharedImage : public CanvasResourceProvider {
   }
 
  protected:
-  scoped_refptr<CanvasResource> ProduceFrame() override {
-    TRACE_EVENT0("blink", "CanvasResourceProviderSharedImage::ProduceFrame");
+  scoped_refptr<CanvasResource> ProduceCanvasResource() override {
+    TRACE_EVENT0("blink",
+                 "CanvasResourceProviderSharedImage::ProduceCanvasResource");
+    FlushSkia();
 
     scoped_refptr<CanvasResource> resource_snapshot = resource_;
 
@@ -509,6 +515,7 @@ class CanvasResourceProviderSharedImage : public CanvasResourceProvider {
 
   scoped_refptr<StaticBitmapImage> Snapshot() override {
     TRACE_EVENT0("blink", "CanvasResourceProviderSharedImage::Snapshot");
+    FlushSkia();
 
     scoped_refptr<CanvasResource> resource_snapshot = resource_;
 
@@ -539,7 +546,8 @@ class CanvasResourceProviderSharedImage : public CanvasResourceProvider {
 
     return SkSurface::MakeFromBackendTexture(
         GetGrContext(), backend_texture, surface_origin, msaa_sample_count_,
-        ColorParams().GetSkColorType(), ColorParams().GetSkColorSpace(),
+        ColorParams().GetSkColorType(),
+        ColorParams().GetSkColorSpaceForSkSurfaces(),
         nullptr /*surface props*/);
   }
 
@@ -549,10 +557,10 @@ class CanvasResourceProviderSharedImage : public CanvasResourceProvider {
   scoped_refptr<CanvasResource> resource_;
 };
 
-// This class does nothing except answering to ProduceFrame() by piping it to
-// NewOrRecycledResource().  This ResourceProvider is meant to be used with an
-// imported external CanvasResource, and all drawing and lifetime logic must be
-// kept at a higher level.
+// This class does nothing except answering to ProduceCanvasResource() by piping
+// it to NewOrRecycledResource().  This ResourceProvider is meant to be used
+// with an imported external CanvasResource, and all drawing and lifetime logic
+// must be kept at a higher level.
 class CanvasResourceProviderPassThrough final : public CanvasResourceProvider {
  public:
   CanvasResourceProviderPassThrough(
@@ -580,7 +588,7 @@ class CanvasResourceProviderPassThrough final : public CanvasResourceProvider {
     return nullptr;
   }
 
-  scoped_refptr<CanvasResource> ProduceFrame() final {
+  scoped_refptr<CanvasResource> ProduceCanvasResource() final {
     return NewOrRecycledResource();
   }
 
@@ -966,15 +974,9 @@ cc::PaintCanvas* CanvasResourceProvider::Canvas() {
       context_flushes.max_draws_before_flush =
           canvas_heuristic_parameters::kMaxDrawsBeforeContextFlush;
     }
-    if (ColorParams().NeedsSkColorSpaceXformCanvas()) {
-      canvas_ = std::make_unique<cc::SkiaPaintCanvas>(
-          GetSkSurface()->getCanvas(), ColorParams().GetSkColorSpace(),
-          canvas_image_provider_.get(), context_flushes);
-    } else {
       canvas_ = std::make_unique<cc::SkiaPaintCanvas>(
           GetSkSurface()->getCanvas(), canvas_image_provider_.get(),
           context_flushes);
-    }
   }
 
   return canvas_.get();
@@ -1056,8 +1058,13 @@ bool CanvasResourceProvider::WritePixels(const SkImageInfo& orig_info,
   TRACE_EVENT0("blink", "CanvasResourceProvider::WritePixels");
 
   DCHECK(IsValid());
-  return GetSkSurface()->getCanvas()->writePixels(orig_info, pixels, row_bytes,
-                                                  x, y);
+  if (GetSkSurface()->getCanvas()->writePixels(orig_info, pixels, row_bytes, x,
+                                               y)) {
+    FlushSkia();
+    return true;
+  }
+
+  return false;
 }
 
 void CanvasResourceProvider::Clear() {
@@ -1082,10 +1089,7 @@ scoped_refptr<CanvasResource> CanvasResourceProvider::CreateResource() {
 }
 
 cc::ImageDecodeCache* CanvasResourceProvider::ImageDecodeCacheRGBA8() {
-  auto color_space = ColorParams().ColorSpace();
-  if (!ColorParams().NeedsSkColorSpaceXformCanvas()) {
-    color_space = kSRGBCanvasColorSpace;
-  }
+  auto color_space = kSRGBCanvasColorSpace;
 
   if (use_hardware_decode_cache()) {
     return context_provider_wrapper_->ContextProvider()->ImageDecodeCache(
@@ -1097,10 +1101,7 @@ cc::ImageDecodeCache* CanvasResourceProvider::ImageDecodeCacheRGBA8() {
 }
 
 cc::ImageDecodeCache* CanvasResourceProvider::ImageDecodeCacheF16() {
-  auto color_space = ColorParams().ColorSpace();
-  if (!ColorParams().NeedsSkColorSpaceXformCanvas()) {
-    color_space = kSRGBCanvasColorSpace;
-  }
+  auto color_space = kSRGBCanvasColorSpace;
 
   if (use_hardware_decode_cache()) {
     return context_provider_wrapper_->ContextProvider()->ImageDecodeCache(

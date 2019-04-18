@@ -34,19 +34,18 @@
 #define THIRD_PARTY_BLINK_RENDERER_CORE_LOADER_FRAME_LOADER_H_
 
 #include "base/macros.h"
+#include "services/network/public/mojom/request_context_frame_type.mojom-shared.h"
 #include "third_party/blink/public/common/user_agent/user_agent_metadata.h"
 #include "third_party/blink/public/platform/web_scoped_virtual_time_pauser.h"
 #include "third_party/blink/public/web/web_document_loader.h"
 #include "third_party/blink/public/web/web_frame_load_type.h"
 #include "third_party/blink/public/web/web_navigation_type.h"
 #include "third_party/blink/renderer/core/core_export.h"
-#include "third_party/blink/renderer/core/frame/csp/content_security_policy.h"
 #include "third_party/blink/renderer/core/frame/frame_types.h"
 #include "third_party/blink/renderer/core/frame/sandbox_flags.h"
 #include "third_party/blink/renderer/core/loader/frame_loader_state_machine.h"
 #include "third_party/blink/renderer/core/loader/frame_loader_types.h"
 #include "third_party/blink/renderer/core/loader/history_item.h"
-#include "third_party/blink/renderer/core/loader/navigation_policy.h"
 #include "third_party/blink/renderer/platform/heap/handle.h"
 #include "third_party/blink/renderer/platform/wtf/forward.h"
 #include "third_party/blink/renderer/platform/wtf/hash_set.h"
@@ -55,6 +54,7 @@
 
 namespace blink {
 
+class ContentSecurityPolicy;
 class Document;
 class DocumentLoader;
 class ExecutionContext;
@@ -97,8 +97,7 @@ class CORE_EXPORT FrameLoader final {
   // kStandard should be used (and the final WebFrameLoadType
   // will be computed).
   void StartNavigation(const FrameLoadRequest&,
-                       WebFrameLoadType = WebFrameLoadType::kStandard,
-                       NavigationPolicy = kNavigationPolicyCurrentTab);
+                       WebFrameLoadType = WebFrameLoadType::kStandard);
 
   // Called when the browser process has asked this renderer process to commit
   // a navigation in this frame. This method skips most of the checks assuming
@@ -167,10 +166,14 @@ class CORE_EXPORT FrameLoader final {
 
   // The following sandbox flags will be forced, regardless of changes to the
   // sandbox attribute of any parent frames.
-  void ForceSandboxFlags(SandboxFlags flags) { forced_sandbox_flags_ |= flags; }
-  SandboxFlags EffectiveSandboxFlags() const;
+  void ForceSandboxFlags(WebSandboxFlags flags) {
+    forced_sandbox_flags_ |= flags;
+  }
+  WebSandboxFlags EffectiveSandboxFlags() const;
 
-  void ModifyRequestForCSP(ResourceRequest&, Document*) const;
+  void ModifyRequestForCSP(ResourceRequest&,
+                           Document*,
+                           network::mojom::RequestContextFrameType) const;
 
   Frame* Opener();
   void SetOpener(LocalFrame*);
@@ -222,7 +225,9 @@ class CORE_EXPORT FrameLoader final {
   void Trace(blink::Visitor*);
 
   static void SetReferrerForFrameRequest(FrameLoadRequest&);
-  static void UpgradeInsecureRequest(ResourceRequest&, ExecutionContext*);
+  static void UpgradeInsecureRequest(ResourceRequest&,
+                                     ExecutionContext*,
+                                     network::mojom::RequestContextFrameType);
 
   void ClientDroppedNavigation();
   void MarkAsLoading();
@@ -230,6 +235,7 @@ class CORE_EXPORT FrameLoader final {
   ContentSecurityPolicy* GetLastOriginDocumentCSP() {
     return last_origin_document_csp_.Get();
   }
+  bool ShouldReuseDefaultView(const KURL&, const ContentSecurityPolicy*);
 
  private:
   bool PrepareRequestForThisFrame(FrameLoadRequest&);
@@ -288,13 +294,11 @@ class CORE_EXPORT FrameLoader final {
   Member<DocumentLoader> document_loader_;
   Member<DocumentLoader> provisional_document_loader_;
 
-  bool in_stop_all_loaders_;
   bool in_restore_scroll_;
 
-  SandboxFlags forced_sandbox_flags_;
+  WebSandboxFlags forced_sandbox_flags_;
 
   bool dispatching_did_clear_window_object_in_main_world_;
-  bool protect_provisional_loader_;
   bool detached_;
 
   WebScopedVirtualTimePauser virtual_time_pauser_;

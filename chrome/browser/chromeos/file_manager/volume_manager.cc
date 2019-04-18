@@ -18,6 +18,7 @@
 #include "base/memory/weak_ptr.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/metrics/histogram_macros.h"
+#include "base/stl_util.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
@@ -401,7 +402,8 @@ std::unique_ptr<Volume> Volume::CreateForDocumentsProvider(
     const std::string& document_id,
     const std::string& title,
     const std::string& summary,
-    const GURL& icon_url) {
+    const GURL& icon_url,
+    bool read_only) {
   std::unique_ptr<Volume> volume(new Volume());
   volume->type_ = VOLUME_TYPE_DOCUMENTS_PROVIDER;
   volume->device_type_ = chromeos::DEVICE_TYPE_UNKNOWN;
@@ -411,8 +413,7 @@ std::unique_ptr<Volume> Volume::CreateForDocumentsProvider(
       arc::GetDocumentsProviderMountPath(authority, document_id);
   volume->mount_condition_ = chromeos::disks::MOUNT_CONDITION_NONE;
   volume->volume_label_ = title;
-  // TODO(fukino): Set a proper flag when write operations are supported.
-  volume->is_read_only_ = true;
+  volume->is_read_only_ = read_only;
   volume->watchable_ = false;
   volume->volume_id_ = arc::GetDocumentsProviderVolumeId(authority, root_id);
   if (!icon_url.is_empty()) {
@@ -675,6 +676,14 @@ bool VolumeManager::RegisterAndroidFilesDirectoryForTesting(
           path);
   DCHECK(result);
   DoMountEvent(chromeos::MOUNT_ERROR_NONE, Volume::CreateForAndroidFiles(path));
+  return true;
+}
+
+bool VolumeManager::RegisterMediaViewForTesting(
+    const std::string& root_document_id) {
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+  DoMountEvent(chromeos::MOUNT_ERROR_NONE,
+               Volume::CreateForMediaView(root_document_id));
   return true;
 }
 
@@ -1042,17 +1051,28 @@ void VolumeManager::OnProvidedFileSystemUnmount(
 }
 
 void VolumeManager::OnExternalStorageDisabledChangedUnmountCallback(
+    std::vector<std::string> remaining_mount_paths,
     chromeos::MountError error_code) {
-  if (disk_mount_manager_->mount_points().empty())
+  LOG_IF(ERROR, error_code != chromeos::MOUNT_ERROR_NONE)
+      << "Unmount on ExternalStorageDisabled policy change failed: "
+      << error_code;
+
+  while (!remaining_mount_paths.empty()) {
+    std::string mount_path = remaining_mount_paths.back();
+    remaining_mount_paths.pop_back();
+    if (!base::ContainsKey(disk_mount_manager_->mount_points(), mount_path)) {
+      // The mount point could have already been removed for another reason
+      // (i.e. the disk was removed by the user).
+      continue;
+    }
+
+    disk_mount_manager_->UnmountPath(
+        mount_path, chromeos::UNMOUNT_OPTIONS_NONE,
+        base::BindOnce(
+            &VolumeManager::OnExternalStorageDisabledChangedUnmountCallback,
+            weak_ptr_factory_.GetWeakPtr(), std::move(remaining_mount_paths)));
     return;
-  // Repeat until unmount all paths
-  const std::string& mount_path =
-      disk_mount_manager_->mount_points().begin()->second.mount_path;
-  disk_mount_manager_->UnmountPath(
-      mount_path, chromeos::UNMOUNT_OPTIONS_NONE,
-      base::BindOnce(
-          &VolumeManager::OnExternalStorageDisabledChangedUnmountCallback,
-          weak_ptr_factory_.GetWeakPtr()));
+  }
 }
 
 void VolumeManager::OnArcPlayStoreEnabledChanged(bool enabled) {
@@ -1099,17 +1119,26 @@ void VolumeManager::OnExternalStorageDisabledChanged() {
   // make it available.
   if (profile_->GetPrefs()->GetBoolean(prefs::kExternalStorageDisabled)) {
     // We do not iterate on mount_points directly, because mount_points can
-    // be changed by UnmountPath().
-    // TODO(hidehiko): Is it necessary to unmount mounted archives, too, here?
-    if (disk_mount_manager_->mount_points().empty())
+    // be changed by UnmountPath(). Also, a failing unmount shouldn't be retried
+    // indefinitely. So make a set of all the mount points that should be
+    // unmounted (all external media mounts), and iterate through them.
+    std::vector<std::string> remaining_mount_paths;
+    for (auto& mount_point : disk_mount_manager_->mount_points()) {
+      if (mount_point.second.mount_type == chromeos::MOUNT_TYPE_DEVICE) {
+        remaining_mount_paths.push_back(mount_point.first);
+      }
+    }
+    if (remaining_mount_paths.empty()) {
       return;
-    const std::string& mount_path =
-        disk_mount_manager_->mount_points().begin()->second.mount_path;
+    }
+
+    std::string mount_path = remaining_mount_paths.back();
+    remaining_mount_paths.pop_back();
     disk_mount_manager_->UnmountPath(
         mount_path, chromeos::UNMOUNT_OPTIONS_NONE,
         base::BindOnce(
             &VolumeManager::OnExternalStorageDisabledChangedUnmountCallback,
-            weak_ptr_factory_.GetWeakPtr()));
+            weak_ptr_factory_.GetWeakPtr(), std::move(remaining_mount_paths)));
   }
 }
 
@@ -1211,17 +1240,21 @@ void VolumeManager::OnRemovableStorageDetached(
   }
 }
 
-void VolumeManager::OnDocumentsProviderRootAdded(const std::string& authority,
-                                                 const std::string& root_id,
-                                                 const std::string& document_id,
-                                                 const std::string& title,
-                                                 const std::string& summary,
-                                                 const GURL& icon_url) {
+void VolumeManager::OnDocumentsProviderRootAdded(
+    const std::string& authority,
+    const std::string& root_id,
+    const std::string& document_id,
+    const std::string& title,
+    const std::string& summary,
+    const GURL& icon_url,
+    bool read_only,
+    const std::vector<std::string>& mime_types) {
   arc::ArcDocumentsProviderRootMap::GetForArcBrowserContext()->RegisterRoot(
-      authority, document_id);
-  DoMountEvent(chromeos::MOUNT_ERROR_NONE,
-               Volume::CreateForDocumentsProvider(
-                   authority, root_id, document_id, title, summary, icon_url));
+      authority, document_id, root_id, mime_types);
+  DoMountEvent(
+      chromeos::MOUNT_ERROR_NONE,
+      Volume::CreateForDocumentsProvider(authority, root_id, document_id, title,
+                                         summary, icon_url, read_only));
 }
 
 void VolumeManager::OnDocumentsProviderRootRemoved(
@@ -1231,7 +1264,7 @@ void VolumeManager::OnDocumentsProviderRootRemoved(
   DoUnmountEvent(chromeos::MOUNT_ERROR_NONE,
                  *Volume::CreateForDocumentsProvider(
                      authority, root_id, std::string(), std::string(),
-                     std::string(), GURL()));
+                     std::string(), GURL(), false));
   arc::ArcDocumentsProviderRootMap::GetForArcBrowserContext()->UnregisterRoot(
       authority, document_id);
 }

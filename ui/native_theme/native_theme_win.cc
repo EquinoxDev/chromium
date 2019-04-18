@@ -85,9 +85,8 @@ void SetCheckerboardShader(SkPaint* paint, const RECT& align_rect) {
   SkMatrix local_matrix;
   local_matrix.setTranslate(SkIntToScalar(align_rect.left),
                             SkIntToScalar(align_rect.top));
-  paint->setShader(
-      SkShader::MakeBitmapShader(bitmap, SkShader::kRepeat_TileMode,
-                                 SkShader::kRepeat_TileMode, &local_matrix));
+  paint->setShader(bitmap.makeShader(SkTileMode::kRepeat, SkTileMode::kRepeat,
+                                     &local_matrix));
 }
 
 //    <-a->
@@ -587,6 +586,11 @@ bool NativeThemeWin::UsesHighContrastColors() const {
 }
 
 bool NativeThemeWin::SystemDarkModeEnabled() const {
+  // Windows high contrast modes are entirely different themes,
+  // so let them take priority over dark mode.
+  // ...unless --force-dark-mode was specified in which case caveat emptor.
+  if (UsesHighContrastColors() && !NativeTheme::SystemDarkModeEnabled())
+    return false;
   bool fDarkModeEnabled = false;
   if (hkcu_themes_regkey_.Valid()) {
     DWORD apps_use_light_theme = 1;

@@ -17,6 +17,7 @@
 #include "base/values.h"
 #include "net/base/host_port_pair.h"
 #include "net/base/net_errors.h"
+#include "net/dns/context_host_resolver.h"
 #include "net/dns/dns_util.h"
 #include "net/dns/host_resolver_source.h"
 #include "net/log/net_log_with_source.h"
@@ -47,6 +48,9 @@ enum RequestOutcome {
 
   // Stale data returned; network got ERR_NAME_NOT_RESOLVED.
   STALE_INSTEAD_OF_NETWORK_NAME_NOT_RESOLVED = 6,
+
+  // Stale data is explicitly requested and returned immediately.
+  STALE_SYNCHRONOUS = 7,
 
   MAX_REQUEST_OUTCOME
 };
@@ -213,6 +217,13 @@ int StaleHostResolver::RequestImpl::Start(
       (!cache_request_->GetStaleInfo() ||
        !cache_request_->GetStaleInfo().value().is_stale())) {
     RecordSynchronousRequest();
+    return cache_error_;
+  }
+
+  if (cache_error_ != net::ERR_DNS_CACHE_MISS &&
+      input_parameters_.cache_usage ==
+          net::HostResolver::ResolveHostParameters::CacheUsage::STALE_ALLOWED) {
+    RecordRequestOutcome(STALE_SYNCHRONOUS);
     return cache_error_;
   }
 
@@ -422,7 +433,7 @@ StaleHostResolver::StaleOptions::StaleOptions()
       use_stale_on_name_not_resolved(false) {}
 
 StaleHostResolver::StaleHostResolver(
-    std::unique_ptr<net::HostResolverImpl> inner_resolver,
+    std::unique_ptr<net::ContextHostResolver> inner_resolver,
     const StaleOptions& stale_options)
     : inner_resolver_(std::move(inner_resolver)),
       options_(stale_options),
@@ -444,39 +455,12 @@ StaleHostResolver::CreateRequest(
       optional_parameters.value_or(ResolveHostParameters()), tick_clock_);
 }
 
-int StaleHostResolver::Resolve(const RequestInfo& info,
-                               net::RequestPriority priority,
-                               net::AddressList* addresses,
-                               net::CompletionOnceCallback callback,
-                               std::unique_ptr<Request>* out_req,
-                               const net::NetLogWithSource& net_log) {
-  std::unique_ptr<ResolveHostRequest> inner_request =
-      CreateRequest(info.host_port_pair(), net_log,
-                    RequestInfoToResolveHostParameters(info, priority));
-  return LegacyResolve(std::move(inner_request), info.is_speculative(),
-                       addresses, std::move(callback), out_req);
-}
-
-int StaleHostResolver::ResolveFromCache(const RequestInfo& info,
-                                        net::AddressList* addresses,
-                                        const net::NetLogWithSource& net_log) {
-  return inner_resolver_->ResolveFromCache(info, addresses, net_log);
-}
-
-int StaleHostResolver::ResolveStaleFromCache(
-    const RequestInfo& info,
-    net::AddressList* addresses,
-    net::HostCache::EntryStaleness* stale_info,
-    const net::NetLogWithSource& net_log) {
-  return inner_resolver_->ResolveStaleFromCache(info, addresses, stale_info,
-                                                net_log);
-}
-
-bool StaleHostResolver::HasCached(
-    base::StringPiece hostname,
-    net::HostCache::Entry::Source* source_out,
-    net::HostCache::EntryStaleness* stale_out) const {
-  return inner_resolver_->HasCached(hostname, source_out, stale_out);
+bool StaleHostResolver::HasCached(base::StringPiece hostname,
+                                  net::HostCache::Entry::Source* source_out,
+                                  net::HostCache::EntryStaleness* stale_out,
+                                  bool* secure_out) const {
+  return inner_resolver_->HasCached(hostname, source_out, stale_out,
+                                    secure_out);
 }
 
 void StaleHostResolver::SetDnsClientEnabled(bool enabled) {
@@ -489,6 +473,11 @@ net::HostCache* StaleHostResolver::GetHostCache() {
 
 std::unique_ptr<base::Value> StaleHostResolver::GetDnsConfigAsValue() const {
   return inner_resolver_->GetDnsConfigAsValue();
+}
+
+void StaleHostResolver::SetRequestContext(
+    net::URLRequestContext* request_context) {
+  inner_resolver_->SetRequestContext(request_context);
 }
 
 void StaleHostResolver::OnNetworkRequestComplete(

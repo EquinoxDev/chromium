@@ -42,13 +42,6 @@
 
 #define UNUSED __attribute__((unused))
 
-// See commentary in crazy_linker_elf_loader.cpp for the effect of setting
-// this. If changing there, change here also.
-//
-// For more, see:
-//   https://crbug.com/504410
-#define RESERVE_BREAKPAD_GUARD_REGION 1
-
 #if defined(ARCH_CPU_X86)
 // Dalvik JIT generated code doesn't guarantee 16-byte stack alignment on
 // x86 - use force_align_arg_pointer to realign the stack at the JNI
@@ -65,13 +58,6 @@ namespace {
 
 // Larger than the largest library we might attempt to load.
 constexpr size_t kAddressSpaceReservationSize = 192 * 1024 * 1024;
-
-// Size of any Breakpad guard region. 16MB is comfortably larger than the
-// ~6MB relocation packing of the current 64-bit libchrome.so, the largest we
-// expect to encounter.
-#if RESERVE_BREAKPAD_GUARD_REGION
-constexpr size_t kBreakpadGuardRegionBytes = 16 * 1024 * 1024;
-#endif
 
 // A simple scoped UTF String class that can be initialized from
 // a Java jstring handle. Modeled like std::string, which cannot
@@ -142,47 +128,6 @@ bool InitFieldId(JNIEnv* env,
     return false;
   }
   LOG_INFO("Found ID %p for field '%s'", *field_id, field_name);
-  return true;
-}
-
-// Initialize a jfieldID corresponding to the static field of a given |clazz|,
-// with name |field_name| and signature |field_sig|.
-// |env| is the current JNI environment handle.
-// On success, return true and set |*field_id|.
-bool InitStaticFieldId(JNIEnv* env,
-                       jclass clazz,
-                       const char* field_name,
-                       const char* field_sig,
-                       jfieldID* field_id) {
-  *field_id = env->GetStaticFieldID(clazz, field_name, field_sig);
-  if (!*field_id) {
-    LOG_ERROR("Could not find ID for static field '%s'", field_name);
-    return false;
-  }
-  LOG_INFO("Found ID %p for static field '%s'", *field_id, field_name);
-  return true;
-}
-
-// Initialize a jint corresponding to the static integer field of a class
-// with class name |class_name| and field name |field_name|.
-// |env| is the current JNI environment handle.
-// On success, return true and set |*value|.
-bool InitStaticInt(JNIEnv* env,
-                   const char* class_name,
-                   const char* field_name,
-                   jint* value) {
-  jclass clazz;
-  if (!InitClassReference(env, class_name, &clazz))
-    return false;
-
-  jfieldID field_id;
-  if (!InitStaticFieldId(env, clazz, field_name, "I", &field_id))
-    return false;
-
-  *value = env->GetStaticIntField(clazz, field_id);
-  LOG_INFO("Found value %d for class '%s', static field '%s'",
-           *value, class_name, field_name);
-
   return true;
 }
 
@@ -272,8 +217,8 @@ crazy_context_t* GetCrazyContext() {
 
     // Ensure libraries located in the same directory as the linker
     // can be loaded before system ones.
-    crazy_context_add_search_path_for_address(
-        s_crazy_context, reinterpret_cast<void*>(&GetCrazyContext));
+    crazy_add_search_path_for_address(
+        reinterpret_cast<void*>(&GetCrazyContext));
   }
 
   return s_crazy_context;
@@ -304,22 +249,6 @@ class ScopedLibrary {
   crazy_library_t* lib_;
 };
 
-// Retrieve the SDK build version and pass it into the crazy linker. This
-// needs to be done early in initialization, before any other crazy linker
-// code is run.
-// |env| is the current JNI environment handle.
-// On success, return true.
-bool InitSDKVersionInfo(JNIEnv* env) {
-  jint value = 0;
-  if (!InitStaticInt(env, "android/os/Build$VERSION", "SDK_INT", &value))
-    return false;
-
-  crazy_set_sdk_build_version(static_cast<int>(value));
-  LOG_INFO("Set SDK build version to %d", static_cast<int>(value));
-
-  return true;
-}
-
 }  // namespace
 
 // Use Android ASLR to create a random address into which we expect to be
@@ -335,11 +264,6 @@ Java_org_chromium_base_library_1loader_Linker_nativeGetRandomBaseLoadAddress(
     jclass clazz) {
   size_t bytes = kAddressSpaceReservationSize;
 
-#if RESERVE_BREAKPAD_GUARD_REGION
-  // Pad the requested address space size for a Breakpad guard region.
-  bytes += kBreakpadGuardRegionBytes;
-#endif
-
   void* address =
       mmap(nullptr, bytes, PROT_NONE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
   if (address == MAP_FAILED) {
@@ -347,12 +271,6 @@ Java_org_chromium_base_library_1loader_Linker_nativeGetRandomBaseLoadAddress(
     return 0;
   }
   munmap(address, bytes);
-
-#if RESERVE_BREAKPAD_GUARD_REGION
-  // Allow for a Breakpad guard region ahead of the returned address.
-  address = reinterpret_cast<void*>(
-      reinterpret_cast<uintptr_t>(address) + kBreakpadGuardRegionBytes);
-#endif
 
   LOG_INFO("Random base load address is %p", address);
   return static_cast<jlong>(reinterpret_cast<uintptr_t>(address));
@@ -390,8 +308,7 @@ Java_org_chromium_base_library_1loader_Linker_nativeAddZipArchivePath(
   snprintf(search_path, sizeof(search_path), "%s!lib/" CURRENT_ABI "/",
            apk_path.c_str());
 
-  crazy_context_t* context = GetCrazyContext();
-  crazy_context_add_search_path(context, search_path);
+  crazy_add_search_path(search_path);
   return true;
 }
 
@@ -532,11 +449,6 @@ Java_org_chromium_base_library_1loader_Linker_nativeUseSharedRelro(
 static bool LinkerJNIInit(JavaVM* vm, JNIEnv* env) {
   LOG_INFO("Entering");
 
-  // Initialize SDK version info.
-  LOG_INFO("Retrieving SDK version info");
-  if (!InitSDKVersionInfo(env))
-    return false;
-
   // Find LibInfo field ids.
   LOG_INFO("Caching field IDs");
   if (!s_lib_info_fields.Init(env)) {
@@ -549,9 +461,9 @@ static bool LinkerJNIInit(JavaVM* vm, JNIEnv* env) {
                           &linker_class))
     return false;
 
-  // Save JavaVM* handle into context.
-  crazy_context_t* context = GetCrazyContext();
-  crazy_context_set_java_vm(context, vm, JNI_VERSION_1_4);
+  // Save JavaVM* handle into linker, so that it can call JNI_OnLoad()
+  // automatically when loading libraries containing JNI entry points.
+  crazy_set_java_vm(vm, JNI_VERSION_1_4);
 
   return true;
 }

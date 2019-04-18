@@ -23,6 +23,9 @@ class AppUpdateTest : public testing::Test {
   std::string expect_short_name_;
   bool expect_short_name_changed_;
 
+  std::vector<std::string> expect_additional_search_terms_;
+  bool expect_additional_search_terms_changed_;
+
   apps::mojom::IconKeyPtr expect_icon_key_;
   bool expect_icon_key_changed_;
 
@@ -66,6 +69,7 @@ class AppUpdateTest : public testing::Test {
     expect_readiness_changed_ = false;
     expect_name_changed_ = false;
     expect_short_name_changed_ = false;
+    expect_additional_search_terms_changed_ = false;
     expect_icon_key_changed_ = false;
     expect_last_launch_time_changed_ = false;
     expect_install_time_changed_ = false;
@@ -86,6 +90,10 @@ class AppUpdateTest : public testing::Test {
 
     EXPECT_EQ(expect_short_name_, u.ShortName());
     EXPECT_EQ(expect_short_name_changed_, u.ShortNameChanged());
+
+    EXPECT_EQ(expect_additional_search_terms_, u.AdditionalSearchTerms());
+    EXPECT_EQ(expect_additional_search_terms_changed_,
+              u.AdditionalSearchTermsChanged());
 
     EXPECT_EQ(expect_icon_key_, u.IconKey());
     EXPECT_EQ(expect_icon_key_changed_, u.IconKeyChanged());
@@ -126,6 +134,7 @@ class AppUpdateTest : public testing::Test {
     expect_readiness_ = apps::mojom::Readiness::kUnknown;
     expect_name_ = "";
     expect_short_name_ = "";
+    expect_additional_search_terms_.clear();
     expect_icon_key_ = nullptr;
     expect_last_launch_time_ = base::Time();
     expect_install_time_ = base::Time();
@@ -202,11 +211,37 @@ class AppUpdateTest : public testing::Test {
       CheckExpects(u);
     }
 
+    // AdditionalSearchTerms tests.
+
+    if (state) {
+      state->additional_search_terms.push_back("cat");
+      state->additional_search_terms.push_back("dog");
+      expect_additional_search_terms_.push_back("cat");
+      expect_additional_search_terms_.push_back("dog");
+      expect_additional_search_terms_changed_ = false;
+      CheckExpects(u);
+    }
+
+    if (delta) {
+      expect_additional_search_terms_.clear();
+      delta->additional_search_terms.push_back("horse");
+      delta->additional_search_terms.push_back("mouse");
+      expect_additional_search_terms_.push_back("horse");
+      expect_additional_search_terms_.push_back("mouse");
+      expect_additional_search_terms_changed_ = true;
+      CheckExpects(u);
+    }
+
+    if (state) {
+      apps::AppUpdate::Merge(state, delta);
+      ExpectNoChange();
+      CheckExpects(u);
+    }
+
     // IconKey tests.
 
     if (state) {
-      auto x = apps::mojom::IconKey::New(apps::mojom::IconType::kResource, 100,
-                                         std::string());
+      auto x = apps::mojom::IconKey::New(100, 0, 0);
       state->icon_key = x.Clone();
       expect_icon_key_ = x.Clone();
       expect_icon_key_changed_ = false;
@@ -214,8 +249,7 @@ class AppUpdateTest : public testing::Test {
     }
 
     if (delta) {
-      auto x = apps::mojom::IconKey::New(apps::mojom::IconType::kExtension, 0,
-                                         "one hundred");
+      auto x = apps::mojom::IconKey::New(200, 0, 0);
       delta->icon_key = x.Clone();
       expect_icon_key_ = x.Clone();
       expect_icon_key_changed_ = true;

@@ -97,8 +97,8 @@ struct AX_EXPORT AXNodeData {
   //
   // Setting accessibility attributes.
   //
-  // Replaces an attribute if not present. This is safer than crashing via a
-  // DCHECK or doing nothing, because most likely that's what the caller would
+  // Replaces an attribute if present. This is safer than crashing via a DCHECK
+  // or doing nothing, because most likely replacing is what the caller would
   // have wanted or what existing code already assumes.
   //
 
@@ -167,6 +167,8 @@ struct AX_EXPORT AXNodeData {
   void SetInvalidState(ax::mojom::InvalidState invalid_state);
   ax::mojom::NameFrom GetNameFrom() const;
   void SetNameFrom(ax::mojom::NameFrom name_from);
+  ax::mojom::DescriptionFrom GetDescriptionFrom() const;
+  void SetDescriptionFrom(ax::mojom::DescriptionFrom description_from);
   ax::mojom::TextPosition GetTextPosition() const;
   void SetTextPosition(ax::mojom::TextPosition text_position);
   ax::mojom::Restriction GetRestriction() const;
@@ -175,6 +177,9 @@ struct AX_EXPORT AXNodeData {
   void SetTextDirection(ax::mojom::TextDirection text_direction);
   ax::mojom::ImageAnnotationStatus GetImageAnnotationStatus() const;
   void SetImageAnnotationStatus(ax::mojom::ImageAnnotationStatus status);
+
+  // Helper to determine if |GetRestriction| is either ReadOnly or Disabled
+  bool IsReadOnlyOrDisabled() const;
 
   // Return a string representation of this data, for debugging.
   virtual std::string ToString() const;

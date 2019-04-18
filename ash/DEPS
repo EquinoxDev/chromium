@@ -59,16 +59,17 @@ include_rules = [
   "+chromeos/audio",
   "+chromeos/components/multidevice/logging/logging.h",
   "+chromeos/constants",
+  # TODO(stevenjb): Eliminate this. http://crbug.com/940810
+  "+chromeos/dbus/audio",
+  "+chromeos/dbus/biod/biod_client.h",
   "+chromeos/dbus/dbus_thread_manager.h",
   "+chromeos/dbus/fake_power_manager_client.h",
-  "+chromeos/dbus/fake_session_manager_client.h",
+  "+chromeos/dbus/hammerd",
+  "+chromeos/dbus/power",
   "+chromeos/dbus/power_manager",
-  "+chromeos/dbus/power_manager_client.h",
-  "+chromeos/dbus/power_policy_controller.h",
-  "+chromeos/dbus/session_manager_client.h",
   "+chromeos/dbus/shill_device_client.h",
-  "+chromeos/dbus/system_clock_client.h",
-  # TODO(jamescook): Eliminate this. http://crbug.com/644355
+  "+chromeos/dbus/system_clock",
+  # TODO(stevenjb): Eliminate this. http://crbug.com/644355
   "+chromeos/network",
   "+chromeos/services/assistant/public" ,
   "+chromeos/services/assistant/test_support",
@@ -77,6 +78,9 @@ include_rules = [
   "+chromeos/settings/timezone_settings.h",
   "+chromeos/strings",
   "+chromeos/system",
+
+  # ui/base/idle depends on SessionManagerClient so disallow it.
+  "-ui/base/idle"
 
   # InputMethodManager lives in the browser process. Use ImeController.
   "-ui/base/ime/chromeos/input_method_manager.h"

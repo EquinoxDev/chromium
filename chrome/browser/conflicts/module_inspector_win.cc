@@ -13,10 +13,10 @@
 #include "base/task_runner_util.h"
 #include "base/threading/sequenced_task_runner_handle.h"
 #include "base/time/time.h"
-#include "chrome/browser/after_startup_task_utils.h"
 #include "chrome/browser/conflicts/module_info_util_win.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/services/util_win/public/mojom/constants.mojom.h"
+#include "content/public/browser/browser_thread.h"
 #include "content/public/common/service_manager_connection.h"
 #include "services/service_manager/public/cpp/connector.h"
 
@@ -37,14 +37,6 @@ StringMapping GetPathMapping() {
 
 void ReportConnectionError(bool value) {
   base::UmaHistogramBoolean("Windows.InspectModule.ConnectionError", value);
-}
-
-base::FilePath GetInspectionResultsCachePath() {
-  base::FilePath user_data_dir;
-  if (!base::PathService::Get(chrome::DIR_USER_DATA, &user_data_dir))
-    return base::FilePath();
-
-  return user_data_dir.Append(L"Module Info Cache");
 }
 
 // Reads the inspection results cache and records the result in UMA.
@@ -75,10 +67,13 @@ void WriteInspectionResultCacheOnBackgroundSequence(
 }  // namespace
 
 // static
-constexpr base::Feature ModuleInspector::kEnableBackgroundModuleInspection;
+constexpr base::Feature ModuleInspector::kDisableBackgroundModuleInspection;
 
 // static
 constexpr base::Feature ModuleInspector::kWinOOPInspectModuleFeature;
+
+// static
+constexpr base::TimeDelta ModuleInspector::kFlushInspectionResultsTimerTimeout;
 
 ModuleInspector::ModuleInspector(
     const OnModuleInspectedCallback& on_module_inspected_callback)
@@ -90,15 +85,22 @@ ModuleInspector::ModuleInspector(
       path_mapping_(GetPathMapping()),
       cache_task_runner_(base::CreateSequencedTaskRunnerWithTraits(
           {base::MayBlock(), base::TaskPriority::BEST_EFFORT,
-           base::TaskShutdownBehavior::SKIP_ON_SHUTDOWN})),
+           base::TaskShutdownBehavior::BLOCK_SHUTDOWN})),
       inspection_results_cache_read_(false),
+      flush_inspection_results_timer_(
+          FROM_HERE,
+          kFlushInspectionResultsTimerTimeout,
+          base::BindRepeating(
+              &ModuleInspector::MaybeUpdateInspectionResultsCache,
+              base::Unretained(this))),
+      has_new_inspection_results_(false),
       connection_error_retry_count_(kConnectionErrorRetryCount),
-      background_inspection_enabled_(
-          base::FeatureList::IsEnabled(kEnableBackgroundModuleInspection)),
+      background_inspection_disabled_(
+          base::FeatureList::IsEnabled(kDisableBackgroundModuleInspection)),
       test_connector_(nullptr),
       weak_ptr_factory_(this) {
-  // Use AfterStartupTaskUtils to be notified when startup is finished.
-  AfterStartupTaskUtils::PostTask(
+  // Use PostAfterStartupTask to be notified when startup is finished.
+  content::BrowserThread::PostAfterStartupTask(
       FROM_HERE, base::SequencedTaskRunnerHandle::Get(),
       base::BindOnce(&ModuleInspector::OnStartupFinished,
                      weak_ptr_factory_.GetWeakPtr()));
@@ -131,10 +133,10 @@ void ModuleInspector::IncreaseInspectionPriority() {
   OnStartupFinished();
 
   // Special case where this instance could be ready to start inspecting but
-  // wasn't because the background inspection feature was disabled.
-  if (!background_inspection_enabled_ && inspection_results_cache_read_ &&
+  // wasn't because background inspection was disabled.
+  if (background_inspection_disabled_ && inspection_results_cache_read_ &&
       !queue_.empty()) {
-    background_inspection_enabled_ = true;
+    background_inspection_disabled_ = false;
     StartInspectingModule();
   }
 }
@@ -144,11 +146,23 @@ bool ModuleInspector::IsIdle() {
 }
 
 void ModuleInspector::OnModuleDatabaseIdle() {
-  // Serialize cache.
-  cache_task_runner_->PostTask(
-      FROM_HERE, base::BindOnce(&WriteInspectionResultCacheOnBackgroundSequence,
-                                GetInspectionResultsCachePath(),
-                                inspection_results_cache_));
+  MaybeUpdateInspectionResultsCache();
+}
+
+// static
+base::FilePath ModuleInspector::GetInspectionResultsCachePath() {
+  base::FilePath user_data_dir;
+  if (!base::PathService::Get(chrome::DIR_USER_DATA, &user_data_dir))
+    return base::FilePath();
+
+  return user_data_dir.Append(L"Module Info Cache");
+}
+
+void ModuleInspector::SetModuleInspectionResultForTesting(
+    const ModuleInfoKey& module_key,
+    ModuleInspectionResult inspection_result) {
+  AddInspectionResultToCache(module_key, inspection_result,
+                             &inspection_results_cache_);
 }
 
 void ModuleInspector::EnsureUtilWinServiceBound() {
@@ -225,7 +239,7 @@ void ModuleInspector::StartInspectingModule() {
   DCHECK(inspection_results_cache_read_);
   DCHECK(!queue_.empty());
 
-  if (!background_inspection_enabled_)
+  if (background_inspection_disabled_)
     return;
 
   const ModuleInfoKey& module_key = queue_.front();
@@ -285,6 +299,9 @@ void ModuleInspector::OnModuleNewlyInspected(
   // easily comparable.
   CollapseMatchingPrefixInPath(path_mapping_, &inspection_result.location);
 
+  has_new_inspection_results_ = true;
+  if (!flush_inspection_results_timer_.IsRunning())
+    flush_inspection_results_timer_.Reset();
   AddInspectionResultToCache(module_key, inspection_result,
                              &inspection_results_cache_);
 
@@ -312,4 +329,17 @@ void ModuleInspector::OnInspectionFinished(
   // Continue the work.
   if (!queue_.empty())
     StartInspectingModule();
+}
+
+void ModuleInspector::MaybeUpdateInspectionResultsCache() {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+
+  if (!has_new_inspection_results_)
+    return;
+
+  has_new_inspection_results_ = false;
+  cache_task_runner_->PostTask(
+      FROM_HERE, base::BindOnce(&WriteInspectionResultCacheOnBackgroundSequence,
+                                GetInspectionResultsCachePath(),
+                                inspection_results_cache_));
 }

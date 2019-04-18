@@ -65,7 +65,8 @@ class CONTENT_EXPORT SignedExchangeLoader final
       scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory,
       URLLoaderThrottlesGetter url_loader_throttles_getter,
       base::RepeatingCallback<int(void)> frame_tree_node_id_getter,
-      scoped_refptr<SignedExchangePrefetchMetricRecorder> metric_recorder);
+      scoped_refptr<SignedExchangePrefetchMetricRecorder> metric_recorder,
+      const std::string& accept_langs);
   ~SignedExchangeLoader() override;
 
 
@@ -168,10 +169,16 @@ class CONTENT_EXPORT SignedExchangeLoader final
   base::Optional<GURL> fallback_url_;
   base::Optional<GURL> inner_request_url_;
 
+  struct OuterResponseLengthInfo {
+    int64_t encoded_data_length;
+    int64_t decoded_body_length;
+  };
   // Set when URLLoaderClient::OnComplete() is called.
-  base::Optional<int64_t> encoded_data_length_;
+  base::Optional<OuterResponseLengthInfo> outer_response_length_info_;
+
   // Set when |body_data_pipe_adapter_| finishes loading the decoded body.
   base::Optional<int> decoded_body_read_result_;
+  const std::string accept_langs_;
 
   base::WeakPtrFactory<SignedExchangeLoader> weak_factory_;
 

@@ -9,6 +9,7 @@
 #include <memory>
 #include <utility>
 
+#include "base/containers/flat_map.h"
 #include "base/macros.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/memory/weak_ptr.h"
@@ -102,23 +103,30 @@ class PLATFORM_EXPORT FrameSchedulerImpl : public FrameScheduler,
   PageScheduler* GetPageScheduler() const override;
   void DidStartProvisionalLoad(bool is_main_frame) override;
   void DidCommitProvisionalLoad(bool is_web_history_inert_commit,
-                                bool is_reload,
-                                bool is_main_frame) override;
+                                NavigationType navigation_type) override;
   WebScopedVirtualTimePauser CreateWebScopedVirtualTimePauser(
       const WTF::String& name,
       WebScopedVirtualTimePauser::VirtualTaskDuration duration) override;
   void OnFirstMeaningfulPaint() override;
-  std::unique_ptr<ActiveConnectionHandle> OnActiveConnectionCreated() override;
   void AsValueInto(base::trace_event::TracedValue* state) const;
   bool IsExemptFromBudgetBasedThrottling() const override;
   std::unique_ptr<blink::mojom::blink::PauseSubresourceLoadingHandle>
   GetPauseSubresourceLoadingHandle() override;
 
+  void OnStartedUsingFeature(SchedulingPolicy::Feature feature,
+                             const SchedulingPolicy& policy) override;
+  void OnStoppedUsingFeature(SchedulingPolicy::Feature feature,
+                             const SchedulingPolicy& policy) override;
+
+  base::WeakPtr<FrameScheduler> GetWeakPtr() override;
+
   scoped_refptr<base::SingleThreadTaskRunner> ControlTaskRunner();
 
   void UpdatePolicy();
 
-  bool has_active_connection() const { return has_active_connection_; }
+  bool opted_out_from_aggressive_throttling() const {
+    return opted_out_from_aggressive_throttling_;
+  }
 
   void OnTraceLogEnabled() { tracing_controller_.OnTraceLogEnabled(); }
 
@@ -140,6 +148,10 @@ class PLATFORM_EXPORT FrameSchedulerImpl : public FrameScheduler,
       MainThreadTaskQueue*,
       base::sequence_manager::TaskQueue::QueueEnabledVoter*) override;
 
+  // Adds the time for the task to a running tally, then forwards it on when
+  // the total time exceeds the threshold (100ms).
+  void AddTaskTime(base::TimeDelta time);
+
   using FrameTaskTypeToQueueTraitsArray =
       std::array<base::Optional<MainThreadTaskQueue::QueueTraits>,
                  static_cast<size_t>(TaskType::kCount)>;
@@ -149,6 +161,9 @@ class PLATFORM_EXPORT FrameSchedulerImpl : public FrameScheduler,
   // thread scheduling settings to avoid redundancy.
   static void InitializeTaskTypeQueueTraitsMap(
       FrameTaskTypeToQueueTraitsArray&);
+
+  WTF::HashSet<SchedulingPolicy::Feature>
+  GetActiveFeaturesOptingOutFromBackForwardCache();
 
  protected:
   FrameSchedulerImpl(MainThreadSchedulerImpl* main_thread_scheduler,
@@ -176,17 +191,6 @@ class PLATFORM_EXPORT FrameSchedulerImpl : public FrameScheduler,
   friend class frame_scheduler_impl_unittest::FrameSchedulerImplTest;
   friend class page_scheduler_impl_unittest::PageSchedulerImplTest;
   friend class ResourceLoadingTaskRunnerHandleImpl;
-
-  class ActiveConnectionHandleImpl : public ActiveConnectionHandle {
-   public:
-    ActiveConnectionHandleImpl(FrameSchedulerImpl* frame_scheduler);
-    ~ActiveConnectionHandleImpl() override;
-
-   private:
-    base::WeakPtr<FrameOrWorkerScheduler> frame_scheduler_;
-
-    DISALLOW_COPY_AND_ASSIGN(ActiveConnectionHandleImpl);
-  };
 
   // A class that adds and removes itself from the passed in weak pointer. While
   // one exists, resource loading is paused.
@@ -221,11 +225,14 @@ class PLATFORM_EXPORT FrameSchedulerImpl : public FrameScheduler,
   void UpdateTaskQueueThrottling(MainThreadTaskQueue* task_queue,
                                  bool should_throttle);
 
-  void DidOpenActiveConnection();
-  void DidCloseActiveConnection();
-
   void AddPauseSubresourceLoadingHandle();
   void RemovePauseSubresourceLoadingHandle();
+
+  void OnAddedAggressiveThrottlingOptOut();
+  void OnRemovedAggressiveThrottlingOptOut();
+
+  void OnAddedBackForwardCacheOptOut(SchedulingPolicy::Feature feature);
+  void OnRemovedBackForwardCacheOptOut(SchedulingPolicy::Feature feature);
 
   std::unique_ptr<ResourceLoadingTaskRunnerHandleImpl>
   CreateResourceLoadingTaskRunnerHandleImpl();
@@ -239,16 +246,25 @@ class PLATFORM_EXPORT FrameSchedulerImpl : public FrameScheduler,
   static base::Optional<MainThreadTaskQueue::QueueTraits>
       CreateQueueTraitsForTaskType(TaskType);
 
+  // Reset the state which should not persist across navigations.
+  void ResetForNavigation();
+
   // Create QueueTraits for the default (non-finch) task queues.
   static MainThreadTaskQueue::QueueTraits ThrottleableTaskQueueTraits();
   static MainThreadTaskQueue::QueueTraits DeferrableTaskQueueTraits();
   static MainThreadTaskQueue::QueueTraits PausableTaskQueueTraits();
   static MainThreadTaskQueue::QueueTraits UnpausableTaskQueueTraits();
   static MainThreadTaskQueue::QueueTraits ForegroundOnlyTaskQueueTraits();
+  static MainThreadTaskQueue::QueueTraits
+  DoesNotUseVirtualTimeTaskQueueTraits();
 
   const FrameScheduler::FrameType frame_type_;
 
   bool is_ad_frame_;
+
+  // A running tally of (wall) time spent in tasks for this frame.
+  // This is periodically forwarded and zeroed out.
+  base::TimeDelta task_time_;
 
   TraceableVariableController tracing_controller_;
   std::unique_ptr<FrameTaskQueueController> frame_task_queue_controller_;
@@ -274,10 +290,15 @@ class PLATFORM_EXPORT FrameSchedulerImpl : public FrameScheduler,
   StateTracer<TracingCategoryName::kInfo> url_tracer_;
   TraceableState<bool, TracingCategoryName::kInfo> task_queues_throttled_;
   // TODO(kraynov): https://crbug.com/827113
-  // Trace active connection count.
-  int active_connection_count_;
+  // Trace the count of aggressive throttling opt outs.
+  int aggressive_throttling_opt_out_count;
+  TraceableState<bool, TracingCategoryName::kInfo>
+      opted_out_from_aggressive_throttling_;
   size_t subresource_loading_pause_count_;
-  TraceableState<bool, TracingCategoryName::kInfo> has_active_connection_;
+  base::flat_map<SchedulingPolicy::Feature, int>
+      back_forward_cache_opt_out_counts_;
+  TraceableState<bool, TracingCategoryName::kInfo>
+      opted_out_from_back_forward_cache_;
 
   // These are the states of the Page.
   // They should be accessed via GetPageScheduler()->SetPageState().

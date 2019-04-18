@@ -255,8 +255,8 @@ class PLATFORM_EXPORT NetworkStateNotifier {
 
   // Returns |rtt| after adding host-specific random noise, and rounding it as
   // per the NetInfo spec to improve privacy.
-  unsigned long RoundRtt(const String& host,
-                         const base::Optional<TimeDelta>& rtt) const;
+  uint32_t RoundRtt(const String& host,
+                    const base::Optional<TimeDelta>& rtt) const;
 
   // Returns |downlink_mbps| after adding host-specific random noise, and
   // rounding it as per the NetInfo spec and to improve privacy.
@@ -313,6 +313,8 @@ class PLATFORM_EXPORT NetworkStateNotifier {
   // thread.  Note that ScopedNotifier must be destroyed when not holding a lock
   // so that onLine notifications can be dispatched without a deadlock.
   class ScopedNotifier {
+    STACK_ALLOCATED();
+
    public:
     explicit ScopedNotifier(NetworkStateNotifier&);
     ~ScopedNotifier();

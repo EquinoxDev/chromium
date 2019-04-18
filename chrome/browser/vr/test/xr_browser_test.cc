@@ -40,6 +40,12 @@ constexpr char XrBrowserTestBase::kVrConfigPathVal[];
 constexpr char XrBrowserTestBase::kVrLogPathEnvVar[];
 constexpr char XrBrowserTestBase::kVrLogPathVal[];
 constexpr char XrBrowserTestBase::kTestFileDir[];
+const std::vector<std::string> XrBrowserTestBase::kRequiredTestSwitches{
+    "enable-gpu", "enable-pixel-output-in-tests",
+    "run-through-xr-wrapper-script"};
+const std::vector<std::pair<std::string, std::string>>
+    XrBrowserTestBase::kRequiredTestSwitchesWithValues{
+        std::pair<std::string, std::string>("test-launcher-jobs", "1")};
 
 XrBrowserTestBase::XrBrowserTestBase() : env_(base::Environment::Create()) {}
 
@@ -79,23 +85,41 @@ std::string MakeExecutableRelative(const char* path) {
 }
 
 void XrBrowserTestBase::SetUp() {
+  // Check whether the required flags were passed to the test - without these,
+  // we can fail in ways that are non-obvious, so fail more explicitly here if
+  // they aren't present.
+  auto* cmd_line = base::CommandLine::ForCurrentProcess();
+  for (auto req_switch : kRequiredTestSwitches) {
+    ASSERT_TRUE(cmd_line->HasSwitch(req_switch))
+        << "Missing switch " << req_switch << " required to run tests properly";
+  }
+  for (auto req_switch_pair : kRequiredTestSwitchesWithValues) {
+    ASSERT_TRUE(cmd_line->HasSwitch(req_switch_pair.first))
+        << "Missing switch " << req_switch_pair.first
+        << " required to run tests properly";
+    ASSERT_TRUE(cmd_line->GetSwitchValueASCII(req_switch_pair.first) ==
+                req_switch_pair.second)
+        << "Have required switch " << req_switch_pair.first
+        << ", but not required value " << req_switch_pair.second;
+  }
+
   // Set the environment variable to use the mock OpenVR client.
-  EXPECT_TRUE(
+  ASSERT_TRUE(
       env_->SetVar(kVrOverrideEnvVar, MakeExecutableRelative(kVrOverrideVal)))
       << "Failed to set OpenVR mock client location environment variable";
-  EXPECT_TRUE(env_->SetVar(kVrConfigPathEnvVar,
+  ASSERT_TRUE(env_->SetVar(kVrConfigPathEnvVar,
                            MakeExecutableRelative(kVrConfigPathVal)))
       << "Failed to set OpenVR config location environment variable";
-  EXPECT_TRUE(
+  ASSERT_TRUE(
       env_->SetVar(kVrLogPathEnvVar, MakeExecutableRelative(kVrLogPathVal)))
       << "Failed to set OpenVR log location environment variable";
 
   // Set any command line flags that subclasses have set, e.g. enabling WebVR
   // and OpenVR support.
   for (const auto& switch_string : append_switches_) {
-    base::CommandLine::ForCurrentProcess()->AppendSwitch(switch_string);
+    cmd_line->AppendSwitch(switch_string);
   }
-  scoped_feature_list_.InitWithFeatures(enable_features_, {});
+  scoped_feature_list_.InitWithFeatures(enable_features_, disable_features_);
 
   InProcessBrowserTest::SetUp();
 }
@@ -126,22 +150,22 @@ net::EmbeddedTestServer* XrBrowserTestBase::GetEmbeddedServer() {
   return server_.get();
 }
 
-content::WebContents* XrBrowserTestBase::GetFirstTabWebContents() {
-  return browser()->tab_strip_model()->GetWebContentsAt(0);
+content::WebContents* XrBrowserTestBase::GetCurrentWebContents() {
+  return browser()->tab_strip_model()->GetActiveWebContents();
 }
 
 void XrBrowserTestBase::LoadUrlAndAwaitInitialization(const GURL& url) {
   ui_test_utils::NavigateToURL(browser(), url);
-  EXPECT_TRUE(PollJavaScriptBoolean(
-      "isInitializationComplete()", kPollTimeoutMedium,
-      browser()->tab_strip_model()->GetActiveWebContents()))
+  ASSERT_TRUE(PollJavaScriptBoolean("isInitializationComplete()",
+                                    kPollTimeoutMedium,
+                                    GetCurrentWebContents()))
       << "Timed out waiting for JavaScript test initialization.";
 }
 
 void XrBrowserTestBase::RunJavaScriptOrFail(
     const std::string& js_expression,
     content::WebContents* web_contents) {
-  EXPECT_TRUE(content::ExecuteScript(web_contents, js_expression))
+  ASSERT_TRUE(content::ExecuteScript(web_contents, js_expression))
       << "Failed to run given JavaScript: " << js_expression;
 }
 
@@ -192,7 +216,7 @@ void XrBrowserTestBase::PollJavaScriptBooleanOrFail(
     const std::string& bool_expression,
     const base::TimeDelta& timeout,
     content::WebContents* web_contents) {
-  EXPECT_TRUE(PollJavaScriptBoolean(bool_expression, timeout, web_contents))
+  ASSERT_TRUE(PollJavaScriptBoolean(bool_expression, timeout, web_contents))
       << "Timed out polling JavaScript boolean expression: " << bool_expression;
 }
 
@@ -244,7 +268,7 @@ void XrBrowserTestBase::WaitOnJavaScriptStep(
   // code to do so.
   bool code_available = RunJavaScriptAndExtractBoolOrFail(
       "typeof javascriptDone !== 'undefined'", web_contents);
-  EXPECT_TRUE(code_available) << "Attempted to wait on a JavaScript test step "
+  ASSERT_TRUE(code_available) << "Attempted to wait on a JavaScript test step "
                               << "without the code to do so. You either forgot "
                               << "to import webxr_e2e.js or "
                               << "are incorrectly using a C++ function.";
@@ -270,7 +294,7 @@ void XrBrowserTestBase::WaitOnJavaScriptStep(
 
     std::string result_string =
         RunJavaScriptAndExtractStringOrFail("resultString", web_contents);
-    if (result_string == "") {
+    if (result_string.empty()) {
       reason +=
           " Did not obtain specific failure reason from JavaScript "
           "testharness.";
@@ -299,7 +323,7 @@ XrBrowserTestBase::TestStatus XrBrowserTestBase::CheckTestStatus(
       RunJavaScriptAndExtractBoolOrFail("testPassed", web_contents);
   if (test_passed) {
     return XrBrowserTestBase::TestStatus::STATUS_PASSED;
-  } else if (!test_passed && result_string == "") {
+  } else if (!test_passed && result_string.empty()) {
     return XrBrowserTestBase::TestStatus::STATUS_RUNNING;
   }
   // !test_passed && result_string != ""
@@ -333,49 +357,49 @@ void XrBrowserTestBase::AssertNoJavaScriptErrors(
 }
 
 void XrBrowserTestBase::RunJavaScriptOrFail(const std::string& js_expression) {
-  RunJavaScriptOrFail(js_expression, GetFirstTabWebContents());
+  RunJavaScriptOrFail(js_expression, GetCurrentWebContents());
 }
 
 bool XrBrowserTestBase::RunJavaScriptAndExtractBoolOrFail(
     const std::string& js_expression) {
   return RunJavaScriptAndExtractBoolOrFail(js_expression,
-                                           GetFirstTabWebContents());
+                                           GetCurrentWebContents());
 }
 
 std::string XrBrowserTestBase::RunJavaScriptAndExtractStringOrFail(
     const std::string& js_expression) {
   return RunJavaScriptAndExtractStringOrFail(js_expression,
-                                             GetFirstTabWebContents());
+                                             GetCurrentWebContents());
 }
 
 bool XrBrowserTestBase::PollJavaScriptBoolean(
     const std::string& bool_expression,
     const base::TimeDelta& timeout) {
   return PollJavaScriptBoolean(bool_expression, timeout,
-                               GetFirstTabWebContents());
+                               GetCurrentWebContents());
 }
 
 void XrBrowserTestBase::PollJavaScriptBooleanOrFail(
     const std::string& bool_expression,
     const base::TimeDelta& timeout) {
   PollJavaScriptBooleanOrFail(bool_expression, timeout,
-                              GetFirstTabWebContents());
+                              GetCurrentWebContents());
 }
 
 void XrBrowserTestBase::WaitOnJavaScriptStep() {
-  WaitOnJavaScriptStep(GetFirstTabWebContents());
+  WaitOnJavaScriptStep(GetCurrentWebContents());
 }
 
 void XrBrowserTestBase::ExecuteStepAndWait(const std::string& step_function) {
-  ExecuteStepAndWait(step_function, GetFirstTabWebContents());
+  ExecuteStepAndWait(step_function, GetCurrentWebContents());
 }
 
 void XrBrowserTestBase::EndTest() {
-  EndTest(GetFirstTabWebContents());
+  EndTest(GetCurrentWebContents());
 }
 
 void XrBrowserTestBase::AssertNoJavaScriptErrors() {
-  AssertNoJavaScriptErrors(GetFirstTabWebContents());
+  AssertNoJavaScriptErrors(GetCurrentWebContents());
 }
 
 }  // namespace vr

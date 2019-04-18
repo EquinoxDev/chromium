@@ -38,7 +38,7 @@ class TestWebState : public WebState {
   UIView* GetView() override;
   void WasShown() override;
   void WasHidden() override;
-  void LoadData(NSData* data, NSString* mime_type, const GURL& url) override;
+  void SetKeepRenderProcessAlive(bool keep_alive) override;
   BrowserState* GetBrowserState() const override;
   void OpenURL(const OpenURLParams& params) override {}
   void Stop() override {}
@@ -49,6 +49,7 @@ class TestWebState : public WebState {
   SessionCertificatePolicyCache* GetSessionCertificatePolicyCache() override;
   CRWSessionStorage* BuildSessionStorage() override;
   CRWJSInjectionReceiver* GetJSInjectionReceiver() const override;
+  void LoadData(NSData* data, NSString* mime_type, const GURL& url) override;
   void ExecuteJavaScript(const base::string16& javascript) override;
   void ExecuteJavaScript(const base::string16& javascript,
                          JavaScriptResultCallback callback) override;
@@ -115,6 +116,7 @@ class TestWebState : public WebState {
   // |response| should be allowed. Defaults to true.
   bool ShouldAllowResponse(NSURLResponse* response, bool for_main_frame);
   base::string16 GetLastExecutedJavascript() const;
+  NSData* GetLastLoadedData() const;
 
   // Notifier for tests.
   void OnPageLoaded(PageLoadCompletionStatus load_completion_status);
@@ -142,6 +144,7 @@ class TestWebState : public WebState {
   std::unique_ptr<NavigationManager> navigation_manager_;
   UIView* view_;
   CRWWebViewProxyType web_view_proxy_;
+  NSData* last_loaded_data_;
 
   // A list of observers notified when page state changes. Weak references.
   base::ObserverList<WebStateObserver, true>::Unchecked observers_;

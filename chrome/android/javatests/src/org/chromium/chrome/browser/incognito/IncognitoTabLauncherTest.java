@@ -14,7 +14,6 @@ import org.junit.Assert;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 
-import org.chromium.base.ThreadUtils;
 import org.chromium.base.test.util.CommandLineFlags;
 import org.chromium.base.test.util.Feature;
 import org.chromium.chrome.browser.ChromeFeatureList;
@@ -23,6 +22,8 @@ import org.chromium.chrome.browser.ChromeTabbedActivity;
 import org.chromium.chrome.test.ChromeActivityTestRule;
 import org.chromium.chrome.test.ChromeJUnit4ClassRunner;
 import org.chromium.chrome.test.util.browser.Features;
+import org.chromium.content_public.browser.test.util.CriteriaHelper;
+import org.chromium.content_public.browser.test.util.TestThreadUtils;
 
 /**
  * Tests for {@link IncognitoTabLauncher}.
@@ -36,7 +37,7 @@ public class IncognitoTabLauncherTest {
     @SmallTest
     public void testEnableComponent() {
         Context context = InstrumentationRegistry.getTargetContext();
-        IncognitoTabLauncher.setComponentEnabled(context, true);
+        IncognitoTabLauncher.setComponentEnabled(true);
         Assert.assertNotNull(
                 context.getPackageManager().resolveActivity(createLaunchIntent(context), 0));
     }
@@ -46,7 +47,7 @@ public class IncognitoTabLauncherTest {
     @SmallTest
     public void testDisableComponent() {
         Context context = InstrumentationRegistry.getTargetContext();
-        IncognitoTabLauncher.setComponentEnabled(context, false);
+        IncognitoTabLauncher.setComponentEnabled(false);
         Assert.assertNull(
                 context.getPackageManager().resolveActivity(createLaunchIntent(context), 0));
     }
@@ -55,8 +56,23 @@ public class IncognitoTabLauncherTest {
     @Feature("Incognito")
     @MediumTest
     public void testLaunchIncognitoNewTab() {
+        ChromeTabbedActivity activity = launchIncognitoTab();
+
+        Assert.assertTrue(activity.getTabModelSelector().isIncognitoSelected());
+        Assert.assertTrue(IncognitoTabLauncher.didCreateIntent(activity.getIntent()));
+    }
+
+    @Test
+    @Feature("Incognito")
+    @MediumTest
+    public void testLaunchIncognitoNewTab_omniboxFocused() {
+        ChromeTabbedActivity activity = launchIncognitoTab();
+        CriteriaHelper.pollUiThread(() -> activity.getToolbarManager().isUrlBarFocused());
+    }
+
+    private ChromeTabbedActivity launchIncognitoTab() {
         Context context = InstrumentationRegistry.getTargetContext();
-        IncognitoTabLauncher.setComponentEnabled(context, true);
+        IncognitoTabLauncher.setComponentEnabled(true);
         Intent intent = createLaunchIntent(context);
 
         // We need FLAG_ACTIVITY_NEW_TASK because we're calling from the application context (not an
@@ -64,11 +80,9 @@ public class IncognitoTabLauncherTest {
         // ApplicationStatus internally, which ignores Tasks and tracks all Chrome Activities.
         intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
 
-        ThreadUtils.runOnUiThreadBlocking(() -> context.startActivity(intent));
+        TestThreadUtils.runOnUiThreadBlocking(() -> context.startActivity(intent));
 
-        ChromeTabbedActivity activity = ChromeActivityTestRule.waitFor(ChromeTabbedActivity.class);
-        Assert.assertTrue(activity.getTabModelSelector().isIncognitoSelected());
-        Assert.assertTrue(IncognitoTabLauncher.didCreateIntent(activity.getIntent()));
+        return ChromeActivityTestRule.waitFor(ChromeTabbedActivity.class);
     }
 
     private Intent createLaunchIntent(Context context) {

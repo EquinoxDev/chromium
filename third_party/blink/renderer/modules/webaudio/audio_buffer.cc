@@ -28,6 +28,7 @@
 
 #include "third_party/blink/renderer/modules/webaudio/audio_buffer.h"
 
+#include <memory>
 #include "third_party/blink/renderer/modules/webaudio/audio_buffer_options.h"
 #include "third_party/blink/renderer/modules/webaudio/base_audio_context.h"
 #include "third_party/blink/renderer/platform/audio/audio_bus.h"
@@ -125,21 +126,6 @@ AudioBuffer* AudioBuffer::CreateUninitialized(unsigned number_of_channels,
   if (!buffer->CreatedSuccessfully(number_of_channels))
     return nullptr;
   return buffer;
-}
-
-AudioBuffer* AudioBuffer::CreateFromAudioFileData(const void* data,
-                                                  size_t data_size,
-                                                  bool mix_to_mono,
-                                                  float sample_rate) {
-  scoped_refptr<AudioBus> bus =
-      CreateBusFromInMemoryAudioFile(data, data_size, mix_to_mono, sample_rate);
-  if (bus) {
-    AudioBuffer* buffer = MakeGarbageCollected<AudioBuffer>(bus.get());
-    if (buffer->CreatedSuccessfully(bus->NumberOfChannels()))
-      return buffer;
-  }
-
-  return nullptr;
 }
 
 AudioBuffer* AudioBuffer::CreateFromAudioBus(AudioBus* bus) {
@@ -347,7 +333,7 @@ void AudioBuffer::Zero() {
 }
 
 std::unique_ptr<SharedAudioBuffer> AudioBuffer::CreateSharedAudioBuffer() {
-  return std::unique_ptr<SharedAudioBuffer>(new SharedAudioBuffer(this));
+  return std::make_unique<SharedAudioBuffer>(this);
 }
 
 SharedAudioBuffer::SharedAudioBuffer(AudioBuffer* buffer)

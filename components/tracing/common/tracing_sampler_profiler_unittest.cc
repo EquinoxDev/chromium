@@ -8,7 +8,6 @@
 #include "base/bind.h"
 #include "base/json/json_reader.h"
 #include "base/memory/ref_counted_memory.h"
-#include "base/profiler/stack_sampling_profiler.h"
 #include "base/run_loop.h"
 #include "base/test/scoped_task_environment.h"
 #include "base/threading/thread.h"
@@ -22,7 +21,6 @@ namespace tracing {
 namespace {
 
 using base::trace_event::TraceLog;
-using base::StackSamplingProfiler;
 
 class TracingSampleProfilerTest : public testing::Test {
  public:
@@ -142,6 +140,20 @@ class TracingSampleProfilerTest : public testing::Test {
   DISALLOW_COPY_AND_ASSIGN(TracingSampleProfilerTest);
 };
 
+// Stub module for testing.
+class TestModule : public base::ModuleCache::Module {
+ public:
+  TestModule() = default;
+
+  TestModule(const TestModule&) = delete;
+  TestModule& operator=(const TestModule&) = delete;
+
+  uintptr_t GetBaseAddress() const override { return 0; }
+  std::string GetId() const override { return ""; }
+  base::FilePath GetDebugBasename() const override { return base::FilePath(); }
+  size_t GetSize() const override { return 0; }
+};
+
 }  // namespace
 
 TEST_F(TracingSampleProfilerTest, OnSampleCompleted) {
@@ -174,6 +186,19 @@ TEST_F(TracingSampleProfilerTest, SamplingChildThread) {
   WaitForEvents();
   EndTracing();
   ValidateReceivedEvents();
+}
+
+TEST(TracingProfileBuilderTest, ValidModule) {
+  TestModule module;
+  TracingSamplerProfiler::TracingProfileBuilder profile_builder(
+      (base::PlatformThreadId()));
+  profile_builder.OnSampleCompleted({base::Frame(0x1010, &module)});
+}
+
+TEST(TracingProfileBuilderTest, InvalidModule) {
+  TracingSamplerProfiler::TracingProfileBuilder profile_builder(
+      (base::PlatformThreadId()));
+  profile_builder.OnSampleCompleted({base::Frame(0x1010, nullptr)});
 }
 
 }  // namespace tracing

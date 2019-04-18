@@ -70,6 +70,8 @@ class MockDeviceInfoTracker : public DeviceInfoTracker {
 
   void Add(const DeviceInfo* device) { devices_.push_back(device); }
 
+  void ForcePulseForTest() override { NOTREACHED(); }
+
  private:
   // DeviceInfo stored here are not owned.
   std::vector<const DeviceInfo*> devices_;
@@ -154,9 +156,6 @@ class MockDeviceInfoSyncService : public syncer::DeviceInfoSyncService {
       override {
     return nullptr;
   }
-  void InitLocalCacheGuid(const std::string& cache_guid,
-                          const std::string& session_name) override {}
-  void ClearLocalCacheGuid() override {}
 
  private:
   MockDeviceInfoTracker tracker_;

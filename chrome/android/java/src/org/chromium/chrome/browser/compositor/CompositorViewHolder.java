@@ -50,12 +50,13 @@ import org.chromium.chrome.browser.fullscreen.ChromeFullscreenManager.Fullscreen
 import org.chromium.chrome.browser.tab.EmptyTabObserver;
 import org.chromium.chrome.browser.tab.Tab;
 import org.chromium.chrome.browser.tab.TabObserver;
-import org.chromium.chrome.browser.tab.TabThemeColorHelper;
 import org.chromium.chrome.browser.tabmodel.EmptyTabModelSelectorObserver;
 import org.chromium.chrome.browser.tabmodel.TabCreatorManager;
 import org.chromium.chrome.browser.tabmodel.TabModel;
 import org.chromium.chrome.browser.tabmodel.TabModelSelector;
+import org.chromium.chrome.browser.util.ColorUtils;
 import org.chromium.chrome.browser.widget.ControlContainer;
+import org.chromium.components.content_capture.ContentCaptureConsumer;
 import org.chromium.content_public.browser.WebContents;
 import org.chromium.ui.KeyboardVisibilityDelegate;
 import org.chromium.ui.UiUtils;
@@ -131,6 +132,8 @@ public class CompositorViewHolder extends FrameLayout
     private boolean mHasDrawnOnce;
 
     private boolean mIsInVr;
+
+    protected ContentCaptureConsumer mContentCaptureConsumer;
 
     /**
      * This view is created on demand to display debugging information.
@@ -454,6 +457,10 @@ public class CompositorViewHolder extends FrameLayout
             mInsetObserverView.removeObserver(this);
             mInsetObserverView = null;
         }
+        if (mContentCaptureConsumer != null) {
+            mContentCaptureConsumer.destroy();
+            mContentCaptureConsumer = null;
+        }
     }
 
     /**
@@ -590,7 +597,7 @@ public class CompositorViewHolder extends FrameLayout
         return tab != null ? tab.getContentView() : null;
     }
 
-    private WebContents getWebContents() {
+    protected WebContents getWebContents() {
         Tab tab = getCurrentTab();
         return tab != null ? tab.getWebContents() : null;
     }
@@ -691,6 +698,7 @@ public class CompositorViewHolder extends FrameLayout
         Point viewportSize = getViewportSize();
         setSize(mTabVisible.getWebContents(), mTabVisible.getContentView(), viewportSize.x,
                 viewportSize.y);
+        onViewportChanged();
     }
 
     @Override
@@ -699,6 +707,7 @@ public class CompositorViewHolder extends FrameLayout
         Point viewportSize = getViewportSize();
         setSize(mTabVisible.getWebContents(), mTabVisible.getContentView(), viewportSize.x,
                 viewportSize.y);
+        onViewportChanged();
     }
 
     @Override
@@ -880,7 +889,8 @@ public class CompositorViewHolder extends FrameLayout
 
     @Override
     public int getBrowserControlsBackgroundColor() {
-        return mTabVisible == null ? Color.WHITE : TabThemeColorHelper.getColor(mTabVisible);
+        return mTabVisible == null ? Color.WHITE
+                                   : ColorUtils.getToolbarSceneLayerBackground(mTabVisible);
     }
 
     @Override
@@ -1060,6 +1070,10 @@ public class CompositorViewHolder extends FrameLayout
         updateContentOverlayVisibility(mContentOverlayVisiblity);
 
         if (mTabVisible != null) initializeTab(mTabVisible);
+
+        if (mContentCaptureConsumer != null) {
+            mContentCaptureConsumer.onWebContentsChanged(getWebContents());
+        }
     }
 
     /**

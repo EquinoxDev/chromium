@@ -85,11 +85,14 @@ SKIP_GN_ISOLATE_MAP_TARGETS = {
   'cast_shell_apk',
   'chrome_official_builder',
   'chrome_official_builder_no_unittests',
+  'chrome_sandbox',
   'chromium_builder_asan',
   'chromium_builder_perf',
   'chromiumos_preflight',
+  'linux_symbols',
   'mini_installer',
   'previous_version_mini_installer',
+  'symupload',
 
   # iOS tests are listed in //ios/build/bots.
   'cronet_test',
@@ -100,6 +103,7 @@ SKIP_GN_ISOLATE_MAP_TARGETS = {
   'ios_chrome_reading_list_egtests',
   'ios_chrome_settings_egtests',
   'ios_chrome_smoke_egtests',
+  'ios_chrome_translate_egtests',
   'ios_chrome_ui_egtests',
   'ios_chrome_unittests',
   'ios_chrome_web_egtests',
@@ -127,6 +131,7 @@ SKIP_GN_ISOLATE_MAP_TARGETS = {
   'device_junit_tests',
   'junit_unit_tests',
   'media_router_e2e_tests',
+  'media_router_junit_tests',
   'media_router_perf_tests',
   'motopho_latency_test',
   'net_junit_tests',
@@ -179,6 +184,9 @@ SKIP_GN_ISOLATE_MAP_TARGETS = {
 
   # These are defined by an android internal gn_isolate_map.pyl file.
   'chrome_apk',
+
+  # These are used by https://www.chromium.org/developers/cluster-telemetry.
+  'ct_telemetry_perf_tests_without_chrome',
 }
 
 

@@ -80,7 +80,8 @@ void XMLParserScriptRunner::ProcessScriptElement(
     // XMLDocumentParser does not support a module script, and thus ignores it.
     success = false;
     document.AddConsoleMessage(
-        ConsoleMessage::Create(kJSMessageSource, kErrorMessageLevel,
+        ConsoleMessage::Create(mojom::ConsoleMessageSource::kJavaScript,
+                               mojom::ConsoleMessageLevel::kError,
                                "Module scripts in XML documents are currently "
                                "not supported. See crbug.com/717643"));
   }

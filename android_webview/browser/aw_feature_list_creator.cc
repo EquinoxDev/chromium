@@ -48,6 +48,8 @@ namespace {
 // These prefs go in the JsonPrefStore, and will persist across runs. Other
 // prefs go in the InMemoryPrefStore, and will be lost when the process ends.
 const char* const kPersistentPrefsWhitelist[] = {
+    // Randomly-generated GUID which pseudonymously identifies uploaded metrics.
+    metrics::prefs::kMetricsClientID,
     // Random seed values for variation's entropy providers, used to assign
     // experiment groups.
     metrics::prefs::kMetricsLowEntropySource,
@@ -83,8 +85,8 @@ std::unique_ptr<PrefService> CreatePrefService(
   pref_registry->RegisterStringPref(
       android_webview::prefs::kWebRestrictionsAuthority, std::string());
 
-  android_webview::AwURLRequestContextGetter::RegisterPrefs(
-      pref_registry.get());
+  AwBrowserContext::RegisterPrefs(pref_registry.get());
+
   metrics::MetricsService::RegisterPrefs(pref_registry.get());
   variations::VariationsService::RegisterPrefs(pref_registry.get());
   safe_browsing::RegisterProfilePrefs(pref_registry.get());
@@ -148,10 +150,13 @@ void AwFeatureListCreator::SetUpFieldTrials() {
   variations_field_trial_creator_->OverrideVariationsPlatform(
       variations::Study::PLATFORM_ANDROID_WEBVIEW);
 
-  // Unused by WebView, but required by
-  // VariationsFieldTrialCreator::SetupFieldTrials().
-  // TODO(isherman): We might want a more genuine SafeSeedManager:
-  // https://crbug.com/801771
+  // Safe Mode is a feature which reverts to a previous variations seed if the
+  // current one is suspected to be causing crashes, or preventing new seeds
+  // from being downloaded. It's not implemented for WebView because 1) it's
+  // difficult for WebView to implement Safe Mode's crash detection, and 2)
+  // downloading and disseminating seeds is handled by the WebView service,
+  // which itself doesn't support variations; therefore a bad seed shouldn't be
+  // able to break seed downloads. See https://crbug.com/801771 for more info.
   std::set<std::string> unforceable_field_trials;
   variations::SafeSeedManager ignored_safe_seed_manager(true,
                                                         local_state_.get());
@@ -165,12 +170,6 @@ void AwFeatureListCreator::SetUpFieldTrials() {
       std::vector<std::string>(), /*low_entropy_provider=*/nullptr,
       std::make_unique<base::FeatureList>(), aw_field_trials_.get(),
       &ignored_safe_seed_manager);
-
-  // Activate a study which exercises permanent-consistency, to test the launch
-  // of permanent-consistency support in WebView.
-  // TODO(crbug/917537): Remove this after m73.
-  base::FieldTrialList::FindFullName("AndroidWebViewConsistencyTest");
-  base::FieldTrialList::FindFullName("AndroidWebViewSessionConsistencyTest");
 }
 
 void AwFeatureListCreator::CreateFeatureListAndFieldTrials() {

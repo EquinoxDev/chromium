@@ -12,6 +12,7 @@
 #include "base/containers/flat_map.h"
 #include "base/optional.h"
 #include "base/run_loop.h"
+#include "base/unguessable_token.h"
 #include "mojo/public/cpp/bindings/binding.h"
 #include "mojo/public/cpp/bindings/binding_set.h"
 #include "mojo/public/cpp/bindings/interface_ptr_set.h"
@@ -123,13 +124,12 @@ class COMPONENT_EXPORT(MEDIA_SESSION_TEST_SUPPORT_CPP) MockMediaSession
   void GetMediaImageBitmap(const MediaImage& image,
                            int minimum_size_px,
                            int desired_size_px,
-                           GetMediaImageBitmapCallback callback) override {}
+                           GetMediaImageBitmapCallback callback) override;
 
   void SetIsControllable(bool value);
   void SetPreferStop(bool value) { prefer_stop_ = value; }
 
   void AbandonAudioFocusFromClient();
-  base::UnguessableToken GetRequestIdFromClient();
 
   base::UnguessableToken RequestAudioFocusFromService(
       mojom::AudioFocusManagerPtr& service,
@@ -149,6 +149,10 @@ class COMPONENT_EXPORT(MEDIA_SESSION_TEST_SUPPORT_CPP) MockMediaSession
 
   void SimulateMetadataChanged(const base::Optional<MediaMetadata>& metadata);
 
+  void ClearAllImages();
+  void SetImagesOfType(mojom::MediaSessionImageType type,
+                       const std::vector<MediaImage>& images);
+
   void EnableAction(mojom::MediaSessionAction action);
   void DisableAction(mojom::MediaSessionAction action);
 
@@ -157,13 +161,21 @@ class COMPONENT_EXPORT(MEDIA_SESSION_TEST_SUPPORT_CPP) MockMediaSession
   int add_observer_count() const { return add_observer_count_; }
   int seek_count() const { return seek_count_; }
 
+  const GURL& last_image_src() const { return last_image_src_; }
+
+  const base::UnguessableToken& request_id() const { return request_id_; }
+
  private:
   void SetState(mojom::MediaSessionInfo::SessionState);
   void NotifyObservers();
   mojom::MediaSessionInfoPtr GetMediaSessionInfoSync() const;
   void NotifyActionObservers();
 
+  void RequestAudioFocusFromClient(mojom::AudioFocusType audio_focus_type);
+
   mojom::AudioFocusRequestClientPtr afr_client_;
+
+  base::UnguessableToken request_id_;
 
   const bool force_duck_ = false;
   bool is_ducking_ = false;
@@ -179,6 +191,9 @@ class COMPONENT_EXPORT(MEDIA_SESSION_TEST_SUPPORT_CPP) MockMediaSession
 
   mojom::MediaSessionInfo::SessionState state_ =
       mojom::MediaSessionInfo::SessionState::kInactive;
+
+  base::flat_map<mojom::MediaSessionImageType, std::vector<MediaImage>> images_;
+  GURL last_image_src_;
 
   mojo::BindingSet<mojom::MediaSession> bindings_;
 

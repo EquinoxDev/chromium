@@ -13,6 +13,7 @@
 #include "build/build_config.h"
 #include "cc/base/switches.h"
 #include "components/viz/common/features.h"
+#include "components/viz/common/viz_utils.h"
 #include "content/browser/browser_main_loop.h"
 #include "content/browser/gpu/gpu_process_host.h"
 #include "content/public/common/content_features.h"
@@ -56,12 +57,9 @@ bool ShouldEnableAndroidSurfaceControl(const base::CommandLine& cmd_line) {
 #if !defined(OS_ANDROID)
   return false;
 #else
-  if (!base::FeatureList::IsEnabled(features::kVizDisplayCompositor))
+  if (viz::PreferRGB565ResourcesForDisplay())
     return false;
-  if (!base::FeatureList::IsEnabled(features::kAImageReaderMediaPlayer))
-    return false;
-
-  return base::FeatureList::IsEnabled(features::kAndroidSurfaceControl);
+  return features::IsAndroidSurfaceControlEnabled();
 #endif
 }
 
@@ -113,15 +111,12 @@ const gpu::GpuPreferences GetGpuPreferencesFromCommandLine() {
 
   gpu_preferences.enable_oop_rasterization_ddl =
       command_line->HasSwitch(switches::kEnableOopRasterizationDDL);
-  gpu_preferences.enable_passthrough_raster_decoder =
-      command_line->HasSwitch(switches::kEnablePassthroughRasterDecoder);
-#if defined(OS_WIN)
-  if (gpu_preferences.enable_oop_rasterization)
-    gpu_preferences.enable_passthrough_raster_decoder = true;
-#endif
 
   gpu_preferences.enable_vulkan =
       command_line->HasSwitch(switches::kEnableVulkan);
+
+  gpu_preferences.disable_vulkan_fallback_to_gl_for_testing =
+      command_line->HasSwitch(switches::kDisableVulkanFallbackToGLForTesting);
 
   gpu_preferences.enable_gpu_benchmarking_extension =
       command_line->HasSwitch(cc::switches::kEnableGpuBenchmarking);

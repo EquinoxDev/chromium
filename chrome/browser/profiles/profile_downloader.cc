@@ -17,10 +17,10 @@
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
+#include "build/build_config.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_downloader_delegate.h"
 #include "chrome/browser/profiles/profile_manager.h"
-#include "chrome/browser/signin/account_fetcher_service_factory.h"
 #include "chrome/browser/signin/identity_manager_factory.h"
 #include "components/data_use_measurement/core/data_use_user_data.h"
 #include "components/signin/core/browser/account_fetcher_service.h"
@@ -120,10 +120,10 @@ void ProfileDownloader::StartFetchingImage() {
   if (maybe_account_info.has_value())
     account_info_ = maybe_account_info.value();
 
-  if (delegate_->IsPreSignin()) {
-    AccountFetcherServiceFactory::GetForProfile(delegate_->GetBrowserProfile())
-        ->FetchUserInfoBeforeSignin(account_id_);
-  }
+#if defined(OS_ANDROID)
+  if (delegate_->IsPreSignin())
+    identity_manager_->ForceRefreshOfExtendedAccountInfo(account_id_);
+#endif
 
   if (account_info_.IsValid()) {
     // FetchImageData might call the delegate's OnProfileDownloadSuccess

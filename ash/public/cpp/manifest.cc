@@ -8,13 +8,13 @@
 #include "ash/public/interfaces/accessibility_controller.mojom.h"
 #include "ash/public/interfaces/accessibility_focus_ring_controller.mojom.h"
 #include "ash/public/interfaces/app_list.mojom.h"
+#include "ash/public/interfaces/arc_custom_tab.mojom.h"
 #include "ash/public/interfaces/ash_display_controller.mojom.h"
 #include "ash/public/interfaces/ash_message_center_controller.mojom.h"
 #include "ash/public/interfaces/assistant_controller.mojom.h"
 #include "ash/public/interfaces/assistant_volume_control.mojom.h"
 #include "ash/public/interfaces/cast_config.mojom.h"
 #include "ash/public/interfaces/constants.mojom.h"
-#include "ash/public/interfaces/contained_shell.mojom.h"
 #include "ash/public/interfaces/cros_display_config.mojom.h"
 #include "ash/public/interfaces/display_output_protection.mojom.h"
 #include "ash/public/interfaces/docked_magnifier_controller.mojom.h"
@@ -23,6 +23,7 @@
 #include "ash/public/interfaces/highlighter_controller.mojom.h"
 #include "ash/public/interfaces/ime_controller.mojom.h"
 #include "ash/public/interfaces/keyboard_controller.mojom.h"
+#include "ash/public/interfaces/kiosk_next_shell.mojom.h"
 #include "ash/public/interfaces/locale.mojom.h"
 #include "ash/public/interfaces/login_screen.mojom.h"
 #include "ash/public/interfaces/media.mojom.h"
@@ -48,10 +49,10 @@
 #include "services/device/public/mojom/constants.mojom.h"
 #include "services/preferences/public/mojom/preferences.mojom.h"
 #include "services/service_manager/public/cpp/manifest_builder.h"
-#include "services/service_manager/public/mojom/service_factory.mojom.h"
 #include "services/viz/public/interfaces/constants.mojom.h"
 #include "services/ws/public/cpp/manifest.h"
 #include "services/ws/public/mojom/constants.mojom.h"
+#include "ui/base/ime/mojo/ime_engine_factory_registry.mojom.h"
 
 namespace ash {
 
@@ -71,26 +72,25 @@ const service_manager::Manifest& GetManifest() {
                                service_manager::Manifest::
                                    InstanceSharingPolicy::kSingleton)
                            .Build())
-          .ExposeCapability("service_manager:service_factory",
-                            service_manager::Manifest::InterfaceList<
-                                service_manager::mojom::ServiceFactory>())
           .ExposeCapability(
               "system_ui",
               service_manager::Manifest::InterfaceList<
                   mojom::AcceleratorController, mojom::AccessibilityController,
                   mojom::AccessibilityFocusRingController,
-                  mojom::AppListController, mojom::AshMessageCenterController,
+                  mojom::AppListController, mojom::ArcCustomTabController,
+                  mojom::AshMessageCenterController,
                   mojom::AssistantAlarmTimerController,
                   mojom::AssistantController,
                   mojom::AssistantNotificationController,
                   mojom::AssistantScreenContextController,
                   mojom::AssistantSetupController,
                   mojom::AssistantVolumeControl, mojom::CastConfig,
-                  mojom::ContainedShellController,
+                  mojom::KioskNextShellController,
                   mojom::CrosDisplayConfigController,
                   mojom::DockedMagnifierController,
                   mojom::EventRewriterController, mojom::FirstRunHelper,
                   mojom::HighlighterController, mojom::ImeController,
+                  ime::mojom::ImeEngineFactoryRegistry,
                   mojom::KeyboardController, mojom::LocaleUpdateController,
                   mojom::LoginScreen, mojom::MediaController,
                   mojom::NewWindowController, mojom::NightLightController,

@@ -94,12 +94,26 @@ class WebView {
                                       bool compositing_enabled,
                                       WebView* opener);
 
-  // Called on WebView when a WebFrameWidget is created for a local main frame,
-  // and can be set back to null when the WebWidgetClient is removed due to the
-  // main frame being detached.
-  // TODO(danakj): Move this to WebWidget and merge with SetLayerTreeView, have
-  // it be null/not set when the main frame is remote.
-  virtual void SetWebWidgetClient(WebWidgetClient*) = 0;
+  // Called to inform WebViewImpl that a local main frame has been attached.
+  // After this call MainFrameImpl() will return a valid frame until it is
+  // detached. It receives the WebWidgetClient* that provides input/compositing
+  // services for the attached main frame.
+  // This must be called for composited WebViews. Non-composited WebViews do not
+  // require a WebWidgetClient, but must call this in order to establish one.
+  virtual void DidAttachLocalMainFrame(WebWidgetClient*) = 0;
+
+  // Called to inform WebViewImpl that it has an initial remote main frame. This
+  // is a hack to just get a WebWidgetClient to WebViewImpl since it expects to
+  // always have one at this time.
+  // This does *NOT* need to be called every time a remote main frame exists,
+  // but is meant to be called when WebViewImpl is initialized with a remote
+  // main frame, since it will not receive a WebWidgetClient otherwise.
+  // TODO(danakj): Remove this method when WebViewImpl does not need a
+  // WebWidgetClient without a local main frame. At that point it should
+  // also drop the WebWidgetClient when a local main frame is detached.
+  // This must only be called for composited WebViews. Non-composited WebViews
+  // do not require a WebWidgetClient.
+  virtual void DidAttachRemoteMainFrame(WebWidgetClient*) = 0;
 
   // Initializes the various client interfaces.
   virtual void SetPrerendererClient(WebPrerendererClient*) = 0;
@@ -163,7 +177,7 @@ class WebView {
   virtual void ClearFocusedElement() = 0;
 
   // Smooth scroll the root layer to |targetX|, |targetY| in |durationMs|.
-  virtual void SmoothScroll(int target_x, int target_y, long duration_ms) {}
+  virtual void SmoothScroll(int target_x, int target_y, uint64_t duration_ms) {}
 
   // Advance the focus of the WebView forward to the next element or to the
   // previous element in the tab sequence (if reverse is true).
@@ -322,7 +336,7 @@ class WebView {
 
   // Returns next unused request identifier which is unique within the
   // parent Page.
-  virtual unsigned long CreateUniqueIdentifierForRequest() = 0;
+  virtual uint64_t CreateUniqueIdentifierForRequest() = 0;
 
   // Developer tools -----------------------------------------------------
 
@@ -355,7 +369,7 @@ class WebView {
 
   // Tells all WebView instances to update the visited link state for the
   // specified hash.
-  BLINK_EXPORT static void UpdateVisitedLinkState(unsigned long long hash);
+  BLINK_EXPORT static void UpdateVisitedLinkState(uint64_t hash);
 
   // Tells all WebView instances to update the visited state for all
   // their links. Use invalidateVisitedLinkHashes to inform that the visitedlink
@@ -379,6 +393,8 @@ class WebView {
   // Overrides the page's background and base background color. You
   // can use this to enforce a transparent background, which is useful if you
   // want to have some custom background rendered behind the widget.
+  //
+  // These may are only called for composited WebViews.
   virtual void SetBackgroundColorOverride(SkColor) {}
   virtual void ClearBackgroundColorOverride() {}
   virtual void SetBaseBackgroundColorOverride(SkColor) {}

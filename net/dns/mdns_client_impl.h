@@ -23,9 +23,7 @@
 #include "net/base/net_export.h"
 #include "net/dns/mdns_cache.h"
 #include "net/dns/mdns_client.h"
-#include "net/socket/datagram_client_socket.h"
 #include "net/socket/datagram_server_socket.h"
-#include "net/socket/udp_client_socket.h"
 #include "net/socket/udp_server_socket.h"
 #include "net/socket/udp_socket.h"
 
@@ -44,8 +42,8 @@ class MDnsSocketFactoryImpl : public MDnsSocketFactory {
   explicit MDnsSocketFactoryImpl(NetLog* net_log) : net_log_(net_log) {}
   ~MDnsSocketFactoryImpl() override {}
 
-  void CreateSocketPairs(
-      std::vector<MDnsSendRecvSocketPair>* socket_pairs) override;
+  void CreateSockets(
+      std::vector<std::unique_ptr<DatagramServerSocket>>* sockets) override;
 
  private:
   NetLog* const net_log_;
@@ -68,14 +66,14 @@ class NET_EXPORT_PRIVATE MDnsConnection {
   explicit MDnsConnection(MDnsConnection::Delegate* delegate);
   virtual ~MDnsConnection();
 
-  // Both methods return true if at least one of the socket handlers succeeded.
-  bool Init(MDnsSocketFactory* socket_factory);
+  // Succeeds if at least one of the socket handlers succeeded.
+  int Init(MDnsSocketFactory* socket_factory);
   void Send(const scoped_refptr<IOBuffer>& buffer, unsigned size);
 
  private:
   class SocketHandler {
    public:
-    SocketHandler(MDnsSendRecvSocketPair socket_pair,
+    SocketHandler(std::unique_ptr<DatagramServerSocket> socket,
                   MDnsConnection* connection);
     ~SocketHandler();
 
@@ -89,8 +87,7 @@ class NET_EXPORT_PRIVATE MDnsConnection {
     // Callback for when sending a query has finished.
     void SendDone(int rv);
 
-    std::unique_ptr<DatagramClientSocket> send_socket_;
-    std::unique_ptr<DatagramServerSocket> recv_socket_;
+    std::unique_ptr<DatagramServerSocket> socket_;
     MDnsConnection* connection_;
     IPEndPoint recv_addr_;
     DnsResponse response_;
@@ -132,8 +129,8 @@ class NET_EXPORT_PRIVATE MDnsClientImpl : public MDnsClient {
     Core(base::Clock* clock, base::OneShotTimer* timer);
     ~Core() override;
 
-    // Initialize the core. Returns true on success.
-    bool Init(MDnsSocketFactory* socket_factory);
+    // Initialize the core.
+    int Init(MDnsSocketFactory* socket_factory);
 
     // Send a query with a specific rrtype and name. Returns true on success.
     bool SendQuery(uint16_t rrtype, const std::string& name);
@@ -151,6 +148,8 @@ class NET_EXPORT_PRIVATE MDnsClientImpl : public MDnsClient {
     void HandlePacket(DnsResponse* response, int bytes_read) override;
 
     void OnConnectionError(int error) override;
+
+    MDnsCache* cache_for_testing() { return &cache_; }
 
    private:
     FRIEND_TEST_ALL_PREFIXES(MDnsTest, CacheCleanupWithShortTTL);
@@ -212,7 +211,7 @@ class NET_EXPORT_PRIVATE MDnsClientImpl : public MDnsClient {
       int flags,
       const MDnsTransaction::ResultCallback& callback) override;
 
-  bool StartListening(MDnsSocketFactory* socket_factory) override;
+  int StartListening(MDnsSocketFactory* socket_factory) override;
   void StopListening() override;
   bool IsListening() const override;
 

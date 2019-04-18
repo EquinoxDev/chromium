@@ -52,20 +52,18 @@ class WebRemoteFrame : public WebFrame {
   // beginning.
   virtual WebLocalFrame* CreateLocalChild(WebTreeScopeType,
                                           const WebString& name,
-                                          WebSandboxFlags,
+                                          const FramePolicy&,
                                           WebLocalFrameClient*,
                                           blink::InterfaceRegistry*,
                                           mojo::ScopedMessagePipeHandle,
                                           WebFrame* previous_sibling,
-                                          const ParsedFeaturePolicy&,
                                           const WebFrameOwnerProperties&,
                                           FrameOwnerElementType,
                                           WebFrame* opener) = 0;
 
   virtual WebRemoteFrame* CreateRemoteChild(WebTreeScopeType,
                                             const WebString& name,
-                                            WebSandboxFlags,
-                                            const ParsedFeaturePolicy&,
+                                            const FramePolicy&,
                                             FrameOwnerElementType,
                                             WebRemoteFrameClient*,
                                             WebFrame* opener) = 0;
@@ -113,6 +111,8 @@ class WebRemoteFrame : public WebFrame {
   virtual void ForwardResourceTimingToParent(const WebResourceTimingInfo&) = 0;
 
   virtual void DispatchLoadEventForFrameOwner() = 0;
+
+  virtual void SetNeedsOcclusionTracking(bool) = 0;
 
   virtual void DidStartLoading() = 0;
   virtual void DidStopLoading() = 0;

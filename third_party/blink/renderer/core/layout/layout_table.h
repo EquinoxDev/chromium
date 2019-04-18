@@ -142,8 +142,8 @@ class CORE_EXPORT LayoutTable final : public LayoutBlock {
   // 'border-spacing' property represent spacing between columns and rows
   // respectively, not necessarily the horizontal and vertical spacing
   // respectively".
-  int HBorderSpacing() const { return h_spacing_; }
-  int VBorderSpacing() const { return v_spacing_; }
+  int16_t HBorderSpacing() const { return h_spacing_; }
+  int16_t VBorderSpacing() const { return v_spacing_; }
 
   bool ShouldCollapseBorders() const {
     return StyleRef().BorderCollapse() == EBorderCollapse::kCollapse;
@@ -185,8 +185,7 @@ class CORE_EXPORT LayoutTable final : public LayoutBlock {
   }
 
   LayoutTableSection* Header() const {
-    // TODO(mstensho): We should ideally DCHECK(!needsSectionRecalc()) here, but
-    // we currently cannot, due to crbug.com/693212
+    DCHECK(!NeedsSectionRecalc());
     return head_;
   }
   LayoutTableSection* Footer() const {
@@ -592,8 +591,8 @@ class CORE_EXPORT LayoutTable final : public LayoutBlock {
         collapsed_outer_border_before_, collapsed_outer_border_after_);
   }
 
-  short h_spacing_;
-  short v_spacing_;
+  int16_t h_spacing_;
+  int16_t v_spacing_;
 
   // See UpdateCollapsedOuterBorders().
   mutable unsigned collapsed_outer_border_start_;

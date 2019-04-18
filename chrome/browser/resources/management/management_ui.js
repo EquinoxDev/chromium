@@ -2,10 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+cr.exportPath('management');
 /**
  * @typedef {{
- *    messages: !Array<string>,
- *    icon: string,
+ *   messageIds: !Array<string>,
+ *   icon: string,
  * }}
  */
 management.BrowserReportingData;
@@ -14,6 +15,7 @@ Polymer({
   is: 'management-ui',
 
   behaviors: [
+    I18nBehavior,
     WebUIListenerBehavior,
   ],
 
@@ -32,20 +34,37 @@ Polymer({
 
     // <if expr="chromeos">
     /**
+     * List of messages related to device reporting.
+     * @private {?Array<!management.DeviceReportingResponse>}
+     */
+    deviceReportingInfo_: Array,
+
+    /**
      * Message stating if the Trust Roots are configured.
      * @private
      */
     localTrustRoots_: String,
+
+    /** @private */
+    managementOverview_: String,
+
+    /** @private {?management.ManagedInfo} */
+    deviceManagedInfo_: Object,
     // </if>
 
-    /**
-     * Indicates if the search field in visible in the toolbar.
-     * @private
-     */
-    showSearchInToolbar_: {
-      type: Boolean,
-      value: false,
-    },
+    /** @private {?management.ManagedInfo} */
+    accountManagedInfo_: Object,
+
+    /** @private */
+    subtitle_: String,
+
+    // <if expr="not chromeos">
+    /** @private */
+    managementNoticeHtml_: String,
+    // </if>
+
+    /** @private */
+    extensionReportingSubtitle_: String,
   },
 
   /** @private {?management.ManagementBrowserProxy} */
@@ -55,14 +74,20 @@ Polymer({
   attached() {
     document.documentElement.classList.remove('loading');
     this.browserProxy_ = management.ManagementBrowserProxyImpl.getInstance();
+    this.updateManagedFields_();
     this.initBrowserReportingInfo_();
 
     this.addWebUIListener(
         'browser-reporting-info-updated',
         reportingInfo => this.onBrowserReportingInfoReceived_(reportingInfo));
 
+    this.addWebUIListener('managed_state_changed', () => {
+      this.updateManagedFields_();
+    });
+
     this.getExtensions_();
     // <if expr="chromeos">
+    this.getDeviceReportingInfo_();
     this.getLocalTrustRootsInfo_();
     // </if>
   },
@@ -81,10 +106,9 @@ Polymer({
     const reportingInfoMap = reportingInfo.reduce((info, response) => {
       info[response.reportingType] = info[response.reportingType] || {
         icon: this.getIconForReportingType_(response.reportingType),
-        messages: []
+        messageIds: []
       };
-      info[response.reportingType].messages.push(
-          loadTimeData.getString(response.messageId));
+      info[response.reportingType].messageIds.push(response.messageId);
       return info;
     }, {});
 
@@ -92,7 +116,8 @@ Polymer({
       [management.ReportingType.SECURITY]: 1,
       [management.ReportingType.EXTENSIONS]: 2,
       [management.ReportingType.USER]: 3,
-      [management.ReportingType.DEVICE]: 4,
+      [management.ReportingType.USER_ACTIVITY]: 4,
+      [management.ReportingType.DEVICE]: 5,
     };
 
     this.browserReportingInfo_ =
@@ -112,10 +137,49 @@ Polymer({
   /** @private */
   getLocalTrustRootsInfo_() {
     this.browserProxy_.getLocalTrustRootsInfo().then(trustRootsConfigured => {
-      this.localTrustRoots_ = loadTimeData.getString(
-          trustRootsConfigured ? 'managementTrustRootsConfigured' :
-                                 'managementTrustRootsNotConfigured');
+      this.localTrustRoots_ = trustRootsConfigured ?
+          loadTimeData.getString('managementTrustRootsConfigured') :
+          '';
     });
+  },
+
+  /** @private */
+  getDeviceReportingInfo_() {
+    this.browserProxy_.getDeviceReportingInfo().then(reportingInfo => {
+      this.deviceReportingInfo_ = reportingInfo;
+    });
+  },
+
+  /**
+   * @return {boolean} True of there are device reporting info to show.
+   * @private
+   */
+  showDeviceReportingInfo_() {
+    return !!this.deviceReportingInfo_ && this.deviceReportingInfo_.length > 0;
+  },
+
+  /**
+   * @param {management.DeviceReportingType} reportingType
+   * @return {string} The associated icon.
+   * @private
+   */
+  getIconForDeviceReportingType_(reportingType) {
+    switch (reportingType) {
+      case management.DeviceReportingType.SUPERVISED_USER:
+        return 'management:supervised-user';
+      case management.DeviceReportingType.DEVICE_ACTIVITY:
+        return 'management:timelapse';
+      case management.DeviceReportingType.STATISTIC:
+        return 'management:bar-chart';
+      case management.DeviceReportingType.DEVICE:
+        return 'cr:computer';
+      case management.DeviceReportingType.LOGS:
+        return 'management:report';
+      case management.DeviceReportingType.PRINT:
+        return 'cr:print';
+      default:
+        return 'cr:computer';
+    }
   },
   // </if>
 
@@ -150,9 +214,40 @@ Polymer({
       case management.ReportingType.EXTENSIONS:
         return 'cr:extension';
       case management.ReportingType.USER:
-        return 'cr:person';
+        return 'management:account-circle';
+      case management.ReportingType.USER_ACTIVITY:
+        return 'management:public';
       default:
         return 'cr:security';
     }
+  },
+
+  /**
+   * Handles the 'search-changed' event fired from the toolbar.
+   * Redirects to the settings page initialized the the current
+   * search query.
+   * @param {!CustomEvent<string>} e
+   * @private
+   */
+  onSearchChanged_: function(e) {
+    const query = e.detail;
+    window.location.href =
+        `chrome://settings?search=${encodeURIComponent(query)}`;
+  },
+
+  /** @private */
+  updateManagedFields_() {
+    this.browserProxy_.getContextualManagedData().then(data => {
+      this.extensionReportingSubtitle_ = data.extensionReportingTitle;
+      this.subtitle_ = data.pageSubtitle;
+      this.accountManagedInfo_ = data.accountManagedInfo;
+      // <if expr="chromeos">
+      this.managementOverview_ = data.overview;
+      this.deviceManagedInfo_ = data.deviceManagedInfo;
+      // </if>
+      // <if expr="not chromeos">
+      this.managementNoticeHtml_ = data.browserManagementNotice;
+      // </if>
+    });
   },
 });

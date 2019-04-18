@@ -20,7 +20,7 @@ class WebStateList;
 @protocol BrowserCommands;
 @protocol EditViewAnimatee;
 @protocol LocationBarAnimatee;
-@protocol OmniboxPopupPositioner;
+@protocol OmniboxPopupPresenterDelegate;
 @protocol ToolbarCoordinatorDelegate;
 
 // Location bar coordinator.
@@ -29,8 +29,9 @@ class WebStateList;
 
 // Command dispatcher.
 @property(nonatomic, strong) CommandDispatcher* commandDispatcher;
-// View containing the omnibox.
-@property(nonatomic, strong, readonly) UIView* view;
+// View controller containing the omnibox.
+@property(nonatomic, strong, readonly)
+    UIViewController* locationBarViewController;
 // Weak reference to ChromeBrowserState;
 @property(nonatomic, assign) ios::ChromeBrowserState* browserState;
 // The dispatcher for this view controller.
@@ -41,7 +42,8 @@ class WebStateList;
 // The web state list this ToolbarCoordinator is handling.
 @property(nonatomic, assign) WebStateList* webStateList;
 
-@property(nonatomic, weak) id<OmniboxPopupPositioner> popupPositioner;
+@property(nonatomic, weak) id<OmniboxPopupPresenterDelegate>
+    popupPresenterDelegate;
 
 // Start this coordinator.
 - (void)start;

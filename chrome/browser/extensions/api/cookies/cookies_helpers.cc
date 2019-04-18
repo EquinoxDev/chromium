@@ -126,12 +126,17 @@ void GetCookieListFromManager(
     const GURL& url,
     network::mojom::CookieManager::GetCookieListCallback callback) {
   if (url.is_empty()) {
-    manager->GetAllCookies(std::move(callback));
+    // GetAllCookies has a different callback signature than GetCookieList, but
+    // can be treated as the same, just returning no excluded cookies.
+    // |AddCookieStatusList| takes a |GetCookieListCallback| and returns a
+    // callback that calls the input callback with an empty excluded list.
+    manager->GetAllCookies(
+        net::cookie_util::AddCookieStatusList(std::move(callback)));
   } else {
     net::CookieOptions options;
     options.set_include_httponly();
-    options.set_same_site_cookie_mode(
-        net::CookieOptions::SameSiteCookieMode::INCLUDE_STRICT_AND_LAX);
+    options.set_same_site_cookie_context(
+        net::CookieOptions::SameSiteCookieContext::SAME_SITE_STRICT);
     options.set_do_not_update_access_time();
 
     manager->GetCookieList(url, options, std::move(callback));

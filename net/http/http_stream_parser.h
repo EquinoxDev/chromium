@@ -73,6 +73,8 @@ class NET_EXPORT_PRIVATE HttpStreamParser {
                   HttpResponseInfo* response,
                   CompletionOnceCallback callback);
 
+  int ConfirmHandshake(CompletionOnceCallback callback);
+
   int ReadResponseHeaders(CompletionOnceCallback callback);
 
   int ReadResponseBody(IOBuffer* buf,
@@ -183,6 +185,8 @@ class NET_EXPORT_PRIVATE HttpStreamParser {
   // This handles most of the logic for DoReadHeadersComplete.
   int HandleReadHeaderResult(int result);
 
+  void RunConfirmHandshakeCallback(int rv);
+
   // Examines |read_buf_| to find the start and end of the headers. If they are
   // found, parse them with DoParseResponseHeaders().  Return the offset for
   // the end of the headers, or -1 if the complete headers were not found, or
@@ -228,8 +232,8 @@ class NET_EXPORT_PRIVATE HttpStreamParser {
   int read_buf_unused_offset_;
 
   // The amount beyond |read_buf_unused_offset_| where the status line starts;
-  // -1 if not found yet.
-  int response_header_start_offset_;
+  // std::string::npos if not found yet.
+  size_t response_header_start_offset_;
 
   // The amount of received data.  If connection is reused then intermediate
   // value may be bigger than final.
@@ -265,6 +269,9 @@ class NET_EXPORT_PRIVATE HttpStreamParser {
   // Where the caller wants the body data.
   scoped_refptr<IOBuffer> user_read_buf_;
   int user_read_buf_len_;
+
+  // The callback to notify a user that the handshake has been confirmed.
+  CompletionOnceCallback confirm_handshake_callback_;
 
   // The callback to notify a user that their request or response is
   // complete or there was an error

@@ -31,8 +31,8 @@ class CORE_EXPORT NGContainerFragmentBuilder : public NGFragmentBuilder {
   STACK_ALLOCATED();
 
  public:
-  typedef Vector<scoped_refptr<const NGPhysicalFragment>, 16> ChildrenVector;
-  typedef Vector<NGLogicalOffset, 16> OffsetVector;
+  typedef Vector<scoped_refptr<const NGPhysicalFragment>, 4> ChildrenVector;
+  typedef Vector<NGLogicalOffset, 4> OffsetVector;
 
   LayoutUnit BfcLineOffset() const { return bfc_line_offset_; }
   NGContainerFragmentBuilder& SetBfcLineOffset(LayoutUnit bfc_line_offset) {
@@ -141,13 +141,18 @@ class CORE_EXPORT NGContainerFragmentBuilder : public NGFragmentBuilder {
   // position OOF candidates yet, (as a containing box may be split over
   // multiple lines), instead we bubble all the descendants up to the parent
   // block layout algorithm, to perform the final OOF layout and positioning.
-  void MoveOutOfFlowDescendantCandidatesToDescendants();
+  void MoveOutOfFlowDescendantCandidatesToDescendants() {
+    GetAndClearOutOfFlowDescendantCandidates(&oof_positioned_descendants_,
+                                             nullptr);
+  }
 
   NGContainerFragmentBuilder& SetIsPushedByFloats() {
     is_pushed_by_floats_ = true;
     return *this;
   }
   bool IsPushedByFloats() const { return is_pushed_by_floats_; }
+
+  bool HasFloatingDescendants() const { return has_floating_descendants_; }
 
   NGContainerFragmentBuilder& ResetAdjoiningFloatTypes() {
     adjoining_floats_ = kFloatTypeNone;
@@ -246,14 +251,15 @@ class CORE_EXPORT NGContainerFragmentBuilder : public NGFragmentBuilder {
 
   NGFloatTypes adjoining_floats_ = kFloatTypeNone;
 
-  bool has_last_resort_break_ = false;
-
   bool is_pushed_by_floats_ = false;
   bool is_old_layout_root_ = false;
 
+  bool has_last_resort_break_ = false;
+  bool has_floating_descendants_ = false;
   bool has_orthogonal_flow_roots_ = false;
   bool has_child_that_depends_on_percentage_block_size_ = false;
   bool has_block_fragmentation_ = false;
+  bool may_have_descendant_above_block_start_ = false;
 };
 
 }  // namespace blink

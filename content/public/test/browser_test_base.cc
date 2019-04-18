@@ -45,6 +45,7 @@
 #include "content/public/test/test_utils.h"
 #include "content/test/content_browser_sanity_checker.h"
 #include "gpu/config/gpu_switches.h"
+#include "media/base/media_switches.h"
 #include "mojo/public/cpp/bindings/sync_call_restrictions.h"
 #include "net/dns/mock_host_resolver.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
@@ -141,6 +142,7 @@ BrowserTestBase::BrowserTestBase()
     : field_trial_list_(std::make_unique<base::FieldTrialList>(nullptr)),
       expected_exit_code_(0),
       enable_pixel_output_(false),
+      enable_audio_output_(false),
       use_software_compositing_(false),
       set_up_called_(false) {
   ui::test::EnableTestConfigForPlatformWindows();
@@ -262,12 +264,14 @@ void BrowserTestBase::SetUp() {
   if (use_software_gl && !use_software_compositing_)
     command_line->AppendSwitch(switches::kOverrideUseSoftwareGLForTests);
 
+  // Disable audio output to avoid unnecessary error log output from platform
+  // audio layers, unless audio has been specifically requested.
+  if (!enable_audio_output_)
+    command_line->AppendSwitch(switches::kDisableAudioOutput);
+
   // Use an sRGB color profile to ensure that the machine's color profile does
   // not affect the results.
   command_line->AppendSwitchASCII(switches::kForceDisplayColorProfile, "srgb");
-
-  // Disable compositor Ukm in browser tests until crbug.com/761524 is resolved.
-  command_line->AppendSwitch(switches::kDisableCompositorUkmForTests);
 
   test_host_resolver_ = std::make_unique<TestHostResolver>();
 
@@ -335,10 +339,10 @@ void BrowserTestBase::SetUp() {
   MainFunctionParams params(*command_line);
   params.ui_task = ui_task.release();
   params.created_main_parts_closure = created_main_parts_closure.release();
-  base::TaskScheduler::Create("Browser");
+  base::ThreadPool::Create("Browser");
   DCHECK(!field_trial_list_);
   field_trial_list_ = SetUpFieldTrialsAndFeatureList();
-  StartBrowserTaskScheduler();
+  StartBrowserThreadPool();
   BrowserTaskExecutor::Create();
   BrowserTaskExecutor::PostFeatureListSetup();
   // TODO(phajdan.jr): Check return code, http://crbug.com/374738 .
@@ -487,6 +491,11 @@ void BrowserTestBase::PostTaskToInProcessRendererAndWait(
 
 void BrowserTestBase::EnablePixelOutput() { enable_pixel_output_ = true; }
 
+void BrowserTestBase::EnableAudioOutput() {
+  DCHECK(!set_up_called_);
+  enable_audio_output_ = true;
+}
+
 void BrowserTestBase::UseSoftwareCompositing() {
   use_software_compositing_ = true;
 }
@@ -539,13 +548,15 @@ void BrowserTestBase::InitializeNetworkProcess() {
          rule.resolver_type !=
              net::RuleBasedHostResolverProc::Rule::kResolverTypeIPLiteral) ||
         rule.address_family != net::AddressFamily::ADDRESS_FAMILY_UNSPECIFIED ||
-        !!rule.latency_ms || rule.replacement.empty())
+        !!rule.latency_ms)
       continue;
     network::mojom::RulePtr mojo_rule = network::mojom::Rule::New();
     if (rule.resolver_type ==
         net::RuleBasedHostResolverProc::Rule::kResolverTypeSystem) {
       mojo_rule->resolver_type =
-          network::mojom::ResolverType::kResolverTypeSystem;
+          rule.replacement.empty()
+              ? network::mojom::ResolverType::kResolverTypeDirectLookup
+              : network::mojom::ResolverType::kResolverTypeSystem;
     } else {
       mojo_rule->resolver_type =
           network::mojom::ResolverType::kResolverTypeIPLiteral;

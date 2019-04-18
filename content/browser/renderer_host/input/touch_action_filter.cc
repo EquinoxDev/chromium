@@ -20,19 +20,6 @@ using blink::WebGestureEvent;
 namespace content {
 namespace {
 
-bool TouchActionRequiredToFilterGestureEvent(
-    const WebGestureEvent* gesture_event) {
-  switch (gesture_event->GetType()) {
-    case WebInputEvent::kGesturePinchBegin:
-    case WebInputEvent::kGesturePinchUpdate:
-    case WebInputEvent::kGesturePinchEnd:
-      return true;
-    default:
-      break;
-  }
-  return false;
-}
-
 // Actions on an axis are disallowed if the perpendicular axis has a filter set
 // and no filter is set for the queried axis.
 bool IsYAxisActionDisallowed(cc::TouchAction action) {
@@ -120,12 +107,6 @@ FilterGestureEventResult TouchActionFilter::FilterGestureEvent(
   if (gesture_event->SourceDevice() != blink::kWebGestureDeviceTouchscreen)
     return FilterGestureEventResult::kFilterGestureEventAllowed;
 
-  if (TouchActionRequiredToFilterGestureEvent(gesture_event) &&
-      !active_touch_action_.has_value() && compositor_touch_action_enabled_) {
-    has_deferred_events_ = true;
-    return FilterGestureEventResult::kFilterGestureEventDelayed;
-  }
-
   if (compositor_touch_action_enabled_ && has_deferred_events_) {
     WebInputEvent::Type type = gesture_event->GetType();
     if (type == WebInputEvent::kGestureScrollBegin ||
@@ -153,18 +134,14 @@ FilterGestureEventResult TouchActionFilter::FilterGestureEvent(
           active_touch_action_ = allowed_touch_action_;
           touch_action = allowed_touch_action_.value();
         } else {
-          touch_action = compositor_touch_action_enabled_
-                             ? white_listed_touch_action_
-                             : active_touch_action_.value();
+          if (compositor_touch_action_enabled_) {
+            touch_action = white_listed_touch_action_;
+          } else {
+            gesture_sequence_.append("B");
+            SetTouchAction(cc::kTouchActionAuto);
+            touch_action = cc::kTouchActionAuto;
+          }
         }
-      }
-      gesture_sequence_.append("B");
-      if (!compositor_touch_action_enabled_ &&
-          !active_touch_action_.has_value()) {
-        static auto* crash_key = base::debug::AllocateCrashKeyString(
-            "scrollbegin-gestures", base::debug::CrashKeySize::Size256);
-        base::debug::SetCrashKeyString(crash_key, gesture_sequence_);
-        gesture_sequence_.clear();
       }
       drop_scroll_events_ =
           ShouldSuppressScrolling(*gesture_event, touch_action);
@@ -191,7 +168,6 @@ FilterGestureEventResult TouchActionFilter::FilterGestureEvent(
       }
 
       gesture_sequence_.append("U");
-      if (!compositor_touch_action_enabled_)
       // Scrolls restricted to a specific axis shouldn't permit movement
       // in the perpendicular axis.
       //
@@ -263,9 +239,14 @@ FilterGestureEventResult TouchActionFilter::FilterGestureEvent(
       FALLTHROUGH;
     case WebInputEvent::kGesturePinchUpdate:
       gesture_sequence_.append("P");
-      return drop_pinch_events_
-                 ? FilterGestureEventResult::kFilterGestureEventFiltered
-                 : FilterGestureEventResult::kFilterGestureEventAllowed;
+      if (!drop_pinch_events_)
+        return FilterGestureEventResult::kFilterGestureEventAllowed;
+      if (compositor_touch_action_enabled_ &&
+          !active_touch_action_.has_value()) {
+        has_deferred_events_ = true;
+        return FilterGestureEventResult::kFilterGestureEventDelayed;
+      }
+      return FilterGestureEventResult::kFilterGestureEventFiltered;
     case WebInputEvent::kGesturePinchEnd:
       ReportGestureEventFiltered(drop_pinch_events_);
       return FilterPinchEventAndResetState();

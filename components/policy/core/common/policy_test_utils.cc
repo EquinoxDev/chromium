@@ -137,6 +137,11 @@ CFPropertyListRef ValueToProperty(const base::Value& value) {
       // because there's no equivalent JSON type, and policy values can only
       // take valid JSON values.
       break;
+
+    // TODO(crbug.com/859477): Remove after root cause is found.
+    case base::Value::Type::DEAD:
+      CHECK(false);
+      break;
   }
 
   return NULL;
@@ -159,6 +164,8 @@ std::ostream& operator<<(std::ostream& os, policy::PolicyScope scope) {
       return os << "POLICY_SCOPE_USER";
     case policy::POLICY_SCOPE_MACHINE:
       return os << "POLICY_SCOPE_MACHINE";
+    case policy::POLICY_SCOPE_MERGED:
+      return os << "POLICY_SCOPE_MERGED";
   }
   return os << "POLICY_SCOPE_UNKNOWN(" << int(scope) << ")";
 }

@@ -37,8 +37,6 @@ class GLOutputSurfaceBufferQueue : public GLOutputSurface {
       gpu::SurfaceHandle surface_handle,
       SyntheticBeginFrameSource* synthetic_begin_frame_source,
       gpu::GpuMemoryBufferManager* gpu_memory_buffer_manager,
-      uint32_t target,
-      uint32_t internal_format,
       gfx::BufferFormat buffer_format);
 
   ~GLOutputSurfaceBufferQueue() override;
@@ -58,6 +56,7 @@ class GLOutputSurfaceBufferQueue : public GLOutputSurface {
   bool IsDisplayedAsOverlayPlane() const override;
   unsigned GetOverlayTextureId() const override;
   gfx::BufferFormat GetOverlayBufferFormat() const override;
+  void SetDrawRectangle(const gfx::Rect& damage) override;
 
   // GLOutputSurface:
   void DidReceiveSwapBuffersAck(gfx::SwapResult result) override;

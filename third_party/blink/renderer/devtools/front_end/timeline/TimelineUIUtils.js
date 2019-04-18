@@ -110,15 +110,15 @@ Timeline.TimelineUIUtils = class {
     eventStyles[recordTypes.ParseScriptOnBackground] =
         new Timeline.TimelineRecordStyle(Common.UIString('Parse Script'), categories['scripting']);
     eventStyles[recordTypes.WasmStreamFromResponseCallback] =
-        new Timeline.TimelineRecordStyle(Common.UIString(ls`Streaming Wasm Response`), categories['scripting']);
+        new Timeline.TimelineRecordStyle(ls`Streaming Wasm Response`, categories['scripting']);
     eventStyles[recordTypes.WasmCompiledModule] =
-        new Timeline.TimelineRecordStyle(Common.UIString(ls`Compiled Wasm Module`), categories['scripting']);
+        new Timeline.TimelineRecordStyle(ls`Compiled Wasm Module`, categories['scripting']);
     eventStyles[recordTypes.WasmCachedModule] =
-        new Timeline.TimelineRecordStyle(Common.UIString(ls`Cached Wasm Module`), categories['scripting']);
+        new Timeline.TimelineRecordStyle(ls`Cached Wasm Module`, categories['scripting']);
     eventStyles[recordTypes.WasmModuleCacheHit] =
-        new Timeline.TimelineRecordStyle(Common.UIString(ls`Wasm Module Cache Hit`), categories['scripting']);
+        new Timeline.TimelineRecordStyle(ls`Wasm Module Cache Hit`, categories['scripting']);
     eventStyles[recordTypes.WasmModuleCacheInvalid] =
-        new Timeline.TimelineRecordStyle(Common.UIString(ls`Wasm Module Cache Invalid`), categories['scripting']);
+        new Timeline.TimelineRecordStyle(ls`Wasm Module Cache Invalid`, categories['scripting']);
     eventStyles[recordTypes.FrameStartedLoading] =
         new Timeline.TimelineRecordStyle(ls`Frame Started Loading`, categories['loading'], true);
     eventStyles[recordTypes.MarkLoad] =
@@ -407,9 +407,11 @@ Timeline.TimelineUIUtils = class {
     if (event.hasCategory(TimelineModel.TimelineModel.Category.Console))
       return title;
     if (event.name === recordType.TimeStamp)
-      return Common.UIString('%s: %s', title, eventData['message']);
+      return ls`${title}: ${eventData['message']}`;
     if (event.name === recordType.Animation && eventData && eventData['name'])
-      return Common.UIString('%s: %s', title, eventData['name']);
+      return ls`${title}: ${eventData['name']}`;
+    if (event.name === recordType.EventDispatch && eventData && eventData['type'])
+      return ls`${title}: ${eventData['type']}`;
     return title;
   }
 
@@ -554,10 +556,13 @@ Timeline.TimelineUIUtils = class {
         break;
       }
       case recordType.ParseHTML: {
+        const startLine = event.args['beginData']['startLine'];
         const endLine = event.args['endData'] && event.args['endData']['endLine'];
         const url = Bindings.displayNameForURL(event.args['beginData']['url']);
-        detailsText = Common.UIString(
-            '%s [%s\u2026%s]', url, event.args['beginData']['startLine'] + 1, endLine >= 0 ? endLine + 1 : '');
+        if (endLine >= 0)
+          detailsText = Common.UIString('%s [%s\u2026%s]', url, startLine + 1, endLine + 1);
+        else
+          detailsText = Common.UIString('%s [%s\u2026]', url, startLine + 1);
         break;
       }
       case recordType.CompileModule:
@@ -899,11 +904,9 @@ Timeline.TimelineUIUtils = class {
         if (url)
           contentHelper.appendLocationRow(ls`Script`, url, eventData['lineNumber'], eventData['columnNumber']);
         contentHelper.appendTextRow(ls`Streamed`, eventData['streamed']);
-        const cacheProduceOptions = eventData && eventData['cacheProduceOptions'];
-        if (cacheProduceOptions) {
-          contentHelper.appendTextRow(ls`Cache Produce Options`, cacheProduceOptions);
-          contentHelper.appendTextRow(ls`Produced Cache Size`, eventData['producedCacheSize']);
-        }
+        const producedCacheSize = eventData && eventData['producedCacheSize'];
+        if (producedCacheSize)
+          contentHelper.appendTextRow(ls`Produced Cache Size`, producedCacheSize);
         const cacheConsumeOptions = eventData && eventData['cacheConsumeOptions'];
         if (cacheConsumeOptions) {
           contentHelper.appendTextRow(ls`Cache Consume Options`, cacheConsumeOptions);
@@ -1898,9 +1901,8 @@ Timeline.TimelineUIUtils = class {
         span.createTextChild(Common.UIString(' is a likely performance bottleneck.'));
         break;
       case warnings.IdleDeadlineExceeded:
-        span.textContent = Common.UIString(
-            'Idle callback execution extended beyond deadline by ' +
-            Number.millisToString(event.duration - eventData['allottedMilliseconds'], true));
+        const exceededMs = Number.millisToString(event.duration - eventData['allottedMilliseconds'], true);
+        span.textContent = ls`Idle callback execution extended beyond deadline by ${exceededMs}`;
         break;
       case warnings.LongHandler:
         span.textContent = Common.UIString('Handler took %s', Number.millisToString(event.duration, true));

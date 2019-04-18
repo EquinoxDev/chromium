@@ -206,7 +206,6 @@ class CombinedReaders {
         this.currentReader_ = this.readers_.pop();
         this.readEntries(success, error);
       }
-
     }, error);
   }
 }
@@ -263,7 +262,8 @@ class EntryList {
   constructor(label, rootType, devicePath = '') {
     /**
      * @private {string} label: Label to be used when displaying to user, it
-     *      should be already translated. */
+     *      should be already translated.
+     */
     this.label_ = label;
 
     /** @private {VolumeManagerCommon.RootType} rootType root type. */
@@ -408,6 +408,22 @@ class EntryList {
   removeByRootType(rootType) {
     const childIndex = this.children_.findIndex(
         childEntry => childEntry.rootType === rootType);
+    if (childIndex !== -1) {
+      this.children_.splice(childIndex, 1);
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * Removes the entry.
+   * @param {!Entry|FilesAppEntry} entry to be removed.
+   * This method is specific to EntryList and VolumeEntry instance.
+   * @return {boolean} if entry was removed.
+   */
+  removeChildEntry(entry) {
+    const childIndex =
+        this.children_.findIndex(childEntry => childEntry === entry);
     if (childIndex !== -1) {
       this.children_.splice(childIndex, 1);
       return true;
@@ -670,6 +686,22 @@ class VolumeEntry {
     }
     return false;
   }
+
+  /**
+   * Removes the entry.
+   * @param {!Entry|FilesAppEntry} entry to be removed.
+   * This method is specific to EntryList and VolumeEntry instance.
+   * @return {boolean} if entry was removed.
+   */
+  removeChildEntry(entry) {
+    const childIndex =
+        this.children_.findIndex(childEntry => childEntry === entry);
+    if (childIndex !== -1) {
+      this.children_.splice(childIndex, 1);
+      return true;
+    }
+    return false;
+  }
 }
 
 /**
@@ -688,7 +720,8 @@ class FakeEntry {
   constructor(label, rootType, opt_sourceRestriction) {
     /**
      * @public {string} label: Label to be used when displaying to user, it
-     *      should be already translated. */
+     *      should be already translated.
+     */
     this.label = label;
 
     /** @public {string} Name for this volume. */

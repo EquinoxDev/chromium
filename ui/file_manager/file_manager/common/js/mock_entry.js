@@ -45,9 +45,9 @@ MockFileSystem.prototype = {
  * 'metadata', 'content'.  Paths ending in slashes are interpreted as
  * directories.  All intermediate directories leading up to the
  * files/directories to be created, are also created.
- * @param {!Array<string|Object>} entries An array of either string file paths,
- *     or objects containing 'fullPath' and 'metadata' to populate in this
- *     file system.
+ * @param {!Array<string|Object|!Entry>} entries An array of either string file
+ *     paths, objects containing 'fullPath' and 'metadata', or Entry to populate
+ *     in this file system.
  * @param {boolean=} opt_clear Optional, if true clears all entries before
  *     populating.
  */
@@ -56,6 +56,11 @@ MockFileSystem.prototype.populate = function(entries, opt_clear) {
     this.entries = {'/': new MockDirectoryEntry(this, '/')};
   }
   entries.forEach(entry => {
+    if (entry instanceof MockEntry) {
+      this.entries[entry.fullPath] = entry;
+      entry.filesystem = this;
+      return;
+    }
     const path = entry.fullPath || entry;
     const metadata = entry.metadata || {size: 0};
     const content = entry.content;
@@ -87,8 +92,7 @@ MockFileSystem.prototype.findChildren_ = function(directory) {
     if (path.indexOf(parentPath) === 0 && path !== parentPath) {
       const nextSeparator = path.indexOf('/', parentPath.length);
       // Add immediate children files and directories...
-      if (nextSeparator === -1 ||
-          nextSeparator === path.length - 1) {
+      if (nextSeparator === -1 || nextSeparator === path.length - 1) {
         children.push(this.entries[path]);
       }
     }

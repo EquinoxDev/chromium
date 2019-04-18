@@ -42,6 +42,7 @@
 #include "third_party/webrtc/api/peer_connection_interface.h"
 #include "third_party/webrtc/api/rtc_error.h"
 #include "third_party/webrtc/api/rtp_transceiver_interface.h"
+#include "third_party/webrtc/api/stats/rtc_stats.h"
 
 namespace webrtc {
 enum class RTCErrorType;
@@ -53,7 +54,6 @@ class WebMediaConstraints;
 class WebMediaStream;
 class WebMediaStreamTrack;
 class WebRTCAnswerOptions;
-class WebRTCDataChannelHandler;
 class WebRTCOfferOptions;
 class WebRTCRtpSender;
 class WebRTCSessionDescription;
@@ -114,9 +114,9 @@ class WebRTCPeerConnectionHandler {
   // Gets stats using the new stats collection API, see
   // third_party/webrtc/api/stats/.  These will replace the old stats collection
   // API when the new API has matured enough.
-  virtual void GetStats(std::unique_ptr<WebRTCStatsReportCallback>,
-                        RTCStatsFilter) = 0;
-  virtual WebRTCDataChannelHandler* CreateDataChannel(
+  virtual void GetStats(WebRTCStatsReportCallback,
+                        const std::vector<webrtc::NonStandardGroupId>&) = 0;
+  virtual scoped_refptr<webrtc::DataChannelInterface> CreateDataChannel(
       const WebString& label,
       const WebRTCDataChannelInit&) = 0;
   virtual webrtc::RTCErrorOr<std::unique_ptr<WebRTCRtpTransceiver>>
@@ -139,9 +139,6 @@ class WebRTCPeerConnectionHandler {
   virtual webrtc::RTCErrorOr<std::unique_ptr<WebRTCRtpTransceiver>> RemoveTrack(
       WebRTCRtpSender*) = 0;
   virtual void Stop() = 0;
-
-  // Origin Trial - RtcPeerConnectionId
-  virtual WebString Id() const = 0;
 
   // Returns a pointer to the underlying native PeerConnection object.
   virtual webrtc::PeerConnectionInterface* NativePeerConnection() = 0;

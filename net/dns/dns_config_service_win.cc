@@ -121,7 +121,8 @@ class RegistryReader {
 // Wrapper for GetAdaptersAddresses. Returns NULL if failed.
 std::unique_ptr<IP_ADAPTER_ADDRESSES, base::FreeDeleter> ReadIpHelper(
     ULONG flags) {
-  base::ScopedBlockingCall scoped_blocking_call(base::BlockingType::MAY_BLOCK);
+  base::ScopedBlockingCall scoped_blocking_call(FROM_HERE,
+                                                base::BlockingType::MAY_BLOCK);
 
   std::unique_ptr<IP_ADAPTER_ADDRESSES, base::FreeDeleter> out;
   ULONG len = 15000;  // As recommended by MSDN for GetAdaptersAddresses.
@@ -131,7 +132,7 @@ std::unique_ptr<IP_ADAPTER_ADDRESSES, base::FreeDeleter> ReadIpHelper(
        tries++) {
     out.reset(static_cast<PIP_ADAPTER_ADDRESSES>(malloc(len)));
     memset(out.get(), 0, len);
-    rv = GetAdaptersAddresses(AF_UNSPEC, flags, NULL, out.get(), &len);
+    rv = GetAdaptersAddresses(AF_UNSPEC, flags, nullptr, out.get(), &len);
   }
   if (rv != NO_ERROR)
     out.reset();
@@ -148,7 +149,8 @@ bool ReadDevolutionSetting(const RegistryReader& reader,
 
 // Reads DnsSystemSettings from IpHelper and registry.
 ConfigParseWinResult ReadSystemSettings(DnsSystemSettings* settings) {
-  base::ScopedBlockingCall scoped_blocking_call(base::BlockingType::MAY_BLOCK);
+  base::ScopedBlockingCall scoped_blocking_call(FROM_HERE,
+                                                base::BlockingType::MAY_BLOCK);
   settings->addresses = ReadIpHelper(GAA_FLAG_SKIP_ANYCAST |
                                      GAA_FLAG_SKIP_UNICAST |
                                      GAA_FLAG_SKIP_MULTICAST |
@@ -240,7 +242,7 @@ HostsParseWinResult AddLocalhostEntries(DnsHosts* hosts) {
   // The order of adapters is the network binding order, so stick to the
   // first good adapter for each family.
   for (const IP_ADAPTER_ADDRESSES* adapter = addresses.get();
-       adapter != NULL && (!have_ipv4 || !have_ipv6);
+       adapter != nullptr && (!have_ipv4 || !have_ipv6);
        adapter = adapter->Next) {
     if (adapter->OperStatus != IfOperStatusUp)
       continue;
@@ -249,8 +251,7 @@ HostsParseWinResult AddLocalhostEntries(DnsHosts* hosts) {
 
     for (const IP_ADAPTER_UNICAST_ADDRESS* address =
              adapter->FirstUnicastAddress;
-         address != NULL;
-         address = address->Next) {
+         address != nullptr; address = address->Next) {
       IPEndPoint ipe;
       if (!ipe.FromSockAddr(address->Address.lpSockaddr,
                             address->Address.iSockaddrLength)) {
@@ -504,7 +505,7 @@ ConfigParseWinResult ConvertSettingsToDnsConfig(
   // The order of adapters is the network binding order, so stick to the
   // first good adapter.
   for (const IP_ADAPTER_ADDRESSES* adapter = settings.addresses.get();
-       adapter != NULL && config->nameservers.empty();
+       adapter != nullptr && config->nameservers.empty();
        adapter = adapter->Next) {
     if (adapter->OperStatus != IfOperStatusUp)
       continue;
@@ -513,8 +514,7 @@ ConfigParseWinResult ConvertSettingsToDnsConfig(
 
     for (const IP_ADAPTER_DNS_SERVER_ADDRESS* address =
              adapter->FirstDnsServerAddress;
-         address != NULL;
-         address = address->Next) {
+         address != nullptr; address = address->Next) {
       IPEndPoint ipe;
       if (ipe.FromSockAddr(address->Address.lpSockaddr,
                            address->Address.iSockaddrLength)) {
@@ -639,7 +639,7 @@ class DnsConfigServiceWin::Watcher
   DISALLOW_COPY_AND_ASSIGN(Watcher);
 };
 
-// Reads config from registry and IpHelper. All work performed in TaskScheduler.
+// Reads config from registry and IpHelper. All work performed in ThreadPool.
 class DnsConfigServiceWin::ConfigReader : public SerialWorker {
  public:
   explicit ConfigReader(DnsConfigServiceWin* service)
@@ -684,7 +684,7 @@ class DnsConfigServiceWin::ConfigReader : public SerialWorker {
 };
 
 // Reads hosts from HOSTS file and fills in localhost and local computer name if
-// necessary. All work performed in TaskScheduler.
+// necessary. All work performed in ThreadPool.
 class DnsConfigServiceWin::HostsReader : public SerialWorker {
  public:
   explicit HostsReader(DnsConfigServiceWin* service)
@@ -699,7 +699,7 @@ class DnsConfigServiceWin::HostsReader : public SerialWorker {
   void DoWork() override {
     base::TimeTicks start_time = base::TimeTicks::Now();
     base::ScopedBlockingCall scoped_blocking_call(
-        base::BlockingType::MAY_BLOCK);
+        FROM_HERE, base::BlockingType::MAY_BLOCK);
     HostsParseWinResult result = HOSTS_PARSE_WIN_UNREADABLE_HOSTS_FILE;
     if (ParseHostsFile(path_, &hosts_))
       result = AddLocalhostEntries(&hosts_);

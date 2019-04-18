@@ -23,6 +23,7 @@
 #include "ui/compositor/scoped_layer_animation_settings.h"
 #include "ui/gfx/animation/throb_animation.h"
 #include "ui/gfx/canvas.h"
+#include "ui/gfx/color_palette.h"
 #include "ui/gfx/font_list.h"
 #include "ui/gfx/geometry/point.h"
 #include "ui/gfx/geometry/vector2d.h"
@@ -60,8 +61,11 @@ constexpr int kDragDropAppIconScaleTransitionInMs = 200;
 // The color of the title for the tiles within folder.
 constexpr SkColor kFolderGridTitleColor = SK_ColorBLACK;
 
-// The color of the selected item view within folder.
-constexpr SkColor kFolderGridSelectedColor = SkColorSetARGB(31, 0, 0, 0);
+// The color of the focus ring within a folder.
+constexpr SkColor kFolderGridFocusRingColor = gfx::kGoogleBlue600;
+
+// The width of the focus ring within a folder.
+constexpr int kFocusRingWidth = 2;
 
 // The duration in milliseconds of dragged view hover animation.
 constexpr int kDraggedViewHoverAnimationDuration = 250;
@@ -471,14 +475,15 @@ void AppListItemView::OnContextMenuModelReceived(
       base::BindOnce(&AppListItemView::OnMenuClosed,
                      weak_ptr_factory_.GetWeakPtr()));
   context_menu_->Build(std::move(menu));
-  context_menu_->Run(anchor_rect, views::MENU_ANCHOR_BUBBLE_TOUCHABLE_RIGHT,
+  context_menu_->Run(anchor_rect, views::MenuAnchorPosition::kBubbleRight,
                      run_types);
   apps_grid_view_->SetSelectedView(this);
 }
 
-void AppListItemView::ShowContextMenuForView(views::View* source,
-                                             const gfx::Point& point,
-                                             ui::MenuSourceType source_type) {
+void AppListItemView::ShowContextMenuForViewImpl(
+    views::View* source,
+    const gfx::Point& point,
+    ui::MenuSourceType source_type) {
   if (context_menu_ && context_menu_->IsShowingMenu())
     return;
   // Prevent multiple requests for context menus before the current request
@@ -518,9 +523,10 @@ void AppListItemView::PaintButtonContents(gfx::Canvas* canvas) {
     cc::PaintFlags flags;
     flags.setAntiAlias(true);
     flags.setColor(apps_grid_view_->is_in_folder()
-                       ? kFolderGridSelectedColor
+                       ? kFolderGridFocusRingColor
                        : AppListConfig::instance().grid_selected_color());
-    flags.setStyle(cc::PaintFlags::kFill_Style);
+    flags.setStyle(cc::PaintFlags::kStroke_Style);
+    flags.setStrokeWidth(kFocusRingWidth);
     gfx::Rect selection_highlight_bounds = GetContentsBounds();
     AdaptBoundsForSelectionHighlight(&selection_highlight_bounds);
     canvas->DrawRoundRect(gfx::RectF(selection_highlight_bounds),
@@ -707,17 +713,16 @@ void AppListItemView::OnGestureEvent(ui::GestureEvent* event) {
     Button::OnGestureEvent(event);
 }
 
-bool AppListItemView::GetTooltipText(const gfx::Point& p,
-                                     base::string16* tooltip) const {
+base::string16 AppListItemView::GetTooltipText(const gfx::Point& p) const {
   // Use the label to generate a tooltip, so that it will consider its text
   // truncation in making the tooltip. We do not want the label itself to have a
   // tooltip, so we only temporarily enable it to get the tooltip text from the
   // label, then disable it again.
   title_->SetHandlesTooltips(true);
   title_->SetTooltipText(tooltip_text_);
-  bool handled = title_->GetTooltipText(p, tooltip);
+  base::string16 tooltip = title_->GetTooltipText(p);
   title_->SetHandlesTooltips(false);
-  return handled;
+  return tooltip;
 }
 
 void AppListItemView::OnDraggedViewEnter() {

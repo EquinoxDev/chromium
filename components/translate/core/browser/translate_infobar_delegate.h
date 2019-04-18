@@ -29,6 +29,17 @@ class InfoBarManager;
 
 namespace translate {
 
+// The number of times user should consecutively translate for "Always
+// Translate" to automatically trigger.
+extern const int kAutoAlwaysThreshold;
+// The number of times user should consecutively dismiss the translate infobar
+// for "Never Translate" to automatically trigger.
+extern const int kAutoNeverThreshold;
+// The maximum number of times "Always Translate" is automatically triggered.
+extern const int kMaxNumberOfAutoAlways;
+// The maximum number of times "Never Translate" is automatically triggered.
+extern const int kMaxNumberOfAutoNever;
+
 // Feature flag for "Translate Compact Infobar UI" project.
 extern const base::Feature kTranslateCompactUI;
 
@@ -45,6 +56,9 @@ class TranslateInfoBarDelegate : public infobars::InfoBarDelegate {
                                         TranslateErrors::Type error_type) = 0;
     // Return whether user declined translate service.
     virtual bool IsDeclinedByUser() = 0;
+    // Called when the TranslateInfoBarDelegate instance is destroyed.
+    virtual void OnTranslateInfoBarDelegateDestroyed(
+        TranslateInfoBarDelegate* delegate) = 0;
 
    protected:
     virtual ~Observer() {}

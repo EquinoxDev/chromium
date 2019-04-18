@@ -96,9 +96,9 @@ bool IsComponentExtensionWhitelisted(int manifest_resource_id) {
     case IDR_VIDEO_PLAYER_MANIFEST:
     case IDR_WALLPAPERMANAGER_MANIFEST:
 #if defined(GOOGLE_CHROME_BUILD)
-    case IDR_CONTAINED_HOME_MANIFEST:
     case IDR_GENIUS_APP_MANIFEST:
     case IDR_HELP_MANIFEST:
+    case IDR_KIOSK_NEXT_HOME_MANIFEST:
     case IDR_QUICKOFFICE_MANIFEST:
 #endif  // defined(GOOGLE_CHROME_BUILD)
 #endif  // defined(OS_CHROMEOS)
@@ -111,5 +111,25 @@ bool IsComponentExtensionWhitelisted(int manifest_resource_id) {
   NOTREACHED();
   return false;
 }
+
+#if defined(OS_CHROMEOS)
+bool IsComponentExtensionWhitelistedForSignInProfile(
+    const std::string& extension_id) {
+  const char* const kAllowed[] = {
+      extension_misc::kChromeVoxExtensionId,
+      extension_misc::kEspeakSpeechSynthesisExtensionId,
+      extension_misc::kGoogleSpeechSynthesisExtensionId,
+      extension_misc::kSelectToSpeakExtensionId,
+      extension_misc::kSwitchAccessExtensionId,
+  };
+
+  for (size_t i = 0; i < base::size(kAllowed); ++i) {
+    if (extension_id == kAllowed[i])
+      return true;
+  }
+
+  return false;
+}
+#endif
 
 }  // namespace extensions

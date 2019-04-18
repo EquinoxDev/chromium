@@ -8,9 +8,9 @@
 
 namespace credential_provider {
 
-CGaiaCredential::CGaiaCredential() {}
+CGaiaCredential::CGaiaCredential() = default;
 
-CGaiaCredential::~CGaiaCredential() {}
+CGaiaCredential::~CGaiaCredential() = default;
 
 HRESULT CGaiaCredential::FinalConstruct() {
   LOGFN(INFO);

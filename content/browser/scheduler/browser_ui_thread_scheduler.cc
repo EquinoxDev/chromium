@@ -6,14 +6,17 @@
 
 #include <utility>
 
+#include "base/feature_list.h"
 #include "base/memory/ptr_util.h"
 #include "base/message_loop/message_loop.h"
 #include "base/process/process.h"
+#include "base/run_loop.h"
 #include "base/task/sequence_manager/sequence_manager.h"
 #include "base/task/sequence_manager/sequence_manager_impl.h"
 #include "base/task/sequence_manager/time_domain.h"
 #include "base/threading/platform_thread.h"
 #include "build/build_config.h"
+#include "content/public/common/content_features.h"
 
 namespace content {
 
@@ -29,7 +32,15 @@ BrowserUIThreadScheduler::CreateForTesting(
 }
 
 void BrowserUIThreadScheduler::PostFeatureListSetup() {
-  // TODO(scheduler-dev): Initialize experiments here.
+  if (base::FeatureList::IsEnabled(features::kPrioritizeBootstrapTasks)) {
+    task_queues_[QueueType::kBootstrap]->SetQueuePriority(
+        base::sequence_manager::TaskQueue::kHighestPriority);
+
+    // Navigation and preconnection tasks are also important during startup so
+    // prioritize them too.
+    task_queues_[QueueType::kNavigationAndPreconnection]->SetQueuePriority(
+        base::sequence_manager::TaskQueue::kHighPriority);
+  }
 }
 
 void BrowserUIThreadScheduler::Shutdown() {
@@ -62,6 +73,7 @@ BrowserUIThreadScheduler::BrowserUIThreadScheduler(
 
 void BrowserUIThreadScheduler::InitialiseTaskQueues() {
   DCHECK(sequence_manager_);
+  sequence_manager_->EnableCrashKeys("ui_scheduler_async_stack");
 
   // To avoid locks in BrowserUIThreadScheduler::GetTaskRunner, eagerly
   // create all the well known task queues.
@@ -92,6 +104,25 @@ BrowserUIThreadScheduler::GetTaskRunner(QueueType queue_type) {
     return it->second;
   NOTREACHED();
   return scoped_refptr<base::SingleThreadTaskRunner>();
+}
+
+void BrowserUIThreadScheduler::RunAllPendingTasksForTesting() {
+  std::vector<scoped_refptr<BrowserUIThreadTaskQueue>> fenced_queues;
+  for (const auto& queue : task_queues_) {
+    bool had_fence = queue.second->HasActiveFence();
+    queue.second->InsertFence(
+        base::sequence_manager::TaskQueue::InsertFencePosition::kNow);
+    // If there was a fence already this must be a re-entrant call to this
+    // method. The previous statement just moved the fence further back. In this
+    // case we do not remove the fence as the parent run loop needs all queues
+    // to be fenced to be able to exit the run loop (i.e. become idle)
+    if (!had_fence)
+      fenced_queues.push_back(queue.second);
+  }
+  base::RunLoop(base::RunLoop::Type::kNestableTasksAllowed).RunUntilIdle();
+  for (const auto& queue : fenced_queues) {
+    queue->RemoveFence();
+  }
 }
 
 }  // namespace content

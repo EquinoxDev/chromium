@@ -78,8 +78,8 @@ enum class AssistantButtonId {
   kKeyboardInputToggle = 4,
   kVoiceInputToggle = 5,
   kSettings = 6,
-  kBackInLauncher = 7,
-  kMaxValue = kBackInLauncher
+  kBackInLauncherDeprecated = 7,
+  kMaxValue = kBackInLauncherDeprecated
 };
 
 // Models the Assistant UI.
@@ -126,7 +126,7 @@ class COMPONENT_EXPORT(ASSISTANT_MODEL) AssistantUiModel {
       base::Optional<AssistantExitPoint> exit_point);
   void NotifyUsableWorkAreaChanged();
 
-  AssistantUiMode ui_mode_ = AssistantUiMode::kMainUi;
+  AssistantUiMode ui_mode_;
 
   AssistantVisibility visibility_ = AssistantVisibility::kClosed;
 

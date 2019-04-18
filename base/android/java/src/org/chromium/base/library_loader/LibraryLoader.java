@@ -8,6 +8,7 @@ import static org.chromium.base.metrics.CachedMetrics.EnumeratedHistogramSample;
 
 import android.annotation.SuppressLint;
 import android.content.Context;
+import android.content.pm.ApplicationInfo;
 import android.os.Build;
 import android.os.Build.VERSION_CODES;
 import android.os.StrictMode;
@@ -33,7 +34,8 @@ import org.chromium.base.annotations.JNINamespace;
 import org.chromium.base.annotations.MainDex;
 import org.chromium.base.compat.ApiHelperForM;
 import org.chromium.base.metrics.RecordHistogram;
-import org.chromium.base.task.AsyncTask;
+import org.chromium.base.task.PostTask;
+import org.chromium.base.task.TaskTraits;
 
 import java.io.File;
 import java.io.IOException;
@@ -116,6 +118,10 @@ public class LibraryLoader {
     // One-way switch becomes true when the libraries are loaded.
     private boolean mLoaded;
 
+    // Similar to |mLoaded| but is limited case of being loaded in app zygote.
+    // This is exposed to clients.
+    private boolean mLoadedByZygote;
+
     // One-way switch becomes true when the Java command line is switched to
     // native.
     private boolean mCommandLineSwitched;
@@ -183,6 +189,13 @@ public class LibraryLoader {
     private LibraryLoader() {}
 
     /**
+     * Return if library is already loaded successfully by the zygote.
+     */
+    public boolean isLoadedByZygote() {
+        return mLoadedByZygote;
+    }
+
+    /**
      *  This method blocks until the library is fully loaded and initialized.
      *
      * @param processType the process the shared library is loaded in.
@@ -193,7 +206,8 @@ public class LibraryLoader {
                 // Already initialized, nothing to do.
                 return;
             }
-            loadAlreadyLocked(ContextUtils.getApplicationContext());
+            loadAlreadyLocked(ContextUtils.getApplicationContext().getApplicationInfo(),
+                    false /* inZygote */);
             initializeAlreadyLocked(processType);
         }
     }
@@ -214,17 +228,17 @@ public class LibraryLoader {
     public void preloadNowOverrideApplicationContext(Context appContext) {
         synchronized (mLock) {
             if (!useCrazyLinker()) {
-                preloadAlreadyLocked(appContext);
+                preloadAlreadyLocked(appContext.getApplicationInfo());
             }
         }
     }
 
-    private void preloadAlreadyLocked(Context appContext) {
+    private void preloadAlreadyLocked(ApplicationInfo appInfo) {
         try (TraceEvent te = TraceEvent.scoped("LibraryLoader.preloadAlreadyLocked")) {
             // Preloader uses system linker, we shouldn't preload if Chromium linker is used.
             assert !useCrazyLinker();
             if (mLibraryPreloader != null && !mLibraryPreloaderCalled) {
-                mLibraryPreloaderStatus = mLibraryPreloader.loadLibrary(appContext);
+                mLibraryPreloaderStatus = mLibraryPreloader.loadLibrary(appInfo);
                 mLibraryPreloaderCalled = true;
             }
         }
@@ -263,7 +277,15 @@ public class LibraryLoader {
             if (mLoaded && appContext != ContextUtils.getApplicationContext()) {
                 throw new IllegalStateException("Attempt to load again from alternate context.");
             }
-            loadAlreadyLocked(appContext);
+            loadAlreadyLocked(appContext.getApplicationInfo(), false /* inZygote */);
+        }
+    }
+
+    public void loadNowInZygote(ApplicationInfo appInfo) throws ProcessInitException {
+        synchronized (mLock) {
+            assert !mLoaded;
+            loadAlreadyLocked(appInfo, true /* inZygote */);
+            mLoadedByZygote = true;
         }
     }
 
@@ -338,9 +360,10 @@ public class LibraryLoader {
         }
     }
 
-    /** Prefetches the native libraries in a background thread.
+    /**
+     * Prefetches the native libraries in a background thread.
      *
-     * Launches an AsyncTask that, through a short-lived forked process, reads a
+     * Launches a task that, through a short-lived forked process, reads a
      * part of each page of the native library.  This is done to warm up the
      * page cache, turning hard page faults into soft ones.
      *
@@ -358,40 +381,28 @@ public class LibraryLoader {
         // skew the results.
         if (coldStart && CommandLine.getInstance().hasSwitch("log-native-library-residency")) {
             // nativePeriodicallyCollectResidency() sleeps, run it on another thread,
-            // and not on the AsyncTask thread pool.
+            // and not on the thread pool.
             new Thread(LibraryLoader::nativePeriodicallyCollectResidency).start();
             return;
         }
 
-        new LibraryPrefetchTask(coldStart).executeOnExecutor(AsyncTask.THREAD_POOL_EXECUTOR);
-    }
-
-    private static class LibraryPrefetchTask extends AsyncTask<Void> {
-        private final boolean mColdStart;
-
-        public LibraryPrefetchTask(boolean coldStart) {
-            mColdStart = coldStart;
-        }
-
-        @Override
-        protected Void doInBackground() {
+        PostTask.postTask(TaskTraits.USER_BLOCKING, () -> {
             int percentage = nativePercentageOfResidentNativeLibraryCode();
             try (TraceEvent e = TraceEvent.scoped("LibraryLoader.asyncPrefetchLibrariesToMemory",
                          Integer.toString(percentage))) {
                 // Arbitrary percentage threshold. If most of the native library is already
                 // resident (likely with monochrome), don't bother creating a prefetch process.
-                boolean prefetch = mColdStart && percentage < 90;
+                boolean prefetch = coldStart && percentage < 90;
                 if (prefetch) {
                     nativeForkAndPrefetchNativeLibrary();
                 }
                 if (percentage != -1) {
                     String histogram = "LibraryLoader.PercentageOfResidentCodeBeforePrefetch"
-                            + (mColdStart ? ".ColdStartup" : ".WarmStartup");
+                            + (coldStart ? ".ColdStartup" : ".WarmStartup");
                     RecordHistogram.recordPercentageHistogram(histogram, percentage);
                 }
             }
-            return null;
-        }
+        });
     }
 
     // Helper for loadAlreadyLocked(). Load a native shared library with the Chromium linker.
@@ -432,31 +443,31 @@ public class LibraryLoader {
     // Experience shows that on some devices, the system sometimes fails to extract native libraries
     // at installation or update time from the APK. This function will extract the library and
     // return the extracted file path.
-    static String getExtractedLibraryPath(Context appContext, String libName) {
+    static String getExtractedLibraryPath(ApplicationInfo appInfo, String libName) {
         assert PLATFORM_REQUIRES_NATIVE_FALLBACK_EXTRACTION;
         Log.w(TAG, "Failed to load libName %s, attempting fallback extraction then trying again",
                 libName);
         String libraryEntry = LibraryLoader.makeLibraryPathInZipFile(libName, false, false);
-        return extractFileIfStale(appContext, libraryEntry, makeLibraryDirAndSetPermission());
+        return extractFileIfStale(appInfo, libraryEntry, makeLibraryDirAndSetPermission());
     }
 
     // Invoke either Linker.loadLibrary(...), System.loadLibrary(...) or System.load(...),
     // triggering JNI_OnLoad in native code.
     // TODO(crbug.com/635567): Fix this properly.
     @SuppressLint({"DefaultLocale", "UnsafeDynamicallyLoadedCode"})
-    private void loadAlreadyLocked(Context appContext) throws ProcessInitException {
+    private void loadAlreadyLocked(ApplicationInfo appInfo, boolean inZygote)
+            throws ProcessInitException {
         try (TraceEvent te = TraceEvent.scoped("LibraryLoader.loadAlreadyLocked")) {
             if (!mLoaded) {
                 assert !mInitialized;
 
                 long startTime = SystemClock.uptimeMillis();
 
-                if (useCrazyLinker()) {
+                if (useCrazyLinker() && !inZygote) {
                     // Load libraries using the Chromium linker.
                     Linker linker = Linker.getInstance();
 
-                    String apkFilePath =
-                            isInZipFile() ? appContext.getApplicationInfo().sourceDir : null;
+                    String apkFilePath = isInZipFile() ? appInfo.sourceDir : null;
                     linker.prepareLibraryLoad(apkFilePath);
 
                     for (String library : NativeLibraries.LIBRARIES) {
@@ -485,7 +496,7 @@ public class LibraryLoader {
                             if (!isInZipFile()
                                     && PLATFORM_REQUIRES_NATIVE_FALLBACK_EXTRACTION) {
                                 loadLibraryWithCustomLinkerAlreadyLocked(
-                                        linker, null, getExtractedLibraryPath(appContext, library));
+                                        linker, null, getExtractedLibraryPath(appInfo, library));
                                 incrementRelinkerCountHitHistogram();
                             } else {
                                 Log.e(TAG, "Unable to load library: " + library);
@@ -497,7 +508,7 @@ public class LibraryLoader {
                     linker.finishLibraryLoad();
                 } else {
                     setEnvForNative();
-                    preloadAlreadyLocked(appContext);
+                    preloadAlreadyLocked(appInfo);
 
                     // If the libraries are located in the zip file, assert that the device API
                     // level is M or higher. On devices lower than M, the libraries should
@@ -514,7 +525,7 @@ public class LibraryLoader {
                             } else {
                                 // Load directly from the APK.
                                 boolean is64Bit = ApiHelperForM.isProcess64Bit();
-                                String zipFilePath = appContext.getApplicationInfo().sourceDir;
+                                String zipFilePath = appInfo.sourceDir;
                                 // In API level 23 and above, it’s possible to open a .so file
                                 // directly from the APK of the path form
                                 // "my_zip_file.zip!/libs/libstuff.so". See:
@@ -646,29 +657,26 @@ public class LibraryLoader {
                 && PLATFORM_REQUIRES_NATIVE_FALLBACK_EXTRACTION) {
             // Perform the detection and deletion of obsolete native libraries on a background
             // background thread.
-            AsyncTask.THREAD_POOL_EXECUTOR.execute(new Runnable() {
-                @Override
-                public void run() {
-                    final String suffix = BuildInfo.getInstance().extractedFileSuffix;
-                    final File[] files = getLibraryDir().listFiles();
-                    if (files == null) return;
+            PostTask.postTask(TaskTraits.BEST_EFFORT_MAY_BLOCK, () -> {
+                final String suffix = BuildInfo.getInstance().extractedFileSuffix;
+                final File[] files = getLibraryDir().listFiles();
+                if (files == null) return;
 
-                    for (File file : files) {
-                        // NOTE: Do not simply look for <suffix> at the end of the file.
-                        //
-                        // Extracted library files have names like 'libfoo.so<suffix>', but
-                        // extractFileIfStale() will use FileUtils.copyFileStreamAtomicWithBuffer()
-                        // to create them, and this method actually uses a transient temporary file
-                        // named like 'libfoo.so<suffix>.tmp' to do that. These temporary files, if
-                        // detected here, should be preserved; hence the reason why contains() is
-                        // used below.
-                        if (!file.getName().contains(suffix)) {
-                            String fileName = file.getName();
-                            if (!file.delete()) {
-                                Log.w(TAG, "Unable to remove %s", fileName);
-                            } else {
-                                Log.i(TAG, "Removed obsolete file %s", fileName);
-                            }
+                for (File file : files) {
+                    // NOTE: Do not simply look for <suffix> at the end of the file.
+                    //
+                    // Extracted library files have names like 'libfoo.so<suffix>', but
+                    // extractFileIfStale() will use FileUtils.copyFileStreamAtomicWithBuffer()
+                    // to create them, and this method actually uses a transient temporary file
+                    // named like 'libfoo.so<suffix>.tmp' to do that. These temporary files, if
+                    // detected here, should be preserved; hence the reason why contains() is
+                    // used below.
+                    if (!file.getName().contains(suffix)) {
+                        String fileName = file.getName();
+                        if (!file.delete()) {
+                            Log.w(TAG, "Unable to remove %s", fileName);
+                        } else {
+                            Log.i(TAG, "Removed obsolete file %s", fileName);
                         }
                     }
                 }
@@ -757,10 +765,10 @@ public class LibraryLoader {
     // This function manually extract libraries as a fallback.
     @SuppressLint({"SetWorldReadable"})
     private static String extractFileIfStale(
-            Context appContext, String pathWithinApk, File destDir) {
+            ApplicationInfo appInfo, String pathWithinApk, File destDir) {
         assert PLATFORM_REQUIRES_NATIVE_FALLBACK_EXTRACTION;
 
-        String apkPath = appContext.getApplicationInfo().sourceDir;
+        String apkPath = appInfo.sourceDir;
         String fileName =
                 (new File(pathWithinApk)).getName() + BuildInfo.getInstance().extractedFileSuffix;
         File libraryFile = new File(destDir, fileName);

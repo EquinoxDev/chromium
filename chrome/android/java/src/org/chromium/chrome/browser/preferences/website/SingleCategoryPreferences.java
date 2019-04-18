@@ -151,9 +151,9 @@ public class SingleCategoryPreferences extends PreferenceFragment
 
             resetList();
 
-            boolean hasEntries = mCategory.showSites(SiteSettingsCategory.Type.USB)
-                    ? addChosenObjects(sites)
-                    : addWebsites(sites);
+            int chooserDataType = mCategory.getObjectChooserDataType();
+            boolean hasEntries =
+                    chooserDataType == -1 ? addWebsites(sites) : addChosenObjects(sites);
 
             if (!hasEntries && mEmptyView != null)
                 mEmptyView.setText(R.string.no_saved_website_settings);
@@ -195,6 +195,8 @@ public class SingleCategoryPreferences extends PreferenceFragment
     private void updateAllowedHeader(int numAllowed, boolean toggleValue) {
         ExpandablePreferenceGroup allowedGroup =
                 (ExpandablePreferenceGroup) getPreferenceScreen().findPreference(ALLOWED_GROUP);
+        if (allowedGroup == null) return;
+
         if (numAllowed == 0) {
             if (allowedGroup != null) getPreferenceScreen().removePreference(allowedGroup);
             return;

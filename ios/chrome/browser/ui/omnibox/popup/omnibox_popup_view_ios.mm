@@ -17,7 +17,7 @@
 #include "components/omnibox/browser/omnibox_popup_model.h"
 #include "components/open_from_clipboard/clipboard_recent_content.h"
 #include "ios/chrome/browser/browser_state/chrome_browser_state.h"
-#import "ios/chrome/browser/experimental_flags.h"
+#import "ios/chrome/browser/system_flags.h"
 #import "ios/chrome/browser/ui/omnibox/omnibox_util.h"
 #import "ios/chrome/browser/ui/omnibox/popup/omnibox_popup_mediator.h"
 #include "ios/chrome/browser/ui/omnibox/popup/omnibox_popup_view_suggestions_delegate.h"
@@ -26,7 +26,6 @@
 #include "ios/chrome/grit/ios_theme_resources.h"
 #include "ios/web/public/web_thread.h"
 #include "net/url_request/url_request_context_getter.h"
-#include "ui/gfx/geometry/rect.h"
 
 #if !defined(__has_feature) || !__has_feature(objc_arc)
 #error "This file requires ARC support."
@@ -82,6 +81,11 @@ bool OmniboxPopupViewIOS::IsPopupOpen() {
 
 void OmniboxPopupViewIOS::SetTextAlignment(NSTextAlignment alignment) {
   [mediator_ setTextAlignment:alignment];
+}
+
+void OmniboxPopupViewIOS::SetSemanticContentAttribute(
+    UISemanticContentAttribute semanticContentAttribute) {
+  [mediator_ setSemanticContentAttribute:semanticContentAttribute];
 }
 
 #pragma mark - OmniboxPopupViewControllerDelegate

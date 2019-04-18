@@ -72,7 +72,7 @@ function GearMenuController(
  */
 GearMenuController.prototype.onShowGearMenu_ = function() {
   this.toggleRipple_.activated = true;
-  this.refreshRemainingSpace_(false);  /* Without loading caption. */
+  this.refreshRemainingSpace_(false); /* Without loading caption. */
 
   // Update view of drive-related settings.
   this.commandHandler_.updateAvailability();
@@ -133,13 +133,13 @@ GearMenuController.prototype.onDirectoryChanged_ = function(event) {
  */
 GearMenuController.prototype.refreshRemainingSpace_ = function(
     showLoadingCaption) {
-  var currentDirectory = this.directoryModel_.getCurrentDirEntry();
+  const currentDirectory = this.directoryModel_.getCurrentDirEntry();
   if (!currentDirectory || util.isRecentRoot(currentDirectory)) {
     this.gearMenu_.setSpaceInfo(null, false);
     return;
   }
 
-  var currentVolumeInfo = this.directoryModel_.getCurrentVolumeInfo();
+  const currentVolumeInfo = this.directoryModel_.getCurrentVolumeInfo();
   if (!currentVolumeInfo) {
     return;
   }
@@ -154,9 +154,12 @@ GearMenuController.prototype.refreshRemainingSpace_ = function(
     return;
   }
 
-  this.gearMenu_.setSpaceInfo(new Promise(function(fulfill) {
-    chrome.fileManagerPrivate.getSizeStats(currentVolumeInfo.volumeId, fulfill);
-  }), true);
+  this.gearMenu_.setSpaceInfo(
+      new Promise(fulfill => {
+        chrome.fileManagerPrivate.getSizeStats(
+            currentVolumeInfo.volumeId, fulfill);
+      }),
+      true);
 };
 
 /**
@@ -164,7 +167,7 @@ GearMenuController.prototype.refreshRemainingSpace_ = function(
  * @private
  */
 GearMenuController.prototype.onPreferencesChanged_ = function() {
-  chrome.fileManagerPrivate.getPreferences(function(prefs) {
+  chrome.fileManagerPrivate.getPreferences(prefs => {
     if (chrome.runtime.lastError) {
       return;
     }
@@ -174,5 +177,5 @@ GearMenuController.prototype.onPreferencesChanged_ = function() {
     } else {
       this.gearMenu_.syncButton.removeAttribute('checked');
     }
-  }.bind(this));
+  });
 };

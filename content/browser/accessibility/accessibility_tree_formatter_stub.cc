@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include "base/strings/string_number_conversions.h"
+#include "content/browser/accessibility/accessibility_tree_formatter_blink.h"
 #include "content/browser/accessibility/accessibility_tree_formatter_browser.h"
 
 namespace content {
@@ -32,13 +33,21 @@ std::unique_ptr<AccessibilityTreeFormatter>
 AccessibilityTreeFormatter::Create() {
   return std::make_unique<AccessibilityTreeFormatterStub>();
 }
+
+// static
+std::vector<AccessibilityTreeFormatter::TestPass>
+AccessibilityTreeFormatter::GetTestPasses() {
+  return {
+      {"blink", &AccessibilityTreeFormatterBlink::CreateBlink},
+      {"native", &AccessibilityTreeFormatter::Create},
+  };
+}
 #endif
 
 AccessibilityTreeFormatterStub::AccessibilityTreeFormatterStub()
     : AccessibilityTreeFormatterBrowser() {}
 
-AccessibilityTreeFormatterStub::~AccessibilityTreeFormatterStub() {
-}
+AccessibilityTreeFormatterStub::~AccessibilityTreeFormatterStub() {}
 
 void AccessibilityTreeFormatterStub::AddProperties(
     const BrowserAccessibility& node,

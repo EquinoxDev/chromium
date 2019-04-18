@@ -77,8 +77,10 @@ gfx::Rect GetCenteredBounds(const gfx::Rect& bounds_in_parent,
 
 // Returns the maximized/full screen and/or centered bounds of a window.
 gfx::Rect GetBoundsInMaximizedMode(wm::WindowState* state_object) {
-  if (state_object->IsFullscreen() || state_object->IsPinned())
-    return screen_util::GetDisplayBoundsInParent(state_object->window());
+  if (state_object->IsFullscreen() || state_object->IsPinned()) {
+    return screen_util::GetFullscreenWindowBoundsInParent(
+        state_object->window());
+  }
 
   if (state_object->GetStateType() == mojom::WindowStateType::LEFT_SNAPPED) {
     return Shell::Get()
@@ -169,18 +171,18 @@ void TabletModeWindowState::UpdateWindowPosition(wm::WindowState* window_state,
 TabletModeWindowState::TabletModeWindowState(aura::Window* window,
                                              TabletModeWindowManager* creator,
                                              bool snap,
-                                             bool animate_bounds_on_attach)
+                                             bool animate_bounds_on_attach,
+                                             bool entering_tablet_mode)
     : window_(window),
       creator_(creator),
       animate_bounds_on_attach_(animate_bounds_on_attach) {
   wm::WindowState* state = wm::GetWindowState(window);
   current_state_type_ = state->GetStateType();
-  // The /*target_state=*/current_state_type_ part is because if |snap| is true,
-  // then we are carrying over a snapped state from desktop mode to tablet mode.
-  state_type_on_attach_ = snap
-                              ? GetSnappedWindowStateType(
-                                    state, /*target_state=*/current_state_type_)
-                              : GetMaximizedOrCenteredWindowType(state);
+  DCHECK(!snap || CanSnapInSplitview(window));
+  state_type_on_attach_ =
+      snap ? current_state_type_ : GetMaximizedOrCenteredWindowType(state);
+  if (entering_tablet_mode)
+    set_enter_animation_type(IsTopWindow(window) ? DEFAULT : STEP_END);
   old_state_.reset(
       state->SetStateObject(std::unique_ptr<State>(this)).release());
 }
@@ -189,19 +191,19 @@ TabletModeWindowState::~TabletModeWindowState() {
   creator_->WindowStateDestroyed(window_);
 }
 
-void TabletModeWindowState::LeaveTabletMode(wm::WindowState* window_state) {
+void TabletModeWindowState::LeaveTabletMode(wm::WindowState* window_state,
+                                            bool was_in_overview) {
+  // TODO(minch): Keep the current animation if leaving tablet mode from
+  // overview. Need more investigation for windows' transform animation and
+  // updates bounds animation when overview is active.
+  old_state_->set_enter_animation_type((was_in_overview ||
+                                        window_state->IsSnapped() ||
+                                        IsTopWindow(window_state->window()))
+                                           ? DEFAULT
+                                           : IMMEDIATE);
   // Note: When we return we will destroy ourselves with the |our_reference|.
   std::unique_ptr<wm::WindowState::State> our_reference =
       window_state->SetStateObject(std::move(old_state_));
-}
-
-void TabletModeWindowState::SetDeferBoundsUpdates(bool defer_bounds_updates) {
-  if (defer_bounds_updates_ == defer_bounds_updates)
-    return;
-
-  defer_bounds_updates_ = defer_bounds_updates;
-  if (!defer_bounds_updates_)
-    UpdateBounds(wm::GetWindowState(window_), true /* animated */);
 }
 
 void TabletModeWindowState::OnWMEvent(wm::WindowState* window_state,
@@ -440,9 +442,6 @@ mojom::WindowStateType TabletModeWindowState::GetSnappedWindowStateType(
 
 void TabletModeWindowState::UpdateBounds(wm::WindowState* window_state,
                                          bool animated) {
-  if (defer_bounds_updates_)
-    return;
-
   // Do not update window's bounds if it's in tab-dragging process. The bounds
   // will be updated later when the drag ends.
   if (wm::IsDraggingTabs(window_state->window()))
@@ -460,9 +459,12 @@ void TabletModeWindowState::UpdateBounds(wm::WindowState* window_state,
     if (!window_state->window()->IsVisible() || !animated) {
       window_state->SetBoundsDirect(bounds_in_parent);
     } else {
-      if (use_zero_animation_type_) {
+      if (enter_animation_type() == STEP_END) {
         window_state->SetBoundsDirectCrossFade(bounds_in_parent,
                                                gfx::Tween::ZERO);
+        // Reset the |enter_animation_type_| to DEFAULT it if is STEP_END, which
+        // is set for non-top windows when entering tablet mode.
+        set_enter_animation_type(DEFAULT);
         return;
       }
       // If we animate (to) tablet mode, we want to use the cross fade to
@@ -475,6 +477,13 @@ void TabletModeWindowState::UpdateBounds(wm::WindowState* window_state,
         window_state->SetBoundsDirectAnimated(bounds_in_parent);
     }
   }
+}
+
+bool TabletModeWindowState::IsTopWindow(aura::Window* window) {
+  MruWindowTracker::WindowList windows =
+      Shell::Get()->mru_window_tracker()->BuildWindowForCycleList();
+
+  return !windows.empty() && window == windows[0];
 }
 
 }  // namespace ash

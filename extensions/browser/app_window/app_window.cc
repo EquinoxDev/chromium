@@ -62,8 +62,8 @@
 #include "extensions/browser/pref_names.h"
 #endif
 
+using blink::mojom::ConsoleMessageLevel;
 using content::BrowserContext;
-using content::ConsoleMessageLevel;
 using content::WebContents;
 using web_modal::WebContentsModalDialogHost;
 using web_modal::WebContentsModalDialogManager;
@@ -879,6 +879,10 @@ void AppWindow::UpdateNativeAlwaysOnTop() {
     // always-on-top.
     native_app_window_->SetAlwaysOnTop(true);
   }
+}
+
+void AppWindow::ActivateContents(WebContents* contents) {
+  native_app_window_->Activate();
 }
 
 void AppWindow::CloseContents(WebContents* contents) {

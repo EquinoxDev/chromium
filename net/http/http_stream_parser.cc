@@ -199,7 +199,7 @@ HttpStreamParser::HttpStreamParser(StreamSocket* stream_socket,
       http_09_on_non_default_ports_enabled_(false),
       read_buf_(read_buffer),
       read_buf_unused_offset_(0),
-      response_header_start_offset_(-1),
+      response_header_start_offset_(std::string::npos),
       received_bytes_(0),
       sent_bytes_(0),
       response_(nullptr),
@@ -250,7 +250,7 @@ int HttpStreamParser::SendRequest(
   std::string request = request_line + headers.ToString();
   request_headers_length_ = request.size();
 
-  if (request_->upload_data_stream != NULL) {
+  if (request_->upload_data_stream != nullptr) {
     request_body_send_buf_ =
         base::MakeRefCounted<SeekableIOBuffer>(kRequestBodyBufferSize);
     if (request_->upload_data_stream->is_chunked()) {
@@ -318,6 +318,15 @@ int HttpStreamParser::SendRequest(
     callback_ = std::move(callback);
 
   return result > 0 ? OK : result;
+}
+
+int HttpStreamParser::ConfirmHandshake(CompletionOnceCallback callback) {
+  int ret = stream_socket_->ConfirmHandshake(
+      base::BindOnce(&HttpStreamParser::RunConfirmHandshakeCallback,
+                     weak_ptr_factory_.GetWeakPtr()));
+  if (ret == ERR_IO_PENDING)
+    confirm_handshake_callback_ = std::move(callback);
+  return ret;
 }
 
 int HttpStreamParser::ReadResponseHeaders(CompletionOnceCallback callback) {
@@ -488,10 +497,10 @@ int HttpStreamParser::DoSendHeadersComplete(int result) {
     return OK;
   }
 
-  if (request_->upload_data_stream != NULL &&
+  if (request_->upload_data_stream != nullptr &&
       (request_->upload_data_stream->is_chunked() ||
-      // !IsEOF() indicates that the body wasn't merged.
-      (request_->upload_data_stream->size() > 0 &&
+       // !IsEOF() indicates that the body wasn't merged.
+       (request_->upload_data_stream->size() > 0 &&
         !request_->upload_data_stream->IsEOF()))) {
     net_log_.AddEvent(NetLogEventType::HTTP_TRANSACTION_SEND_REQUEST_BODY,
                       base::Bind(&NetLogSendRequestBodyCallback,
@@ -789,7 +798,7 @@ int HttpStreamParser::DoReadBodyComplete(int result) {
     read_buf_unused_offset_ = 0;
   } else {
     // Now waiting for more of the body to be read.
-    user_read_buf_ = NULL;
+    user_read_buf_ = nullptr;
     user_read_buf_len_ = 0;
   }
 
@@ -820,12 +829,12 @@ int HttpStreamParser::HandleReadHeaderResult(int result) {
     // Accepting truncated headers over HTTPS is a potential security
     // vulnerability, so just return an error in that case.
     //
-    // If response_header_start_offset_ is -1, this may be a < 8 byte HTTP/0.9
-    // response. However, accepting such a response over HTTPS would allow a
-    // MITM to truncate an HTTP/1.x status line to look like a short HTTP/0.9
-    // response if the peer put a record boundary at the first 8 bytes. To
-    // ensure that all response headers received over HTTPS are pristine, treat
-    // such responses as errors.
+    // If response_header_start_offset_ is std::string::npos, this may be a < 8
+    // byte HTTP/0.9 response. However, accepting such a response over HTTPS
+    // would allow a MITM to truncate an HTTP/1.x status line to look like a
+    // short HTTP/0.9 response if the peer put a record boundary at the first 8
+    // bytes. To ensure that all response headers received over HTTPS are
+    // pristine, treat such responses as errors.
     //
     // TODO(mmenke):  Returning ERR_RESPONSE_HEADERS_TRUNCATED when a response
     // looks like an HTTP/0.9 response is weird.  Should either come up with
@@ -838,7 +847,7 @@ int HttpStreamParser::HandleReadHeaderResult(int result) {
 
     // Parse things as well as we can and let the caller decide what to do.
     int end_offset;
-    if (response_header_start_offset_ >= 0) {
+    if (response_header_start_offset_ != std::string::npos) {
       // The response looks to be a truncated set of HTTP headers.
       io_state_ = STATE_READ_BODY_COMPLETE;
       end_offset = read_buf_->offset();
@@ -910,7 +919,7 @@ int HttpStreamParser::HandleReadHeaderResult(int result) {
         // request so we return OK here, which lets the caller inspect the
         // response and reject it in the event that we're setting up a CONNECT
         // tunnel.
-        response_header_start_offset_ = -1;
+        response_header_start_offset_ = std::string::npos;
         response_body_length_ = -1;
         // Now waiting for the second set of headers to be read.
       } else {
@@ -932,26 +941,32 @@ int HttpStreamParser::HandleReadHeaderResult(int result) {
   return OK;
 }
 
+void HttpStreamParser::RunConfirmHandshakeCallback(int rv) {
+  std::move(confirm_handshake_callback_).Run(rv);
+}
+
 int HttpStreamParser::FindAndParseResponseHeaders(int new_bytes) {
   DCHECK_GT(new_bytes, 0);
   DCHECK_EQ(0, read_buf_unused_offset_);
-  int end_offset = -1;
+  size_t end_offset = std::string::npos;
 
   // Look for the start of the status line, if it hasn't been found yet.
-  if (response_header_start_offset_ < 0) {
+  if (response_header_start_offset_ == std::string::npos) {
     response_header_start_offset_ = HttpUtil::LocateStartOfStatusLine(
         read_buf_->StartOfBuffer(), read_buf_->offset());
   }
 
-  if (response_header_start_offset_ >= 0) {
+  if (response_header_start_offset_ != std::string::npos) {
     // LocateEndOfHeaders looks for two line breaks in a row (With or without
     // carriage returns). So the end of the headers includes at most the last 3
     // bytes of the buffer from the past read. This optimization avoids O(n^2)
     // performance in the case each read only returns a couple bytes. It's not
     // too important in production, but for fuzzers with memory instrumentation,
     // it's needed to avoid timing out.
-    int search_start = std::max(response_header_start_offset_,
-                                read_buf_->offset() - new_bytes - 3);
+    size_t lower_bound =
+        (base::ClampedNumeric<size_t>(read_buf_->offset()) - new_bytes - 3)
+            .RawValue();
+    size_t search_start = std::max(response_header_start_offset_, lower_bound);
     end_offset = HttpUtil::LocateEndOfHeaders(
         read_buf_->StartOfBuffer(), read_buf_->offset(), search_start);
   } else if (read_buf_->offset() >= 8) {
@@ -960,7 +975,7 @@ int HttpStreamParser::FindAndParseResponseHeaders(int new_bytes) {
     end_offset = 0;
   }
 
-  if (end_offset == -1)
+  if (end_offset == std::string::npos)
     return -1;
 
   int rv = ParseResponseHeaders(end_offset);
@@ -973,7 +988,7 @@ int HttpStreamParser::ParseResponseHeaders(int end_offset) {
   scoped_refptr<HttpResponseHeaders> headers;
   DCHECK_EQ(0, read_buf_unused_offset_);
 
-  if (response_header_start_offset_ >= 0) {
+  if (response_header_start_offset_ != std::string::npos) {
     received_bytes_ += end_offset;
     headers = HttpResponseHeaders::TryToCreate(
         base::StringPiece(read_buf_->StartOfBuffer(), end_offset));
@@ -1162,10 +1177,9 @@ int HttpStreamParser::EncodeChunk(const base::StringPiece& payload,
 bool HttpStreamParser::ShouldMergeRequestHeadersAndBody(
     const std::string& request_headers,
     const UploadDataStream* request_body) {
-  if (request_body != NULL &&
+  if (request_body != nullptr &&
       // IsInMemory() ensures that the request body is not chunked.
-      request_body->IsInMemory() &&
-      request_body->size() > 0) {
+      request_body->IsInMemory() && request_body->size() > 0) {
     uint64_t merged_size = request_headers.size() + request_body->size();
     if (merged_size <= kMaxMergedHeaderAndBodySize)
       return true;

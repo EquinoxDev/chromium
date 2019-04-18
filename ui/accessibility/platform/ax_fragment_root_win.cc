@@ -4,6 +4,8 @@
 
 #include "ui/accessibility/platform/ax_fragment_root_win.h"
 
+#include <unordered_map>
+
 #include "base/no_destructor.h"
 #include "ui/accessibility/platform/ax_platform_node_win.h"
 #include "ui/base/win/atl_module.h"
@@ -158,6 +160,16 @@ gfx::NativeViewAccessible AXFragmentRootWin::GetNativeViewAccessible() {
   return platform_node_.Get();
 }
 
+void AXFragmentRootWin::SetParent(gfx::NativeViewAccessible parent) {
+  if (parent != nullptr) {
+    parent_ = static_cast<ui::AXPlatformNodeWin*>(
+        ui::AXPlatformNode::FromNativeViewAccessible(parent));
+    DCHECK(parent_);
+  } else {
+    parent_ = nullptr;
+  }
+}
+
 void AXFragmentRootWin::SetChild(gfx::NativeViewAccessible child) {
   if (child != nullptr) {
     child_ = static_cast<ui::AXPlatformNodeWin*>(
@@ -166,6 +178,14 @@ void AXFragmentRootWin::SetChild(gfx::NativeViewAccessible child) {
   } else {
     child_ = nullptr;
   }
+}
+
+gfx::NativeViewAccessible AXFragmentRootWin::GetParent() {
+  if (parent_ != nullptr) {
+    return parent_->GetNativeViewAccessible();
+  }
+
+  return nullptr;
 }
 
 int AXFragmentRootWin::GetChildCount() {

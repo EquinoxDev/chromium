@@ -9,6 +9,7 @@
 #include <memory>
 #include <set>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "base/component_export.h"
@@ -41,7 +42,7 @@
 
 namespace net {
 class FileNetLogObserver;
-class HostResolver;
+class HostResolverManager;
 class HttpAuthHandlerFactory;
 class LoggingNetworkChangeObserver;
 class NetworkQualityEstimator;
@@ -77,7 +78,8 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) NetworkService
       std::unique_ptr<service_manager::BinderRegistry> registry,
       mojom::NetworkServiceRequest request = nullptr,
       net::NetLog* net_log = nullptr,
-      service_manager::mojom::ServiceRequest service_request = nullptr);
+      service_manager::mojom::ServiceRequest service_request = nullptr,
+      bool delay_initialization_until_set_client = false);
 
   ~NetworkService() override;
 
@@ -102,15 +104,13 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) NetworkService
       std::unique_ptr<URLRequestContextBuilderMojo> builder,
       net::URLRequestContext** url_request_context);
 
-  // Sets the HostResolver used by the NetworkService. Must be called before any
-  // NetworkContexts have been created. Used in the legacy path only.
-  // TODO(mmenke): Remove once the NetworkService can create a correct
-  // HostResolver for ChromeOS.
-  void SetHostResolver(std::unique_ptr<net::HostResolver> host_resolver);
-
   // Allows late binding if the mojo request wasn't specified in the
   // constructor.
   void Bind(mojom::NetworkServiceRequest request);
+
+  // Allows the browser process to synchronously initialize the NetworkService.
+  // TODO(jam): remove this once the old path is gone.
+  void Initialize(mojom::NetworkServiceParamsPtr params);
 
   // Creates a NetworkService instance on the current thread, optionally using
   // the passed-in NetLog. Does not take ownership of |net_log|. Must be
@@ -147,7 +147,8 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) NetworkService
       net::NetLog::ThreadSafeObserver* observer);
 
   // mojom::NetworkService implementation:
-  void SetClient(mojom::NetworkServiceClientPtr client) override;
+  void SetClient(mojom::NetworkServiceClientPtr client,
+                 mojom::NetworkServiceParamsPtr params) override;
   void StartNetLog(base::File file,
                    mojom::NetLogCaptureMode capture_mode,
                    base::Value constants) override;
@@ -194,6 +195,8 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) NetworkService
 #if defined(OS_ANDROID)
   void OnApplicationStateChange(base::android::ApplicationState state) override;
 #endif
+  void SetEnvironment(
+      std::vector<mojom::EnvironmentVariablePtr> environment) override;
 
   // Returns the shared HttpAuthHandlerFactory for the NetworkService, creating
   // one if needed.
@@ -213,7 +216,12 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) NetworkService
   KeepaliveStatisticsRecorder* keepalive_statistics_recorder() {
     return &keepalive_statistics_recorder_;
   }
-  net::HostResolver* host_resolver() { return host_resolver_.get(); }
+  net::HostResolverManager* host_resolver_manager() {
+    return host_resolver_manager_.get();
+  }
+  net::HostResolver::Factory* host_resolver_factory() {
+    return host_resolver_factory_.get();
+  }
   NetworkUsageAccumulator* network_usage_accumulator() {
     return network_usage_accumulator_.get();
   }
@@ -231,7 +239,16 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) NetworkService
 
   bool os_crypt_config_set() const { return os_crypt_config_set_; }
 
+  void set_host_resolver_factory_for_testing(
+      std::unique_ptr<net::HostResolver::Factory> host_resolver_factory) {
+    host_resolver_factory_ = std::move(host_resolver_factory);
+  }
+
   static NetworkService* GetNetworkServiceForTesting();
+
+  // Tells the network service to not create a NetworkChangeNotifier instance.
+  // Must be called before the network service is started.
+  static void DisableNetworkChangeNotifierForTesting();
 
  private:
   // service_manager::Service implementation.
@@ -260,6 +277,8 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) NetworkService
 
   service_manager::ServiceBinding service_binding_{this};
 
+  bool initialized_ = false;
+
   net::NetLog* net_log_ = nullptr;
 
   std::unique_ptr<net::FileNetLogObserver> file_net_log_observer_;
@@ -286,7 +305,8 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) NetworkService
 
   std::unique_ptr<DnsConfigChangeManager> dns_config_change_manager_;
 
-  std::unique_ptr<net::HostResolver> host_resolver_;
+  std::unique_ptr<net::HostResolverManager> host_resolver_manager_;
+  std::unique_ptr<net::HostResolver::Factory> host_resolver_factory_;
   std::unique_ptr<NetworkUsageAccumulator> network_usage_accumulator_;
 
   // Must be above |http_auth_handler_factory_|, since it depends on this.

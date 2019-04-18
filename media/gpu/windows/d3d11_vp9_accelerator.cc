@@ -71,16 +71,6 @@ scoped_refptr<VP9Picture> D3D11VP9Accelerator::CreateVP9Picture() {
 }
 
 bool D3D11VP9Accelerator::BeginFrame(D3D11VP9Picture* pic) {
-  Microsoft::WRL::ComPtr<ID3D11VideoDecoderOutputView> output_view;
-  D3D11_VIDEO_DECODER_OUTPUT_VIEW_DESC view_desc = {
-      .DecodeProfile = D3D11_DECODER_PROFILE_VP9_VLD_PROFILE0,
-      .ViewDimension = D3D11_VDOV_DIMENSION_TEXTURE2D,
-      .Texture2D = {.ArraySlice = (UINT)pic->level()}};
-
-  RETURN_ON_HR_FAILURE(CreateVideoDecoderOutputView,
-                       video_device_->CreateVideoDecoderOutputView(
-                           pic->picture_buffer()->texture().Get(), &view_desc,
-                           output_view.GetAddressOf()));
   // This |decrypt_context| has to be outside the if block because pKeyInfo in
   // D3D11_VIDEO_DECODER_BEGIN_FRAME_CRYPTO_SESSION is a pointer (to a GUID).
   base::Optional<CdmProxyContext::D3D11DecryptContext> decrypt_context;
@@ -106,7 +96,7 @@ bool D3D11VP9Accelerator::BeginFrame(D3D11VP9Picture* pic) {
   HRESULT hr;
   do {
     hr = video_context_->DecoderBeginFrame(
-        video_decoder_.Get(), output_view.Get(),
+        video_decoder_.Get(), pic->picture_buffer()->output_view().Get(),
         content_key ? sizeof(*content_key) : 0, content_key.get());
   } while (hr == E_PENDING || hr == D3DERR_WASSTILLDRAWING);
 
@@ -159,14 +149,15 @@ void D3D11VP9Accelerator::CopyFrameParams(
 void D3D11VP9Accelerator::CopyReferenceFrames(
     const scoped_refptr<D3D11VP9Picture>& pic,
     DXVA_PicParams_VP9* pic_params,
-    const std::vector<scoped_refptr<VP9Picture>>& reference_pictures) {
+    const Vp9ReferenceFrameVector& ref_frames) {
   D3D11_TEXTURE2D_DESC texture_descriptor;
   pic->picture_buffer()->texture()->GetDesc(&texture_descriptor);
 
   for (size_t i = 0; i < base::size(pic_params->ref_frame_map); i++) {
-    if (i < reference_pictures.size() && reference_pictures[i].get()) {
+    auto ref_pic = ref_frames.GetFrame(i);
+    if (ref_pic) {
       scoped_refptr<D3D11VP9Picture> our_ref_pic(
-          static_cast<D3D11VP9Picture*>(reference_pictures[i].get()));
+          static_cast<D3D11VP9Picture*>(ref_pic.get()));
       pic_params->ref_frame_map[i].Index7Bits = our_ref_pic->level();
       pic_params->ref_frame_coded_width[i] = texture_descriptor.Width;
       pic_params->ref_frame_coded_height[i] = texture_descriptor.Height;
@@ -361,7 +352,7 @@ bool D3D11VP9Accelerator::SubmitDecode(
     const scoped_refptr<VP9Picture>& picture,
     const Vp9SegmentationParams& segmentation_params,
     const Vp9LoopFilterParams& loop_filter_params,
-    const std::vector<scoped_refptr<VP9Picture>>& reference_pictures,
+    const Vp9ReferenceFrameVector& reference_frames,
     const base::Closure& on_finished_cb) {
   scoped_refptr<D3D11VP9Picture> pic(
       static_cast<D3D11VP9Picture*>(picture.get()));
@@ -371,7 +362,7 @@ bool D3D11VP9Accelerator::SubmitDecode(
 
   DXVA_PicParams_VP9 pic_params = {};
   CopyFrameParams(pic, &pic_params);
-  CopyReferenceFrames(pic, &pic_params, reference_pictures);
+  CopyReferenceFrames(pic, &pic_params, reference_frames);
   CopyFrameRefs(&pic_params, pic);
   CopyLoopFilterParams(&pic_params, loop_filter_params);
   CopyQuantParams(&pic_params, pic);

@@ -13,7 +13,7 @@
 #include "chrome/browser/chromeos/login/users/chrome_user_manager.h"
 #include "chrome/browser/net/system_network_context_manager.h"
 #include "chromeos/cryptohome/cryptohome_parameters.h"
-#include "chromeos/dbus/auth_policy_client.h"
+#include "chromeos/dbus/auth_policy/auth_policy_client.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "chromeos/dbus/login_manager/policy_descriptor.pb.h"
 #include "chromeos/network/onc/variable_expander.h"
@@ -44,13 +44,7 @@ void RunRefreshCallback(base::OnceCallback<void(bool success)> callback,
 
 // Gets the AuthPolicy D-Bus interface.
 chromeos::AuthPolicyClient* GetAuthPolicyClient() {
-  chromeos::DBusThreadManager* thread_manager =
-      chromeos::DBusThreadManager::Get();
-  DCHECK(thread_manager);
-  chromeos::AuthPolicyClient* auth_policy_client =
-      thread_manager->GetAuthPolicyClient();
-  DCHECK(auth_policy_client);
-  return auth_policy_client;
+  return chromeos::AuthPolicyClient::Get();
 }
 
 bool IsComponentPolicyDisabled() {

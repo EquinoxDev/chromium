@@ -20,7 +20,7 @@
 #include "base/task/post_task.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "content/browser/frame_host/render_frame_host_impl.h"
-#include "content/browser/service_worker/embedded_worker_registry.h"
+#include "content/browser/log_console_message.h"
 #include "content/browser/service_worker/embedded_worker_status.h"
 #include "content/browser/service_worker/service_worker_consts.h"
 #include "content/browser/service_worker/service_worker_context_core_observer.h"
@@ -37,7 +37,9 @@
 #include "content/common/service_worker/service_worker_utils.h"
 #include "content/public/browser/browser_task_traits.h"
 #include "content/public/browser/browser_thread.h"
+#include "content/public/browser/console_message.h"
 #include "content/public/common/child_process_host.h"
+#include "content/public/common/url_utils.h"
 #include "ipc/ipc_message.h"
 #include "net/http/http_response_headers.h"
 #include "net/http/http_response_info.h"
@@ -211,64 +213,36 @@ ServiceWorkerContextCore::ProviderHostIterator::~ProviderHostIterator() {}
 ServiceWorkerProviderHost*
 ServiceWorkerContextCore::ProviderHostIterator::GetProviderHost() {
   DCHECK(!IsAtEnd());
-  return provider_host_iterator_->GetCurrentValue();
+  return provider_host_iterator_->second.get();
 }
 
 void ServiceWorkerContextCore::ProviderHostIterator::Advance() {
   DCHECK(!IsAtEnd());
-  DCHECK(!provider_host_iterator_->IsAtEnd());
-  DCHECK(!process_iterator_->IsAtEnd());
-
-  // Advance the inner iterator. If an element is reached, we're done.
-  provider_host_iterator_->Advance();
-  if (ForwardUntilMatchingProviderHost())
-    return;
-
-  // Advance the outer iterator until an element is reached, or end is hit.
-  while (true) {
-    process_iterator_->Advance();
-    if (process_iterator_->IsAtEnd())
-      return;
-    ProviderMap* provider_map = process_iterator_->GetCurrentValue();
-    provider_host_iterator_.reset(new ProviderMap::iterator(provider_map));
-    if (ForwardUntilMatchingProviderHost())
-      return;
-  }
+  provider_host_iterator_++;
+  ForwardUntilMatchingProviderHost();
 }
 
 bool ServiceWorkerContextCore::ProviderHostIterator::IsAtEnd() {
-  return process_iterator_->IsAtEnd() &&
-         (!provider_host_iterator_ || provider_host_iterator_->IsAtEnd());
+  return provider_host_iterator_ == map_->end();
 }
 
 ServiceWorkerContextCore::ProviderHostIterator::ProviderHostIterator(
-    ProcessToProviderMap* map,
+    ProviderByIdMap* map,
     ProviderHostPredicate predicate)
-    : map_(map), predicate_(std::move(predicate)) {
-  DCHECK(map);
-  Initialize();
+    : map_(map),
+      predicate_(std::move(predicate)),
+      provider_host_iterator_(map_->begin()) {
+  ForwardUntilMatchingProviderHost();
 }
 
-void ServiceWorkerContextCore::ProviderHostIterator::Initialize() {
-  process_iterator_.reset(new ProcessToProviderMap::iterator(map_));
-  // Advance to the first element.
-  while (!process_iterator_->IsAtEnd()) {
-    ProviderMap* provider_map = process_iterator_->GetCurrentValue();
-    provider_host_iterator_.reset(new ProviderMap::iterator(provider_map));
-    if (ForwardUntilMatchingProviderHost())
-      return;
-    process_iterator_->Advance();
-  }
-}
-
-bool ServiceWorkerContextCore::ProviderHostIterator::
+void ServiceWorkerContextCore::ProviderHostIterator::
     ForwardUntilMatchingProviderHost() {
-  while (!provider_host_iterator_->IsAtEnd()) {
+  while (!IsAtEnd()) {
     if (predicate_.is_null() || predicate_.Run(GetProviderHost()))
-      return true;
-    provider_host_iterator_->Advance();
+      return;
+    provider_host_iterator_++;
   }
-  return false;
+  return;
 }
 
 ServiceWorkerContextCore::ServiceWorkerContextCore(
@@ -281,7 +255,7 @@ ServiceWorkerContextCore::ServiceWorkerContextCore(
         observer_list,
     ServiceWorkerContextWrapper* wrapper)
     : wrapper_(wrapper),
-      providers_(std::make_unique<ProcessToProviderMap>()),
+      providers_(std::make_unique<ProviderByIdMap>()),
       provider_by_uuid_(std::make_unique<ProviderByClientUUIDMap>()),
       loader_factory_getter_(url_loader_factory_getter),
       force_update_on_page_load_(false),
@@ -294,7 +268,6 @@ ServiceWorkerContextCore::ServiceWorkerContextCore(
   storage_ = ServiceWorkerStorage::Create(
       user_data_directory, AsWeakPtr(), std::move(database_task_runner),
       quota_manager_proxy, special_storage_policy);
-  embedded_worker_registry_ = EmbeddedWorkerRegistry::Create(AsWeakPtr());
   job_coordinator_ = std::make_unique<ServiceWorkerJobCoordinator>(AsWeakPtr());
 }
 
@@ -308,15 +281,13 @@ ServiceWorkerContextCore::ServiceWorkerContextCore(
       was_service_worker_registered_(
           old_context->was_service_worker_registered_),
       observer_list_(old_context->observer_list_),
+      next_embedded_worker_id_(old_context->next_embedded_worker_id_),
       weak_factory_(this) {
   DCHECK(observer_list_);
 
   // These get a WeakPtr from |weak_factory_|, so must be set after
   // |weak_factory_| is initialized.
   storage_ = ServiceWorkerStorage::Create(AsWeakPtr(), old_context->storage());
-  embedded_worker_registry_ = EmbeddedWorkerRegistry::Create(
-      AsWeakPtr(),
-      old_context->embedded_worker_registry());
   job_coordinator_ = std::make_unique<ServiceWorkerJobCoordinator>(AsWeakPtr());
 }
 
@@ -330,52 +301,22 @@ ServiceWorkerContextCore::~ServiceWorkerContextCore() {
 void ServiceWorkerContextCore::AddProviderHost(
     std::unique_ptr<ServiceWorkerProviderHost> host) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-  int process_id = host->process_id();
   int provider_id = host->provider_id();
-  // Precreated hosts are stored in the same map regardless of process.
-  if (ServiceWorkerUtils::IsBrowserAssignedProviderId(provider_id))
-    process_id = ChildProcessHost::kInvalidUniqueID;
-  ProviderMap* map = GetProviderMapForProcess(process_id);
-  if (!map) {
-    providers_->AddWithID(std::make_unique<ProviderMap>(), process_id);
-    map = GetProviderMapForProcess(process_id);
-  }
-  map->AddWithID(std::move(host), provider_id);
+  providers_->emplace(provider_id, std::move(host));
 }
 
 ServiceWorkerProviderHost* ServiceWorkerContextCore::GetProviderHost(
-    int process_id,
     int provider_id) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-  // Precreated hosts are stored in the same map regardless of process.
-  if (ServiceWorkerUtils::IsBrowserAssignedProviderId(provider_id))
-    process_id = ChildProcessHost::kInvalidUniqueID;
-  ProviderMap* map = GetProviderMapForProcess(process_id);
-  if (!map)
+  auto found = providers_->find(provider_id);
+  if (found == providers_->end())
     return nullptr;
-  return map->Lookup(provider_id);
+  return found->second.get();
 }
 
-void ServiceWorkerContextCore::RemoveProviderHost(
-    int process_id, int provider_id) {
+void ServiceWorkerContextCore::RemoveProviderHost(int provider_id) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-  // Precreated hosts are stored in the same map regardless of process.
-  if (ServiceWorkerUtils::IsBrowserAssignedProviderId(provider_id))
-    process_id = ChildProcessHost::kInvalidUniqueID;
-  ProviderMap* map = GetProviderMapForProcess(process_id);
-  DCHECK(map);
-  map->Remove(provider_id);
-}
-
-void ServiceWorkerContextCore::RemoveAllProviderHostsForProcess(
-    int process_id) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-  if (providers_->Lookup(process_id))
-    providers_->Remove(process_id);
-  // This function is used to prevent <process_id, provider_id> collisions when
-  // a render process host is reused with the same process id. Don't bother
-  // removing the providers in this process with browser-assigned ids, which
-  // live in a different map, since they have unique ids.
+  providers_->erase(provider_id);
 }
 
 std::unique_ptr<ServiceWorkerContextCore::ProviderHostIterator>
@@ -538,10 +479,8 @@ void ServiceWorkerContextCore::DidGetRegistrationsForDeleteForOrigin(
   }
 }
 
-ServiceWorkerContextCore::ProviderMap*
-ServiceWorkerContextCore::GetProviderMapForProcess(int process_id) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-  return providers_->Lookup(process_id);
+int ServiceWorkerContextCore::GetNextEmbeddedWorkerId() {
+  return next_embedded_worker_id_++;
 }
 
 void ServiceWorkerContextCore::RegistrationComplete(
@@ -652,6 +591,14 @@ void ServiceWorkerContextCore::AddLiveVersion(ServiceWorkerVersion* version) {
 }
 
 void ServiceWorkerContextCore::RemoveLiveVersion(int64_t id) {
+  if (live_versions_[id]->running_status() != EmbeddedWorkerStatus::STOPPED) {
+    // Notify all observers that this live version is stopped, as it will
+    // be removed from |live_versions_|.
+    observer_list_->Notify(
+        FROM_HERE, &ServiceWorkerContextCoreObserver::OnRunningStateChanged, id,
+        EmbeddedWorkerStatus::STOPPED);
+  }
+
   live_versions_.erase(id);
 }
 
@@ -832,16 +779,27 @@ void ServiceWorkerContextCore::OnErrorReported(
 
 void ServiceWorkerContextCore::OnReportConsoleMessage(
     ServiceWorkerVersion* version,
-    int source_identifier,
-    int message_level,
+    blink::mojom::ConsoleMessageSource source,
+    blink::mojom::ConsoleMessageLevel message_level,
     const base::string16& message,
     int line_number,
     const GURL& source_url) {
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
+  // NOTE: This differs slightly from
+  // RenderFrameHostImpl::OnDidAddMessageToConsole, which also asks the
+  // content embedder whether to classify the message as a builtin component.
+  // This is called on the IO thread, though, so we can't easily get a
+  // BrowserContext and call ContentBrowserClient::IsBuiltinComponent().
+  const bool is_builtin_component = HasWebUIScheme(source_url);
+
+  LogConsoleMessage(ConsoleMessageLevelToLogSeverity(message_level), message,
+                    line_number, is_builtin_component, wrapper_->is_incognito(),
+                    base::UTF8ToUTF16(source_url.spec()));
+
   observer_list_->Notify(
       FROM_HERE, &ServiceWorkerContextCoreObserver::OnReportConsoleMessage,
       version->version_id(),
-      ServiceWorkerContextCoreObserver::ConsoleMessage(
-          source_identifier, message_level, message, line_number, source_url));
+      ConsoleMessage(source, message_level, message, line_number, source_url));
 }
 
 void ServiceWorkerContextCore::OnControlleeAdded(

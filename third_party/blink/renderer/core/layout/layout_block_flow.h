@@ -60,10 +60,8 @@ class LayoutMultiColumnSpannerPlaceholder;
 class LayoutRubyRun;
 class MarginInfo;
 class NGBlockBreakToken;
-class NGBreakToken;
 class NGConstraintSpace;
-class NGLayoutResult;
-class NGPaintFragment;
+class NGOffsetMapping;
 class NGPhysicalFragment;
 
 struct NGInlineNodeData;
@@ -104,7 +102,8 @@ class CORE_EXPORT LayoutBlockFlow : public LayoutBlock {
   ~LayoutBlockFlow() override;
 
   static LayoutBlockFlow* CreateAnonymous(Document*,
-                                          scoped_refptr<ComputedStyle>);
+                                          scoped_refptr<ComputedStyle>,
+                                          LegacyLayout);
   bool BeingDestroyed() const { return being_destroyed_; }
 
   bool IsLayoutBlockFlow() const final { return true; }
@@ -360,7 +359,6 @@ class CORE_EXPORT LayoutBlockFlow : public LayoutBlock {
   void PositionSpannerDescendant(LayoutMultiColumnSpannerPlaceholder& child);
 
   bool CreatesNewFormattingContext() const override;
-  bool AvoidsFloats() const final;
 
   using LayoutBoxModelObject::MoveChildrenTo;
   void MoveChildrenTo(LayoutBoxModelObject* to_box_model_object,
@@ -457,10 +455,6 @@ class CORE_EXPORT LayoutBlockFlow : public LayoutBlock {
   virtual void ResetNGInlineNodeData() {}
   virtual void ClearNGInlineNodeData() {}
   virtual bool HasNGInlineNodeData() const { return false; }
-  virtual NGPaintFragment* PaintFragment() const { return nullptr; }
-  virtual scoped_refptr<const NGLayoutResult> CachedLayoutResult(
-      const NGConstraintSpace&,
-      const NGBreakToken*);
   virtual bool AreCachedLinesValidFor(const NGConstraintSpace&) const;
   virtual void WillCollectInlines() {}
   virtual void SetPaintFragment(const NGBlockBreakToken*,
@@ -491,10 +485,6 @@ class CORE_EXPORT LayoutBlockFlow : public LayoutBlock {
 
   void UpdateBlockChildDirtyBitsBeforeLayout(bool relayout_children,
                                              LayoutBox&);
-
-  void ComputeSelfHitTestRects(Vector<LayoutRect>&,
-                               const LayoutPoint& layer_offset) const override;
-
   void AbsoluteRects(Vector<IntRect>&,
                      const LayoutPoint& accumulated_offset) const override;
   void AbsoluteQuads(Vector<FloatQuad>&,
@@ -637,17 +627,6 @@ class CORE_EXPORT LayoutBlockFlow : public LayoutBlock {
         marking_behaviour == kMarkContainerChain);
   }
 
-  bool IsPagedOverflow(const ComputedStyle&);
-
-  enum FlowThreadType {
-    kNoFlowThread,
-    kMultiColumnFlowThread,
-    kPagedFlowThread
-  };
-
-  FlowThreadType GetFlowThreadType(const ComputedStyle&);
-
-  LayoutMultiColumnFlowThread* CreateMultiColumnFlowThread(FlowThreadType);
   void CreateOrDestroyMultiColumnFlowThreadIfNeeded(
       const ComputedStyle* old_style);
 
@@ -758,18 +737,8 @@ class CORE_EXPORT LayoutBlockFlow : public LayoutBlock {
     USING_FAST_MALLOC(LayoutBlockFlowRareData);
 
    public:
-    LayoutBlockFlowRareData(const LayoutBlockFlow* block)
-        : margins_(PositiveMarginBeforeDefault(block),
-                   NegativeMarginBeforeDefault(block),
-                   PositiveMarginAfterDefault(block),
-                   NegativeMarginAfterDefault(block)),
-          multi_column_flow_thread_(nullptr),
-          break_before_(static_cast<unsigned>(EBreakBetween::kAuto)),
-          break_after_(static_cast<unsigned>(EBreakBetween::kAuto)),
-          line_break_to_avoid_widow_(-1),
-          did_break_at_line_to_avoid_widow_(false),
-          discard_margin_before_(false),
-          discard_margin_after_(false) {}
+    explicit LayoutBlockFlowRareData(const LayoutBlockFlow* block);
+    ~LayoutBlockFlowRareData();
 
     static LayoutUnit PositiveMarginBeforeDefault(
         const LayoutBlockFlow* block) {
@@ -791,7 +760,13 @@ class CORE_EXPORT LayoutBlockFlow : public LayoutBlock {
 
     LayoutUnit first_forced_break_offset_;
 
-    LayoutMultiColumnFlowThread* multi_column_flow_thread_;
+    LayoutMultiColumnFlowThread* multi_column_flow_thread_ = nullptr;
+
+    // |offset_mapping_| is used only for legacy layout tree for caching offset
+    // mapping for |NGInlineNode::GetOffsetMapping()|.
+    // TODO(yosin): Once we have no legacy support, we should get rid of
+    // |offset_mapping_| here.
+    std::unique_ptr<NGOffsetMapping> offset_mapping_;
 
     unsigned break_before_ : 4;
     unsigned break_after_ : 4;
@@ -801,6 +776,10 @@ class CORE_EXPORT LayoutBlockFlow : public LayoutBlock {
     bool discard_margin_after_ : 1;
     DISALLOW_COPY_AND_ASSIGN(LayoutBlockFlowRareData);
   };
+
+  void ClearOffsetMapping();
+  const NGOffsetMapping* GetOffsetMapping() const;
+  void SetOffsetMapping(std::unique_ptr<NGOffsetMapping>);
 
   const FloatingObjects* GetFloatingObjects() const {
     return floating_objects_.get();
@@ -1054,6 +1033,13 @@ class CORE_EXPORT LayoutBlockFlow : public LayoutBlock {
 };
 
 DEFINE_LAYOUT_OBJECT_TYPE_CASTS(LayoutBlockFlow, IsLayoutBlockFlow());
+
+template <>
+struct DowncastTraits<LayoutBlockFlow> {
+  static bool AllowFrom(const LayoutObject& object) {
+    return object.IsLayoutBlockFlow();
+  }
+};
 
 }  // namespace blink
 

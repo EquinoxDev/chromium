@@ -39,7 +39,7 @@ import org.junit.Test;
 import org.junit.runner.RunWith;
 
 import org.chromium.base.ContextUtils;
-import org.chromium.base.ThreadUtils;
+import org.chromium.base.task.PostTask;
 import org.chromium.base.test.util.CallbackHelper;
 import org.chromium.base.test.util.DisabledTest;
 import org.chromium.base.test.util.FlakyTest;
@@ -66,8 +66,10 @@ import org.chromium.chrome.test.ui.DisableAnimationsTestRule;
 import org.chromium.chrome.test.util.browser.Features.DisableFeatures;
 import org.chromium.chrome.test.util.browser.Features.EnableFeatures;
 import org.chromium.components.offline_items_collection.OfflineItem;
+import org.chromium.content_public.browser.UiThreadTaskTraits;
 import org.chromium.content_public.browser.test.util.Criteria;
 import org.chromium.content_public.browser.test.util.CriteriaHelper;
+import org.chromium.content_public.browser.test.util.TestThreadUtils;
 import org.chromium.ui.test.util.UiRestriction;
 
 import java.util.HashMap;
@@ -135,7 +137,7 @@ public class DownloadActivityTest {
         Editor editor = ContextUtils.getAppSharedPreferences().edit();
         editor.putBoolean(PREF_SHOW_STORAGE_INFO_HEADER, true).apply();
 
-        ThreadUtils.runOnUiThreadBlocking(() -> {
+        TestThreadUtils.runOnUiThreadBlocking(() -> {
             PrefServiceBridge.getInstance().setPromptForDownloadAndroid(
                     DownloadPromptStatus.DONT_SHOW);
         });
@@ -144,7 +146,10 @@ public class DownloadActivityTest {
         features.put(ChromeFeatureList.DOWNLOADS_LOCATION_CHANGE, false);
         features.put(ChromeFeatureList.DOWNLOAD_HOME_SHOW_STORAGE_INFO, false);
         features.put(ChromeFeatureList.DOWNLOAD_HOME_V2, false);
+        features.put(ChromeFeatureList.MOBILE_IDENTITY_CONSISTENCY, false);
         features.put(ChromeFeatureList.OVERSCROLL_HISTORY_NAVIGATION, false);
+        features.put(ChromeFeatureList.DOWNLOAD_OFFLINE_CONTENT_PROVIDER, false);
+        features.put(ChromeFeatureList.DOWNLOAD_RENAME, false);
         ChromeFeatureList.setTestFeatures(features);
 
         mStubbedProvider = new StubbedProvider();
@@ -177,7 +182,8 @@ public class DownloadActivityTest {
         int callCount = mAdapterObserver.onChangedCallback.getCallCount();
         int spaceDisplayCallCount = mAdapterObserver.onSpaceDisplayUpdatedCallback.getCallCount();
         final DownloadItem updateItem = StubbedProvider.createDownloadItem(7, "20151021 07:28");
-        ThreadUtils.runOnUiThread(() -> mAdapter.onDownloadItemCreated(updateItem));
+        PostTask.runOrPostTask(
+                UiThreadTaskTraits.DEFAULT, () -> mAdapter.onDownloadItemCreated(updateItem));
         mAdapterObserver.onChangedCallback.waitForCallback(callCount, 2);
         mAdapterObserver.onSpaceDisplayUpdatedCallback.waitForCallback(spaceDisplayCallCount);
         // Use Criteria here because the text for SpaceDisplay is updated through an AsyncTask.
@@ -188,7 +194,8 @@ public class DownloadActivityTest {
         spaceDisplayCallCount = mAdapterObserver.onSpaceDisplayUpdatedCallback.getCallCount();
         final DownloadItem deletedItem = StubbedProvider.createDownloadItem(6, "20151021 07:28");
         deletedItem.setHasBeenExternallyRemoved(true);
-        ThreadUtils.runOnUiThread(() -> mAdapter.onDownloadItemUpdated(deletedItem));
+        PostTask.runOrPostTask(
+                UiThreadTaskTraits.DEFAULT, () -> mAdapter.onDownloadItemUpdated(deletedItem));
         mAdapterObserver.onChangedCallback.waitForCallback(callCount, 2);
         mAdapterObserver.onSpaceDisplayUpdatedCallback.waitForCallback(spaceDisplayCallCount);
         onView(withText("5.50 GB downloaded")).check(matches(isDisplayed()));
@@ -197,9 +204,8 @@ public class DownloadActivityTest {
         callCount = mAdapterObserver.onChangedCallback.getCallCount();
         spaceDisplayCallCount = mAdapterObserver.onSpaceDisplayUpdatedCallback.getCallCount();
         final OfflineItem deletedPage = StubbedProvider.createOfflineItem(3, "20151021 07:28");
-        ThreadUtils.runOnUiThread(
-                ()
-                        -> mStubbedProvider.getOfflineContentProvider().observer.onItemRemoved(
+        PostTask.runOrPostTask(UiThreadTaskTraits.DEFAULT,
+                () -> mStubbedProvider.getOfflineContentProvider().observer.onItemRemoved(
                                 deletedPage.id));
         mAdapterObserver.onChangedCallback.waitForCallback(callCount, 2);
         mAdapterObserver.onSpaceDisplayUpdatedCallback.waitForCallback(spaceDisplayCallCount);
@@ -270,9 +276,8 @@ public class DownloadActivityTest {
         Assert.assertEquals(
                 0, mStubbedProvider.getOfflineContentProvider().deleteItemCallback.getCallCount());
         int callCount = mAdapterObserver.onSpaceDisplayUpdatedCallback.getCallCount();
-        ThreadUtils.runOnUiThread(
-                ()
-                        -> Assert.assertTrue(
+        PostTask.runOrPostTask(UiThreadTaskTraits.DEFAULT,
+                () -> Assert.assertTrue(
                                 mUi.getDownloadManagerToolbarForTests()
                                         .getMenu()
                                         .performIdentifierAction(
@@ -341,7 +346,7 @@ public class DownloadActivityTest {
         int callCount = mAdapterObserver.onSpaceDisplayUpdatedCallback.getCallCount();
         final DownloadItem item7 = StubbedProvider.createDownloadItem(7, "20161021 07:28");
         final DownloadItem item8 = StubbedProvider.createDownloadItem(8, "20161021 17:28");
-        ThreadUtils.runOnUiThread(() -> {
+        PostTask.runOrPostTask(UiThreadTaskTraits.DEFAULT, () -> {
             mAdapter.onDownloadItemCreated(item7);
             mAdapter.onDownloadItemCreated(item8);
         });
@@ -364,9 +369,8 @@ public class DownloadActivityTest {
 
         // Click the delete button.
         callCount = mAdapterObserver.onSpaceDisplayUpdatedCallback.getCallCount();
-        ThreadUtils.runOnUiThread(
-                ()
-                        -> Assert.assertTrue(
+        PostTask.runOrPostTask(UiThreadTaskTraits.DEFAULT,
+                () -> Assert.assertTrue(
                                 mUi.getDownloadManagerToolbarForTests()
                                         .getMenu()
                                         .performIdentifierAction(
@@ -382,7 +386,7 @@ public class DownloadActivityTest {
         callCount = mAdapterObserver.onSpaceDisplayUpdatedCallback.getCallCount();
         final View rootView = mUi.getView().getRootView();
         Assert.assertNotNull(rootView.findViewById(R.id.snackbar));
-        ThreadUtils.runOnUiThread(
+        PostTask.runOrPostTask(UiThreadTaskTraits.DEFAULT,
                 (Runnable) () -> rootView.findViewById(R.id.snackbar_button).callOnClick());
 
         mAdapterObserver.onSpaceDisplayUpdatedCallback.waitForCallback(callCount);
@@ -417,7 +421,7 @@ public class DownloadActivityTest {
         int callCount = mAdapterObserver.onSpaceDisplayUpdatedCallback.getCallCount();
         final DownloadItem item7 = StubbedProvider.createDownloadItem(7, "20161021 07:28");
         final DownloadItem item8 = StubbedProvider.createDownloadItem(8, "20161021 17:28");
-        ThreadUtils.runOnUiThread(() -> {
+        PostTask.runOrPostTask(UiThreadTaskTraits.DEFAULT, () -> {
             mAdapter.onDownloadItemCreated(item7);
             mAdapter.onDownloadItemCreated(item8);
         });
@@ -448,7 +452,7 @@ public class DownloadActivityTest {
         callCount = mAdapterObserver.onSpaceDisplayUpdatedCallback.getCallCount();
         final View rootView = mUi.getView().getRootView();
         Assert.assertNotNull(rootView.findViewById(R.id.snackbar));
-        ThreadUtils.runOnUiThread(
+        PostTask.runOrPostTask(UiThreadTaskTraits.DEFAULT,
                 (Runnable) () -> rootView.findViewById(R.id.snackbar_button).callOnClick());
 
         mAdapterObserver.onSpaceDisplayUpdatedCallback.waitForCallback(callCount);
@@ -481,7 +485,7 @@ public class DownloadActivityTest {
         int callCount = mAdapterObserver.onSpaceDisplayUpdatedCallback.getCallCount();
         final DownloadItem item7 = StubbedProvider.createDownloadItem(7, "20161021 07:28");
         final DownloadItem item8 = StubbedProvider.createDownloadItem(8, "20161021 17:28");
-        ThreadUtils.runOnUiThread(() -> {
+        PostTask.runOrPostTask(UiThreadTaskTraits.DEFAULT, () -> {
             mAdapter.onDownloadItemCreated(item7);
             mAdapter.onDownloadItemCreated(item8);
         });
@@ -504,9 +508,8 @@ public class DownloadActivityTest {
 
         // Click the delete button.
         callCount = mAdapterObserver.onSpaceDisplayUpdatedCallback.getCallCount();
-        ThreadUtils.runOnUiThread(
-                ()
-                        -> Assert.assertTrue(
+        PostTask.runOrPostTask(UiThreadTaskTraits.DEFAULT,
+                () -> Assert.assertTrue(
                                 mUi.getDownloadManagerToolbarForTests()
                                         .getMenu()
                                         .performIdentifierAction(
@@ -521,7 +524,7 @@ public class DownloadActivityTest {
         callCount = mAdapterObserver.onSpaceDisplayUpdatedCallback.getCallCount();
         final View rootView = mUi.getView().getRootView();
         Assert.assertNotNull(rootView.findViewById(R.id.snackbar));
-        ThreadUtils.runOnUiThread(
+        PostTask.runOrPostTask(UiThreadTaskTraits.DEFAULT,
                 (Runnable) () -> rootView.findViewById(R.id.snackbar_button).callOnClick());
 
         mAdapterObserver.onSpaceDisplayUpdatedCallback.waitForCallback(callCount);
@@ -562,7 +565,7 @@ public class DownloadActivityTest {
                 shareIntent.getParcelableArrayListExtra(Intent.EXTRA_STREAM));
 
         // Scroll to ensure the item at position 8 is visible.
-        ThreadUtils.runOnUiThread(() -> mRecyclerView.scrollToPosition(9));
+        PostTask.runOrPostTask(UiThreadTaskTraits.DEFAULT, () -> mRecyclerView.scrollToPosition(9));
         InstrumentationRegistry.getInstrumentation().waitForIdleSync();
 
         // Select another image, download item #0.
@@ -576,7 +579,7 @@ public class DownloadActivityTest {
                 shareIntent.getParcelableArrayListExtra(Intent.EXTRA_STREAM).size());
 
         // Scroll to ensure the item at position 5 is visible.
-        ThreadUtils.runOnUiThread(() -> mRecyclerView.scrollToPosition(6));
+        PostTask.runOrPostTask(UiThreadTaskTraits.DEFAULT, () -> mRecyclerView.scrollToPosition(6));
         InstrumentationRegistry.getInstrumentation().waitForIdleSync();
 
         // Select non-image item, download item #4.
@@ -590,7 +593,7 @@ public class DownloadActivityTest {
                 shareIntent.getParcelableArrayListExtra(Intent.EXTRA_STREAM).size());
 
         // Scroll to ensure the item at position 2 is visible.
-        ThreadUtils.runOnUiThread(() -> mRecyclerView.scrollToPosition(3));
+        PostTask.runOrPostTask(UiThreadTaskTraits.DEFAULT, () -> mRecyclerView.scrollToPosition(3));
         InstrumentationRegistry.getInstrumentation().waitForIdleSync();
 
         // Select an offline page #3.
@@ -615,7 +618,7 @@ public class DownloadActivityTest {
     @EnableFeatures("OfflinePagesSharing")
     public void testShareOfflinePageWithP2PSharingEnabled() throws Exception {
         // Scroll to ensure the item at position 2 is visible.
-        ThreadUtils.runOnUiThread(() -> mRecyclerView.scrollToPosition(3));
+        PostTask.runOrPostTask(UiThreadTaskTraits.DEFAULT, () -> mRecyclerView.scrollToPosition(3));
         InstrumentationRegistry.getInstrumentation().waitForIdleSync();
 
         // Select the offline page located at position #3.
@@ -701,7 +704,7 @@ public class DownloadActivityTest {
         Assert.assertTrue(mStubbedProvider.getSelectionDelegate().isSelectionEnabled());
 
         int callCount = mAdapterObserver.onSelectionCallback.getCallCount();
-        ThreadUtils.runOnUiThreadBlocking(
+        TestThreadUtils.runOnUiThreadBlocking(
                 (Runnable) () -> toolbar.getMenu().performIdentifierAction(R.id.search_menu_id, 0));
 
         // The selection should be cleared when a search is started.
@@ -802,7 +805,7 @@ public class DownloadActivityTest {
     private void clickOnFilter(final DownloadManagerUi ui, final int position) throws Exception {
         int previousCount = mAdapterObserver.onChangedCallback.getCallCount();
         final Spinner spinner = mUi.getDownloadManagerToolbarForTests().getSpinnerForTests();
-        ThreadUtils.runOnUiThread(() -> {
+        PostTask.runOrPostTask(UiThreadTaskTraits.DEFAULT, () -> {
             spinner.performClick();
             spinner.setSelection(position);
         });
@@ -812,13 +815,14 @@ public class DownloadActivityTest {
     private void toggleItemSelection(int position) throws Exception {
         int callCount = mAdapterObserver.onSelectionCallback.getCallCount();
         final DownloadItemView itemView = getView(position);
-        ThreadUtils.runOnUiThread((Runnable) () -> itemView.performLongClick());
+        PostTask.runOrPostTask(
+                UiThreadTaskTraits.DEFAULT, (Runnable) () -> itemView.performLongClick());
         mAdapterObserver.onSelectionCallback.waitForCallback(callCount, 1);
     }
 
     private void simulateContextMenu(int position, @StringRes int text) throws Exception {
         final DownloadItemView view = getView(position);
-        ThreadUtils.runOnUiThread((Runnable) () -> {
+        PostTask.runOrPostTask(UiThreadTaskTraits.DEFAULT, (Runnable) () -> {
             Item[] items = view.getItems();
             for (Item item : items) {
                 if (item.getTextId() == text) {

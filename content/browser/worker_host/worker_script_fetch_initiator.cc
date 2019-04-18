@@ -40,7 +40,6 @@
 #include "services/network/public/cpp/features.h"
 #include "services/network/public/cpp/shared_url_loader_factory.h"
 #include "third_party/blink/public/common/loader//url_loader_factory_bundle.h"
-#include "third_party/blink/public/common/service_worker/service_worker_utils.h"
 #include "third_party/blink/public/mojom/renderer_preferences.mojom.h"
 #include "third_party/blink/public/mojom/service_worker/service_worker_provider.mojom.h"
 #include "url/origin.h"
@@ -58,7 +57,6 @@ void WorkerScriptFetchInitiator::Start(
     StoragePartitionImpl* storage_partition,
     CompletionCallback callback) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
-  DCHECK(blink::ServiceWorkerUtils::IsServicificationEnabled());
   DCHECK(storage_partition);
   DCHECK(resource_type == RESOURCE_TYPE_WORKER ||
          resource_type == RESOURCE_TYPE_SHARED_WORKER)
@@ -95,6 +93,7 @@ void WorkerScriptFetchInitiator::Start(
     // (https://crbug.com/715632)
     resource_request = std::make_unique<network::ResourceRequest>();
     resource_request->url = script_url;
+    resource_request->site_for_cookies = script_url;
     resource_request->request_initiator = request_initiator;
     resource_request->resource_type = resource_type;
 
@@ -129,7 +128,6 @@ WorkerScriptFetchInitiator::CreateFactoryBundle(
     StoragePartitionImpl* storage_partition,
     bool file_support) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
-  DCHECK(blink::ServiceWorkerUtils::IsServicificationEnabled());
 
   ContentBrowserClient::NonNetworkURLLoaderFactoryMap non_network_factories;
   GetContentClient()
@@ -216,9 +214,11 @@ void WorkerScriptFetchInitiator::AddAdditionalRequestHeaders(
   }
 
   // Set Fetch metadata headers if necessary.
-  if ((base::FeatureList::IsEnabled(features::kSecMetadata) ||
-       base::CommandLine::ForCurrentProcess()->HasSwitch(
-           switches::kEnableExperimentalWebPlatformFeatures)) &&
+  bool experimental_features_enabled =
+      base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kEnableExperimentalWebPlatformFeatures);
+  if ((base::FeatureList::IsEnabled(network::features::kFetchMetadata) ||
+       experimental_features_enabled) &&
       IsOriginSecure(resource_request->url)) {
     // The worker's origin can be different from the constructor's origin, for
     // example, when the worker created from the extension.
@@ -229,13 +229,18 @@ void WorkerScriptFetchInitiator::AddAdditionalRequestHeaders(
             url::Origin::Create(resource_request->url))) {
       site_value = "same-origin";
     }
-    resource_request->headers.SetHeaderIfMissing("Sec-Fetch-Dest",
-                                                 "sharedworker");
     resource_request->headers.SetHeaderIfMissing("Sec-Fetch-Site",
                                                  site_value.c_str());
     resource_request->headers.SetHeaderIfMissing("Sec-Fetch-Mode",
                                                  "same-origin");
-    resource_request->headers.SetHeaderIfMissing("Sec-Fetch-User", "?F");
+    // We don't set `Sec-Fetch-User` for subresource requests.
+
+    if (base::FeatureList::IsEnabled(
+            network::features::kFetchMetadataDestination) ||
+        experimental_features_enabled) {
+      resource_request->headers.SetHeaderIfMissing("Sec-Fetch-Dest",
+                                                   "sharedworker");
+    }
   }
 }
 
@@ -254,7 +259,6 @@ void WorkerScriptFetchInitiator::CreateScriptLoaderOnIO(
         blob_url_loader_factory_info,
     CompletionCallback callback) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
-  DCHECK(blink::ServiceWorkerUtils::IsServicificationEnabled());
   DCHECK(resource_context);
 
   // Set up for service worker.
@@ -368,14 +372,30 @@ void WorkerScriptFetchInitiator::DidCreateScriptLoaderOnIO(
         std::move(subresource_loader_params->appcache_loader_factory_info);
   }
 
+  // NetworkService (PlzWorker):
+  // Prepare the controller service worker info to pass to the renderer. This is
+  // only provided if NetworkService is enabled. In the non-NetworkService case,
+  // the controller is sent in SetController IPCs during the request for the
+  // shared worker script.
+  blink::mojom::ControllerServiceWorkerInfoPtr controller;
+  base::WeakPtr<ServiceWorkerObjectHost> controller_service_worker_object_host;
+  if (subresource_loader_params &&
+      subresource_loader_params->controller_service_worker_info) {
+    DCHECK(base::FeatureList::IsEnabled(network::features::kNetworkService));
+    controller =
+        std::move(subresource_loader_params->controller_service_worker_info);
+    controller_service_worker_object_host =
+        subresource_loader_params->controller_service_worker_object_host;
+  }
+
   base::PostTaskWithTraits(
       FROM_HERE, {BrowserThread::UI},
-      base::BindOnce(std::move(callback),
-                     std::move(service_worker_provider_info),
-                     std::move(main_script_loader_factory),
-                     std::move(subresource_loader_factories),
-                     std::move(main_script_load_params),
-                     std::move(subresource_loader_params), success));
+      base::BindOnce(
+          std::move(callback), std::move(service_worker_provider_info),
+          std::move(main_script_loader_factory),
+          std::move(subresource_loader_factories),
+          std::move(main_script_load_params), std::move(controller),
+          std::move(controller_service_worker_object_host), success));
 }
 
 }  // namespace content

@@ -39,6 +39,7 @@
 #include "chrome/test/chromedriver/session.h"
 #include "chrome/test/chromedriver/util.h"
 #include "ui/gfx/geometry/point.h"
+#include "url/url_util.h"
 
 namespace {
 
@@ -171,6 +172,20 @@ int MouseButtonToButtons(MouseButton button) {
       return 16;
     default:
       return 0;
+  }
+}
+
+int KeyToKeyModifiers(std::string key) {
+  if (key == "Shift") {
+    return kShiftKeyModifierMask;
+  } else if (key == "Control") {
+    return kControlKeyModifierMask;
+  } else if (key == "Alt") {
+    return kAltKeyModifierMask;
+  } else if (key == "Meta") {
+    return kMetaKeyModifierMask;
+  } else {
+    return 0;
   }
 }
 
@@ -395,32 +410,41 @@ Status ElementInViewCenter(Session* session,
                            std::string element_id,
                            int* center_x,
                            int* center_y) {
-  WebRect region;
-  Status status = GetElementRegion(session, web_view, element_id, &region);
+  WebPoint center_location;
+  Status status = GetElementLocationInViewCenter(session, web_view, element_id,
+                                                 &center_location);
   if (status.IsError())
     return status;
-  WebPoint region_offset;
-  status = ScrollElementRegionIntoView(session, web_view, element_id, region,
-                                       true /* center */, std::string(),
-                                       &region_offset);
-  if (status.IsError())
-    return status;
-  int innerWidth, innerHeight;
-  status = WindowViewportSize(session, web_view, &innerWidth, &innerHeight);
-  if (status.IsError())
-    return status;
-  int left =
-      std::max(0, std::min(region_offset.x, region_offset.x + region.Width()));
-  int right = std::min(
-      innerWidth, std::max(region_offset.x, region_offset.x + region.Width()));
-  int top =
-      std::max(0, std::min(region_offset.y, region_offset.y + region.Height()));
-  int bottom =
-      std::min(innerHeight,
-               std::max(region_offset.y, region_offset.y + region.Height()));
-  *center_x = static_cast<int>(std::floor((left + right) / 2));
-  *center_y = static_cast<int>(std::floor((top + bottom) / 2));
+
+  *center_x = center_location.x;
+  *center_y = center_location.y;
   return Status(kOk);
+}
+
+bool IsRepeatedClickEvent(float x,
+                          float y,
+                          float last_x,
+                          float last_y,
+                          int click_count,
+                          const base::TimeTicks& timestamp,
+                          const base::TimeTicks& last_mouse_click_time) {
+  const int kDoubleClickTimeMS = 500;
+  const int kDoubleClickRange = 4;
+
+  if (click_count == 0)
+    return false;
+
+  base::TimeDelta time_difference = timestamp - last_mouse_click_time;
+  if (time_difference.InMilliseconds() > kDoubleClickTimeMS)
+    return false;
+
+  if (std::abs(x - last_x) > kDoubleClickRange / 2)
+    return false;
+
+  if (std::abs(y - last_y) > kDoubleClickRange / 2)
+    return false;
+
+  return true;
 }
 
 }  // namespace
@@ -547,6 +571,9 @@ Status ExecuteExecuteScript(Session* session,
     const base::ListValue* args;
     if (!params.GetList("args", &args))
       return Status(kInvalidArgument, "'args' must be a list");
+    // Need to support line oriented comment
+    if (script.find("//") != std::string::npos)
+      script = script + "\n";
 
     return web_view->CallFunction(session->GetCurrentFrameId(),
                                   "function(){" + script + "}", *args, value);
@@ -1250,7 +1277,11 @@ Status ExecutePerformActions(Session* session,
   std::set<std::string> pointer_id_set;
   std::string type;
   std::vector<std::vector<MouseEvent>> mouse_events_list;
+  std::vector<base::DictionaryValue*> mouse_input_states;
+  std::vector<gfx::Point> mouse_locations;
   std::vector<std::vector<TouchEvent>> touch_events_list;
+  std::vector<base::DictionaryValue*> touch_input_states;
+  std::vector<gfx::Point> touch_locations;
   std::vector<std::vector<KeyEvent>> key_events_list;
   std::vector<base::DictionaryValue*> key_input_states;
   size_t longest_mouse_list_size = 0;
@@ -1320,6 +1351,7 @@ Status ExecutePerformActions(Session* session,
       bool has_touch_start = false;
       int buttons = 0;
       std::string button_type;
+      OriginType origin_type = kPointer;
       std::string element_id;
       for (size_t j = 0; j < actions->GetSize(); j++) {
         const base::DictionaryValue* pointer_action;
@@ -1330,10 +1362,18 @@ Status ExecutePerformActions(Session* session,
           pointer_action->GetDouble("x", &x);
           pointer_action->GetDouble("y", &y);
           const base::DictionaryValue* origin_dict;
+          origin_type = kViewPort;
           element_id = "";
-          if (pointer_action->HasKey("origin") &&
-              pointer_action->GetDictionary("origin", &origin_dict)) {
-            origin_dict->GetString(GetElementKey(), &element_id);
+          if (pointer_action->HasKey("origin")) {
+            if (pointer_action->GetDictionary("origin", &origin_dict)) {
+              origin_type = kElement;
+              origin_dict->GetString(GetElementKey(), &element_id);
+            } else {
+              std::string origin;
+              pointer_action->GetString("origin", &origin);
+              if (origin == "pointer")
+                origin_type = kPointer;
+            }
           }
         }
 
@@ -1342,10 +1382,13 @@ Status ExecutePerformActions(Session* session,
           if (action_type == "pointerDown" || action_type == "pointerUp") {
             pointer_action->GetString("button", &button_type);
             click_count = 1;
+          } else if (buttons == 0) {
+            button_type.clear();
           }
           MouseEvent event(StringToMouseEventType(action_type),
                            StringToMouseButton(button_type), x, y, 0, buttons,
                            click_count);
+          event.origin = origin_type;
           event.element_id = element_id;
           event.pointer_type = StringToPointerType(pointer_type);
           mouse_events.push_back(event);
@@ -1359,22 +1402,32 @@ Status ExecutePerformActions(Session* session,
           else if (action_type == "pointerUp")
             has_touch_start = false;
 
-          if (action_type != "pointerMove" || has_touch_start) {
-            TouchEvent event(StringToTouchEventType(action_type), x, y);
-            event.element_id = element_id;
-            touch_events.push_back(event);
-          }
+          TouchEvent event(StringToTouchEventType(action_type), x, y);
+          event.origin = origin_type;
+          event.element_id = element_id;
+          if (action_type == "pointerMove")
+            event.dispatch = has_touch_start;
+          touch_events.push_back(event);
         }
       }
+
+      int init_x, init_y;
+      if (!input_state->GetInteger("x", &init_x) ||
+          !input_state->GetInteger("y", &init_y))
+        return Status(kUnknownError, "invalid input state");
 
       if (pointer_type == "mouse" || pointer_type == "pen") {
         longest_mouse_list_size =
             std::max(mouse_events.size(), longest_mouse_list_size);
         mouse_events_list.push_back(mouse_events);
+        mouse_input_states.push_back(input_state);
+        mouse_locations.emplace_back(init_x, init_y);
       } else if (pointer_type == "touch") {
         longest_touch_list_size =
             std::max(touch_events.size(), longest_touch_list_size);
         touch_events_list.push_back(touch_events);
+        touch_input_states.push_back(input_state);
+        touch_locations.emplace_back(init_x, init_y);
       }
     }
   }
@@ -1382,28 +1435,77 @@ Status ExecutePerformActions(Session* session,
   std::vector<int> tick_durations;
   ComputeTickDurations(&tick_durations, actions_list);
 
+  int viewport_width = 0, viewport_height = 0;
+  if (mouse_events_list.size() > 0 || touch_events_list.size() > 0) {
+    Status status = WindowViewportSize(session, web_view, &viewport_width,
+                                       &viewport_height);
+    if (status.IsError())
+      return status;
+  }
+
   size_t max_list_length =
       std::max({longest_mouse_list_size, longest_touch_list_size,
                 longest_key_list_size, tick_durations.size()});
-  std::map<std::string, gfx::Point> element_center_point;
+  int key_modifiers = 0;
   for (size_t i = 0; i < max_list_length; i++) {
+    std::list<KeyEvent> dispatch_key_events;
+    for (size_t j = 0; j < key_events_list.size(); j++) {
+      if (i < key_events_list[j].size() &&
+          key_events_list[j][i].type != kPauseEventType) {
+        const KeyEvent& event = key_events_list[j][i];
+        dispatch_key_events.push_back(event);
+        if (event.type == kKeyDownEventType) {
+          session->input_cancel_list.emplace_back(key_input_states[j], nullptr,
+                                                  nullptr, &event);
+          key_modifiers |= KeyToKeyModifiers(event.key);
+        } else if (event.type == kKeyUpEventType) {
+          key_modifiers &= ~KeyToKeyModifiers(event.key);
+        }
+      }
+    }
+    if (dispatch_key_events.size() > 0) {
+      Status status = web_view->DispatchKeyEvents(dispatch_key_events);
+      if (status.IsError())
+        return status;
+    }
+
     std::list<MouseEvent> dispatch_mouse_events;
     for (size_t j = 0; j < mouse_events_list.size(); j++) {
       if (i < mouse_events_list[j].size() &&
           mouse_events_list[j][i].type != kPauseMouseEventType) {
         MouseEvent event = mouse_events_list[j][i];
-        if (!event.element_id.empty()) {
-          if (event.type == kMovedMouseEventType ||
-              element_center_point.find(event.element_id) ==
-                  element_center_point.end()) {
+        if (event.type == kMovedMouseEventType) {
+          if (event.origin == kPointer) {
+            event.x += mouse_locations[j].x();
+            event.y += mouse_locations[j].y();
+          } else if (!event.element_id.empty()) {
             int center_x = 0, center_y = 0;
             ElementInViewCenter(session, web_view, event.element_id, &center_x,
                                 &center_y);
-            element_center_point[event.element_id] =
-                gfx::Point(center_x, center_y);
+            event.x += center_x;
+            event.y += center_y;
           }
-          event.x += element_center_point[event.element_id].x();
-          event.y += element_center_point[event.element_id].y();
+          if (event.x < 0 || event.x > viewport_width || event.y < 0 ||
+              event.y > viewport_height)
+            return Status(kMoveTargetOutOfBounds);
+          mouse_locations[j] = gfx::Point(event.x, event.y);
+        } else {
+          event.x = mouse_locations[j].x();
+          event.y = mouse_locations[j].y();
+        }
+        event.modifiers = key_modifiers;
+        if (event.type == kPressedMouseEventType) {
+          base::TimeTicks timestamp = base::TimeTicks::Now();
+          bool is_repeated_click = IsRepeatedClickEvent(
+              event.x, event.y, session->mouse_position.x,
+              session->mouse_position.y, session->click_count, timestamp,
+              session->mouse_click_timestamp);
+          event.click_count = is_repeated_click ? 2 : 1;
+          session->mouse_position = WebPoint(event.x, event.y);
+          session->click_count = event.click_count;
+          session->mouse_click_timestamp = timestamp;
+        } else if (event.type == kReleasedMouseEventType) {
+          event.click_count = session->click_count;
         }
         dispatch_mouse_events.push_back(event);
       }
@@ -1420,20 +1522,27 @@ Status ExecutePerformActions(Session* session,
       if (i < touch_events_list[j].size() &&
           touch_events_list[j][i].type != kPause) {
         TouchEvent event = touch_events_list[j][i];
-        if (!event.element_id.empty()) {
-          if (event.type == kTouchMove ||
-              element_center_point.find(event.element_id) ==
-                  element_center_point.end()) {
+        if (event.type == kTouchMove) {
+          if (event.origin == kPointer) {
+            event.x += touch_locations[j].x();
+            event.y += touch_locations[j].y();
+          } else if (!event.element_id.empty()) {
             int center_x = 0, center_y = 0;
             ElementInViewCenter(session, web_view, event.element_id, &center_x,
                                 &center_y);
-            element_center_point[event.element_id] =
-                gfx::Point(center_x, center_y);
+            event.x += center_x;
+            event.y += center_y;
           }
-          event.x += element_center_point[event.element_id].x();
-          event.y += element_center_point[event.element_id].y();
+          if (event.x < 0 || event.x > viewport_width || event.y < 0 ||
+              event.y > viewport_height)
+            return Status(kMoveTargetOutOfBounds);
+          touch_locations[j] = gfx::Point(event.x, event.y);
+        } else {
+          event.x = touch_locations[j].x();
+          event.y = touch_locations[j].y();
         }
-        dispatch_touch_events.push_back(event);
+        if (event.dispatch)
+          dispatch_touch_events.push_back(event);
       }
     }
     if (dispatch_touch_events.size() > 0) {
@@ -1442,28 +1551,21 @@ Status ExecutePerformActions(Session* session,
         return status;
     }
 
-    std::list<KeyEvent> dispatch_key_events;
-    for (size_t j = 0; j < key_events_list.size(); j++) {
-      if (i < key_events_list[j].size() &&
-          key_events_list[j][i].type != kPauseEventType) {
-        const KeyEvent& event = key_events_list[j][i];
-        dispatch_key_events.push_back(event);
-        if (event.type == kKeyDownEventType) {
-          session->input_cancel_list.emplace_back(key_input_states[j], nullptr,
-                                                  nullptr, &event);
-        }
-      }
-    }
-    if (dispatch_key_events.size() > 0) {
-      Status status = web_view->DispatchKeyEvents(dispatch_key_events);
-      if (status.IsError())
-        return status;
-    }
     if (i < tick_durations.size() && tick_durations[i] > 0) {
       base::PlatformThread::Sleep(
           base::TimeDelta::FromMilliseconds(tick_durations[i]));
     }
   }
+
+  for (size_t i = 0; i < mouse_events_list.size(); i++) {
+    mouse_input_states[i]->SetInteger("x", mouse_locations[i].x());
+    mouse_input_states[i]->SetInteger("y", mouse_locations[i].y());
+  }
+  for (size_t i = 0; i < touch_events_list.size(); i++) {
+    touch_input_states[i]->SetInteger("x", touch_locations[i].x());
+    touch_input_states[i]->SetInteger("y", touch_locations[i].y());
+  }
+
   return Status(kOk);
 }
 
@@ -1489,6 +1591,9 @@ Status ExecuteReleaseActions(Session* session,
   session->input_cancel_list.clear();
   session->input_state_table.Clear();
   session->active_input_sources.Clear();
+  session->mouse_position = WebPoint(0, 0);
+  session->click_count = 0;
+  session->mouse_click_timestamp = base::TimeTicks::Now();
 
   return Status(kOk);
 }
@@ -1715,8 +1820,10 @@ Status ExecuteGetCookies(Session* session,
   if (status.IsError())
     return status;
   std::unique_ptr<base::ListValue> cookie_list(new base::ListValue());
-  for (std::list<Cookie>::const_iterator it = cookies.begin();
+  for (std::list<Cookie>::iterator it = cookies.begin();
        it != cookies.end(); ++it) {
+    if (session->w3c_compliant && it->domain[0] == '.')
+      it->domain.erase(0, 1);
     cookie_list->Append(CreateDictionaryFrom(*it));
   }
   *value = std::move(cookie_list);
@@ -1737,9 +1844,11 @@ Status ExecuteGetNamedCookie(Session* session,
   if (status.IsError())
     return status;
 
-  for (std::list<Cookie>::const_iterator it = cookies.begin();
+  for (std::list<Cookie>::iterator it = cookies.begin();
        it != cookies.end(); ++it) {
     if (name == it->name) {
+      if (session->w3c_compliant && it->domain[0] == '.')
+        it->domain.erase(0, 1);
       value->reset(CreateDictionaryFrom(*it)->DeepCopy());
       return Status(kOk);
     }
@@ -1768,6 +1877,9 @@ Status ExecuteAddCookie(Session* session,
   std::string domain;
   if (!GetOptionalString(cookie, "domain", &domain))
     return Status(kInvalidArgument, "invalid 'domain'");
+  if (session->w3c_compliant)
+    if (!domain.empty() && domain[0] != '.' && !url::HostIsIPAddress(domain))
+      domain.insert(0, 1, '.');
   std::string path("/");
   if (!GetOptionalString(cookie, "path", &path))
     return Status(kInvalidArgument, "invalid 'path'");

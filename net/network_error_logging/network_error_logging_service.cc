@@ -12,6 +12,7 @@
 #include "base/json/json_reader.h"
 #include "base/logging.h"
 #include "base/metrics/histogram_macros.h"
+#include "base/optional.h"
 #include "base/rand_util.h"
 #include "base/stl_util.h"
 #include "base/time/clock.h"
@@ -21,7 +22,6 @@
 #include "net/base/ip_address.h"
 #include "net/base/net_errors.h"
 #include "net/log/net_log.h"
-#include "net/network_error_logging/network_error_logging_delegate.h"
 #include "net/reporting/reporting_service.h"
 #include "url/gurl.h"
 #include "url/origin.h"
@@ -168,25 +168,34 @@ void RecordHeaderOutcome(NetworkErrorLoggingService::HeaderOutcome outcome) {
 
 void RecordRequestOutcome(NetworkErrorLoggingService::RequestOutcome outcome) {
   UMA_HISTOGRAM_ENUMERATION(
-      NetworkErrorLoggingService::kRequestOutcomeHistogram, outcome,
-      NetworkErrorLoggingService::RequestOutcome::MAX);
+      NetworkErrorLoggingService::kRequestOutcomeHistogram, outcome);
+}
+
+void RecordSignedExchangeRequestOutcome(
+    NetworkErrorLoggingService::RequestOutcome outcome) {
+  UMA_HISTOGRAM_ENUMERATION(
+      NetworkErrorLoggingService::kSignedExchangeRequestOutcomeHistogram,
+      outcome);
 }
 
 class NetworkErrorLoggingServiceImpl : public NetworkErrorLoggingService {
  public:
-  explicit NetworkErrorLoggingServiceImpl(
-      std::unique_ptr<NetworkErrorLoggingDelegate> delegate)
-      : delegate_(std::move(delegate)) {
-    DCHECK(delegate_);
-  }
+  explicit NetworkErrorLoggingServiceImpl(PersistentNELStore* store)
+      : store_(store) {}
 
-  ~NetworkErrorLoggingServiceImpl() override = default;
+  ~NetworkErrorLoggingServiceImpl() override {
+    if (store_)
+      store_->Flush();
+  }
 
   // NetworkErrorLoggingService implementation:
 
   void OnHeader(const url::Origin& origin,
                 const IPAddress& received_ip_address,
                 const std::string& value) override {
+    if (shut_down_)
+      return;
+
     // NEL is only available to secure origins, so don't permit insecure origins
     // to set policies.
     if (!origin.GetURL().SchemeIsCryptographic()) {
@@ -194,20 +203,23 @@ class NetworkErrorLoggingServiceImpl : public NetworkErrorLoggingService {
       return;
     }
 
-    OriginPolicy policy;
+    NELPolicy policy;
     policy.origin = origin;
     policy.received_ip_address = received_ip_address;
+    policy.last_used = clock_->Now();
     HeaderOutcome outcome = ParseHeader(value, clock_->Now(), &policy);
     RecordHeaderOutcome(outcome);
     if (outcome != HeaderOutcome::SET && outcome != HeaderOutcome::REMOVED)
       return;
 
+    // If a policy for |origin| already existed, remove the old poliicy.
     auto it = policies_.find(origin);
-    if (it != policies_.end()) {
-      MaybeRemoveWildcardPolicy(origin, &it->second);
-      policies_.erase(it);
-    }
+    if (it != policies_.end())
+      RemovePolicy(it);
 
+    // A policy's |expires| field is set to a null time if the max_age was 0.
+    // Having a max_age of 0 means that the policy should be removed, so return
+    // here instead of continuing on to inserting the policy.
     if (policy.expires.is_null())
       return;
 
@@ -215,11 +227,22 @@ class NetworkErrorLoggingServiceImpl : public NetworkErrorLoggingService {
     auto inserted = policies_.insert(std::make_pair(origin, policy));
     DCHECK(inserted.second);
     MaybeAddWildcardPolicy(origin, &inserted.first->second);
+
+    // Evict policies if the policy limit is exceeded.
+    if (policies_.size() > kMaxPolicies) {
+      RemoveAllExpiredPolicies();
+      while (policies_.size() > kMaxPolicies) {
+        EvictStalestPolicy();
+      }
+    }
   }
 
   void OnRequest(RequestDetails details) override {
+    if (shut_down_)
+      return;
+
     if (!reporting_service_) {
-      RecordRequestOutcome(RequestOutcome::DISCARDED_NO_REPORTING_SERVICE);
+      RecordRequestOutcome(RequestOutcome::kDiscardedNoReportingService);
       return;
     }
 
@@ -227,11 +250,14 @@ class NetworkErrorLoggingServiceImpl : public NetworkErrorLoggingService {
     DCHECK(details.uri.SchemeIsCryptographic());
 
     auto report_origin = url::Origin::Create(details.uri);
-    const OriginPolicy* policy = FindPolicyForOrigin(report_origin);
+    const NELPolicy* policy = FindPolicyForOrigin(report_origin);
     if (!policy) {
-      RecordRequestOutcome(RequestOutcome::DISCARDED_NO_ORIGIN_POLICY);
+      RecordRequestOutcome(RequestOutcome::kDiscardedNoOriginPolicy);
       return;
     }
+
+    // Mark the policy used.
+    policy->last_used = clock_->Now();
 
     Error type = details.type;
     // It is expected for Reporting uploads to terminate with ERR_ABORTED, since
@@ -257,7 +283,7 @@ class NetworkErrorLoggingServiceImpl : public NetworkErrorLoggingService {
     // meaningful if it only includes reports that otherwise could have been
     // uploaded.
     if (details.reporting_upload_depth > kMaxNestedReportDepth) {
-      RecordRequestOutcome(RequestOutcome::DISCARDED_REPORTING_UPLOAD);
+      RecordRequestOutcome(RequestOutcome::kDiscardedReportingUpload);
       return;
     }
 
@@ -275,19 +301,19 @@ class NetworkErrorLoggingServiceImpl : public NetworkErrorLoggingService {
 
     // include_subdomains policies are only allowed to report on DNS resolution
     // errors.
-    if (phase_string != kDnsPhase && policy->include_subdomains &&
-        !(policy->origin == report_origin)) {
-      RecordRequestOutcome(RequestOutcome::DISCARDED_NON_DNS_SUBDOMAIN_REPORT);
+    if (phase_string != kDnsPhase &&
+        IsMismatchingSubdomainReport(*policy, report_origin)) {
+      RecordRequestOutcome(RequestOutcome::kDiscardedNonDNSSubdomainReport);
       return;
     }
 
     bool success = (type == OK) && !IsHttpError(details);
-    double sampling_fraction =
-        success ? policy->success_fraction : policy->failure_fraction;
-    if (base::RandDouble() >= sampling_fraction) {
+    const base::Optional<double> sampling_fraction =
+        SampleAndReturnFraction(*policy, success);
+    if (!sampling_fraction.has_value()) {
       RecordRequestOutcome(success
-                               ? RequestOutcome::DISCARDED_UNSAMPLED_SUCCESS
-                               : RequestOutcome::DISCARDED_UNSAMPLED_FAILURE);
+                               ? RequestOutcome::kDiscardedUnsampledSuccess
+                               : RequestOutcome::kDiscardedUnsampledFailure);
       return;
     }
 
@@ -297,24 +323,79 @@ class NetworkErrorLoggingServiceImpl : public NetworkErrorLoggingService {
              << details.uri;
     reporting_service_->QueueReport(
         details.uri, details.user_agent, policy->report_to, kReportType,
-        CreateReportBody(phase_string, type_string, sampling_fraction, details),
+        CreateReportBody(phase_string, type_string, sampling_fraction.value(),
+                         details),
         details.reporting_upload_depth);
-    RecordRequestOutcome(RequestOutcome::QUEUED);
+    RecordRequestOutcome(RequestOutcome::kQueued);
+  }
+
+  void QueueSignedExchangeReport(
+      const SignedExchangeReportDetails& details) override {
+    if (shut_down_)
+      return;
+
+    if (!reporting_service_) {
+      RecordSignedExchangeRequestOutcome(
+          RequestOutcome::kDiscardedNoReportingService);
+      return;
+    }
+    if (!details.outer_url.SchemeIsCryptographic()) {
+      RecordSignedExchangeRequestOutcome(
+          RequestOutcome::kDiscardedInsecureOrigin);
+      return;
+    }
+    const auto report_origin = url::Origin::Create(details.outer_url);
+    const NELPolicy* policy = FindPolicyForOrigin(report_origin);
+    if (!policy) {
+      RecordSignedExchangeRequestOutcome(
+          RequestOutcome::kDiscardedNoOriginPolicy);
+      return;
+    }
+
+    // Mark the policy used.
+    policy->last_used = clock_->Now();
+
+    if (IsMismatchingSubdomainReport(*policy, report_origin)) {
+      RecordSignedExchangeRequestOutcome(
+          RequestOutcome::kDiscardedNonDNSSubdomainReport);
+      return;
+    }
+    // Don't send the report when the IP addresses of the server and the policy
+    // don’t match. This case is coverd by OnRequest() while processing the HTTP
+    // response.
+    // This happens if the server has set the NEL policy previously, but doesn't
+    // set the NEL policy for the signed exchange response, and the IP address
+    // has changed due to DNS round robin.
+    if (details.server_ip_address != policy->received_ip_address) {
+      RecordSignedExchangeRequestOutcome(
+          RequestOutcome::kDiscardedIPAddressMismatch);
+      return;
+    }
+    const base::Optional<double> sampling_fraction =
+        SampleAndReturnFraction(*policy, details.success);
+    if (!sampling_fraction.has_value()) {
+      RecordSignedExchangeRequestOutcome(
+          details.success ? RequestOutcome::kDiscardedUnsampledSuccess
+                          : RequestOutcome::kDiscardedUnsampledFailure);
+      return;
+    }
+    reporting_service_->QueueReport(
+        details.outer_url, details.user_agent, policy->report_to, kReportType,
+        CreateSignedExchangeReportBody(details, sampling_fraction.value()),
+        0 /* depth */);
+    RecordSignedExchangeRequestOutcome(RequestOutcome::kQueued);
   }
 
   void RemoveBrowsingData(const base::RepeatingCallback<bool(const GURL&)>&
                               origin_filter) override {
-    std::vector<url::Origin> origins_to_remove;
-
-    for (auto it = policies_.begin(); it != policies_.end(); ++it) {
-      if (origin_filter.Run(it->first.GetURL()))
-        origins_to_remove.push_back(it->first);
-    }
-
-    for (auto it = origins_to_remove.begin(); it != origins_to_remove.end();
-         ++it) {
-      MaybeRemoveWildcardPolicy(*it, &policies_[*it]);
-      policies_.erase(*it);
+    for (auto it = policies_.begin(); it != policies_.end();) {
+      const url::Origin& origin = it->first;
+      // Remove policies matching the filter.
+      if (origin_filter.Run(origin.GetURL())) {
+        it = RemovePolicy(it);
+      } else {
+        ++it;
+      }
     }
   }
 
@@ -357,24 +438,9 @@ class NetworkErrorLoggingServiceImpl : public NetworkErrorLoggingService {
   }
 
  private:
-  // NEL Policy set by an origin.
-  struct OriginPolicy {
-    url::Origin origin;
-    IPAddress received_ip_address;
-
-    // Reporting API endpoint group to which reports should be sent.
-    std::string report_to;
-
-    base::Time expires;
-
-    double success_fraction;
-    double failure_fraction;
-    bool include_subdomains;
-  };
-
   // Map from origin to origin's (owned) policy.
   // Would be unordered_map, but url::Origin has no hash.
-  using PolicyMap = std::map<url::Origin, OriginPolicy>;
+  using PolicyMap = std::map<url::Origin, NELPolicy>;
 
   // Wildcard policies are policies for which the include_subdomains flag is
   // set.
@@ -387,17 +453,21 @@ class NetworkErrorLoggingServiceImpl : public NetworkErrorLoggingService {
   //
   // Policies in the map are unowned; they are pointers to the original in the
   // PolicyMap.
-  using WildcardPolicyMap =
-      std::map<std::string, std::set<const OriginPolicy*>>;
-
-  std::unique_ptr<NetworkErrorLoggingDelegate> delegate_;
+  using WildcardPolicyMap = std::map<std::string, std::set<const NELPolicy*>>;
 
   PolicyMap policies_;
   WildcardPolicyMap wildcard_policies_;
 
+  // The persistent store in which NEL policies will be stored to disk, if not
+  // null. If |store_| is null, then NEL policies will be in-memory only.
+  // The store is owned by the URLRequestContext because Reporting also needs
+  // access to it.
+  // TODO(chlily): Implement.
+  PersistentNELStore* store_;
+
   HeaderOutcome ParseHeader(const std::string& json_value,
                             base::Time now,
-                            OriginPolicy* policy_out) const {
+                            NELPolicy* policy_out) const {
     DCHECK(policy_out);
 
     if (json_value.size() > kMaxJsonSize)
@@ -433,6 +503,8 @@ class NetworkErrorLoggingServiceImpl : public NetworkErrorLoggingService {
     // GetBoolean fails.
     dict->GetBoolean(kIncludeSubdomainsKey, &include_subdomains);
 
+    // TODO(chlily): According to the spec we should restrict these sampling
+    // fractions to [0.0, 1.0].
     double success_fraction = 0.0;
     // success_fraction is optional and defaults to 0.0, so it's okay if
     // GetDouble fails.
@@ -456,14 +528,13 @@ class NetworkErrorLoggingServiceImpl : public NetworkErrorLoggingService {
     }
   }
 
-  const OriginPolicy* FindPolicyForOrigin(const url::Origin& origin) const {
-    // TODO(juliatuttle): Clean out expired policies sometime/somewhere.
+  const NELPolicy* FindPolicyForOrigin(const url::Origin& origin) const {
     auto it = policies_.find(origin);
     if (it != policies_.end() && clock_->Now() < it->second.expires)
       return &it->second;
 
     std::string domain = origin.host();
-    const OriginPolicy* wildcard_policy = nullptr;
+    const NELPolicy* wildcard_policy = nullptr;
     while (!wildcard_policy && !domain.empty()) {
       wildcard_policy = FindWildcardPolicyForDomain(domain);
       domain = GetSuperdomain(domain);
@@ -472,7 +543,7 @@ class NetworkErrorLoggingServiceImpl : public NetworkErrorLoggingService {
     return wildcard_policy;
   }
 
-  const OriginPolicy* FindWildcardPolicyForDomain(
+  const NELPolicy* FindWildcardPolicyForDomain(
       const std::string& domain) const {
     DCHECK(!domain.empty());
 
@@ -498,7 +569,7 @@ class NetworkErrorLoggingServiceImpl : public NetworkErrorLoggingService {
   }
 
   void MaybeAddWildcardPolicy(const url::Origin& origin,
-                              const OriginPolicy* policy) {
+                              const NELPolicy* policy) {
     DCHECK(policy);
     DCHECK_EQ(policy, &policies_[origin]);
 
@@ -509,13 +580,23 @@ class NetworkErrorLoggingServiceImpl : public NetworkErrorLoggingService {
     DCHECK(inserted.second);
   }
 
-  void MaybeRemoveWildcardPolicy(const url::Origin& origin,
-                                 const OriginPolicy* policy) {
+  // Removes the policy pointed to by |policy_it|. Invalidates |policy_it|.
+  // Returns the iterator to the next element.
+  PolicyMap::iterator RemovePolicy(PolicyMap::iterator policy_it) {
+    DCHECK(policy_it != policies_.end());
+    NELPolicy* policy = &policy_it->second;
+    MaybeRemoveWildcardPolicy(policy);
+    return policies_.erase(policy_it);
+  }
+
+  void MaybeRemoveWildcardPolicy(const NELPolicy* policy) {
     DCHECK(policy);
-    DCHECK_EQ(policy, &policies_[origin]);
 
     if (!policy->include_subdomains)
       return;
+
+    const url::Origin& origin = policy->origin;
+    DCHECK_EQ(policy, &policies_[origin]);
 
     auto wildcard_it = wildcard_policies_.find(origin.host());
     DCHECK(wildcard_it != wildcard_policies_.end());
@@ -524,6 +605,30 @@ class NetworkErrorLoggingServiceImpl : public NetworkErrorLoggingService {
     DCHECK_EQ(1u, erased);
     if (wildcard_it->second.empty())
       wildcard_policies_.erase(wildcard_it);
+  }
+
+  void RemoveAllExpiredPolicies() {
+    for (auto it = policies_.begin(); it != policies_.end();) {
+      if (it->second.expires < clock_->Now()) {
+        it = RemovePolicy(it);
+      } else {
+        ++it;
+      }
+    }
+  }
+
+  void EvictStalestPolicy() {
+    PolicyMap::iterator stalest_it = policies_.begin();
+    for (auto it = policies_.begin(); it != policies_.end(); ++it) {
+      if (it->second.last_used < stalest_it->second.last_used)
+        stalest_it = it;
+    }
+
+    // This should only be called if we have hit the max policy limit, so there
+    // should be at least one policy.
+    DCHECK(stalest_it != policies_.end());
+
+    RemovePolicy(stalest_it);
   }
 
   std::unique_ptr<const base::Value> CreateReportBody(
@@ -545,9 +650,67 @@ class NetworkErrorLoggingServiceImpl : public NetworkErrorLoggingService {
 
     return std::move(body);
   }
+
+  std::unique_ptr<const base::Value> CreateSignedExchangeReportBody(
+      const SignedExchangeReportDetails& details,
+      double sampling_fraction) const {
+    auto body = std::make_unique<base::DictionaryValue>();
+    body->SetString(kPhaseKey, kSignedExchangePhaseValue);
+    body->SetString(kTypeKey, details.type);
+    body->SetDouble(kSamplingFractionKey, sampling_fraction);
+    body->SetString(kReferrerKey, details.referrer);
+    body->SetString(kServerIpKey, details.server_ip_address.ToString());
+    body->SetString(kProtocolKey, details.protocol);
+    body->SetString(kMethodKey, details.method);
+    body->SetInteger(kStatusCodeKey, details.status_code);
+    body->SetInteger(kElapsedTimeKey, details.elapsed_time.InMilliseconds());
+
+    auto sxg_body = std::make_unique<base::DictionaryValue>();
+    sxg_body->SetKey(kOuterUrlKey, base::Value(details.outer_url.spec()));
+    if (details.inner_url.is_valid())
+      sxg_body->SetKey(kInnerUrlKey, base::Value(details.inner_url.spec()));
+
+    base::Value cert_url_list = base::Value(base::Value::Type::LIST);
+    if (details.cert_url.is_valid())
+      cert_url_list.GetList().push_back(base::Value(details.cert_url.spec()));
+    sxg_body->SetKey(kCertUrlKey, std::move(cert_url_list));
+    body->SetDictionary(kSignedExchangeBodyKey, std::move(sxg_body));
+
+    return std::move(body);
+  }
+
+  bool IsMismatchingSubdomainReport(const NELPolicy& policy,
+                                    const url::Origin& report_origin) const {
+    return policy.include_subdomains && (policy.origin != report_origin);
+  }
+
+  // Returns a valid value of matching fraction iff the event should be sampled.
+  base::Optional<double> SampleAndReturnFraction(const NELPolicy& policy,
+                                                 bool success) const {
+    const double sampling_fraction =
+        success ? policy.success_fraction : policy.failure_fraction;
+
+    // Sampling fractions are often either 0.0 or 1.0, so in those cases we
+    // can avoid having to call RandDouble().
+    if (sampling_fraction <= 0.0)
+      return base::nullopt;
+    if (sampling_fraction >= 1.0)
+      return sampling_fraction;
+
+    if (base::RandDouble() >= sampling_fraction)
+      return base::nullopt;
+    return sampling_fraction;
+  }
 };
 
 }  // namespace
+
+NetworkErrorLoggingService::NELPolicy::NELPolicy() = default;
+
+NetworkErrorLoggingService::NELPolicy::NELPolicy(const NELPolicy& other) =
+    default;
+
+NetworkErrorLoggingService::NELPolicy::~NELPolicy() = default;
 
 NetworkErrorLoggingService::RequestDetails::RequestDetails() = default;
 
@@ -555,6 +718,16 @@ NetworkErrorLoggingService::RequestDetails::RequestDetails(
     const RequestDetails& other) = default;
 
 NetworkErrorLoggingService::RequestDetails::~RequestDetails() = default;
+
+NetworkErrorLoggingService::SignedExchangeReportDetails::
+    SignedExchangeReportDetails() = default;
+
+NetworkErrorLoggingService::SignedExchangeReportDetails::
+    SignedExchangeReportDetails(const SignedExchangeReportDetails& other) =
+        default;
+
+NetworkErrorLoggingService::SignedExchangeReportDetails::
+    ~SignedExchangeReportDetails() = default;
 
 const char NetworkErrorLoggingService::kHeaderName[] = "NEL";
 
@@ -565,6 +738,10 @@ const char NetworkErrorLoggingService::kHeaderOutcomeHistogram[] =
 
 const char NetworkErrorLoggingService::kRequestOutcomeHistogram[] =
     "Net.NetworkErrorLogging.RequestOutcome";
+
+const char
+    NetworkErrorLoggingService::kSignedExchangeRequestOutcomeHistogram[] =
+        "Net.NetworkErrorLogging.SignedExchangeRequestOutcome";
 
 // Allow NEL reports on regular requests, plus NEL reports on Reporting uploads
 // containing only regular requests, but do not allow NEL reports on Reporting
@@ -584,6 +761,15 @@ const char NetworkErrorLoggingService::kStatusCodeKey[] = "status_code";
 const char NetworkErrorLoggingService::kElapsedTimeKey[] = "elapsed_time";
 const char NetworkErrorLoggingService::kPhaseKey[] = "phase";
 const char NetworkErrorLoggingService::kTypeKey[] = "type";
+
+const char NetworkErrorLoggingService::kSignedExchangePhaseValue[] = "sxg";
+const char NetworkErrorLoggingService::kSignedExchangeBodyKey[] = "sxg";
+const char NetworkErrorLoggingService::kOuterUrlKey[] = "outer_url";
+const char NetworkErrorLoggingService::kInnerUrlKey[] = "inner_url";
+const char NetworkErrorLoggingService::kCertUrlKey[] = "cert_url";
+
+// See also: max number of Reporting endpoints specified in ReportingPolicy.
+const size_t NetworkErrorLoggingService::kMaxPolicies = 1000u;
 
 // static
 void NetworkErrorLoggingService::
@@ -611,19 +797,18 @@ void NetworkErrorLoggingService::
 // static
 void NetworkErrorLoggingService::
     RecordRequestDiscardedForNoNetworkErrorLoggingService() {
-  RecordRequestOutcome(
-      RequestOutcome::DISCARDED_NO_NETWORK_ERROR_LOGGING_SERVICE);
+  RecordRequestOutcome(RequestOutcome::kDiscardedNoNetworkErrorLoggingService);
 }
 
 // static
 void NetworkErrorLoggingService::RecordRequestDiscardedForInsecureOrigin() {
-  RecordRequestOutcome(RequestOutcome::DISCARDED_INSECURE_ORIGIN);
+  RecordRequestOutcome(RequestOutcome::kDiscardedInsecureOrigin);
 }
 
 // static
 std::unique_ptr<NetworkErrorLoggingService> NetworkErrorLoggingService::Create(
-    std::unique_ptr<NetworkErrorLoggingDelegate> delegate) {
-  return std::make_unique<NetworkErrorLoggingServiceImpl>(std::move(delegate));
+    PersistentNELStore* store) {
+  return std::make_unique<NetworkErrorLoggingServiceImpl>(store);
 }
 
 NetworkErrorLoggingService::~NetworkErrorLoggingService() = default;
@@ -631,6 +816,11 @@ NetworkErrorLoggingService::~NetworkErrorLoggingService() = default;
 void NetworkErrorLoggingService::SetReportingService(
     ReportingService* reporting_service) {
   reporting_service_ = reporting_service;
+}
+
+void NetworkErrorLoggingService::OnShutdown() {
+  shut_down_ = true;
+  SetReportingService(nullptr);
 }
 
 void NetworkErrorLoggingService::SetClockForTesting(const base::Clock* clock) {
@@ -648,6 +838,8 @@ std::set<url::Origin> NetworkErrorLoggingService::GetPolicyOriginsForTesting() {
 }
 
 NetworkErrorLoggingService::NetworkErrorLoggingService()
-    : clock_(base::DefaultClock::GetInstance()), reporting_service_(nullptr) {}
+    : clock_(base::DefaultClock::GetInstance()),
+      reporting_service_(nullptr),
+      shut_down_(false) {}
 
 }  // namespace net

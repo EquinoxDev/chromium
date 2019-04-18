@@ -60,7 +60,7 @@ class SharedProtoDatabase
  private:
   friend class base::RefCountedThreadSafe<SharedProtoDatabase>;
   friend class ProtoDatabaseProvider;
-
+  template <typename T>
   friend class ProtoDatabaseImplTest;
   friend class SharedProtoDatabaseTest;
   friend class SharedProtoDatabaseClientTest;
@@ -70,10 +70,18 @@ class SharedProtoDatabase
 >>>>>>> 1edcc2f128d290860af09401391ae79df290b5f3
 
   enum InitState {
-    kNone,
+    // Initialization hasn't been attempted.
+    kNotAttempted,
+    // Initialization is in progress, new requests will be enqueued.
     kInProgress,
+    // Initialization successful, new requests will return existing DB.
     kSuccess,
+    // Initialization failed, new requests will return InitStatus::kError.
     kFailure,
+    // Shared database doesn't exist, new requests with create_if_missing ==
+    // true will attempt to create it, if create_if_missing == false then will
+    // return InitStatus::kInvalidOperation.
+    kNotFound,
   };
 
   struct InitRequest {
@@ -165,7 +173,7 @@ class SharedProtoDatabase
 
   SEQUENCE_CHECKER(on_task_runner_);
 
-  InitState init_state_ = InitState::kNone;
+  InitState init_state_ = InitState::kNotAttempted;
 
   // This TaskRunner is used to properly sequence Init calls and checks for the
   // current init state. When clients request the current InitState as part of

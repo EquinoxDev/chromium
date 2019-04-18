@@ -12,6 +12,7 @@
 #include "base/bind.h"
 #include "base/i18n/number_formatting.h"
 #include "base/macros.h"
+#include "base/metrics/histogram_macros.h"
 #include "base/metrics/user_metrics.h"
 #include "base/stl_util.h"
 #include "base/strings/utf_string_conversions.h"
@@ -28,6 +29,8 @@
 #include "chrome/browser/permissions/permission_uma_util.h"
 #include "chrome/browser/permissions/permission_util.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/serial/serial_chooser_context.h"
+#include "chrome/browser/serial/serial_chooser_context_factory.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/browser/ui/page_info/page_info_infobar_delegate.h"
@@ -78,6 +81,16 @@ constexpr char kZoom[] = "zoom";
 // Placeholder value for ETLD+1 until a valid origin is added. If an ETLD+1
 // only has placeholder, then create an ETLD+1 origin.
 constexpr char kPlaceholder[] = "placeholder";
+
+// These values are persisted to logs. Entries should not be renumbered and
+// numeric values should never be reused.
+enum class AllSitesAction {
+  kLoadPage = 0,
+  kResetPermissions = 1,
+  kClearData = 2,
+  kEnterSiteDetails = 3,
+  kMaxValue = kEnterSiteDetails,
+};
 
 // Return an appropriate API Permission ID for the given string name.
 extensions::APIPermission::APIPermission::ID APIPermissionFromGroupName(
@@ -289,6 +302,10 @@ void UpdateDataFromCookiesTree(
   CreateOrAppendSiteGroupEntry(all_sites_map, origin);
 }
 
+void LogAllSitesAction(AllSitesAction action) {
+  UMA_HISTOGRAM_ENUMERATION("WebsiteSettings.AllSitesAction", action);
+}
+
 }  // namespace
 
 SiteSettingsHandler::SiteSettingsHandler(Profile* profile)
@@ -397,10 +414,16 @@ void SiteSettingsHandler::RegisterMessages() {
       base::BindRepeating(
           &SiteSettingsHandler::HandleClearEtldPlus1DataAndCookies,
           base::Unretained(this)));
+  web_ui()->RegisterMessageCallback(
+      "recordAction",
+      base::BindRepeating(&SiteSettingsHandler::HandleRecordAction,
+                          base::Unretained(this)));
 }
 
 void SiteSettingsHandler::OnJavascriptAllowed() {
-  ObserveSources();
+  ObserveSourcesForProfile(profile_);
+  if (profile_->HasOffTheRecordProfile())
+    ObserveSourcesForProfile(profile_->GetOffTheRecordProfile());
 
   notification_registrar_.Add(
       this, chrome::NOTIFICATION_PROFILE_CREATED,
@@ -452,6 +475,7 @@ void SiteSettingsHandler::OnGetUsageInfo() {
   // Site Details Page does not display the number of cookies for the origin.
   const CookieTreeNode* root = cookies_tree_model_->GetRoot();
   std::string usage_string = "";
+  std::string cookie_string = "";
   for (int i = 0; i < root->child_count(); ++i) {
     const CookieTreeNode* site = root->GetChild(i);
     std::string title = base::UTF16ToUTF8(site->GetTitle());
@@ -460,10 +484,16 @@ void SiteSettingsHandler::OnGetUsageInfo() {
     int64_t size = site->InclusiveSize();
     if (size != 0)
       usage_string = base::UTF16ToUTF8(ui::FormatBytes(size));
+    int num_cookies = site->NumberOfCookies();
+    if (num_cookies != 0) {
+      cookie_string = base::UTF16ToUTF8(l10n_util::GetPluralStringFUTF16(
+          IDS_SETTINGS_SITE_SETTINGS_NUM_COOKIES, num_cookies));
+    }
     break;
   }
   CallJavascriptFunction("settings.WebsiteUsagePrivateApi.returnUsageTotal",
-                         base::Value(usage_host_), base::Value(usage_string));
+                         base::Value(usage_host_), base::Value(usage_string),
+                         base::Value(cookie_string));
 }
 
 #if defined(OS_CHROMEOS)
@@ -515,13 +545,8 @@ void SiteSettingsHandler::Observe(
         break;
       SendIncognitoStatus(profile, /*was_destroyed=*/ true);
 
-      HostContentSettingsMap* settings_map =
-          HostContentSettingsMapFactory::GetForProfile(profile);
-      if (profile->IsOffTheRecord() &&
-          observer_.IsObserving(settings_map)) {
-        observer_.Remove(settings_map);
-      }
-
+      if (profile->IsOffTheRecord())
+        StopObservingSourcesForProfile(profile);
       break;
     }
 
@@ -531,7 +556,7 @@ void SiteSettingsHandler::Observe(
         break;
       SendIncognitoStatus(profile, /*was_destroyed=*/ false);
 
-      observer_.Add(HostContentSettingsMapFactory::GetForProfile(profile));
+      ObserveSourcesForProfile(profile);
       break;
     }
   }
@@ -570,7 +595,7 @@ void SiteSettingsHandler::HandleFetchUsageTotal(
     cookies_tree_model_->RemoveCookiesTreeObserver(this);
     cookies_tree_model_.reset();
   }
-  EnsureCookiesTreeModelCreated(/*omit_cookies=*/true);
+  EnsureCookiesTreeModelCreated();
 }
 
 void SiteSettingsHandler::HandleClearUsage(
@@ -731,6 +756,8 @@ void SiteSettingsHandler::HandleGetAllSites(const base::ListValue* args) {
   ConvertSiteGroupMapToListValue(all_sites_map_, origin_permission_set_,
                                  &result, profile);
 
+  LogAllSitesAction(AllSitesAction::kLoadPage);
+
   send_sites_list_ = true;
 
   ResolveJavascriptCallback(*callback_id, result);
@@ -765,12 +792,12 @@ base::Value SiteSettingsHandler::PopulateCookiesAndUsageData(Profile* profile) {
         origin_info.SetKey("usage", base::Value(size_info_it->second));
       const auto& origin_cookie_num_it =
           origin_cookie_map.find(GURL(origin).host());
-      // Add cookies numbers for origins that isn't an eTLD+1.
-      if (GURL(origin).host() != etld_plus1 &&
-          origin_cookie_num_it != origin_cookie_map.end()) {
+      if (origin_cookie_num_it != origin_cookie_map.end()) {
         origin_info.SetKey(kNumCookies,
                            base::Value(origin_cookie_num_it->second));
-        cookie_num += origin_cookie_num_it->second;
+        // Add cookies numbers for origins that isn't an eTLD+1.
+        if (GURL(origin).host() != etld_plus1)
+          cookie_num += origin_cookie_num_it->second;
       }
     }
     site_group.SetKey(kNumCookies, base::Value(cookie_num));
@@ -850,7 +877,6 @@ void SiteSettingsHandler::HandleGetChooserExceptionList(
 
   std::unique_ptr<base::ListValue> exceptions =
       site_settings::GetChooserExceptionListFromProfile(profile_,
-                                                        /*incognito=*/false,
                                                         *chooser_type);
   ResolveJavascriptCallback(*callback_id, *exceptions.get());
 }
@@ -1331,29 +1357,39 @@ void SiteSettingsHandler::HandleSetBlockAutoplayEnabled(
   profile_->GetPrefs()->SetBoolean(prefs::kBlockAutoplayEnabled, value);
 }
 
-void SiteSettingsHandler::EnsureCookiesTreeModelCreated(bool omit_cookies) {
+void SiteSettingsHandler::EnsureCookiesTreeModelCreated() {
   if (cookies_tree_model_)
     return;
-  cookies_tree_model_ =
-      CookiesTreeModel::CreateForProfile(profile_, omit_cookies);
+  cookies_tree_model_ = CookiesTreeModel::CreateForProfile(profile_);
   cookies_tree_model_->AddCookiesTreeObserver(this);
 }
 
-void SiteSettingsHandler::ObserveSources() {
-  observer_.Add(HostContentSettingsMapFactory::GetForProfile(profile_));
-  chooser_observer_.Add(UsbChooserContextFactory::GetForProfile(profile_));
-
-  if (!profile_->HasOffTheRecordProfile())
-    return;
-
-  // At the moment, off the record chooser permissions are not included in the
-  // chooser permissions.
-  // TODO(https://crbug.com/927372): When chooser permissions are included,
-  // attach SiteSettingsHandler as an observer to the chooser contexts.
-  auto* map = HostContentSettingsMapFactory::GetForProfile(
-      profile_->GetOffTheRecordProfile());
+void SiteSettingsHandler::ObserveSourcesForProfile(Profile* profile) {
+  auto* map = HostContentSettingsMapFactory::GetForProfile(profile);
   if (!observer_.IsObserving(map))
     observer_.Add(map);
+
+  auto* usb_context = UsbChooserContextFactory::GetForProfile(profile);
+  if (!chooser_observer_.IsObserving(usb_context))
+    chooser_observer_.Add(usb_context);
+
+  auto* serial_context = SerialChooserContextFactory::GetForProfile(profile);
+  if (!chooser_observer_.IsObserving(serial_context))
+    chooser_observer_.Add(serial_context);
+}
+
+void SiteSettingsHandler::StopObservingSourcesForProfile(Profile* profile) {
+  auto* map = HostContentSettingsMapFactory::GetForProfile(profile);
+  if (observer_.IsObserving(map))
+    observer_.Remove(map);
+
+  auto* usb_context = UsbChooserContextFactory::GetForProfile(profile);
+  if (chooser_observer_.IsObserving(usb_context))
+    chooser_observer_.Remove(usb_context);
+
+  auto* serial_context = SerialChooserContextFactory::GetForProfile(profile);
+  if (chooser_observer_.IsObserving(serial_context))
+    chooser_observer_.Remove(serial_context);
 }
 
 void SiteSettingsHandler::TreeNodesAdded(ui::TreeModel* model,
@@ -1435,6 +1471,18 @@ void SiteSettingsHandler::HandleClearEtldPlus1DataAndCookies(
   for (auto* node : nodes_to_delete) {
     cookies_tree_model_->DeleteCookieNode(node);
   }
+
+  LogAllSitesAction(AllSitesAction::kClearData);
+}
+
+void SiteSettingsHandler::HandleRecordAction(const base::ListValue* args) {
+  CHECK_EQ(1U, args->GetSize());
+  int action;
+  CHECK(args->GetInteger(0, &action));
+  DCHECK_LE(action, static_cast<int>(AllSitesAction::kMaxValue));
+  DCHECK_GE(action, static_cast<int>(AllSitesAction::kLoadPage));
+
+  LogAllSitesAction(static_cast<AllSitesAction>(action));
 }
 
 void SiteSettingsHandler::SetCookiesTreeModelForTesting(

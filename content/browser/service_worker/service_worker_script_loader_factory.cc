@@ -25,13 +25,17 @@ namespace content {
 ServiceWorkerScriptLoaderFactory::ServiceWorkerScriptLoaderFactory(
     base::WeakPtr<ServiceWorkerContextCore> context,
     base::WeakPtr<ServiceWorkerProviderHost> provider_host,
-    scoped_refptr<network::SharedURLLoaderFactory> loader_factory)
+    scoped_refptr<network::SharedURLLoaderFactory>
+        loader_factory_for_new_scripts)
     : context_(context),
       provider_host_(provider_host),
-      loader_factory_(std::move(loader_factory)),
+      loader_factory_for_new_scripts_(
+          std::move(loader_factory_for_new_scripts)),
       weak_factory_(this) {
   DCHECK(provider_host_->IsProviderForServiceWorker());
-  DCHECK(loader_factory_);
+  DCHECK(loader_factory_for_new_scripts_ ||
+         ServiceWorkerVersion::IsInstalled(
+             provider_host_->running_hosted_version()->status()));
 }
 
 ServiceWorkerScriptLoaderFactory::~ServiceWorkerScriptLoaderFactory() = default;
@@ -44,10 +48,7 @@ void ServiceWorkerScriptLoaderFactory::CreateLoaderAndStart(
     const network::ResourceRequest& resource_request,
     network::mojom::URLLoaderClientPtr client,
     const net::MutableNetworkTrafficAnnotationTag& traffic_annotation) {
-  DCHECK(blink::ServiceWorkerUtils::IsServicificationEnabled());
   if (!CheckIfScriptRequestIsValid(resource_request)) {
-    // TODO(kinuko): Record the reason like what we do with netlog in
-    // ServiceWorkerContextRequestHandler.
     client->OnComplete(network::URLLoaderCompletionStatus(net::ERR_ABORTED));
     return;
   }
@@ -142,14 +143,19 @@ void ServiceWorkerScriptLoaderFactory::CreateLoaderAndStart(
   mojo::MakeStrongBinding(
       std::make_unique<ServiceWorkerNewScriptLoader>(
           routing_id, request_id, options, resource_request, std::move(client),
-          provider_host_->running_hosted_version(), loader_factory_,
-          traffic_annotation),
+          provider_host_->running_hosted_version(),
+          loader_factory_for_new_scripts_, traffic_annotation),
       std::move(request));
 }
 
 void ServiceWorkerScriptLoaderFactory::Clone(
     network::mojom::URLLoaderFactoryRequest request) {
   bindings_.AddBinding(this, std::move(request));
+}
+
+void ServiceWorkerScriptLoaderFactory::Update(
+    scoped_refptr<network::SharedURLLoaderFactory> loader_factory) {
+  loader_factory_for_new_scripts_ = std::move(loader_factory);
 }
 
 bool ServiceWorkerScriptLoaderFactory::CheckIfScriptRequestIsValid(

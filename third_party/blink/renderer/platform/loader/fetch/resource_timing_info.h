@@ -56,8 +56,8 @@ class PLATFORM_EXPORT ResourceTimingInfo
 
   const AtomicString& InitiatorType() const { return type_; }
 
-  void SetLoadFinishTime(TimeTicks time) { load_finish_time_ = time; }
-  TimeTicks LoadFinishTime() const { return load_finish_time_; }
+  void SetLoadResponseEnd(TimeTicks time) { load_response_end_ = time; }
+  TimeTicks LoadResponseEnd() const { return load_response_end_; }
 
   void SetInitialURL(const KURL& url) { initial_url_ = url; }
   const KURL& InitialURL() const { return initial_url_; }
@@ -73,10 +73,10 @@ class PLATFORM_EXPORT ResourceTimingInfo
     return redirect_chain_;
   }
 
-  void AddFinalTransferSize(long long encoded_data_length) {
+  void AddFinalTransferSize(uint64_t encoded_data_length) {
     transfer_size_ += encoded_data_length;
   }
-  long long TransferSize() const { return transfer_size_; }
+  uint64_t TransferSize() const { return transfer_size_; }
 
   // The timestamps in PerformanceResourceTiming are measured relative from the
   // time origin. In most cases these timestamps must be positive value, so we
@@ -95,11 +95,11 @@ class PLATFORM_EXPORT ResourceTimingInfo
 
   AtomicString type_;
   TimeTicks initial_time_;
-  TimeTicks load_finish_time_;
+  TimeTicks load_response_end_;
   KURL initial_url_;
   ResourceResponse final_response_;
   Vector<ResourceResponse> redirect_chain_;
-  long long transfer_size_ = 0;
+  uint64_t transfer_size_ = 0;
   bool has_cross_origin_redirect_ = false;
   bool negative_allowed_ = false;
 

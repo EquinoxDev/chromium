@@ -14,6 +14,7 @@
 namespace remoting {
 
 struct DisplayGeometry {
+  int32_t id;
   int32_t x, y;
   uint32_t width, height;
   uint32_t dpi;     // Number of pixels per logical inch.
@@ -34,6 +35,8 @@ class DesktopDisplayInfo {
   void Reset();
   int NumDisplays();
   const DisplayGeometry* GetDisplayInfo(unsigned int id);
+
+  webrtc::DesktopVector CalcDisplayOffset(unsigned int id);
 
   // Add a new display with the given info to the display list.
   void AddDisplay(DisplayGeometry* display);

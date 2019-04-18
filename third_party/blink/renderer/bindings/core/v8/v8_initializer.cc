@@ -57,7 +57,6 @@
 #include "third_party/blink/renderer/core/frame/local_dom_window.h"
 #include "third_party/blink/renderer/core/inspector/console_message.h"
 #include "third_party/blink/renderer/core/inspector/main_thread_debugger.h"
-#include "third_party/blink/renderer/core/origin_trials/origin_trials.h"
 #include "third_party/blink/renderer/core/page/page.h"
 #include "third_party/blink/renderer/core/script/modulator.h"
 #include "third_party/blink/renderer/core/workers/worker_global_scope.h"
@@ -71,8 +70,8 @@
 #include "third_party/blink/renderer/platform/scheduler/public/thread_scheduler.h"
 #include "third_party/blink/renderer/platform/weborigin/kurl.h"
 #include "third_party/blink/renderer/platform/weborigin/security_violation_reporting_policy.h"
-#include "third_party/blink/renderer/platform/wtf/address_sanitizer.h"
 #include "third_party/blink/renderer/platform/wtf/assertions.h"
+#include "third_party/blink/renderer/platform/wtf/sanitizers.h"
 #include "third_party/blink/renderer/platform/wtf/stack_util.h"
 #include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
 #include "third_party/blink/renderer/platform/wtf/typed_arrays/array_buffer_contents.h"
@@ -136,9 +135,9 @@ size_t NearHeapLimitCallbackOnMainThread(void* data,
   Document* document = nullptr;
   int pages = 0;
   for (Page* page : Page::OrdinaryPages()) {
-    if (page->MainFrame()->IsLocalFrame()) {
+    if (auto* main_local_frame = DynamicTo<LocalFrame>(page->MainFrame())) {
       ++pages;
-      document = ToLocalFrame(page->MainFrame())->GetDocument();
+      document = main_local_frame->GetDocument();
     }
   }
   ukm::UkmRecorder* ukm_recorder = nullptr;
@@ -196,21 +195,21 @@ static String ExtractMessageForConsole(v8::Isolate* isolate,
 }
 
 namespace {
-MessageLevel MessageLevelFromNonFatalErrorLevel(int error_level) {
-  MessageLevel level = kErrorMessageLevel;
+mojom::ConsoleMessageLevel MessageLevelFromNonFatalErrorLevel(int error_level) {
+  mojom::ConsoleMessageLevel level = mojom::ConsoleMessageLevel::kError;
   switch (error_level) {
     case v8::Isolate::kMessageDebug:
-      level = kVerboseMessageLevel;
+      level = mojom::ConsoleMessageLevel::kVerbose;
       break;
     case v8::Isolate::kMessageLog:
     case v8::Isolate::kMessageInfo:
-      level = kInfoMessageLevel;
+      level = mojom::ConsoleMessageLevel::kInfo;
       break;
     case v8::Isolate::kMessageWarning:
-      level = kWarningMessageLevel;
+      level = mojom::ConsoleMessageLevel::kWarning;
       break;
     case v8::Isolate::kMessageError:
-      level = kInfoMessageLevel;
+      level = mojom::ConsoleMessageLevel::kInfo;
       break;
     default:
       NOTREACHED();
@@ -244,7 +243,7 @@ void V8Initializer::MessageHandlerInMainThread(v8::Local<v8::Message> message,
 
   if (message->ErrorLevel() != v8::Isolate::kMessageError) {
     context->AddConsoleMessage(ConsoleMessage::Create(
-        kJSMessageSource,
+        mojom::ConsoleMessageSource::kJavaScript,
         MessageLevelFromNonFatalErrorLevel(message->ErrorLevel()),
         ToCoreStringWithNullCheck(message->Get()), std::move(location)));
     return;
@@ -289,7 +288,7 @@ void V8Initializer::MessageHandlerInWorker(v8::Local<v8::Message> message,
 
   if (message->ErrorLevel() != v8::Isolate::kMessageError) {
     context->AddConsoleMessage(ConsoleMessage::Create(
-        kJSMessageSource,
+        mojom::ConsoleMessageSource::kJavaScript,
         MessageLevelFromNonFatalErrorLevel(message->ErrorLevel()),
         ToCoreStringWithNullCheck(message->Get()), std::move(location)));
     return;
@@ -372,8 +371,8 @@ static void PromiseRejectHandler(v8::PromiseRejectMessage data,
     if (message->IsSharedCrossOrigin())
       sanitize_script_errors = SanitizeScriptErrors::kDoNotSanitize;
   } else {
-    location =
-        SourceLocation::Create(context->Url().GetString(), 0, 0, nullptr);
+    location = std::make_unique<SourceLocation>(context->Url().GetString(), 0,
+                                                0, nullptr);
   }
 
   String message_for_console =
@@ -492,7 +491,7 @@ static bool WasmThreadsEnabledCallback(v8::Local<v8::Context> context) {
   if (!execution_context)
     return false;
 
-  return origin_trials::WebAssemblyThreadsEnabled(execution_context);
+  return RuntimeEnabledFeatures::WebAssemblyThreadsEnabled(execution_context);
 }
 
 v8::Local<v8::Value> NewRangeException(v8::Isolate* isolate,
@@ -558,7 +557,7 @@ static v8::MaybeLocal<v8::Promise> HostImportModuleDynamically(
     v8::Local<v8::ScriptOrModule> v8_referrer,
     v8::Local<v8::String> v8_specifier) {
   ScriptState* script_state = ScriptState::From(context);
-  ScriptPromiseResolver* resolver = ScriptPromiseResolver::Create(script_state);
+  auto* resolver = MakeGarbageCollected<ScriptPromiseResolver>(script_state);
   ScriptPromise promise = resolver->Promise();
 
   Modulator* modulator = Modulator::From(script_state);
@@ -599,7 +598,7 @@ static void HostGetImportMetaProperties(v8::Local<v8::Context> context,
 
   // TODO(shivanisha): Can a valid source url be passed to the constructor.
   ModuleImportMeta host_meta = modulator->HostGetImportMetaProperties(
-      ScriptModule(isolate, module, KURL()));
+      ModuleRecord(isolate, module, KURL()));
 
   // 3. Return <<Record { [[Key]]: "url", [[Value]]: urlString }>>. [spec text]
   v8::Local<v8::String> url_key = V8String(isolate, "url");
@@ -610,17 +609,9 @@ static void HostGetImportMetaProperties(v8::Local<v8::Context> context,
 static void InitializeV8Common(v8::Isolate* isolate) {
   isolate->AddGCPrologueCallback(V8GCController::GcPrologue);
   isolate->AddGCEpilogueCallback(V8GCController::GcEpilogue);
-
-  isolate->SetEmbedderHeapTracer(
-      RuntimeEnabledFeatures::HeapUnifiedGarbageCollectionEnabled()
-          ? static_cast<v8::EmbedderHeapTracer*>(
-                V8PerIsolateData::From(isolate)->GetUnifiedHeapController())
-          : static_cast<v8::EmbedderHeapTracer*>(
-                V8PerIsolateData::From(isolate)
-                    ->GetScriptWrappableMarkingVisitor()));
-
+  isolate->SetEmbedderHeapTracer(static_cast<v8::EmbedderHeapTracer*>(
+      V8PerIsolateData::From(isolate)->GetUnifiedHeapController()));
   isolate->SetMicrotasksPolicy(v8::MicrotasksPolicy::kScoped);
-
   isolate->SetUseCounterCallback(&UseCounterCallback);
   isolate->SetWasmModuleCallback(WasmModuleOverride);
   isolate->SetWasmInstanceCallback(WasmInstanceOverride);
@@ -696,20 +687,15 @@ void V8Initializer::InitializeMainThread(const intptr_t* reference_table) {
 
   v8::Isolate* isolate = V8PerIsolateData::Initialize(scheduler->V8TaskRunner(),
                                                       v8_context_snapshot_mode);
+  scheduler->SetV8Isolate(isolate);
 
   // ThreadState::isolate_ needs to be set before setting the EmbedderHeapTracer
   // as setting the tracer indicates that a V8 garbage collection should trace
   // over to Blink.
   DCHECK(ThreadState::MainThreadState());
-  if (RuntimeEnabledFeatures::HeapUnifiedGarbageCollectionEnabled()) {
-    ThreadState::MainThreadState()->RegisterTraceDOMWrappers(
-        isolate, V8GCController::TraceDOMWrappers, nullptr, nullptr);
-  } else {
-    ThreadState::MainThreadState()->RegisterTraceDOMWrappers(
-        isolate, V8GCController::TraceDOMWrappers,
-        ScriptWrappableMarkingVisitor::InvalidateDeadObjectsInMarkingDeque,
-        ScriptWrappableMarkingVisitor::PerformCleanup);
-  }
+
+  ThreadState::MainThreadState()->RegisterTraceDOMWrappers(
+      isolate, V8GCController::TraceDOMWrappers);
 
   InitializeV8Common(isolate);
 
@@ -742,7 +728,7 @@ void V8Initializer::InitializeMainThread(const intptr_t* reference_table) {
 
   if (v8::HeapProfiler* profiler = isolate->GetHeapProfiler()) {
     profiler->AddBuildEmbedderGraphCallback(
-        &V8EmbedderGraphBuilder::BuildEmbedderGraphCallback, nullptr);
+        &EmbedderGraphBuilder::BuildEmbedderGraphCallback, nullptr);
   }
 
   V8PerIsolateData::From(isolate)->SetThreadDebugger(

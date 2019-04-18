@@ -11,19 +11,20 @@ namespace web {
 class WebState;
 }
 
-@class TabModel;
-@protocol ApplicationCommands;
+@class CommandDispatcher;
 @protocol InfobarPositioner;
 @protocol SyncPresenter;
+class WebStateList;
 
 // Coordinator that owns and manages an InfobarContainer.
 @interface InfobarContainerCoordinator : ChromeCoordinator
 
-// TODO(crbug.com/892376): Stop passing TabModel and use WebStateList instead.
+// TODO(crbug.com/892376): Pass a Browser object instead of BrowserState and
+// WebStateList once BVC has a Browser pointer.
 - (instancetype)initWithBaseViewController:(UIViewController*)viewController
                               browserState:
                                   (ios::ChromeBrowserState*)browserState
-                                  tabModel:(TabModel*)tabModel
+                              webStateList:(WebStateList*)webStateList
     NS_DESIGNATED_INITIALIZER;
 ;
 
@@ -37,8 +38,11 @@ class WebState;
 - (instancetype)initWithBaseViewController:(UIViewController*)viewController
                                    browser:(Browser*)browser NS_UNAVAILABLE;
 
-// The InfobarContainer View.
-- (UIView*)view;
+// Sets the visibility of the container to |hidden|.
+- (void)hideContainer:(BOOL)hidden;
+
+// The InfobarContainer Legacy View.
+- (UIView*)legacyContainerView;
 
 // Updates the InfobarContainer according to the positioner information.
 - (void)updateInfobarContainer;
@@ -46,14 +50,23 @@ class WebState;
 // YES if an Infobar is being presented for |webState|.
 - (BOOL)isInfobarPresentingForWebState:(web::WebState*)webState;
 
-// The dispatcher for this Coordinator.
-@property(nonatomic, weak) id<ApplicationCommands> dispatcher;
+// Dismisses the InfobarBanner, if none is being presented |completion| will
+// still run.
+- (void)dismissInfobarBannerAnimated:(BOOL)animated
+                          completion:(void (^)())completion;
+
+// The CommandDispatcher for this Coordinator.
+@property(nonatomic, weak) CommandDispatcher* commandDispatcher;
 
 // The delegate used to position the InfobarContainer in the view.
 @property(nonatomic, weak) id<InfobarPositioner> positioner;
 
 // The SyncPresenter delegate for this Coordinator.
 @property(nonatomic, weak) id<SyncPresenter> syncPresenter;
+
+// YES if an InfobarBanner is being presented.
+@property(nonatomic, assign, getter=isPresentingInfobarBanner)
+    BOOL presentingInfobarBanner;
 
 @end
 

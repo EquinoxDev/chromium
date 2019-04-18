@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <utility>
 
+#include "base/auto_reset.h"
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/callback.h"
@@ -208,9 +209,13 @@ void Window::SetTitle(const base::string16& title) {
 }
 
 void Window::SetTransparent(bool transparent) {
+  if (transparent == transparent_)
+    return;
   transparent_ = transparent;
   if (layer())
     layer()->SetFillsBoundsOpaquely(!transparent_);
+  if (port_)
+    port_->OnTransparentChanged(transparent);
 }
 
 void Window::SetFillsBoundsCompletely(bool fills_bounds) {
@@ -359,6 +364,10 @@ void Window::SetBoundsInScreen(const gfx::Rect& new_bounds_in_screen,
 
 gfx::Rect Window::GetTargetBounds() const {
   return layer() ? layer()->GetTargetBounds() : bounds();
+}
+
+void Window::ScheduleDraw() {
+  layer()->ScheduleDraw();
 }
 
 void Window::SchedulePaintInRect(const gfx::Rect& rect) {
@@ -580,6 +589,7 @@ void Window::SetEventTargetingPolicy(ws::mojom::EventTargetingPolicy policy) {
     return;
 
   event_targeting_policy_ = policy;
+  layer()->SetAcceptEvents(policy != ws::mojom::EventTargetingPolicy::NONE);
   if (port_)
     port_->OnEventTargetingPolicyChanged();
 }
@@ -754,17 +764,24 @@ void Window::OnDeviceScaleFactorChanged(float old_device_scale_factor,
                                     new_device_scale_factor);
 }
 
+void Window::UpdateVisualState() {
+  if (delegate_)
+    delegate_->UpdateVisualState();
+}
+
 #if !defined(NDEBUG)
 std::string Window::GetDebugInfo() const {
   return base::StringPrintf(
-      "%s<%d> bounds(%d, %d, %d, %d) %s %s opacity=%.1f",
+      "%s<%d> bounds(%d, %d, %d, %d) %s %s opacity=%.1f "
+      "occlusion_state=%s",
       GetName().empty() ? "Unknown" : GetName().c_str(), id(), bounds().x(),
       bounds().y(), bounds().width(), bounds().height(),
       visible_ ? "WindowVisible" : "WindowHidden",
       layer()
           ? (layer()->GetTargetVisibility() ? "LayerVisible" : "LayerHidden")
           : "NoLayer",
-      layer() ? layer()->opacity() : 1.0f);
+      layer() ? layer()->opacity() : 1.0f,
+      OcclusionStateToString(occlusion_state_));
 }
 
 void Window::PrintWindowHierarchy(int depth) const {
@@ -795,8 +812,10 @@ void Window::RemoveOrDestroyChildren() {
 }
 
 std::unique_ptr<ui::PropertyData> Window::BeforePropertyChange(
-    const void* key) {
-  return port_ ? port_->OnWillChangeProperty(key) : nullptr;
+    const void* key,
+    bool is_value_changing) {
+  return (is_value_changing && port_) ? port_->OnWillChangeProperty(key)
+                                      : nullptr;
 }
 
 void Window::AfterPropertyChange(const void* key,
@@ -1091,11 +1110,23 @@ void Window::NotifyWindowVisibilityChangedUp(aura::Window* target,
 }
 
 bool Window::CleanupGestureState() {
+  // If it's in the process already, nothing has to be done. Reentrant can
+  // happen through some event handlers for CancelActiveTouches().
+  if (cleaning_up_gesture_state_)
+    return false;
+
+  base::AutoReset<bool> in_cleanup(&cleaning_up_gesture_state_, true);
   bool state_modified = false;
   state_modified |= env_->gesture_recognizer()->CancelActiveTouches(this);
   state_modified |= env_->gesture_recognizer()->CleanupStateForConsumer(this);
-  for (auto iter = children_.begin(); iter != children_.end(); ++iter) {
-    state_modified |= (*iter)->CleanupGestureState();
+  // Potentially event handlers for CancelActiveTouches() within
+  // CleanupGestureState may change the window hierarchy (or reorder the
+  // |children_|), and therefore iterating over |children_| is not safe. Use
+  // WindowTracker to track the list of children.
+  WindowTracker children(children_);
+  while (!children.windows().empty()) {
+    Window* child = children.Pop();
+    state_modified |= child->CleanupGestureState();
   }
   return state_modified;
 }
@@ -1173,6 +1204,34 @@ void Window::TrackOcclusionState() {
 
 bool Window::RequiresDoubleTapGestureEvents() const {
   return delegate_ && delegate_->RequiresDoubleTapGestureEvents();
+}
+
+// static
+const char* Window::OcclusionStateToString(OcclusionState state) {
+#define CASE_TYPE(t) \
+  case t:            \
+    return #t
+
+  switch (state) {
+    CASE_TYPE(OcclusionState::UNKNOWN);
+    CASE_TYPE(OcclusionState::VISIBLE);
+    CASE_TYPE(OcclusionState::OCCLUDED);
+    CASE_TYPE(OcclusionState::HIDDEN);
+  }
+#undef CASE_TYPE
+
+  NOTREACHED();
+  return "";
+}
+
+void Window::NotifyResizeLoopStarted() {
+  for (auto& observer : observers_)
+    observer.OnResizeLoopStarted(this);
+}
+
+void Window::NotifyResizeLoopEnded() {
+  for (auto& observer : observers_)
+    observer.OnResizeLoopEnded(this);
 }
 
 #if DCHECK_IS_ON()
@@ -1330,7 +1389,7 @@ void Window::UpdateLayerName() {
     layer_name = "Unnamed Window";
 
   if (id_ != -1)
-    layer_name += " " + base::IntToString(id_);
+    layer_name += " " + base::NumberToString(id_);
 
   layer()->set_name(layer_name);
 #endif

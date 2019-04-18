@@ -8,12 +8,14 @@
 #include "base/macros.h"
 #include "content/renderer/loader/code_cache_loader_impl.h"
 #include "content/renderer/loader/resource_load_stats.h"
-#include "content/renderer/loader/url_response_body_consumer.h"
 #include "content/renderer/loader/web_url_loader_impl.h"
 #include "services/network/public/cpp/url_loader_completion_status.h"
 #include "third_party/blink/public/web/web_navigation_params.h"
 
 namespace content {
+
+// static
+constexpr uint32_t NavigationBodyLoader::kMaxNumConsumedBytesInTask;
 
 // static
 void NavigationBodyLoader::FillNavigationParamsResponseAndBodyLoader(
@@ -51,7 +53,7 @@ void NavigationBodyLoader::FillNavigationParamsResponseAndBodyLoader(
         url, redirect_response, &redirect.redirect_response,
         false /* report_security_info */, request_id);
     if (url.SchemeIs(url::kDataScheme))
-      redirect.redirect_response.SetHTTPStatusCode(200);
+      redirect.redirect_response.SetHttpStatusCode(200);
     redirect.new_url = redirect_info.new_url;
     redirect.new_referrer =
         blink::WebString::FromUTF8(redirect_info.new_referrer);
@@ -67,7 +69,7 @@ void NavigationBodyLoader::FillNavigationParamsResponseAndBodyLoader(
                                         false /* report_security_info */,
                                         request_id);
   if (url.SchemeIs(url::kDataScheme))
-    navigation_params->response.SetHTTPStatusCode(200);
+    navigation_params->response.SetHttpStatusCode(200);
 
   if (url_loader_client_endpoints) {
     navigation_params->body_loader.reset(new NavigationBodyLoader(
@@ -171,7 +173,7 @@ void NavigationBodyLoader::StartLoadingBody(
   client_ = client;
 
   NotifyResourceResponseReceived(render_frame_id_, resource_load_info_.get(),
-                                 head_);
+                                 head_, content::PREVIEWS_OFF);
 
   if (use_isolated_code_cache) {
     code_cache_loader_ = std::make_unique<CodeCacheLoaderImpl>();
@@ -252,11 +254,9 @@ void NavigationBodyLoader::ReadFromDataPipe() {
       NotifyCompletionIfAppropriate();
       return;
     }
-    DCHECK_LE(num_bytes_consumed,
-              URLResponseBodyConsumer::kMaxNumConsumedBytesInTask);
-    available = std::min(available,
-                         URLResponseBodyConsumer::kMaxNumConsumedBytesInTask -
-                             num_bytes_consumed);
+    DCHECK_LE(num_bytes_consumed, kMaxNumConsumedBytesInTask);
+    available =
+        std::min(available, kMaxNumConsumedBytesInTask - num_bytes_consumed);
     if (available == 0) {
       // We've already consumed many bytes in this task. Defer the remaining
       // to the next task.

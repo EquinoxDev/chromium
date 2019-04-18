@@ -88,7 +88,7 @@ signin_metrics::PromoAction GetPromoActionForNewAccount(
   if (account_consistency != signin::AccountConsistencyMethod::kDice)
     return signin_metrics::PromoAction::PROMO_ACTION_NEW_ACCOUNT_PRE_DICE;
 
-  return identity_manager->GetAccountsWithRefreshTokens().size() > 0
+  return !identity_manager->GetAccountsWithRefreshTokens().empty()
              ? signin_metrics::PromoAction::
                    PROMO_ACTION_NEW_ACCOUNT_EXISTING_ACCOUNT
              : signin_metrics::PromoAction::
@@ -217,7 +217,8 @@ void SigninViewController::ShowDiceSigninTab(
           signin_metrics::AccessPoint::ACCESS_POINT_EXTENSIONS) {
         // Extensions do not activate the tab to prevent misbehaving
         // extensions to keep focusing the signin tab.
-        tab_strip->ActivateTabAt(dice_tab_index, true /* user_gesture */);
+        tab_strip->ActivateTabAt(dice_tab_index,
+                                 {TabStripModel::GestureType::kOther});
       }
       // Do not create a new signin tab, because there is already one.
       return;

@@ -478,21 +478,25 @@ void Cronet_UrlRequestImpl::GetStatus(
                      Cronet_UrlRequestStatusListener_Status_INVALID));
 }
 
-void Cronet_UrlRequestImpl::OnUploadDataProviderError(
-    const std::string& error_message) {
-  {
-    base::AutoLock lock(lock_);
-    // If |error_| is not nullptr, that means that another network error is
-    // already reported.
-    if (error_)
-      return;
-    error_ = CreateCronet_Error(
-        0, 0, "Failure from UploadDataProvider: " + error_message);
-    error_->error_code = Cronet_Error_ERROR_CODE_ERROR_CALLBACK;
-  }
-  // Invoke Cronet_UrlRequestCallback_OnFailed on client executor.
+void Cronet_UrlRequestImpl::PostCallbackOnFailedToExecutor() {
   PostTaskToExecutor(base::BindOnce(
       &Cronet_UrlRequestImpl::InvokeCallbackOnFailed, base::Unretained(this)));
+}
+
+void Cronet_UrlRequestImpl::OnUploadDataProviderError(
+    const std::string& error_message) {
+  base::AutoLock lock(lock_);
+  // If |error_| is not nullptr, that means that another network error is
+  // already reported.
+  if (error_)
+    return;
+  error_ = CreateCronet_Error(
+      0, 0, "Failure from UploadDataProvider: " + error_message);
+  error_->error_code = Cronet_Error_ERROR_CODE_ERROR_CALLBACK;
+
+  request_->MaybeReportMetricsAndRunCallback(
+      base::BindOnce(&Cronet_UrlRequestImpl::PostCallbackOnFailedToExecutor,
+                     base::Unretained(this)));
 }
 
 void Cronet_UrlRequestImpl::PostTaskToExecutor(base::OnceClosure task) {
@@ -542,6 +546,7 @@ void Cronet_UrlRequestImpl::InvokeCallbackOnSucceeded() {
   }
   InvokeAllStatusListeners();
   Cronet_UrlRequestCallback_OnSucceeded(callback_, this, response_info_.get());
+  // |this| may have been deleted here.
 }
 
 void Cronet_UrlRequestImpl::InvokeCallbackOnFailed() {
@@ -552,11 +557,13 @@ void Cronet_UrlRequestImpl::InvokeCallbackOnFailed() {
   InvokeAllStatusListeners();
   Cronet_UrlRequestCallback_OnFailed(callback_, this, response_info_.get(),
                                      error_.get());
+  // |this| may have been deleted here.
 }
 
 void Cronet_UrlRequestImpl::InvokeCallbackOnCanceled() {
   InvokeAllStatusListeners();
   Cronet_UrlRequestCallback_OnCanceled(callback_, this, response_info_.get());
+  // |this| may have been deleted here.
 }
 
 void Cronet_UrlRequestImpl::InvokeAllStatusListeners() {
@@ -587,7 +594,6 @@ Cronet_UrlRequestImpl::NetworkTasks::NetworkTasks(
   DCHECK(url_request);
 }
 
-// CronetURLRequest::NetworkTasks implementations:
 void Cronet_UrlRequestImpl::NetworkTasks::OnReceivedRedirect(
     const std::string& new_location,
     int http_status_code,

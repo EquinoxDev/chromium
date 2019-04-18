@@ -28,15 +28,12 @@ LayoutWorkletGlobalScope* LayoutWorkletGlobalScope::Create(
     LocalFrame* frame,
     std::unique_ptr<GlobalScopeCreationParams> creation_params,
     WorkerReportingProxy& reporting_proxy,
-    PendingLayoutRegistry* pending_layout_registry,
-    size_t global_scope_number) {
+    PendingLayoutRegistry* pending_layout_registry) {
   auto* global_scope = MakeGarbageCollected<LayoutWorkletGlobalScope>(
       frame, std::move(creation_params), reporting_proxy,
       pending_layout_registry);
-  String context_name("LayoutWorklet #");
-  context_name.append(String::Number(global_scope_number));
   // TODO(bashi): Handle a case where the script controller fails to initialize.
-  global_scope->ScriptController()->InitializeContext(context_name, NullURL());
+  global_scope->ScriptController()->Initialize(NullURL());
   MainThreadDebugger::Instance()->ContextCreated(
       global_scope->ScriptController()->GetScriptState(),
       global_scope->GetFrame(), global_scope->DocumentSecurityOrigin());
@@ -74,6 +71,12 @@ void LayoutWorkletGlobalScope::registerLayout(
     exception_state.ThrowDOMException(
         DOMExceptionCode::kNotSupportedError,
         "A class with name:'" + name + "' is already registered.");
+    return;
+  }
+
+  if (!layout_ctor->IsConstructor()) {
+    exception_state.ThrowTypeError(
+        "The provided callback is not a constructor.");
     return;
   }
 

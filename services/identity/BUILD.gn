@@ -8,8 +8,8 @@ if (is_android) {
 
 source_set("lib") {
   sources = [
-    "identity_manager_impl.cc",
-    "identity_manager_impl.h",
+    "identity_accessor_impl.cc",
+    "identity_accessor_impl.h",
     "identity_service.cc",
     "identity_service.h",
   ]
@@ -20,7 +20,7 @@ source_set("lib") {
     "//base",
     "//components/signin/core/browser:internals",
     "//components/signin/core/browser:shared",
-    "//services/identity/public/cpp:cpp_types",
+    "//services/identity/public/cpp:cpp",
     "//services/identity/public/mojom",
     "//services/service_manager/public/cpp",
     "//services/service_manager/public/mojom",
@@ -33,6 +33,7 @@ source_set("tests") {
     ":lib",
     "//base",
     "//base/test:test_support",
+    "//components/image_fetcher/core:test_support",
     "//components/prefs:test_support",
     "//components/signin/core/browser:internals",
     "//components/signin/core/browser:internals_test_support",
@@ -49,7 +50,7 @@ source_set("tests") {
     "//testing/gtest",
   ]
   sources = [
-    "identity_manager_impl_unittest.cc",
+    "identity_accessor_impl_unittest.cc",
     "public/cpp/access_token_fetcher_unittest.cc",
     "public/cpp/identity_manager_unittest.cc",
     "public/cpp/identity_test_environment_unittest.cc",

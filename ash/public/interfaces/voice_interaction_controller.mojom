@@ -44,7 +44,9 @@ enum AssistantAllowedState {
   // Disallowed because the device is in demo mode.
   DISALLOWED_BY_DEMO_MODE,
   // Disallowed because the device is in public session.
-  DISALLOWED_BY_PUBLIC_SESSION
+  DISALLOWED_BY_PUBLIC_SESSION,
+  // Disallowed because the user's account type is currently not supported.
+  DISALLOWED_BY_ACCOUNT_TYPE
 };
 
 // Allows observing changes to voice interaction status and settings.
@@ -70,6 +72,9 @@ interface VoiceInteractionObserver {
 
   // Called when assistant feature allowed state has changed.
   OnAssistantFeatureAllowedChanged(AssistantAllowedState state);
+
+  // Called when Google Play Store is enabled/disabled.
+  OnArcPlayStoreEnabledChanged(bool enabled);
 
   // Called when locale is changed in pref. The locale is in the format can be
   // "en-US" or simply "en". When locale is not set in pref, it returns empty
@@ -112,6 +117,9 @@ interface VoiceInteractionController {
 
   // Called when the launch with mic open state is changed.
   NotifyLaunchWithMicOpen(bool launch_with_mic_open);
+
+  // Called when Google Play Store is enabled/disabled.
+  NotifyArcPlayStoreEnabledChanged(bool enabled);
 
   // Add an observer.
   AddObserver(VoiceInteractionObserver observer);

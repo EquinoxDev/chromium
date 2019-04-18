@@ -6,20 +6,18 @@
 #define THIRD_PARTY_BLINK_RENDERER_CORE_PAINT_NG_NG_PAINT_FRAGMENT_H_
 
 #include <iterator>
+#include <memory>
 
 #include "third_party/blink/renderer/core/core_export.h"
 #include "third_party/blink/renderer/core/layout/ng/ng_physical_fragment.h"
-#include "third_party/blink/renderer/core/loader/resource/image_resource_observer.h"
+#include "third_party/blink/renderer/core/scroll/scroll_types.h"
 #include "third_party/blink/renderer/platform/graphics/paint/display_item_client.h"
-#include "third_party/blink/renderer/platform/scroll/scroll_types.h"
 #include "third_party/blink/renderer/platform/wtf/allocator.h"
 
 namespace blink {
 
-class LayoutInline;
 class NGBlockBreakToken;
 struct LayoutSelectionStatus;
-struct PaintInfo;
 enum class NGOutlineType;
 
 // The NGPaintFragment contains a NGPhysicalFragment and geometry in the paint
@@ -38,8 +36,7 @@ enum class NGOutlineType;
 // - image (<img>, svg <image>) or video (<video>) elements that are
 //   placeholders for displaying them.
 class CORE_EXPORT NGPaintFragment : public RefCounted<NGPaintFragment>,
-                                    public DisplayItemClient,
-                                    public ImageResourceObserver {
+                                    public DisplayItemClient {
  public:
   NGPaintFragment(scoped_refptr<const NGPhysicalFragment>,
                   NGPhysicalOffset offset,
@@ -55,11 +52,6 @@ class CORE_EXPORT NGPaintFragment : public RefCounted<NGPaintFragment>,
     return *physical_fragment_;
   }
 
-  // Next/last fragment for  when this is fragmented.
-  const NGPaintFragment* Next() const { return next_fragmented_.get(); }
-  void SetNext(scoped_refptr<NGPaintFragment>);
-  const NGPaintFragment* Last() const;
-  const NGPaintFragment* Last(const NGBreakToken&) const;
   static scoped_refptr<NGPaintFragment>* Find(scoped_refptr<NGPaintFragment>*,
                                               const NGBlockBreakToken*);
 
@@ -155,24 +147,30 @@ class CORE_EXPORT NGPaintFragment : public RefCounted<NGPaintFragment>,
     return inline_offset_to_container_box_;
   }
 
+  // InkOverflow of itself, not including contents, in the local coordinate.
+  NGPhysicalOffsetRect SelfInkOverflow() const;
+
+  // InkOverflow of its contents, not including itself, in the local coordinate.
+  NGPhysicalOffsetRect ContentsInkOverflow() const;
+
+  // InkOverflow of itself, including contents if they contribute to the ink
+  // overflow of this object (e.g. when not clipped,) in the local coordinate.
+  NGPhysicalOffsetRect InkOverflow() const;
+
+  void RecalcInlineChildrenInkOverflow();
+
   void AddSelfOutlineRect(Vector<LayoutRect>*,
                           const LayoutPoint& offset,
                           NGOutlineType) const;
 
   // TODO(layout-dev): Implement when we have oveflow support.
   // TODO(eae): Switch to using NG geometry types.
-  bool HasOverflowClip() const;
+  bool HasOverflowClip() const { return PhysicalFragment().HasOverflowClip(); }
   bool ShouldClipOverflow() const;
   bool HasSelfPaintingLayer() const;
   // This is equivalent to LayoutObject::VisualRect
-  LayoutRect VisualRect() const override;
-  LayoutRect PartialInvalidationVisualRect() const override;
-
-  // CSS ink overflow https://www.w3.org/TR/css-overflow-3/#ink
-  // Encloses all pixels painted by self + children.
-  LayoutRect SelfInkOverflow() const;
-  // Union of children's ink overflows.
-  LayoutRect ChildrenInkOverflow() const;
+  IntRect VisualRect() const override;
+  IntRect PartialInvalidationVisualRect() const override;
 
   NGPhysicalOffsetRect ComputeLocalSelectionRectForText(
       const LayoutSelectionStatus&) const;
@@ -188,13 +186,6 @@ class CORE_EXPORT NGPaintFragment : public RefCounted<NGPaintFragment>,
   // Set ShouldDoFullPaintInvalidation flag to all objects in the first line of
   // this block-level fragment.
   void SetShouldDoFullPaintInvalidationForFirstLine();
-
-  // Paint all descendant inline box fragments that belong to the specified
-  // LayoutObject.
-  void PaintInlineBoxForDescendants(const PaintInfo&,
-                                    const LayoutPoint& paint_offset,
-                                    const LayoutInline*,
-                                    NGPhysicalOffset = {}) const;
 
   // DisplayItemClient methods.
   String DebugName() const override;
@@ -270,6 +261,13 @@ class CORE_EXPORT NGPaintFragment : public RefCounted<NGPaintFragment>,
   // for a LayoutObject.
   static FragmentRange InlineFragmentsFor(const LayoutObject*);
 
+  // Same as |InlineFragmentsFor()| but this function includes descendants if
+  // the |layout_object| is culled (i.e., did not generate fragments.)
+  typedef void (*Callback)(NGPaintFragment*, void*);
+  static void InlineFragmentsIncludingCulledFor(const LayoutObject&,
+                                                Callback callback,
+                                                void* context);
+
   const NGPaintFragment* LastForSameLayoutObject() const;
   NGPaintFragment* LastForSameLayoutObject();
 
@@ -321,6 +319,13 @@ class CORE_EXPORT NGPaintFragment : public RefCounted<NGPaintFragment>,
   // Dirty line boxes containing |layout_object|.
   static void MarkLineBoxesDirtyFor(const LayoutObject& layout_object);
 
+  // Returns |LayoutBox| that holds ink overflow for this fragment.
+  LayoutBox* InkOverflowOwnerBox() const;
+
+  // Re-compute ink overflow of children and return the union.
+  NGPhysicalOffsetRect RecalcInkOverflow();
+  NGPhysicalOffsetRect RecalcContentsInkOverflow();
+
   // This fragment will use the layout object's visual rect.
   const LayoutObject& VisualRectLayoutObject(bool& this_as_inline_box) const;
 
@@ -340,6 +345,19 @@ class CORE_EXPORT NGPaintFragment : public RefCounted<NGPaintFragment>,
 
   NGPaintFragment* next_for_same_layout_object_ = nullptr;
   NGPhysicalOffset inline_offset_to_container_box_;
+
+  // The ink overflow storage for when |InkOverflowOwnerBox()| is nullptr.
+  struct NGInkOverflowModel {
+    USING_FAST_MALLOC(NGInkOverflowModel);
+
+   public:
+    NGInkOverflowModel(const NGPhysicalOffsetRect& self_ink_overflow,
+                       const NGPhysicalOffsetRect& contents_ink_overflow);
+
+    NGPhysicalOffsetRect self_ink_overflow;
+    NGPhysicalOffsetRect contents_ink_overflow;
+  };
+  std::unique_ptr<NGInkOverflowModel> ink_overflow_;
 
   // For a line box, this indicates it is dirty. This helps to determine if the
   // fragment is re-usable when part of an inline formatting context is changed.

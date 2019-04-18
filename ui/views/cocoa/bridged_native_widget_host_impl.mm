@@ -7,12 +7,15 @@
 #include <utility>
 
 #include "base/mac/foundation_util.h"
+#include "base/strings/sys_string_conversions.h"
 #include "mojo/public/cpp/bindings/strong_associated_binding.h"
 #include "ui/accelerated_widget_mac/window_resize_helper_mac.h"
+#include "ui/base/cocoa/animation_utils.h"
 #include "ui/base/cocoa/remote_accessibility_api.h"
+#include "ui/base/cocoa/remote_layer_api.h"
 #include "ui/base/hit_test.h"
+#include "ui/base/ime/init/input_method_factory.h"
 #include "ui/base/ime/input_method.h"
-#include "ui/base/ime/input_method_factory.h"
 #include "ui/compositor/recyclable_compositor_mac.h"
 #include "ui/display/screen.h"
 #include "ui/gfx/geometry/dip_util.h"
@@ -49,8 +52,8 @@ namespace {
 class BridgedNativeWidgetHostDummy
     : public views_bridge_mac::mojom::BridgedNativeWidgetHost {
  public:
-  BridgedNativeWidgetHostDummy() {}
-  ~BridgedNativeWidgetHostDummy() override {}
+  BridgedNativeWidgetHostDummy() = default;
+  ~BridgedNativeWidgetHostDummy() override = default;
 
  private:
   void OnVisibilityChanged(bool visible) override {}
@@ -206,6 +209,60 @@ uint64_t g_last_bridged_native_widget_id = 0;
 
 }  // namespace
 
+// A gfx::CALayerParams may pass the content to be drawn across processes via
+// either an IOSurface (sent as mach port) or a CAContextID (which is an
+// integer). For historical reasons, software compositing uses IOSurfaces.
+// The mojo connection to the app shim process does not support sending mach
+// ports, which results in nothing being drawn when using software compositing.
+// To work around this issue, this structure creates a CALayer that uses the
+// IOSurface as its contents, and hosts this CALayer in a CAContext that is
+// the gfx::CALayerParams is then pointed to.
+// https://crbug.com/942213
+class BridgedNativeWidgetHostImpl::IOSurfaceToRemoteLayerInterceptor {
+ public:
+  IOSurfaceToRemoteLayerInterceptor() = default;
+  ~IOSurfaceToRemoteLayerInterceptor() = default;
+
+  void UpdateCALayerParams(gfx::CALayerParams* ca_layer_params) {
+    DCHECK(ca_layer_params->io_surface_mach_port);
+    base::ScopedCFTypeRef<IOSurfaceRef> io_surface(
+        IOSurfaceLookupFromMachPort(ca_layer_params->io_surface_mach_port));
+
+    ScopedCAActionDisabler disabler;
+    // Lazily create |io_surface_layer_| and |ca_context_|.
+    if (!io_surface_layer_) {
+      io_surface_layer_.reset([[CALayer alloc] init]);
+      [io_surface_layer_ setContentsGravity:kCAGravityTopLeft];
+      [io_surface_layer_ setAnchorPoint:CGPointMake(0, 0)];
+    }
+    if (!ca_context_) {
+      CGSConnectionID connection_id = CGSMainConnectionID();
+      ca_context_.reset([[CAContext contextWithCGSConnection:connection_id
+                                                     options:@{}] retain]);
+      [ca_context_ setLayer:io_surface_layer_];
+    }
+
+    // Update |io_surface_layer_| to draw the contents of |ca_layer_params|.
+    id new_contents = static_cast<id>(io_surface.get());
+    [io_surface_layer_ setContents:new_contents];
+    gfx::Size bounds_dip = gfx::ConvertSizeToDIP(ca_layer_params->scale_factor,
+                                                 ca_layer_params->pixel_size);
+    [io_surface_layer_
+        setBounds:CGRectMake(0, 0, bounds_dip.width(), bounds_dip.height())];
+    if ([io_surface_layer_ contentsScale] != ca_layer_params->scale_factor)
+      [io_surface_layer_ setContentsScale:ca_layer_params->scale_factor];
+
+    // Change |ca_layer_params| to use |ca_context_| instead of an IOSurface.
+    ca_layer_params->ca_context_id = [ca_context_ contextId];
+    ca_layer_params->io_surface_mach_port.reset();
+  }
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(IOSurfaceToRemoteLayerInterceptor);
+  base::scoped_nsobject<CAContext> ca_context_;
+  base::scoped_nsobject<CALayer> io_surface_layer_;
+};
+
 // static
 BridgedNativeWidgetHostImpl* BridgedNativeWidgetHostImpl::GetFromNativeWindow(
     gfx::NativeWindow native_window) {
@@ -315,6 +372,7 @@ void BridgedNativeWidgetHostImpl::CreateLocalBridge(
 void BridgedNativeWidgetHostImpl::CreateRemoteBridge(
     BridgeFactoryHost* bridge_factory_host,
     views_bridge_mac::mojom::CreateWindowParamsPtr window_create_params) {
+  accessibility_focus_overrider_.SetAppIsRemote(true);
   bridge_factory_host_ = bridge_factory_host;
   bridge_factory_host_->AddObserver(this);
 
@@ -555,6 +613,22 @@ void BridgedNativeWidgetHostImpl::OnWidgetInitDone() {
     dialog->AddObserver(this);
 }
 
+bool BridgedNativeWidgetHostImpl::RedispatchKeyEvent(NSEvent* event) {
+  // If the target window is in-process, then redispatch the event directly,
+  // and give an accurate return value.
+  if (bridge_impl_)
+    return bridge_impl_->RedispatchKeyEvent(event);
+
+  // If the target window is out of process then always report the event as
+  // handled (because it should never be handled in this process).
+  bridge()->RedispatchKeyEvent(
+      [event type], [event modifierFlags], [event timestamp],
+      base::SysNSStringToUTF16([event characters]),
+      base::SysNSStringToUTF16([event charactersIgnoringModifiers]),
+      [event keyCode]);
+  return true;
+}
+
 ui::InputMethod* BridgedNativeWidgetHostImpl::GetInputMethod() {
   if (!input_method_) {
     input_method_ = ui::CreateInputMethod(this, gfx::kNullAcceleratedWidget);
@@ -638,8 +712,8 @@ void BridgedNativeWidgetHostImpl::RankNSViewsRecursive(
   auto it = associated_views_.find(view);
   if (it != associated_views_.end())
     rank->emplace(it->second, rank->size());
-  for (int i = 0; i < view->child_count(); ++i)
-    RankNSViewsRecursive(view->child_at(i), rank);
+  for (View* child : view->children())
+    RankNSViewsRecursive(child, rank);
 }
 
 void BridgedNativeWidgetHostImpl::UpdateLocalWindowFrame(
@@ -766,7 +840,9 @@ bool BridgedNativeWidgetHostImpl::GetHasMenuController(
     bool* has_menu_controller) {
   MenuController* menu_controller = MenuController::GetActiveInstance();
   *has_menu_controller = menu_controller && root_view_ &&
-                         menu_controller->owner() == root_view_->GetWidget();
+                         menu_controller->owner() == root_view_->GetWidget() &&
+                         // The editable combobox menu does not swallow keys.
+                         !menu_controller->IsEditableCombobox();
   return true;
 }
 
@@ -825,8 +901,7 @@ bool BridgedNativeWidgetHostImpl::GetTooltipTextAt(
     gfx::Point view_point = location_in_content;
     views::View::ConvertPointToScreen(root_view_, &view_point);
     views::View::ConvertPointFromScreen(view, &view_point);
-    if (!view->GetTooltipText(view_point, new_tooltip_text))
-      DCHECK(new_tooltip_text->empty());
+    *new_tooltip_text = view->GetTooltipText(view_point);
   }
   return true;
 }
@@ -1350,14 +1425,36 @@ void BridgedNativeWidgetHostImpl::OnDeviceScaleFactorChanged(
       old_device_scale_factor, new_device_scale_factor);
 }
 
+void BridgedNativeWidgetHostImpl::UpdateVisualState() {
+  native_widget_mac_->GetWidget()->LayoutRootViewIfNecessary();
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // BridgedNativeWidgetHostImpl, AcceleratedWidgetMac:
 
 void BridgedNativeWidgetHostImpl::AcceleratedWidgetCALayerParamsUpdated() {
   const gfx::CALayerParams* ca_layer_params =
       compositor_->widget()->GetCALayerParams();
-  if (ca_layer_params)
-    bridge()->SetCALayerParams(*ca_layer_params);
+  if (ca_layer_params) {
+    // Replace IOSurface mach ports with CAContextIDs only when using the
+    // out-of-process bridge (to reduce risk, because this workaround is being
+    // merged to late-life-cycle release branches) and when an IOSurface
+    // mach port has been specified (in practice, when software compositing is
+    // enabled).
+    // https://crbug.com/942213
+    if (bridge_ptr_ && ca_layer_params->io_surface_mach_port) {
+      gfx::CALayerParams updated_ca_layer_params = *ca_layer_params;
+      if (!io_surface_to_remote_layer_interceptor_) {
+        io_surface_to_remote_layer_interceptor_ =
+            std::make_unique<IOSurfaceToRemoteLayerInterceptor>();
+      }
+      io_surface_to_remote_layer_interceptor_->UpdateCALayerParams(
+          &updated_ca_layer_params);
+      bridge_ptr_->SetCALayerParams(updated_ca_layer_params);
+    } else {
+      bridge()->SetCALayerParams(*ca_layer_params);
+    }
+  }
 
   // Take this opportunity to update the VSync parameters, if needed.
   if (display_link_) {

@@ -344,10 +344,14 @@ void BrowserShortcutLauncherItemController::ExecuteCommand(
                                       TabStripModel::CLOSE_USER_GESTURE);
       }
     } else {
+      // These extra checks should gather info for http://crbug.com/937088
+      CHECK(browser);
+      CHECK(browser->window());
+      CHECK(browser->window()->GetNativeWindow());
       multi_user_util::MoveWindowToCurrentDesktop(
           browser->window()->GetNativeWindow());
       if (tab_index != kNoTab && tab_strip->ContainsIndex(tab_index))
-        tab_strip->ActivateTabAt(tab_index, false);
+        tab_strip->ActivateTabAt(tab_index);
       browser->window()->Show();
       browser->window()->Activate();
     }

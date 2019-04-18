@@ -39,12 +39,12 @@
 #include "net/spdy/http2_priority_dependencies.h"
 #include "net/spdy/multiplexed_session.h"
 #include "net/spdy/server_push_delegate.h"
-#include "net/third_party/quic/core/http/quic_client_push_promise_index.h"
-#include "net/third_party/quic/core/http/quic_spdy_client_session_base.h"
-#include "net/third_party/quic/core/quic_crypto_client_stream.h"
-#include "net/third_party/quic/core/quic_packets.h"
-#include "net/third_party/quic/core/quic_server_id.h"
-#include "net/third_party/quic/core/quic_time.h"
+#include "net/third_party/quiche/src/quic/core/http/quic_client_push_promise_index.h"
+#include "net/third_party/quiche/src/quic/core/http/quic_spdy_client_session_base.h"
+#include "net/third_party/quiche/src/quic/core/quic_crypto_client_stream.h"
+#include "net/third_party/quiche/src/quic/core/quic_packets.h"
+#include "net/third_party/quiche/src/quic/core/quic_server_id.h"
+#include "net/third_party/quiche/src/quic/core/quic_time.h"
 #include "net/traffic_annotation/network_traffic_annotation.h"
 
 namespace net {
@@ -376,6 +376,8 @@ class NET_EXPORT_PRIVATE QuicChromiumClientSession
       bool migrate_sesion_early_v2,
       bool migrate_session_on_network_change_v2,
       NetworkChangeNotifier::NetworkHandle default_network,
+      quic::QuicTime::Delta retransmittable_on_wire_timeout,
+      bool migrate_idle_session,
       base::TimeDelta idle_migration_period,
       base::TimeDelta max_time_on_non_default_network,
       int max_migrations_to_non_default_network_on_write_error,
@@ -500,7 +502,7 @@ class NET_EXPORT_PRIVATE QuicChromiumClientSession
       const quic::QuicSocketAddress& self_address,
       const quic::QuicSocketAddress& peer_address) override;
   void OnPathDegrading() override;
-  bool HasOpenDynamicStreams() const override;
+  bool ShouldKeepConnectionAlive() const override;
 
   // QuicChromiumPacketReader::Visitor methods:
   void OnReadError(int result, const DatagramClientSocket* socket) override;
@@ -713,8 +715,10 @@ class NET_EXPORT_PRIVATE QuicChromiumClientSession
   void TryMigrateBackToDefaultNetwork(base::TimeDelta timeout);
   void MaybeRetryMigrateBackToDefaultNetwork();
 
-  // Returns true and post a task to close the connection if session's
-  // idle time exceeds the |idle_migration_period_|.
+  // If migrate idle session is enabled, returns true and post a task to close
+  // the connection if session's idle time exceeds the |idle_migration_period_|.
+  // If migrate idle session is not enabled, returns true and posts a task to
+  // close the connection if session doesn't have outstanding streams.
   bool CheckIdleTimeExceedsIdleMigrationPeriod();
 
   // Close non-migratable streams in both directions by sending reset stream to
@@ -749,6 +753,7 @@ class NET_EXPORT_PRIVATE QuicChromiumClientSession
   bool require_confirmation_;
   bool migrate_session_early_v2_;
   bool migrate_session_on_network_change_v2_;
+  bool migrate_idle_session_;
   // Session can be migrated if its idle time is within this period.
   base::TimeDelta idle_migration_period_;
   base::TimeDelta max_time_on_non_default_network_;

@@ -9,6 +9,7 @@
 
 #include <memory>
 #include <string>
+#include <vector>
 
 #include "base/macros.h"
 #include "base/memory/ref_counted.h"
@@ -54,15 +55,15 @@ class ChromiumHttpConnection
   void Close() override;
   void UploadData(const std::string& data, bool is_last_chunk) override;
 
+  // network::mojom::ChunkedDataPipeGetter implementation:
+  void GetSize(GetSizeCallback get_size_callback) override;
+  void StartReading(mojo::ScopedDataPipeProducerHandle pipe) override;
+
   // network::SimpleURLLoaderStreamConsumer implementation:
   void OnDataReceived(base::StringPiece string_piece,
                       base::OnceClosure resume) override;
   void OnComplete(bool success) override;
   void OnRetry(base::OnceClosure start_retry) override;
-
-  // network::mojom::ChunkedDataPipeGetter implementation:
-  void GetSize(GetSizeCallback get_size_callback) override;
-  void StartReading(mojo::ScopedDataPipeProducerHandle pipe) override;
 
  protected:
   ~ChromiumHttpConnection() override;
@@ -77,25 +78,14 @@ class ChromiumHttpConnection
     DESTROYED,
   };
 
-  // HttpConnection methods, re-scheduled on |task_runner|:
-  void SetRequestOnTaskRunner(const std::string& url, Method method);
-  void AddHeaderOnTaskRunner(const std::string& name, const std::string& value);
-  void SetUploadContentOnTaskRunner(const std::string& content,
-                                    const std::string& content_type);
-  void SetChunkedUploadContentTypeOnTaskRunner(const std::string& content_type);
-  void EnablePartialResultsOnTaskRunner();
-  void StartOnTaskRunner();
-  void CloseOnTaskRunner();
-  void UploadDataOnTaskRunner(const std::string& data, bool is_last_chunk);
-
-  // URL loader completion callback.
-  void OnURLLoadComplete(std::unique_ptr<std::string> response_body);
-
   // Send more chunked upload data.
   void SendData();
 
   // |upload_pipe_| can now receive more data.
   void OnUploadPipeWriteable(MojoResult unused);
+
+  // URL loader completion callback.
+  void OnURLLoadComplete(std::unique_ptr<std::string> response_body);
 
   Delegate* const delegate_;
   scoped_refptr<base::SequencedTaskRunner> task_runner_;
@@ -122,6 +112,8 @@ class ChromiumHttpConnection
   std::string upload_content_type_;
   std::string chunked_upload_content_type_;
   bool handle_partial_response_ = false;
+  bool enable_header_response_ = false;
+  std::vector<std::string> partial_response_cache_;
 
   DISALLOW_COPY_AND_ASSIGN(ChromiumHttpConnection);
 };

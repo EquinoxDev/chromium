@@ -4,9 +4,10 @@
 
 #import "ios/web/public/test/fakes/test_web_client.h"
 
+#import <UIKit/UIKit.h>
+
 #include "base/logging.h"
 #include "base/task/post_task.h"
-#include "ios/web/public/features.h"
 #include "ios/web/public/web_task_traits.h"
 #include "ios/web/test/test_url_constants.h"
 #include "ui/base/resource/resource_bundle.h"
@@ -34,6 +35,10 @@ bool TestWebClient::IsAppSpecificURL(const GURL& url) const {
          url.SchemeIs(kTestAppSpecificScheme);
 }
 
+base::string16 TestWebClient::GetPluginNotSupportedText() const {
+  return plugin_not_supported_text_;
+}
+
 std::string TestWebClient::GetUserAgent(UserAgentType type) const {
   return "Chromium/66.0.3333.0 CFNetwork/893.14 Darwin/16.7.0";
 }
@@ -49,6 +54,10 @@ base::RefCountedMemory* TestWebClient::GetDataResourceBytes(
 NSString* TestWebClient::GetDocumentStartScriptForMainFrame(
     BrowserState* browser_state) const {
   return early_page_script_ ? early_page_script_ : @"";
+}
+
+void TestWebClient::SetPluginNotSupportedText(const base::string16& text) {
+  plugin_not_supported_text_ = text;
 }
 
 void TestWebClient::SetEarlyPageScript(NSString* page_script) {
@@ -74,6 +83,10 @@ void TestWebClient::AllowCertificateError(
 
 void TestWebClient::SetAllowCertificateErrors(bool flag) {
   allow_certificate_errors_ = flag;
+}
+
+UIView* TestWebClient::GetWindowedContainer() {
+  return UIApplication.sharedApplication.keyWindow.rootViewController.view;
 }
 
 }  // namespace web

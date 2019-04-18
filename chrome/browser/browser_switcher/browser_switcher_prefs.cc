@@ -9,6 +9,7 @@
 #include "base/metrics/histogram_macros.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "build/build_config.h"
+#include "chrome/browser/browser_switcher/browser_switcher_sitelist.h"
 #include "chrome/browser/policy/profile_policy_connector.h"
 #include "chrome/browser/policy/profile_policy_connector_factory.h"
 #include "chrome/browser/profiles/profile.h"
@@ -37,16 +38,21 @@ BrowserSwitcherPrefs::BrowserSwitcherPrefs(
     const char* pref_name;
     base::RepeatingCallback<void(BrowserSwitcherPrefs*)> callback;
   } hooks[] = {
-      {prefs::kAlternativeBrowserPath,
-       base::BindRepeating(
-           &BrowserSwitcherPrefs::AlternativeBrowserPathChanged)},
-      {prefs::kAlternativeBrowserParameters,
-       base::BindRepeating(
-           &BrowserSwitcherPrefs::AlternativeBrowserParametersChanged)},
-      {prefs::kUrlList,
-       base::BindRepeating(&BrowserSwitcherPrefs::UrlListChanged)},
-      {prefs::kUrlGreylist,
-       base::BindRepeating(&BrowserSwitcherPrefs::GreylistChanged)},
+    {prefs::kAlternativeBrowserPath,
+     base::BindRepeating(&BrowserSwitcherPrefs::AlternativeBrowserPathChanged)},
+    {prefs::kAlternativeBrowserParameters,
+     base::BindRepeating(
+         &BrowserSwitcherPrefs::AlternativeBrowserParametersChanged)},
+    {prefs::kUrlList,
+     base::BindRepeating(&BrowserSwitcherPrefs::UrlListChanged)},
+    {prefs::kUrlGreylist,
+     base::BindRepeating(&BrowserSwitcherPrefs::GreylistChanged)},
+#if defined(OS_WIN)
+    {prefs::kChromePath,
+     base::BindRepeating(&BrowserSwitcherPrefs::ChromePathChanged)},
+    {prefs::kChromeParameters,
+     base::BindRepeating(&BrowserSwitcherPrefs::ChromeParametersChanged)},
+#endif
   };
 
   // Listen for pref changes, and run all the hooks once to initialize state.
@@ -69,6 +75,8 @@ BrowserSwitcherPrefs::BrowserSwitcherPrefs(
     prefs::kExternalSitelistUrl,
 #if defined(OS_WIN)
     prefs::kUseIeSitelist,
+    prefs::kChromePath,
+    prefs::kChromeParameters,
 #endif
   };
   for (const char* pref_name : all_prefs) {
@@ -101,6 +109,8 @@ void BrowserSwitcherPrefs::RegisterProfilePrefs(
   registry->RegisterStringPref(prefs::kExternalSitelistUrl, "");
 #if defined(OS_WIN)
   registry->RegisterBooleanPref(prefs::kUseIeSitelist, false);
+  registry->RegisterStringPref(prefs::kChromePath, "");
+  registry->RegisterListPref(prefs::kChromeParameters);
 #endif
 }
 
@@ -141,6 +151,15 @@ bool BrowserSwitcherPrefs::UseIeSitelist() const {
   if (!prefs_->IsManagedPreference(prefs::kUseIeSitelist))
     return false;
   return prefs_->GetBoolean(prefs::kUseIeSitelist);
+}
+
+const std::string& BrowserSwitcherPrefs::GetChromePath() const {
+  return chrome_path_;
+}
+
+const std::vector<std::string>& BrowserSwitcherPrefs::GetChromeParameters()
+    const {
+  return chrome_params_;
 }
 #endif
 
@@ -201,7 +220,9 @@ void BrowserSwitcherPrefs::UrlListChanged() {
 
   bool has_wildcard = false;
   for (const auto& url : *prefs_->GetList(prefs::kUrlList)) {
-    rules_.sitelist.push_back(url.GetString());
+    std::string canonical = url.GetString();
+    CanonicalizeRule(&canonical);
+    rules_.sitelist.push_back(std::move(canonical));
     if (url.GetString() == "*")
       has_wildcard = true;
   }
@@ -222,13 +243,34 @@ void BrowserSwitcherPrefs::GreylistChanged() {
 
   bool has_wildcard = false;
   for (const auto& url : *prefs_->GetList(prefs::kUrlGreylist)) {
-    rules_.greylist.push_back(url.GetString());
+    std::string canonical = url.GetString();
+    CanonicalizeRule(&canonical);
+    rules_.greylist.push_back(std::move(canonical));
     if (url.GetString() == "*")
       has_wildcard = true;
   }
 
   UMA_HISTOGRAM_BOOLEAN("BrowserSwitcher.UrlListWildcard", has_wildcard);
 }
+
+#if defined(OS_WIN)
+void BrowserSwitcherPrefs::ChromePathChanged() {
+  chrome_path_.clear();
+  if (prefs_->IsManagedPreference(prefs::kChromePath))
+    chrome_path_ = prefs_->GetString(prefs::kChromePath);
+}
+
+void BrowserSwitcherPrefs::ChromeParametersChanged() {
+  chrome_params_.clear();
+  if (!prefs_->IsManagedPreference(prefs::kChromeParameters))
+    return;
+  const base::ListValue* params = prefs_->GetList(prefs::kChromeParameters);
+  for (const auto& param : *params) {
+    std::string param_string = param.GetString();
+    chrome_params_.push_back(param_string);
+  }
+}
+#endif
 
 namespace prefs {
 
@@ -257,6 +299,12 @@ const char kExternalSitelistUrl[] = "browser_switcher.external_sitelist_url";
 #if defined(OS_WIN)
 // If set to true, use the IE Enterprise Mode Sitelist policy.
 const char kUseIeSitelist[] = "browser_switcher.use_ie_sitelist";
+
+// Path to the Chrome executable for the alternative browser.
+const char kChromePath[] = "browser_switcher.chrome_path";
+
+// Arguments the alternative browser should pass to Chrome when launching it.
+const char kChromeParameters[] = "browser_switcher.chrome_parameters";
 #endif
 
 // Disable browser_switcher unless this is set to true.

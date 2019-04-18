@@ -13,6 +13,7 @@
 #include "third_party/blink/renderer/core/html/parser/text_resource_decoder.h"
 #include "third_party/blink/renderer/modules/service_worker/service_worker_thread.h"
 #include "third_party/blink/renderer/platform/cross_thread_functional.h"
+#include "third_party/blink/renderer/platform/wtf/allocator.h"
 #include "third_party/blink/renderer/platform/wtf/functional.h"
 #include "third_party/blink/renderer/platform/wtf/hash_map.h"
 #include "third_party/blink/renderer/platform/wtf/std_lib_extras.h"
@@ -30,6 +31,8 @@ namespace {
 // BundledReceivers. It is created to read the script body or metadata from a
 // data pipe, and is destroyed when the read finishes.
 class Receiver {
+  DISALLOW_NEW();
+
  public:
   using BytesChunk = Vector<char>;
 
@@ -215,7 +218,7 @@ class Internal : public mojom::blink::ServiceWorkerInstalledScriptsManager {
       return;
     }
 
-    auto script_data = RawScriptData::Create(
+    auto script_data = std::make_unique<RawScriptData>(
         script_info->encoding, receivers->body()->TakeChunks(),
         receivers->meta_data()->TakeChunks());
     for (const auto& entry : script_info->headers)
@@ -264,6 +267,9 @@ bool ServiceWorkerInstalledScriptsManager::IsScriptInstalled(
 std::unique_ptr<InstalledScriptsManager::ScriptData>
 ServiceWorkerInstalledScriptsManager::GetScriptData(const KURL& script_url) {
   DCHECK(!IsMainThread());
+  TRACE_EVENT1("ServiceWorker",
+               "ServiceWorkerInstalledScriptsManager::GetScriptData", "url",
+               script_url.GetString().Utf8().data());
   if (!IsScriptInstalled(script_url))
     return nullptr;
 
@@ -274,7 +280,7 @@ ServiceWorkerInstalledScriptsManager::GetScriptData(const KURL& script_url) {
 
   // This is from WorkerClassicScriptLoader::DidReceiveData.
   std::unique_ptr<TextResourceDecoder> decoder =
-      TextResourceDecoder::Create(TextResourceDecoderOptions(
+      std::make_unique<TextResourceDecoder>(TextResourceDecoderOptions(
           TextResourceDecoderOptions::kPlainTextContent,
           raw_script_data->Encoding().IsEmpty()
               ? UTF8Encoding()

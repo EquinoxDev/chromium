@@ -13,6 +13,7 @@
 #include "ash/public/interfaces/ash_message_center_controller.mojom.h"
 #include "ash/public/interfaces/assistant_controller.mojom.h"
 #include "ash/public/interfaces/voice_interaction_controller.mojom.h"
+#include "base/synchronization/lock.h"
 #include "base/threading/thread.h"
 #include "chromeos/assistant/internal/action/cros_action_module.h"
 #include "chromeos/assistant/internal/cros_display_connection.h"
@@ -25,7 +26,11 @@
 #include "libassistant/shared/internal_api/assistant_manager_delegate.h"
 #include "libassistant/shared/public/conversation_state_listener.h"
 #include "libassistant/shared/public/device_state_listener.h"
+#include "mojo/public/cpp/bindings/binding.h"
+#include "mojo/public/cpp/bindings/interface_ptr_set.h"
 #include "services/device/public/mojom/battery_monitor.mojom.h"
+#include "services/media_session/public/mojom/media_controller.mojom.h"
+#include "services/media_session/public/mojom/media_session.mojom.h"
 #include "ui/accessibility/ax_assistant_structure.h"
 #include "ui/accessibility/mojom/ax_assistant_structure.mojom.h"
 
@@ -82,7 +87,8 @@ class AssistantManagerServiceImpl
       public AssistantEventObserver,
       public assistant_client::ConversationStateListener,
       public assistant_client::AssistantManagerDelegate,
-      public assistant_client::DeviceStateListener {
+      public assistant_client::DeviceStateListener,
+      public media_session::mojom::MediaControllerObserver {
  public:
   // |service| owns this class and must outlive this class.
   AssistantManagerServiceImpl(
@@ -96,7 +102,7 @@ class AssistantManagerServiceImpl
   ~AssistantManagerServiceImpl() override;
 
   // assistant::AssistantManagerService overrides
-  void Start(const std::string& access_token,
+  void Start(const base::Optional<std::string>& access_token,
              bool enable_hotword,
              base::OnceClosure callback) override;
   void Stop() override;
@@ -104,10 +110,12 @@ class AssistantManagerServiceImpl
   void SetAccessToken(const std::string& access_token) override;
   void EnableListening(bool enable) override;
   void EnableHotword(bool enable) override;
+  void SetArcPlayStoreEnabled(bool enable) override;
   AssistantSettingsManager* GetAssistantSettingsManager() override;
 
   // mojom::Assistant overrides:
   void StartCachedScreenContextInteraction() override;
+  void StartEditReminderInteraction(const std::string& client_id) override;
   void StartMetalayerInteraction(const gfx::Rect& region) override;
   void StartTextInteraction(const std::string& query, bool allow_tts) override;
   void StartVoiceInteraction() override;
@@ -127,6 +135,7 @@ class AssistantManagerServiceImpl
       mojom::AssistantFeedbackPtr assistant_feedback) override;
 
   // AssistantActionObserver overrides:
+  void OnScheduleWait(int id, int time_ms) override;
   void OnShowContextualQueryFallback() override;
   void OnShowHtml(const std::string& html,
                   const std::string& fallback) override;
@@ -179,12 +188,20 @@ class AssistantManagerServiceImpl
     return assistant_manager_internal_;
   }
 
+  // media_session::mojom::MediaControllerObserver overrides:
+  void MediaSessionInfoChanged(
+      media_session::mojom::MediaSessionInfoPtr info) override;
+  void MediaSessionMetadataChanged(
+      const base::Optional<media_session::MediaMetadata>& metadata) override;
+  void MediaSessionActionsChanged(
+      const std::vector<media_session::mojom::MediaSessionAction>& action)
+      override {}
+  void MediaSessionChanged(
+      const base::Optional<base::UnguessableToken>& request_id) override {}
+
  private:
-  std::unique_ptr<assistant_client::AssistantManager> StartAssistantInternal(
-      const std::string& access_token);
-  void PostInitAssistant(
-      base::OnceClosure post_init_callback,
-      std::unique_ptr<assistant_client::AssistantManager>* assistant_manager);
+  void StartAssistantInternal(const base::Optional<std::string>& access_token);
+  void PostInitAssistant(base::OnceClosure post_init_callback);
 
   // Update device id, type and locale
   void UpdateDeviceSettings();
@@ -197,6 +214,8 @@ class AssistantManagerServiceImpl
   void HandleVerifyAndroidAppResponse(
       const action::InteractionInfo& interaction,
       std::vector<mojom::AndroidAppInfoPtr> apps_info);
+
+  void HandleLaunchMediaIntentResponse(bool app_opened);
 
   void OnConversationTurnStartedOnMainThread(bool is_mic_open);
   void OnConversationTurnFinishedOnMainThread(
@@ -218,8 +237,15 @@ class AssistantManagerServiceImpl
   void OnRespondingStartedOnMainThread(bool is_error_response);
   void OnSpeechLevelUpdatedOnMainThread(const float speech_level);
   void OnModifySettingsAction(const std::string& modify_setting_args_proto);
+  void OnOpenMediaAndroidIntentOnMainThread(
+      const std::string play_media_args_proto,
+      action::AndroidAppInfo* android_app_info);
+  void OnPlayMedia(const std::string play_media_args_proto);
+  void OnMediaControlAction(const std::string& action_name,
+                            const std::string& media_action_args_proto);
 
   void RegisterFallbackMediaHandler();
+  void AddMediaControllerObserver();
 
   void CacheAssistantStructure(
       base::OnceClosure on_done,
@@ -246,6 +272,8 @@ class AssistantManagerServiceImpl
   // be sent back in the second round (recorded as kDeviceAction).
   void RecordQueryResponseTypeUMA();
 
+  void UpdateMediaState();
+
   State state_ = State::STOPPED;
   std::unique_ptr<AssistantMediaSession> media_session_;
   std::unique_ptr<PlatformApiImpl> platform_api_;
@@ -256,12 +284,17 @@ class AssistantManagerServiceImpl
   std::unique_ptr<CrosDisplayConnection> display_connection_;
   std::unique_ptr<assistant_client::AssistantManager> assistant_manager_;
   std::unique_ptr<AssistantSettingsManagerImpl> assistant_settings_manager_;
+  // |new_asssistant_manager_| is created on |background_thread_| then posted to
+  // main thread to finish initialization then move to |assistant_manager_|.
+  std::unique_ptr<assistant_client::AssistantManager> new_assistant_manager_;
+  base::Lock new_assistant_manager_lock_;
   // same ownership as assistant_manager_.
   assistant_client::AssistantManagerInternal* assistant_manager_internal_ =
       nullptr;
   mojo::InterfacePtrSet<mojom::AssistantInteractionSubscriber>
       interaction_subscribers_;
   ash::mojom::AshMessageCenterControllerPtr ash_message_center_controller_;
+  media_session::mojom::MediaControllerPtr media_controller_;
 
   Service* service_;  // unowned.
 
@@ -281,6 +314,15 @@ class AssistantManagerServiceImpl
   std::string receive_url_response_;
 
   bool is_first_client_discourse_context_query_ = true;
+
+  mojo::Binding<media_session::mojom::MediaControllerObserver>
+      media_controller_observer_binding_;
+
+  // Info associated to the active media session.
+  media_session::mojom::MediaSessionInfoPtr media_session_info_ptr_;
+  // The metadata for the active media session. It can be null to be reset, e.g.
+  // the media that was being played has been stopped.
+  base::Optional<media_session::MediaMetadata> media_metadata_ = base::nullopt;
 
   base::WeakPtrFactory<AssistantManagerServiceImpl> weak_factory_;
 

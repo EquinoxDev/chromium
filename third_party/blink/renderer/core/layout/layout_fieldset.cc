@@ -146,7 +146,7 @@ LayoutBox* LayoutFieldset::FindInFlowLegend(const LayoutBlock& fieldset) {
     if (fieldset.IsLayoutNGFieldset()) {
       // If there is a rendered legend, it will be found inside the anonymous
       // fieldset wrapper.
-      parent = ToLayoutBlock(fieldset.FirstChild());
+      parent = To<LayoutBlock>(fieldset.FirstChild());
       if (!parent)
         return nullptr;
     }
@@ -156,7 +156,7 @@ LayoutBox* LayoutFieldset::FindInFlowLegend(const LayoutBlock& fieldset) {
     if (legend->IsFloatingOrOutOfFlowPositioned())
       continue;
 
-    if (IsHTMLLegendElement(legend->GetNode()))
+    if (legend->IsHTMLLegendElement())
       return ToLayoutBox(legend);
   }
   return nullptr;

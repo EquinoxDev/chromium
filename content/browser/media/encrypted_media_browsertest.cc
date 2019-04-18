@@ -18,7 +18,6 @@
 #include "media/base/test_data_util.h"
 #include "media/media_buildflags.h"
 #include "media/mojo/buildflags.h"
-#include "third_party/libaom/av1_buildflags.h"
 
 #if defined(OS_ANDROID)
 #include "base/android/build_info.h"
@@ -330,9 +329,10 @@ IN_PROC_BROWSER_TEST_P(EncryptedMediaTest,
 IN_PROC_BROWSER_TEST_P(EncryptedMediaTest, FrameSizeChangeVideo) {
 #if defined(OS_ANDROID)
   // https://crbug.com/778245
-  if (base::android::BuildInfo::GetInstance()->sdk_int() <=
-      base::android::SDK_VERSION_KITKAT) {
-    DVLOG(0) << "Skipping test - FrameSizeChange is flaky on KitKat devices.";
+  if (base::android::BuildInfo::GetInstance()->sdk_int() <
+      base::android::SDK_VERSION_MARSHMALLOW) {
+    DVLOG(0) << "Skipping test - FrameSizeChange is flaky on KitKat and "
+                "Lollipop devices.";
     return;
   }
 #endif

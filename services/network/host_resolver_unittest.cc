@@ -20,10 +20,10 @@
 #include "net/base/ip_address.h"
 #include "net/base/ip_endpoint.h"
 #include "net/base/net_errors.h"
+#include "net/dns/context_host_resolver.h"
 #include "net/dns/dns_config.h"
 #include "net/dns/dns_test_util.h"
 #include "net/dns/host_resolver.h"
-#include "net/dns/host_resolver_impl.h"
 #include "net/dns/mock_host_resolver.h"
 #include "net/dns/public/dns_protocol.h"
 #include "net/log/net_log.h"
@@ -249,7 +249,7 @@ TEST_F(HostResolverTest, Async) {
 TEST_F(HostResolverTest, DnsQueryType) {
   net::NetLog net_log;
   std::unique_ptr<net::HostResolver> inner_resolver =
-      net::HostResolver::CreateDefaultResolver(&net_log);
+      net::HostResolver::CreateStandaloneResolver(&net_log);
 
   HostResolver resolver(inner_resolver.get(), &net_log);
 
@@ -686,7 +686,7 @@ TEST_F(HostResolverTest, Failure_Async) {
 TEST_F(HostResolverTest, NoOptionalParameters) {
   net::NetLog net_log;
   std::unique_ptr<net::HostResolver> inner_resolver =
-      net::HostResolver::CreateDefaultResolver(&net_log);
+      net::HostResolver::CreateStandaloneResolver(&net_log);
 
   HostResolver resolver(inner_resolver.get(), &net_log);
 
@@ -711,7 +711,7 @@ TEST_F(HostResolverTest, NoOptionalParameters) {
 TEST_F(HostResolverTest, NoControlHandle) {
   net::NetLog net_log;
   std::unique_ptr<net::HostResolver> inner_resolver =
-      net::HostResolver::CreateDefaultResolver(&net_log);
+      net::HostResolver::CreateStandaloneResolver(&net_log);
 
   HostResolver resolver(inner_resolver.get(), &net_log);
 
@@ -739,7 +739,7 @@ TEST_F(HostResolverTest, NoControlHandle) {
 TEST_F(HostResolverTest, CloseControlHandle) {
   net::NetLog net_log;
   std::unique_ptr<net::HostResolver> inner_resolver =
-      net::HostResolver::CreateDefaultResolver(&net_log);
+      net::HostResolver::CreateStandaloneResolver(&net_log);
 
   HostResolver resolver(inner_resolver.get(), &net_log);
 
@@ -808,7 +808,7 @@ TEST_F(HostResolverTest, Cancellation) {
 TEST_F(HostResolverTest, Cancellation_SubsequentRequest) {
   net::NetLog net_log;
   std::unique_ptr<net::HostResolver> inner_resolver =
-      net::HostResolver::CreateDefaultResolver(&net_log);
+      net::HostResolver::CreateStandaloneResolver(&net_log);
 
   HostResolver resolver(inner_resolver.get(), &net_log);
 
@@ -927,7 +927,7 @@ TEST_F(HostResolverTest, CloseClient) {
 TEST_F(HostResolverTest, CloseClient_SubsequentRequest) {
   net::NetLog net_log;
   std::unique_ptr<net::HostResolver> inner_resolver =
-      net::HostResolver::CreateDefaultResolver(&net_log);
+      net::HostResolver::CreateStandaloneResolver(&net_log);
 
   HostResolver resolver(inner_resolver.get(), &net_log);
 
@@ -972,7 +972,7 @@ TEST_F(HostResolverTest, Binding) {
 
   net::NetLog net_log;
   std::unique_ptr<net::HostResolver> inner_resolver =
-      net::HostResolver::CreateDefaultResolver(&net_log);
+      net::HostResolver::CreateStandaloneResolver(&net_log);
 
   HostResolver resolver(mojo::MakeRequest(&resolver_ptr),
                         std::move(shutdown_callback), inner_resolver.get(),
@@ -1058,7 +1058,7 @@ TEST_F(HostResolverTest, CloseBinding_SubsequentRequest) {
 
   net::NetLog net_log;
   std::unique_ptr<net::HostResolver> inner_resolver =
-      net::HostResolver::CreateDefaultResolver(&net_log);
+      net::HostResolver::CreateStandaloneResolver(&net_log);
 
   HostResolver resolver(mojo::MakeRequest(&resolver_ptr),
                         std::move(shutdown_callback), inner_resolver.get(),
@@ -1101,7 +1101,7 @@ TEST_F(HostResolverTest, CloseBinding_SubsequentRequest) {
 TEST_F(HostResolverTest, IsSpeculative) {
   net::NetLog net_log;
   std::unique_ptr<net::HostResolver> inner_resolver =
-      net::HostResolver::CreateDefaultResolver(&net_log);
+      net::HostResolver::CreateStandaloneResolver(&net_log);
 
   HostResolver resolver(inner_resolver.get(), &net_log);
 
@@ -1136,8 +1136,8 @@ TEST_F(HostResolverTest, TextResults) {
   static const char* kTextRecords[] = {"foo", "bar", "more text"};
   net::MockDnsClientRuleList rules;
   rules.emplace_back(
-      "example.com", net::dns_protocol::kTypeTXT,
-      net::MockDnsClientRule::Result(net::BuildTestDnsResponse(
+      "example.com", net::dns_protocol::kTypeTXT, net::SecureDnsMode::AUTOMATIC,
+      net::MockDnsClientRule::Result(net::BuildTestDnsTextResponse(
           "example.com", {std::vector<std::string>(std::begin(kTextRecords),
                                                    std::end(kTextRecords))})),
       false /* delay */);
@@ -1145,9 +1145,9 @@ TEST_F(HostResolverTest, TextResults) {
       std::make_unique<net::MockDnsClient>(net::DnsConfig(), std::move(rules));
 
   net::NetLog net_log;
-  std::unique_ptr<net::HostResolverImpl> inner_resolver =
-      net::HostResolver::CreateDefaultResolverImpl(&net_log);
-  inner_resolver->SetDnsClient(std::move(dns_client));
+  std::unique_ptr<net::ContextHostResolver> inner_resolver =
+      net::HostResolver::CreateStandaloneContextResolver(&net_log);
+  inner_resolver->SetDnsClientForTesting(std::move(dns_client));
   inner_resolver->SetBaseDnsConfigForTesting(CreateValidDnsConfig());
 
   HostResolver resolver(inner_resolver.get(), &net_log);
@@ -1175,7 +1175,7 @@ TEST_F(HostResolverTest, TextResults) {
 TEST_F(HostResolverTest, HostResults) {
   net::MockDnsClientRuleList rules;
   rules.emplace_back(
-      "example.com", net::dns_protocol::kTypePTR,
+      "example.com", net::dns_protocol::kTypePTR, net::SecureDnsMode::AUTOMATIC,
       net::MockDnsClientRule::Result(net::BuildTestDnsPointerResponse(
           "example.com", {"google.com", "chromium.org"})),
       false /* delay */);
@@ -1183,9 +1183,9 @@ TEST_F(HostResolverTest, HostResults) {
       std::make_unique<net::MockDnsClient>(net::DnsConfig(), std::move(rules));
 
   net::NetLog net_log;
-  std::unique_ptr<net::HostResolverImpl> inner_resolver =
-      net::HostResolver::CreateDefaultResolverImpl(&net_log);
-  inner_resolver->SetDnsClient(std::move(dns_client));
+  std::unique_ptr<net::ContextHostResolver> inner_resolver =
+      net::HostResolver::CreateStandaloneContextResolver(&net_log);
+  inner_resolver->SetDnsClientForTesting(std::move(dns_client));
   inner_resolver->SetBaseDnsConfigForTesting(CreateValidDnsConfig());
 
   HostResolver resolver(inner_resolver.get(), &net_log);

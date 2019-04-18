@@ -545,6 +545,7 @@ Polymer({
 
   /**
    * @param {!CrOnc.NetworkStateProperties} state The network state.
+   * @return {boolean}
    * @private
    */
   isBlockedByPolicy_: function(state) {
@@ -608,7 +609,7 @@ Polymer({
    * @param {!Event} event
    * @private
    */
-  onTetherEnabledTap_: function(event) {
+  onTetherEnabledChange_: function(event) {
     this.fire('device-enabled-toggled', {
       enabled: !this.deviceIsEnabled_(this.tetherDeviceState),
       type: CrOnc.Type.TETHER,

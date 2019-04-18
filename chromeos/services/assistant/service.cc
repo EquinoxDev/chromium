@@ -9,6 +9,7 @@
 
 #include "ash/public/interfaces/constants.mojom.h"
 #include "base/bind.h"
+#include "base/command_line.h"
 #include "base/logging.h"
 #include "base/rand_util.h"
 #include "base/single_thread_task_runner.h"
@@ -16,6 +17,7 @@
 #include "build/buildflag.h"
 #include "chromeos/assistant/buildflags.h"
 #include "chromeos/audio/cras_audio_handler.h"
+#include "chromeos/constants/chromeos_switches.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "chromeos/dbus/power_manager/power_supply_properties.pb.h"
 #include "chromeos/services/assistant/assistant_manager_service.h"
@@ -75,7 +77,7 @@ Service::Service(service_manager::mojom::ServiceRequest request,
   // TODO(xiaohuic): in MASH we will need to setup the dbus client if assistant
   // service runs in its own process.
   chromeos::PowerManagerClient* power_manager_client =
-      chromeos::DBusThreadManager::Get()->GetPowerManagerClient();
+      chromeos::PowerManagerClient::Get();
   power_manager_observer_.Add(power_manager_client);
   power_manager_client->RequestStatusUpdate();
 }
@@ -83,14 +85,18 @@ Service::Service(service_manager::mojom::ServiceRequest request,
 Service::~Service() = default;
 
 void Service::RequestAccessToken() {
+  // Bypass access token fetching under signed out mode.
+  if (is_signed_out_mode_)
+    return;
+
   VLOG(1) << "Start requesting access token.";
-  GetIdentityManager()->GetPrimaryAccountInfo(base::BindOnce(
+  GetIdentityAccessor()->GetPrimaryAccountInfo(base::BindOnce(
       &Service::GetPrimaryAccountInfoCallback, base::Unretained(this)));
 }
 
-void Service::SetIdentityManagerForTesting(
-    identity::mojom::IdentityManagerPtr identity_manager) {
-  identity_manager_ = std::move(identity_manager);
+void Service::SetIdentityAccessorForTesting(
+    identity::mojom::IdentityAccessorPtr identity_accessor) {
+  identity_accessor_ = std::move(identity_accessor);
 }
 
 void Service::SetAssistantManagerForTesting(
@@ -176,6 +182,10 @@ void Service::OnLocaleChanged(const std::string& locale) {
   UpdateAssistantManagerState();
 }
 
+void Service::OnArcPlayStoreEnabledChanged(bool enabled) {
+  UpdateAssistantManagerState();
+}
+
 void Service::OnVoiceInteractionHotwordAlwaysOn(bool always_on) {
   // No need to update hotword status if power source is connected.
   if (power_source_connected_)
@@ -188,7 +198,9 @@ void Service::UpdateAssistantManagerState() {
   if (!assistant_state_.hotword_enabled().has_value() ||
       !assistant_state_.settings_enabled().has_value() ||
       !assistant_state_.hotword_always_on().has_value() ||
-      !assistant_state_.locale().has_value() || !access_token_.has_value()) {
+      !assistant_state_.locale().has_value() ||
+      (!access_token_.has_value() && !is_signed_out_mode_) ||
+      !assistant_state_.arc_play_store_enabled().has_value()) {
     // Assistant state has not finished initialization, let's wait.
     return;
   }
@@ -200,7 +212,8 @@ void Service::UpdateAssistantManagerState() {
     case AssistantManagerService::State::STOPPED:
       if (assistant_state_.settings_enabled().value()) {
         assistant_manager_service_->Start(
-            access_token_.value(), ShouldEnableHotword(),
+            is_signed_out_mode_ ? base::nullopt : access_token_,
+            ShouldEnableHotword(),
             base::BindOnce(
                 [](scoped_refptr<base::SequencedTaskRunner> task_runner,
                    base::OnceCallback<void()> callback) {
@@ -215,8 +228,11 @@ void Service::UpdateAssistantManagerState() {
     case AssistantManagerService::State::RUNNING:
     case AssistantManagerService::State::STARTED:
       if (assistant_state_.settings_enabled().value()) {
-        assistant_manager_service_->SetAccessToken(access_token_.value());
+        if (!is_signed_out_mode_)
+          assistant_manager_service_->SetAccessToken(access_token_.value());
         assistant_manager_service_->EnableHotword(ShouldEnableHotword());
+        assistant_manager_service_->SetArcPlayStoreEnabled(
+            assistant_state_.arc_play_store_enabled().value());
       } else {
         StopAssistantManagerService();
       }
@@ -237,15 +253,23 @@ void Service::Init(mojom::ClientPtr client,
   device_actions_ = std::move(device_actions);
   assistant_state_.Init(service_binding_.GetConnector());
   assistant_state_.AddObserver(this);
+
+  // Don't fetch token for test.
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+          chromeos::switches::kDisableGaiaServices)) {
+    is_signed_out_mode_ = true;
+    return;
+  }
+
   RequestAccessToken();
 }
 
-identity::mojom::IdentityManager* Service::GetIdentityManager() {
-  if (!identity_manager_) {
+identity::mojom::IdentityAccessor* Service::GetIdentityAccessor() {
+  if (!identity_accessor_) {
     service_binding_.GetConnector()->BindInterface(
-        identity::mojom::kServiceName, mojo::MakeRequest(&identity_manager_));
+        identity::mojom::kServiceName, mojo::MakeRequest(&identity_accessor_));
   }
-  return identity_manager_.get();
+  return identity_accessor_.get();
 }
 
 void Service::GetPrimaryAccountInfoCallback(
@@ -264,7 +288,7 @@ void Service::GetPrimaryAccountInfoCallback(
   scopes.insert(kScopeAuthGcm);
   if (features::IsClearCutLogEnabled())
     scopes.insert(kScopeClearCutLog);
-  identity_manager_->GetAccessToken(
+  identity_accessor_->GetAccessToken(
       account_info.value().account_id, scopes, "cros_assistant",
       base::BindOnce(&Service::GetAccessTokenCallback, base::Unretained(this)));
 }

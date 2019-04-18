@@ -38,6 +38,7 @@
 #include "ios/chrome/browser/ui/omnibox/web_omnibox_edit_controller_impl.h"
 #import "ios/chrome/browser/ui/toolbar/toolbar_coordinator_delegate.h"
 #import "ios/chrome/browser/ui/util/pasteboard_util.h"
+#import "ios/chrome/browser/url_loading/url_loading_params.h"
 #import "ios/chrome/browser/url_loading/url_loading_service.h"
 #import "ios/chrome/browser/url_loading/url_loading_service_factory.h"
 #import "ios/chrome/browser/url_loading/url_loading_util.h"
@@ -98,13 +99,12 @@ const int kLocationAuthorizationStatusCount = 4;
 @synthesize delegate = _delegate;
 @synthesize webStateList = _webStateList;
 @synthesize omniboxPopupCoordinator = _omniboxPopupCoordinator;
-@synthesize popupPositioner = _popupPositioner;
 @synthesize omniboxCoordinator = _omniboxCoordinator;
 
 #pragma mark - public
 
-- (UIView*)view {
-  return self.viewController.view;
+- (UIViewController*)locationBarViewController {
+  return self.viewController;
 }
 
 - (void)start {
@@ -150,8 +150,8 @@ const int kLocationAuthorizationStatusCount = 4;
       didMoveToParentViewController:self.viewController];
   self.viewController.offsetProvider = [self.omniboxCoordinator offsetProvider];
 
-  self.omniboxPopupCoordinator =
-      [self.omniboxCoordinator createPopupCoordinator:self.popupPositioner];
+  self.omniboxPopupCoordinator = [self.omniboxCoordinator
+      createPopupCoordinator:self.popupPresenterDelegate];
   self.omniboxPopupCoordinator.dispatcher = self.dispatcher;
   self.omniboxPopupCoordinator.webStateList = self.webStateList;
   [self.omniboxPopupCoordinator start];
@@ -159,6 +159,8 @@ const int kLocationAuthorizationStatusCount = 4;
   self.mediator = [[LocationBarMediator alloc]
       initWithLocationBarModel:[self locationBarModel]];
   self.mediator.webStateList = self.webStateList;
+  self.mediator.templateURLService =
+      ios::TemplateURLServiceFactory::GetForBrowserState(self.browserState);
   self.mediator.consumer = self;
 
   _fullscreenObserver =
@@ -243,16 +245,16 @@ const int kLocationAuthorizationStatusCount = 4;
     // |loadURL|?  It doesn't seem to be causing major problems.  If we call
     // cancel before load, then any prerendered pages get destroyed before the
     // call to load.
-    web::NavigationManager::WebLoadParams params =
+    web::NavigationManager::WebLoadParams web_params =
         web_navigation_util::CreateWebLoadParams(url, transition, postContent);
     NSMutableDictionary* combinedExtraHeaders =
         [[self variationHeadersForURL:url] mutableCopy];
-    [combinedExtraHeaders addEntriesFromDictionary:params.extra_headers];
-    params.extra_headers = [combinedExtraHeaders copy];
-    ChromeLoadParams chromeParams(params);
-    chromeParams.disposition = disposition;
+    [combinedExtraHeaders addEntriesFromDictionary:web_params.extra_headers];
+    web_params.extra_headers = [combinedExtraHeaders copy];
+    UrlLoadParams params = UrlLoadParams::InCurrentTab(web_params);
+    params.disposition = disposition;
     UrlLoadingServiceFactory::GetForBrowserState(self.browserState)
-        ->LoadUrlInCurrentTab(chromeParams);
+        ->Load(params);
 
     if (google_util::IsGoogleSearchUrl(url)) {
       UMA_HISTOGRAM_ENUMERATION(
@@ -269,10 +271,12 @@ const int kLocationAuthorizationStatusCount = 4;
 - (void)focusOmniboxFromSearchButton {
   // TODO(crbug.com/931284): Temporary workaround for intermediate broken state
   // in the NTP.  Remove this once crbug.com/899827 is fixed.
-  NewTabPageTabHelper* NTPHelper =
-      NewTabPageTabHelper::FromWebState(self.webState);
-  if (NTPHelper && NTPHelper->IsActive() && NTPHelper->IgnoreLoadRequests()) {
-    return;
+  if (self.webState) {
+    NewTabPageTabHelper* NTPHelper =
+        NewTabPageTabHelper::FromWebState(self.webState);
+    if (NTPHelper && NTPHelper->IsActive() && NTPHelper->IgnoreLoadRequests()) {
+      return;
+    }
   }
   [self.omniboxCoordinator setNextFocusSourceAsSearchButton];
   [self focusOmnibox];
@@ -285,22 +289,24 @@ const int kLocationAuthorizationStatusCount = 4;
 - (void)focusOmnibox {
   // TODO(crbug.com/931284): Temporary workaround for intermediate broken state
   // in the NTP.  Remove this once crbug.com/899827 is fixed.
-  NewTabPageTabHelper* NTPHelper =
-      NewTabPageTabHelper::FromWebState(self.webState);
-  if (NTPHelper && NTPHelper->IsActive() && NTPHelper->IgnoreLoadRequests()) {
-    return;
+  if (self.webState) {
+    NewTabPageTabHelper* NTPHelper =
+        NewTabPageTabHelper::FromWebState(self.webState);
+    if (NTPHelper && NTPHelper->IsActive() && NTPHelper->IgnoreLoadRequests()) {
+      return;
+    }
   }
   // Dismiss the edit menu.
   [[UIMenuController sharedMenuController] setMenuVisible:NO animated:NO];
 
   // When the NTP and fakebox are visible, make the fakebox animates into place
-  // before focusing the omnibox.webState
+  // before focusing the omnibox.
   if (IsVisibleURLNewTabPage([self webState]) &&
       !self.browserState->IsOffTheRecord()) {
     [self.viewController.dispatcher focusFakebox];
   } else {
     [self.omniboxCoordinator focusOmnibox];
-    [self.omniboxPopupCoordinator openPopup];
+    [self.omniboxPopupCoordinator presentShortcutsIfNecessary];
   }
 }
 
@@ -310,7 +316,7 @@ const int kLocationAuthorizationStatusCount = 4;
   }
   self.isCancellingOmniboxEdit = YES;
   [self.omniboxCoordinator endEditing];
-  [self.omniboxPopupCoordinator closePopup];
+  [self.omniboxPopupCoordinator dismissShortcuts];
   self.isCancellingOmniboxEdit = NO;
 }
 
@@ -371,6 +377,22 @@ const int kLocationAuthorizationStatusCount = 4;
   [self.viewController setShareButtonEnabled:shareable];
 }
 
+- (void)updateSearchByImageSupported:(BOOL)searchByImageSupported {
+  self.viewController.searchByImageEnabled = searchByImageSupported;
+}
+
+- (void)displayInfobarBadge:(BOOL)display {
+  [self.viewController displayInfobarButton:display];
+}
+
+- (void)selectInfobarBadge:(BOOL)select {
+  [self.viewController setInfobarButtonStyleSelected:select];
+}
+
+- (void)activeInfobarBadge:(BOOL)active {
+  [self.viewController setInfobarButtonStyleActive:active];
+}
+
 #pragma mark - private
 
 // Returns a dictionary with variation headers for qualified URLs. Can be empty.
@@ -409,12 +431,11 @@ const int kLocationAuthorizationStatusCount = 4;
     // It is necessary to include PAGE_TRANSITION_FROM_ADDRESS_BAR in the
     // transition type is so that query-in-the-omnibox is triggered for the
     // URL.
-    web::NavigationManager::WebLoadParams params(searchURL);
-    params.transition_type = ui::PageTransitionFromInt(
+    UrlLoadParams params = UrlLoadParams::InCurrentTab(searchURL);
+    params.web_params.transition_type = ui::PageTransitionFromInt(
         ui::PAGE_TRANSITION_LINK | ui::PAGE_TRANSITION_FROM_ADDRESS_BAR);
-    ChromeLoadParams chromeParams(params);
     UrlLoadingServiceFactory::GetForBrowserState(self.browserState)
-        ->LoadUrlInCurrentTab(chromeParams);
+        ->Load(params);
   }
 }
 

@@ -4,12 +4,20 @@
 
 #include "base/message_loop/message_pump.h"
 
+#include <type_traits>
+
 #include "base/message_loop/message_loop.h"
+#include "base/message_loop/message_pump_for_io.h"
+#include "base/message_loop/message_pump_for_ui.h"
 #include "base/test/bind_test_util.h"
 #include "base/threading/thread.h"
 #include "build/build_config.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
+
+#if defined(OS_POSIX) && !defined(OS_NACL_SFI)
+#include "base/message_loop/message_pump_libevent.h"
+#endif
 
 using ::testing::_;
 using ::testing::AnyNumber;
@@ -30,20 +38,36 @@ bool PumpTypeUsesDoSomeWork(MessageLoopBase::Type type) {
 #else
       return true;
 #endif
+
     case MessageLoopBase::Type::TYPE_UI:
 #if defined(OS_IOS)
       // iOS uses a MessagePumpDefault for UI in unit tests, ref.
       // test_support_ios.mm::CreateMessagePumpForUIForTests().
       return true;
+#elif defined(OS_WIN)
+      return true;
+#elif defined(OS_POSIX) && !defined(OS_NACL_SFI)
+      // MessagePumpLibevent was migrated (ref. message_pump_for_ui.h and
+      // |use_libevent| in base/BUILD.gn for enabled conditions).
+      return std::is_same<MessagePumpForUI, MessagePumpLibevent>::value;
 #else
       // TODO(gab): Complete migration of all UI pumps to DoSomeWork() as part
       // of crbug.com/885371.
       return false;
 #endif
+
     case MessageLoopBase::Type::TYPE_IO:
+#if defined(OS_WIN) || (defined(OS_MACOSX) && !defined(OS_IOS))
+      return true;
+#elif defined(OS_POSIX) && !defined(OS_NACL_SFI)
+      // MessagePumpLibevent was migrated (ref. message_pump_for_io.h and
+      // |use_libevent| in base/BUILD.gn for enabled conditions).
+      return std::is_same<MessagePumpForIO, MessagePumpLibevent>::value;
+#else
       // TODO(gab): Complete migration of all IO pumps to DoSomeWork() as part
       // of crbug.com/885371.
       return false;
+#endif
 
     case MessageLoopBase::Type::TYPE_CUSTOM:
 #if defined(OS_ANDROID)

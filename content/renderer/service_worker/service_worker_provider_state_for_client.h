@@ -20,7 +20,7 @@
 #include "third_party/blink/public/mojom/service_worker/controller_service_worker.mojom.h"
 #include "third_party/blink/public/mojom/service_worker/service_worker_container.mojom.h"
 #include "third_party/blink/public/mojom/service_worker/service_worker_provider.mojom.h"
-#include "third_party/blink/public/platform/web_feature.mojom.h"
+#include "third_party/blink/public/mojom/web_feature/web_feature.mojom.h"
 
 namespace content {
 
@@ -36,16 +36,13 @@ struct ServiceWorkerProviderStateForClient {
   // Keeps version id of the current controller service worker object.
   int64_t controller_version_id = blink::mojom::kInvalidServiceWorkerVersionId;
 
-  // S13nServiceWorker:
   // Used to intercept requests from the controllee and dispatch them
   // as events to the controller ServiceWorker.
   network::mojom::URLLoaderFactoryPtr subresource_loader_factory;
 
-  // S13nServiceWorker:
   // Used when we create |subresource_loader_factory|.
   scoped_refptr<network::SharedURLLoaderFactory> fallback_loader_factory;
 
-  // S13nServiceWorker:
   // The Client#id value of the client.
   std::string client_id;
 
@@ -75,7 +72,6 @@ struct ServiceWorkerProviderStateForClient {
   mojo::BindingSet<blink::mojom::ServiceWorkerWorkerClientRegistry>
       worker_client_registry_bindings;
 
-  // S13nServiceWorker
   // Used in |subresource_loader_factory| to get the connection to the
   // controller service worker.
   //

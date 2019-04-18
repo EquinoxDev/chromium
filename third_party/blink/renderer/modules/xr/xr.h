@@ -71,6 +71,10 @@ class XR final : public EventTargetWithInlineData,
 
   int64_t GetSourceId() const { return ukm_source_id_; }
 
+  using EnvironmentProviderErrorCallback = base::OnceCallback<void()>;
+  void AddEnvironmentProviderErrorHandler(
+      EnvironmentProviderErrorCallback callback);
+
  private:
   class PendingSessionQuery final
       : public GarbageCollected<PendingSessionQuery> {
@@ -84,11 +88,8 @@ class XR final : public EventTargetWithInlineData,
 
     Member<ScriptPromiseResolver> resolver;
     const XRSession::SessionMode mode;
-    Member<XRPresentationContext> output_context;
     bool has_user_activation = false;
   };
-
-  const char* checkSessionSupport(const XRSessionCreationOptions*) const;
 
   void OnRequestDeviceReturned(device::mojom::blink::XRDevicePtr device);
   void DispatchPendingSessionCalls();
@@ -106,7 +107,17 @@ class XR final : public EventTargetWithInlineData,
   void AddedEventListener(const AtomicString& event_type,
                           RegisteredEventListener&) override;
 
+  XRSession* CreateSession(
+      XRSession::SessionMode mode,
+      XRSession::EnvironmentBlendMode blend_mode,
+      device::mojom::blink::XRSessionClientRequest client_request,
+      device::mojom::blink::VRDisplayInfoPtr display_info,
+      bool sensorless_session = false);
+  XRSession* CreateSensorlessInlineSession();
+
   void Dispose();
+
+  void OnEnvironmentProviderDisconnect();
 
   bool pending_device_ = false;
 
@@ -125,6 +136,9 @@ class XR final : public EventTargetWithInlineData,
   // respective calls to be made directly.
   HeapVector<Member<PendingSessionQuery>> pending_mode_queries_;
   HeapVector<Member<PendingSessionQuery>> pending_session_requests_;
+
+  Vector<EnvironmentProviderErrorCallback>
+      environment_provider_error_callbacks_;
 
   Member<XRFrameProvider> frame_provider_;
   HeapHashSet<WeakMember<XRSession>> sessions_;

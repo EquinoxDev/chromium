@@ -18,7 +18,6 @@
 #import "ios/chrome/browser/ui/location_bar/location_bar_coordinator.h"
 #import "ios/chrome/browser/ui/ntp/ntp_util.h"
 #import "ios/chrome/browser/ui/omnibox/omnibox_text_field_ios.h"
-#import "ios/chrome/browser/ui/omnibox/popup/omnibox_popup_positioner.h"
 #import "ios/chrome/browser/ui/orchestrator/omnibox_focus_orchestrator.h"
 #import "ios/chrome/browser/ui/toolbar/adaptive_toolbar_coordinator+subclassing.h"
 #import "ios/chrome/browser/ui/toolbar/primary_toolbar_view_controller.h"
@@ -33,8 +32,7 @@
 #error "This file requires ARC support."
 #endif
 
-@interface PrimaryToolbarCoordinator ()<OmniboxPopupPositioner,
-                                        PrimaryToolbarViewControllerDelegate> {
+@interface PrimaryToolbarCoordinator () <PrimaryToolbarViewControllerDelegate> {
   // Observer that updates |toolbarViewController| for fullscreen events.
   std::unique_ptr<FullscreenControllerObserver> _fullscreenObserver;
 }
@@ -47,17 +45,17 @@
 @property(nonatomic, strong) LocationBarCoordinator* locationBarCoordinator;
 // Orchestrator for the expansion animation.
 @property(nonatomic, strong) OmniboxFocusOrchestrator* orchestrator;
+// Whether the omnibox focusing should happen with animation.
+@property(nonatomic, assign) BOOL enableAnimationsForOmniboxFocus;
 
 @end
 
 @implementation PrimaryToolbarCoordinator
 
 @dynamic viewController;
-@synthesize started = _started;
+@synthesize popupPresenterDelegate = _popupPresenterDelegate;
 @synthesize commandDispatcher = _commandDispatcher;
 @synthesize delegate = _delegate;
-@synthesize locationBarCoordinator = _locationBarCoordinator;
-@synthesize orchestrator = _orchestrator;
 
 #pragma mark - ChromeCoordinator
 
@@ -65,6 +63,8 @@
   DCHECK(self.commandDispatcher);
   if (self.started)
     return;
+
+  self.enableAnimationsForOmniboxFocus = YES;
 
   [self.commandDispatcher startDispatchingToTarget:self
                                        forProtocol:@protocol(FakeboxFocuser)];
@@ -78,7 +78,8 @@
   self.orchestrator.toolbarAnimatee = self.viewController;
 
   [self setUpLocationBar];
-  self.viewController.locationBarView = self.locationBarCoordinator.view;
+  self.viewController.locationBarViewController =
+      self.locationBarCoordinator.locationBarViewController;
   self.orchestrator.locationBarAnimatee =
       [self.locationBarCoordinator locationBarAnimatee];
 
@@ -140,7 +141,7 @@
       transitionToStateOmniboxFocused:focused
                       toolbarExpanded:focused && !IsRegularXRegularSizeClass(
                                                      self.viewController)
-                             animated:YES];
+                             animated:self.enableAnimationsForOmniboxFocus];
 }
 
 #pragma mark - PrimaryToolbarViewControllerDelegate
@@ -165,6 +166,18 @@
 
 #pragma mark - FakeboxFocuser
 
+- (void)focusOmniboxNoAnimation {
+  self.enableAnimationsForOmniboxFocus = NO;
+  [self fakeboxFocused];
+  self.enableAnimationsForOmniboxFocus = YES;
+  // If the pasteboard is containing a URL, the omnibox popup suggestions are
+  // displayed as soon as the omnibox is focused.
+  // If the fake omnibox animation is triggered at the same time, it is possible
+  // to see the NTP going up where the real omnibox should be displayed.
+  if ([self.locationBarCoordinator omniboxPopupHasAutocompleteResults])
+    [self onFakeboxAnimationComplete];
+}
+
 - (void)fakeboxFocused {
   [self.locationBarCoordinator focusOmniboxFromFakebox];
 }
@@ -181,19 +194,6 @@
   self.viewController.view.hidden = NO;
 }
 
-// TODO(crbug.com/786940): This protocol should move to the ViewController
-// owning the Toolbar. This can wait until the omnibox and toolbar refactoring
-// is more advanced.
-#pragma mark OmniboxPopupPositioner methods.
-
-- (UIView*)popupParentView {
-  return self.viewController.view.superview;
-}
-
-- (UIViewController*)popupParentViewController {
-  return self.viewController.parentViewController;
-}
-
 #pragma mark - Protected override
 
 - (void)updateToolbarForSideSwipeSnapshot:(web::WebState*)webState {
@@ -203,16 +203,16 @@
 
   // Don't do anything for a live non-ntp tab.
   if (webState == self.webStateList->GetActiveWebState() && !isNTP) {
-    [self.locationBarCoordinator.view setHidden:NO];
+    [self.locationBarCoordinator.locationBarViewController.view setHidden:NO];
   } else {
     self.viewController.view.hidden = NO;
-    [self.locationBarCoordinator.view setHidden:YES];
+    [self.locationBarCoordinator.locationBarViewController.view setHidden:YES];
   }
 }
 
 - (void)resetToolbarAfterSideSwipeSnapshot {
   [super resetToolbarAfterSideSwipeSnapshot];
-  [self.locationBarCoordinator.view setHidden:NO];
+  [self.locationBarCoordinator.locationBarViewController.view setHidden:NO];
 }
 
 #pragma mark - Private
@@ -227,7 +227,8 @@
   self.locationBarCoordinator.commandDispatcher = self.commandDispatcher;
   self.locationBarCoordinator.delegate = self.delegate;
   self.locationBarCoordinator.webStateList = self.webStateList;
-  self.locationBarCoordinator.popupPositioner = self;
+  self.locationBarCoordinator.popupPresenterDelegate =
+      self.popupPresenterDelegate;
   [self.locationBarCoordinator start];
 }
 

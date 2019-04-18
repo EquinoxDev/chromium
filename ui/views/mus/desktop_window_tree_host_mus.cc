@@ -14,6 +14,7 @@
 #include "ui/aura/client/transient_window_client.h"
 #include "ui/aura/env.h"
 #include "ui/aura/mus/focus_synchronizer.h"
+#include "ui/aura/mus/window_mus.h"
 #include "ui/aura/mus/window_tree_client.h"
 #include "ui/aura/mus/window_tree_host_mus.h"
 #include "ui/aura/mus/window_tree_host_mus_init_params.h"
@@ -25,6 +26,7 @@
 #include "ui/events/gestures/gesture_recognizer_observer.h"
 #include "ui/gfx/geometry/dip_util.h"
 #include "ui/gfx/geometry/vector2d_conversions.h"
+#include "ui/gfx/image/image_skia_operations.h"
 #include "ui/views/accessibility/view_accessibility.h"
 #include "ui/views/corewm/tooltip_aura.h"
 #include "ui/views/mus/cursor_manager_owner.h"
@@ -56,7 +58,7 @@ class ClientSideNonClientFrameView : public NonClientFrameView,
 
     observed_.Add(window());
   }
-  ~ClientSideNonClientFrameView() override {}
+  ~ClientSideNonClientFrameView() override = default;
 
  private:
   gfx::Insets GetClientInsets() const {
@@ -132,10 +134,8 @@ class ClientSideNonClientFrameView : public NonClientFrameView,
   void OnWindowPropertyChanged(aura::Window* window,
                                const void* key,
                                intptr_t old) override {
-    if (key == aura::client::kTopViewInset) {
+    if (key == aura::client::kTopViewInset)
       InvalidateLayout();
-      widget_->GetRootView()->Layout();
-    }
   }
 
   aura::Window* window() const {
@@ -149,10 +149,10 @@ class ClientSideNonClientFrameView : public NonClientFrameView,
 };
 
 void OnMoveLoopEnd(bool* out_success,
-                   base::Closure quit_closure,
+                   base::OnceClosure quit_closure,
                    bool in_success) {
   *out_success = in_success;
-  quit_closure.Run();
+  std::move(quit_closure).Run();
 }
 
 }  // namespace
@@ -187,6 +187,12 @@ class DesktopWindowTreeHostMus::WindowTreeHostWindowObserver
                                intptr_t old) override {
     if (key == aura::client::kShowStateKey)
       is_waiting_for_restore_ = false;
+  }
+  void OnResizeLoopStarted(aura::Window* window) override {
+    host_->native_widget_delegate_->OnNativeWidgetBeginUserBoundsChange();
+  }
+  void OnResizeLoopEnded(aura::Window* window) override {
+    host_->native_widget_delegate_->OnNativeWidgetEndUserBoundsChange();
   }
 
  private:
@@ -286,6 +292,8 @@ void DesktopWindowTreeHostMus::RestoreToPreminimizedState() {
   window_tree_host_window_observer_->set_is_waiting_for_restore(true);
   base::AutoReset<bool> setter(&is_updating_window_visibility_, true);
   window()->Show();
+  if (compositor())
+    compositor()->SetVisible(true);
 }
 
 void DesktopWindowTreeHostMus::OnWindowTreeHostWindowVisibilityChanged(
@@ -339,6 +347,11 @@ void DesktopWindowTreeHostMus::Init(const Widget::InitParams& params) {
     SetBoundsInDIP(params.bounds);
   }
 
+  // If the standard frame is not used, the frame area (rendered by the client)
+  // should be handled by the client, so it shouldn't update the client area
+  // by itself. See https://crbug.com/935338.
+  auto_update_client_area_ = !params.remove_standard_frame;
+
   cursor_manager_owner_ = std::make_unique<CursorManagerOwner>(window());
   InitHost();
 
@@ -385,13 +398,6 @@ void DesktopWindowTreeHostMus::Init(const Widget::InitParams& params) {
 
   if (!params.accept_events)
     window()->SetEventTargetingPolicy(ws::mojom::EventTargetingPolicy::NONE);
-
-  // Sets the has-content info for the occlusion tracker that runs on the Window
-  // Service side.
-  content_window()->SetProperty(
-      aura::client::kClientWindowHasContent,
-      params.layer_type != ui::LAYER_NOT_DRAWN &&
-          params.opacity == Widget::InitParams::OPAQUE_WINDOW);
 }
 
 void DesktopWindowTreeHostMus::OnNativeWidgetCreated(
@@ -671,7 +677,8 @@ gfx::Rect DesktopWindowTreeHostMus::GetWorkAreaBoundsInScreen() const {
 
 void DesktopWindowTreeHostMus::SetShape(
     std::unique_ptr<Widget::ShapeRects> native_shape) {
-  NOTIMPLEMENTED();
+  MusClient::Get()->window_tree_client()->SetShape(
+      aura::WindowMus::Get(window()), std::move(native_shape));
 }
 
 void DesktopWindowTreeHostMus::Activate() {
@@ -886,7 +893,20 @@ void DesktopWindowTreeHostMus::SetAspectRatio(const gfx::SizeF& aspect_ratio) {
 
 void DesktopWindowTreeHostMus::SetWindowIcons(const gfx::ImageSkia& window_icon,
                                               const gfx::ImageSkia& app_icon) {
-  NativeWidgetAura::AssignIconToAuraWindow(window(), window_icon, app_icon);
+  // In Ash, the app icon is always used in preference to the window icon, so
+  // ignore the window icon. The max size that ash needs is 24dip, which is
+  // kIconSize in caption_container_view.cc.
+  constexpr gfx::Size kMaxUsefulAppIconSize(24, 24);
+  DCHECK_EQ(app_icon.width(), app_icon.height());
+  gfx::ImageSkia app_icon_resized =
+      app_icon.width() > kMaxUsefulAppIconSize.width()
+          ? gfx::ImageSkiaOperations::CreateResizedImage(
+                app_icon, skia::ImageOperations::RESIZE_BEST,
+                kMaxUsefulAppIconSize)
+          : app_icon;
+
+  window()->GetRootWindow()->SetProperty(aura::client::kAppIconSmallKey,
+                                         new gfx::ImageSkia(app_icon_resized));
 }
 
 void DesktopWindowTreeHostMus::InitModalType(ui::ModalType modal_type) {
@@ -946,7 +966,7 @@ void DesktopWindowTreeHostMus::OnWindowManagerFrameValuesChanged() {
   NonClientView* non_client_view =
       native_widget_delegate_->AsWidget()->non_client_view();
   if (non_client_view) {
-    non_client_view->Layout();
+    non_client_view->InvalidateLayout();
     non_client_view->SchedulePaint();
   }
 
@@ -1020,7 +1040,8 @@ void DesktopWindowTreeHostMus::SetBounds(
     const gfx::Rect& bounds,
     const viz::LocalSurfaceIdAllocation& local_surface_id_allocation) {
   gfx::Rect final_bounds = bounds;
-  if (bounds_in_dip().size() != bounds.size()) {
+  // If the server initiated the bounds change, then we need to honor it.
+  if (!is_server_setting_bounds() && bounds_in_dip().size() != bounds.size()) {
     gfx::Size size = bounds.size();
     size.SetToMax(native_widget_delegate_->GetMinimumSize());
     const gfx::Size max_size = native_widget_delegate_->GetMaximumSize();
@@ -1037,8 +1058,10 @@ void DesktopWindowTreeHostMus::SetBoundsInPixels(
     const viz::LocalSurfaceIdAllocation& local_surface_id_allocation) {
   // NOTE: in typical usage SetBounds() is called and not this, but as
   // WindowTreeHost exposes SetBoundsInPixels() this function may be called too.
+  // If the server initiated the bounds change, then we need to honor it.
   gfx::Rect final_bounds_in_pixels = bounds_in_pixels;
-  if (GetBoundsInPixels().size() != bounds_in_pixels.size()) {
+  if (!is_server_setting_bounds() &&
+      GetBoundsInPixels().size() != bounds_in_pixels.size()) {
     gfx::Size size = bounds_in_pixels.size();
     size.SetToMax(gfx::ConvertSizeToPixel(
         GetScaleFactor(), native_widget_delegate_->GetMinimumSize()));

@@ -51,6 +51,7 @@
 #include "third_party/blink/renderer/modules/notifications/notification_manager.h"
 #include "third_party/blink/renderer/modules/notifications/notification_options.h"
 #include "third_party/blink/renderer/modules/notifications/notification_resources_loader.h"
+#include "third_party/blink/renderer/modules/notifications/timestamp_trigger.h"
 #include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/bindings/script_state.h"
 #include "third_party/blink/renderer/platform/instrumentation/resource_coordinator/frame_resource_coordinator.h"
@@ -84,6 +85,13 @@ Notification* Notification::Create(ExecutionContext* context,
     exception_state.ThrowTypeError(
         "Actions are only supported for persistent notifications shown using "
         "ServiceWorkerRegistration.showNotification().");
+    return nullptr;
+  }
+
+  if (options->hasShowTrigger()) {
+    exception_state.ThrowTypeError(
+        "ShowTrigger is only supported for persistent notifications shown "
+        "using ServiceWorkerRegistration.showNotification().");
     return nullptr;
   }
 
@@ -158,7 +166,12 @@ Notification::Notification(ExecutionContext* context,
       prepare_show_timer_(context->GetTaskRunner(TaskType::kMiscPlatformAPI),
                           this,
                           &Notification::PrepareShow),
-      listener_binding_(this) {}
+      listener_binding_(this) {
+  if (data_->show_trigger_timestamp.has_value()) {
+    show_trigger_ = TimestampTrigger::Create(static_cast<DOMTimeStamp>(
+        data_->show_trigger_timestamp.value().ToJsTime()));
+  }
+}
 
 Notification::~Notification() = default;
 
@@ -422,7 +435,7 @@ ScriptPromise Notification::requestPermission(
   ExecutionContext* context = ExecutionContext::From(script_state);
   Document* doc = DynamicTo<Document>(context);
 
-  probe::breakableLocation(context, "Notification.requestPermission");
+  probe::BreakableLocation(context, "Notification.requestPermission");
   if (!LocalFrame::HasTransientUserActivation(doc ? doc->GetFrame()
                                                   : nullptr)) {
     PerformanceMonitor::ReportGenericViolation(
@@ -486,6 +499,7 @@ bool Notification::HasPendingActivity() const {
 }
 
 void Notification::Trace(blink::Visitor* visitor) {
+  visitor->Trace(show_trigger_);
   visitor->Trace(loader_);
   EventTargetWithInlineData::Trace(visitor);
   ContextLifecycleObserver::Trace(visitor);

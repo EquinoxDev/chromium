@@ -293,13 +293,13 @@ FetchResponseData::PopulateFetchAPIResponse() {
 
 FetchResponseData::FetchResponseData(Type type,
                                      network::mojom::FetchResponseSource source,
-                                     unsigned short status,
+                                     uint16_t status,
                                      AtomicString status_message)
     : type_(type),
       response_source_(source),
       status_(status),
       status_message_(status_message),
-      header_list_(FetchHeaderList::Create()),
+      header_list_(MakeGarbageCollected<FetchHeaderList>()),
       response_time_(base::Time::Now()) {}
 
 void FetchResponseData::ReplaceBodyStreamBuffer(BodyStreamBuffer* buffer) {

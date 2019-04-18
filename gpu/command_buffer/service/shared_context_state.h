@@ -11,7 +11,9 @@
 #include "base/memory/memory_pressure_listener.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
+#include "base/observer_list.h"
 #include "base/trace_event/memory_dump_provider.h"
+#include "build/build_config.h"
 #include "gpu/command_buffer/common/skia_utils.h"
 #include "gpu/command_buffer/service/gl_context_virtual_delegate.h"
 #include "gpu/gpu_gles2_export.h"
@@ -79,6 +81,7 @@ class GPU_GLES2_EXPORT SharedContextState
   viz::VulkanContextProvider* vk_context_provider() {
     return vk_context_provider_;
   }
+  gl::ProgressReporter* progress_reporter() const { return progress_reporter_; }
   GrContext* gr_context() { return gr_context_; }
   gles2::FeatureInfo* feature_info() { return feature_info_.get(); }
   gles2::ContextState* context_state() const { return context_state_.get(); }
@@ -102,6 +105,17 @@ class GPU_GLES2_EXPORT SharedContextState
   // base::trace_event::MemoryDumpProvider implementation.
   bool OnMemoryDump(const base::trace_event::MemoryDumpArgs& args,
                     base::trace_event::ProcessMemoryDump* pmd) override;
+
+  // Observer class which is notified when the context is lost.
+  class ContextLostObserver {
+   public:
+    virtual void OnContextLost() = 0;
+
+   protected:
+    virtual ~ContextLostObserver() {}
+  };
+  void AddContextLostObserver(ContextLostObserver* obs);
+  void RemoveContextLostObserver(ContextLostObserver* obs);
 
  private:
   friend class base::RefCounted<SharedContextState>;
@@ -143,6 +157,7 @@ class GPU_GLES2_EXPORT SharedContextState
   // raster decoders and display compositor share this context_state_.
   std::unique_ptr<gles2::ContextState> context_state_;
 
+  gl::ProgressReporter* progress_reporter_ = nullptr;
   sk_sp<GrContext> owned_gr_context_;
   std::unique_ptr<ServiceTransferCache> transfer_cache_;
   size_t glyph_cache_max_texture_bytes_ = 0u;
@@ -153,6 +168,7 @@ class GPU_GLES2_EXPORT SharedContextState
   bool need_context_state_reset_ = false;
 
   bool context_lost_ = false;
+  base::ObserverList<ContextLostObserver>::Unchecked context_lost_observers_;
 
   base::WeakPtrFactory<SharedContextState> weak_ptr_factory_;
 

@@ -189,10 +189,6 @@ std::string ChangeToDescription(const Change& change,
                                 change.change_id,
                                 WindowIdToString(change.window_id).c_str(),
                                 change.bool_value ? "true" : "false");
-    case CHANGE_TYPE_OPACITY:
-      return base::StringPrintf("OpacityChanged window_id=%s opacity=%.2f",
-                                WindowIdToString(change.window_id).c_str(),
-                                change.float_value);
     case CHANGE_TYPE_REQUEST_CLOSE:
       return "RequestClose";
     case CHANGE_TYPE_TRANSFORM_CHANGED:
@@ -360,12 +356,14 @@ void TestChangeTracker::OnEmbeddedAppDisconnected(Id window_id) {
 void TestChangeTracker::OnWindowBoundsChanged(
     Id window_id,
     const gfx::Rect& new_bounds,
+    ui::WindowShowState new_state,
     const base::Optional<viz::LocalSurfaceIdAllocation>&
         local_surface_id_allocation) {
   Change change;
   change.type = CHANGE_TYPE_NODE_BOUNDS_CHANGED;
   change.window_id = window_id;
   change.bounds = new_bounds;
+  change.state = new_state;
   change.local_surface_id_allocation = local_surface_id_allocation;
   AddChange(change);
 }
@@ -461,14 +459,6 @@ void TestChangeTracker::OnWindowVisibilityChanged(Id window_id, bool visible) {
   AddChange(change);
 }
 
-void TestChangeTracker::OnWindowOpacityChanged(Id window_id, float opacity) {
-  Change change;
-  change.type = CHANGE_TYPE_OPACITY;
-  change.window_id = window_id;
-  change.float_value = opacity;
-  AddChange(change);
-}
-
 void TestChangeTracker::OnWindowDisplayChanged(Id window_id,
                                                int64_t display_id) {
   Change change;
@@ -553,12 +543,14 @@ void TestChangeTracker::OnChangeCompleted(uint32_t change_id, bool success) {
 void TestChangeTracker::OnTopLevelCreated(
     uint32_t change_id,
     mojom::WindowDataPtr window_data,
+    int64_t display_id,
     bool drawn,
     const viz::LocalSurfaceIdAllocation& local_surface_id_allocation) {
   Change change;
   change.type = CHANGE_TYPE_ON_TOP_LEVEL_CREATED;
   change.change_id = change_id;
   change.window_id = window_data->window_id;
+  change.display_id = display_id;
   change.bool_value = drawn;
   change.local_surface_id_allocation = local_surface_id_allocation;
   AddChange(change);

@@ -39,6 +39,16 @@ const AssistantUiModel* AssistantViewDelegateImpl::GetUiModel() const {
   return assistant_controller_->ui_controller()->model();
 }
 
+void AssistantViewDelegateImpl::AddObserver(
+    AssistantViewDelegateObserver* observer) {
+  view_delegate_observers_.AddObserver(observer);
+}
+
+void AssistantViewDelegateImpl::RemoveObserver(
+    AssistantViewDelegateObserver* observer) {
+  view_delegate_observers_.RemoveObserver(observer);
+}
+
 void AssistantViewDelegateImpl::AddCacheModelObserver(
     AssistantCacheModelObserver* observer) {
   assistant_controller_->cache_controller()->AddModelObserver(observer);
@@ -81,16 +91,6 @@ void AssistantViewDelegateImpl::RemoveUiModelObserver(
   assistant_controller_->ui_controller()->RemoveModelObserver(observer);
 }
 
-void AssistantViewDelegateImpl::AddViewDelegateObserver(
-    AssistantViewDelegateObserver* observer) {
-  view_delegate_observers_.AddObserver(observer);
-}
-
-void AssistantViewDelegateImpl::RemoveViewDelegateObserver(
-    AssistantViewDelegateObserver* observer) {
-  view_delegate_observers_.RemoveObserver(observer);
-}
-
 void AssistantViewDelegateImpl::AddVoiceInteractionControllerObserver(
     DefaultVoiceInteractionObserver* observer) {
   Shell::Get()->voice_interaction_controller()->AddLocalObserver(observer);
@@ -103,20 +103,6 @@ void AssistantViewDelegateImpl::RemoveVoiceInteractionControllerObserver(
 
 CaptionBarDelegate* AssistantViewDelegateImpl::GetCaptionBarDelegate() {
   return assistant_controller_->ui_controller();
-}
-
-std::vector<DialogPlateObserver*>
-AssistantViewDelegateImpl::GetDialogPlateObservers() {
-  return {assistant_controller_->interaction_controller(),
-          assistant_controller_->ui_controller()};
-}
-
-AssistantMiniViewDelegate* AssistantViewDelegateImpl::GetMiniViewDelegate() {
-  return assistant_controller_->ui_controller();
-}
-
-AssistantOptInDelegate* AssistantViewDelegateImpl::GetOptInDelegate() {
-  return assistant_controller_->setup_controller();
 }
 
 void AssistantViewDelegateImpl::DownloadImage(
@@ -137,18 +123,39 @@ mojom::ConsentStatus AssistantViewDelegateImpl::GetConsentStatus() const {
 }
 
 void AssistantViewDelegateImpl::GetNavigableContentsFactoryForView(
-    content::mojom::NavigableContentsFactoryRequest request) {
-  assistant_controller_->GetNavigableContentsFactory(std::move(request));
+    mojo::PendingReceiver<content::mojom::NavigableContentsFactory> receiver) {
+  assistant_controller_->GetNavigableContentsFactory(std::move(receiver));
 }
 
 aura::Window* AssistantViewDelegateImpl::GetRootWindowForNewWindows() {
   return Shell::Get()->GetRootWindowForNewWindows();
 }
 
+bool AssistantViewDelegateImpl::IsLaunchWithMicOpen() const {
+  return Shell::Get()->voice_interaction_controller()->launch_with_mic_open();
+}
+
 bool AssistantViewDelegateImpl::IsTabletMode() const {
   return Shell::Get()
       ->tablet_mode_controller()
       ->IsTabletModeWindowManagerEnabled();
+}
+
+void AssistantViewDelegateImpl::OnDialogPlateButtonPressed(
+    AssistantButtonId id) {
+  for (auto& observer : view_delegate_observers_)
+    observer.OnDialogPlateButtonPressed(id);
+}
+
+void AssistantViewDelegateImpl::OnDialogPlateContentsCommitted(
+    const std::string& text) {
+  for (auto& observer : view_delegate_observers_)
+    observer.OnDialogPlateContentsCommitted(text);
+}
+
+void AssistantViewDelegateImpl::OnMiniViewPressed() {
+  for (auto& observer : view_delegate_observers_)
+    observer.OnMiniViewPressed();
 }
 
 void AssistantViewDelegateImpl::OnNotificationButtonPressed(
@@ -158,10 +165,15 @@ void AssistantViewDelegateImpl::OnNotificationButtonPressed(
       notification_id, notification_button_index, /*reply=*/base::nullopt);
 }
 
+void AssistantViewDelegateImpl::OnOptInButtonPressed() {
+  for (auto& observer : view_delegate_observers_)
+    observer.OnOptInButtonPressed();
+}
+
 void AssistantViewDelegateImpl::OnSuggestionChipPressed(
     const AssistantSuggestion* suggestion) {
-  assistant_controller_->interaction_controller()->OnSuggestionChipPressed(
-      suggestion);
+  for (AssistantViewDelegateObserver& observer : view_delegate_observers_)
+    observer.OnSuggestionChipPressed(suggestion);
 }
 
 void AssistantViewDelegateImpl::OpenUrlFromView(const GURL& url) {

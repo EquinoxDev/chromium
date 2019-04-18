@@ -4,9 +4,14 @@
 
 #include "components/download/internal/common/android/download_collection_bridge.h"
 
+#include <utility>
+
 #include "base/android/jni_android.h"
 #include "base/android/jni_string.h"
 #include "base/files/file_util.h"
+#include "base/metrics/field_trial_params.h"
+#include "base/strings/string_number_conversions.h"
+#include "components/download/public/common/download_features.h"
 #include "components/download/public/common/download_interrupt_reasons.h"
 #include "jni/DownloadCollectionBridge_jni.h"
 
@@ -18,6 +23,15 @@ using base::android::ScopedJavaLocalRef;
 
 namespace download {
 
+namespace {
+// Default value for |kDownloadExpirationDurationFinchKey|, when no parameter is
+// specified.
+const int kDefaultExpirationDurationInDays = 3;
+
+// Finch parameter key value of the duration in days for an intermediate
+// download to expire.
+constexpr char kDownloadExpirationDurationFinchKey[] = "expiration_duration";
+}  // namespace
 // static
 base::FilePath DownloadCollectionBridge::CreateIntermediateUriForPublish(
     const GURL& original_url,
@@ -106,6 +120,70 @@ base::File DownloadCollectionBridge::OpenIntermediateUri(
   if (fd < 0)
     return base::File();
   return base::File(fd);
+}
+
+// static
+bool DownloadCollectionBridge::FileNameExists(const base::FilePath& file_name) {
+  JNIEnv* env = base::android::AttachCurrentThread();
+  ScopedJavaLocalRef<jstring> jfile_name =
+      ConvertUTF8ToJavaString(env, file_name.value());
+  return Java_DownloadCollectionBridge_fileNameExists(env, jfile_name);
+}
+
+// static
+bool DownloadCollectionBridge::RenameDownloadUri(
+    const base::FilePath& download_uri,
+    const base::FilePath& new_display_name) {
+  JNIEnv* env = base::android::AttachCurrentThread();
+  ScopedJavaLocalRef<jstring> jdownload_uri =
+      ConvertUTF8ToJavaString(env, download_uri.value());
+  ScopedJavaLocalRef<jstring> jdisplay_name =
+      ConvertUTF8ToJavaString(env, new_display_name.value());
+  return Java_DownloadCollectionBridge_renameDownloadUri(env, jdownload_uri,
+                                                         jdisplay_name);
+}
+
+// static
+void DownloadCollectionBridge::GetDisplayNamesForDownloads(
+    GetDisplayNamesCallback cb) {
+  JNIEnv* env = base::android::AttachCurrentThread();
+  ScopedJavaLocalRef<jobjectArray> jdisplay_infos =
+      Java_DownloadCollectionBridge_getDisplayNamesForDownloads(env);
+  auto result = std::make_unique<std::map<std::string, base::FilePath>>();
+  if (!jdisplay_infos) {
+    std::move(cb).Run(std::move(result));
+    return;
+  }
+  jsize count = env->GetArrayLength(jdisplay_infos.obj());
+  for (jsize i = 0; i < count; ++i) {
+    base::android::ScopedJavaLocalRef<jobject> jdisplay_info(
+        env, env->GetObjectArrayElement(jdisplay_infos.obj(), i));
+    ScopedJavaLocalRef<jstring> juri =
+        Java_DisplayNameInfo_getDownloadUri(env, jdisplay_info);
+    ScopedJavaLocalRef<jstring> jdisplay_name =
+        Java_DisplayNameInfo_getDisplayName(env, jdisplay_info);
+    if (juri && jdisplay_name) {
+      std::string uri = ConvertJavaStringToUTF8(env, juri);
+      std::string display_name = ConvertJavaStringToUTF8(env, jdisplay_name);
+      result->emplace(uri, display_name);
+    }
+  }
+  std::move(cb).Run(std::move(result));
+}
+
+// static
+bool DownloadCollectionBridge::NeedToRetrieveDisplayNames() {
+  JNIEnv* env = base::android::AttachCurrentThread();
+  return Java_DownloadCollectionBridge_needToRetrieveDisplayNames(env);
+}
+
+jint JNI_DownloadCollectionBridge_GetExpirationDurationInDays(JNIEnv* env) {
+  std::string finch_value = base::GetFieldTrialParamValueByFeature(
+      features::kRefreshExpirationDate, kDownloadExpirationDurationFinchKey);
+  int days;
+  return base::StringToInt(finch_value, &days)
+             ? days
+             : kDefaultExpirationDurationInDays;
 }
 
 }  // namespace download

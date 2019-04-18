@@ -8,6 +8,7 @@
 #include "base/containers/unique_ptr_adapters.h"
 #include "content/common/content_export.h"
 #include "content/public/browser/frame_service_base.h"
+#include "content/public/browser/media_player_id.h"
 #include "third_party/blink/public/mojom/picture_in_picture/picture_in_picture.mojom.h"
 
 namespace content {
@@ -32,12 +33,14 @@ class CONTENT_EXPORT PictureInPictureServiceImpl final
                     const base::Optional<viz::SurfaceId>& surface_id,
                     const gfx::Size& natural_size,
                     bool show_play_pause_button,
+                    bool show_mute_button,
                     StartSessionCallback) final;
   void EndSession(EndSessionCallback) final;
   void UpdateSession(uint32_t player_id,
                      const base::Optional<viz::SurfaceId>& surface_id,
                      const gfx::Size& natural_size,
-                     bool show_play_pause_button) final;
+                     bool show_play_pause_button,
+                     bool show_mute_button) final;
   void SetDelegate(blink::mojom::PictureInPictureDelegatePtr) final;
 
   void NotifyWindowResized(const gfx::Size&);

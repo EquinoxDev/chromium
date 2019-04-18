@@ -15,6 +15,7 @@ import org.chromium.chrome.R;
 import org.chromium.chrome.browser.ChromeActivity;
 import org.chromium.chrome.browser.ChromeTabbedActivity;
 import org.chromium.chrome.browser.appmenu.AppMenuHandler;
+import org.chromium.chrome.browser.datareduction.DataReductionSavingsMilestonePromo;
 import org.chromium.chrome.browser.feature_engagement.TrackerFactory;
 import org.chromium.chrome.browser.lifecycle.Destroyable;
 import org.chromium.chrome.browser.net.spdyproxy.DataReductionProxySettings;
@@ -68,7 +69,7 @@ public class ToolbarButtonInProductHelpController implements Destroyable {
 
             @Override
             public void onPageLoadStarted(Tab tab, String url) {
-                if (tab != activity.getActivityTabProvider().getActivityTab()) return;
+                if (tab != activity.getActivityTabProvider().get()) return;
                 mDataSavedOnStartPageLoad = DataReductionProxySettings.getInstance()
                                                     .getContentLengthSavedInHistorySummary();
                 mPageLoadTab = tab;
@@ -83,9 +84,9 @@ public class ToolbarButtonInProductHelpController implements Destroyable {
                 Tracker tracker = TrackerFactory.getTrackerForProfile(Profile.getLastUsedProfile());
                 if (dataSaved > 0L) tracker.notifyEvent(EventConstants.DATA_SAVED_ON_PAGE_LOAD);
                 if (tab.isPreview()) tracker.notifyEvent(EventConstants.PREVIEWS_PAGE_LOADED);
-                if (tab == activity.getActivityTabProvider().getActivityTab()
-                        && tab.isUserInteractable()) {
-                    maybeShowDataSaver(activity);
+                if (tab == activity.getActivityTabProvider().get() && tab.isUserInteractable()) {
+                    maybeShowDataSaverDetail(activity);
+                    maybeShowDataSaverMilestonePromo(activity);
                     maybeShowPreviewVerboseStatus(activity);
                 }
                 mPageLoadTab = null;
@@ -98,28 +99,52 @@ public class ToolbarButtonInProductHelpController implements Destroyable {
         mPageLoadObserver.destroy();
     }
 
-    // Attempts to show an IPH text bubble for data saver.
-    private static void maybeShowDataSaver(ChromeActivity activity) {
+    private static int getDataReductionMenuItemHighlight() {
+        return FeatureUtilities.isBottomToolbarEnabled() ? R.id.data_reduction_menu_item
+                                                         : R.id.app_menu_footer;
+    }
+
+    // Attempts to show an IPH text bubble for data saver detail.
+    private static void maybeShowDataSaverDetail(ChromeActivity activity) {
         View anchorView = activity.getToolbarManager().getMenuButton();
         if (anchorView == null) return;
 
         setupAndMaybeShowIPHForFeature(FeatureConstants.DATA_SAVER_DETAIL_FEATURE,
-                R.id.app_menu_footer, R.string.iph_data_saver_detail_text,
+                getDataReductionMenuItemHighlight(), false, R.string.iph_data_saver_detail_text,
                 R.string.iph_data_saver_detail_accessibility_text, anchorView,
-                activity.getAppMenuHandler(), Profile.getLastUsedProfile(), activity);
+                activity.getAppMenuHandler(), Profile.getLastUsedProfile(), activity, null);
+    }
+
+    // Attempts to show an IPH text bubble for data saver milestone promo.
+    private static void maybeShowDataSaverMilestonePromo(ChromeActivity activity) {
+        View anchorView = activity.getToolbarManager().getMenuButton();
+        if (anchorView == null) return;
+
+        final DataReductionSavingsMilestonePromo promo =
+                new DataReductionSavingsMilestonePromo(activity,
+                        DataReductionProxySettings.getInstance().getTotalHttpContentLengthSaved());
+        if (!promo.shouldShowPromo()) return;
+
+        final Runnable dismissCallback = () -> {
+            promo.onPromoTextSeen();
+        };
+        setupAndMaybeShowIPHForFeature(FeatureConstants.DATA_SAVER_MILESTONE_PROMO_FEATURE,
+                getDataReductionMenuItemHighlight(), false, promo.getPromoText(),
+                promo.getPromoText(), anchorView, activity.getAppMenuHandler(),
+                Profile.getLastUsedProfile(), activity, dismissCallback);
     }
 
     // Attempts to show an IPH text bubble for page in preview mode.
     private static void maybeShowPreviewVerboseStatus(ChromeActivity activity) {
-        if (!activity.getActivityTabProvider().getActivityTab().isPreview()) return;
+        if (!activity.getActivityTabProvider().get().isPreview()) return;
 
         final View anchorView = activity.getToolbarManager().getSecurityIconView();
         if (anchorView == null) return;
 
-        setupAndMaybeShowIPHForFeature(FeatureConstants.PREVIEWS_OMNIBOX_UI_FEATURE, null,
+        setupAndMaybeShowIPHForFeature(FeatureConstants.PREVIEWS_OMNIBOX_UI_FEATURE, null, true,
                 R.string.iph_previews_omnibox_ui_text,
                 R.string.iph_previews_omnibox_ui_accessibility_text, anchorView, null,
-                Profile.getLastUsedProfile(), activity);
+                Profile.getLastUsedProfile(), activity, null);
     }
 
     /**
@@ -133,20 +158,20 @@ public class ToolbarButtonInProductHelpController implements Destroyable {
 
     private void maybeShowDownloadHomeIPH() {
         setupAndMaybeShowIPHForFeature(FeatureConstants.DOWNLOAD_HOME_FEATURE,
-                R.id.downloads_menu_id, R.string.iph_download_home_text,
+                R.id.downloads_menu_id, true, R.string.iph_download_home_text,
                 R.string.iph_download_home_accessibility_text,
                 mActivity.getToolbarManager().getMenuButton(), mActivity.getAppMenuHandler(),
-                Profile.getLastUsedProfile(), mActivity);
+                Profile.getLastUsedProfile(), mActivity, null);
     }
 
     private void maybeShowNTPButtonIPH() {
         if (!canShowNTPButtonIPH(mActivity)) return;
 
-        setupAndMaybeShowIPHForFeature(FeatureConstants.NTP_BUTTON_FEATURE, null,
+        setupAndMaybeShowIPHForFeature(FeatureConstants.NTP_BUTTON_FEATURE, null, true,
                 R.string.iph_ntp_button_text_home_text,
                 R.string.iph_ntp_button_text_home_accessibility_text,
                 mActivity.findViewById(R.id.home_button), null, Profile.getLastUsedProfile(),
-                mActivity);
+                mActivity, null);
     }
 
     /**
@@ -158,20 +183,36 @@ public class ToolbarButtonInProductHelpController implements Destroyable {
             ChromeTabbedActivity activity, Profile profile) {
         setupAndMaybeShowIPHForFeature(
                 FeatureConstants.DOWNLOAD_INFOBAR_DOWNLOAD_CONTINUING_FEATURE,
-                R.id.downloads_menu_id, R.string.iph_download_infobar_download_continuing_text,
+                R.id.downloads_menu_id, true,
+                R.string.iph_download_infobar_download_continuing_text,
                 R.string.iph_download_infobar_download_continuing_text,
                 activity.getToolbarManager().getMenuButton(), activity.getAppMenuHandler(), profile,
-                activity);
+                activity, null);
     }
 
     private static void setupAndMaybeShowIPHForFeature(String featureName,
-            Integer highlightMenuItemId, @StringRes int stringId,
+            Integer highlightMenuItemId, boolean circleHighlight, @StringRes int stringId,
             @StringRes int accessibilityStringId, View anchorView,
-            @Nullable AppMenuHandler appMenuHandler, Profile profile, ChromeActivity activity) {
+            @Nullable AppMenuHandler appMenuHandler, Profile profile, ChromeActivity activity,
+            @Nullable Runnable onDismissCallback) {
+        final String contentString = activity.getString(stringId);
+        final String accessibilityString = activity.getString(accessibilityStringId);
         final Tracker tracker = TrackerFactory.getTrackerForProfile(profile);
         tracker.addOnInitializedCallback((Callback<Boolean>) success
-                -> maybeShowIPH(tracker, featureName, highlightMenuItemId, stringId,
-                        accessibilityStringId, anchorView, appMenuHandler, activity));
+                -> maybeShowIPH(tracker, featureName, highlightMenuItemId, circleHighlight,
+                        contentString, accessibilityString, anchorView, appMenuHandler, activity,
+                        onDismissCallback));
+    }
+
+    private static void setupAndMaybeShowIPHForFeature(String featureName,
+            Integer highlightMenuItemId, boolean circleHighlight, String contentString,
+            String accessibilityString, View anchorView, @Nullable AppMenuHandler appMenuHandler,
+            Profile profile, ChromeActivity activity, @Nullable Runnable onDismissCallback) {
+        final Tracker tracker = TrackerFactory.getTrackerForProfile(profile);
+        tracker.addOnInitializedCallback((Callback<Boolean>) success
+                -> maybeShowIPH(tracker, featureName, highlightMenuItemId, circleHighlight,
+                        contentString, accessibilityString, anchorView, appMenuHandler, activity,
+                        onDismissCallback));
     }
 
     private static boolean shouldHighlightForIPH(String featureName) {
@@ -184,13 +225,14 @@ public class ToolbarButtonInProductHelpController implements Destroyable {
     }
 
     private static void maybeShowIPH(Tracker tracker, String featureName,
-            Integer highlightMenuItemId, @StringRes int stringId,
-            @StringRes int accessibilityStringId, View anchorView, AppMenuHandler appMenuHandler,
-            ChromeActivity activity) {
+            Integer highlightMenuItemId, boolean circleHighlight, String contentString,
+            String accessibilityString, View anchorView, AppMenuHandler appMenuHandler,
+            ChromeActivity activity, @Nullable Runnable onDismissCallback) {
         // Activity was destroyed; don't show IPH.
         if (activity.isActivityFinishingOrDestroyed() || anchorView == null) return;
 
-        assert(stringId != 0 && accessibilityStringId != 0);
+        assert (contentString.length() > 0);
+        assert (accessibilityString.length() > 0);
 
         // Post a request to show the IPH bubble to allow time for a layout pass. Since the bubble
         // is shown on startup, the anchor view may not have a height initially see
@@ -207,17 +249,21 @@ public class ToolbarButtonInProductHelpController implements Destroyable {
             ViewRectProvider rectProvider = new ViewRectProvider(anchorView);
 
             TextBubble textBubble = new TextBubble(
-                    activity, anchorView, stringId, accessibilityStringId, rectProvider);
+                    activity, anchorView, contentString, accessibilityString, true, rectProvider);
             textBubble.setDismissOnTouchInteraction(true);
             textBubble.addOnDismissListener(() -> anchorView.getHandler().postDelayed(() -> {
                 tracker.dismissed(featureName);
+                if (onDismissCallback != null) {
+                    onDismissCallback.run();
+                }
                 if (shouldHighlightForIPH(featureName)) {
                     turnOffHighlightForTextBubble(appMenuHandler, anchorView);
                 }
             }, ViewHighlighter.IPH_MIN_DELAY_BETWEEN_TWO_HIGHLIGHTS));
 
             if (shouldHighlightForIPH(featureName)) {
-                turnOnHighlightForTextBubble(appMenuHandler, highlightMenuItemId, anchorView);
+                turnOnHighlightForTextBubble(
+                        appMenuHandler, highlightMenuItemId, circleHighlight, anchorView);
             }
 
             int yInsetPx = activity.getResources().getDimensionPixelOffset(
@@ -227,18 +273,18 @@ public class ToolbarButtonInProductHelpController implements Destroyable {
         });
     }
 
-    private static void turnOnHighlightForTextBubble(
-            AppMenuHandler handler, Integer highlightMenuItemId, View anchorView) {
+    private static void turnOnHighlightForTextBubble(AppMenuHandler handler,
+            Integer highlightMenuItemId, boolean circleHighlight, View anchorView) {
         if (handler != null) {
-            handler.setMenuHighlight(highlightMenuItemId);
+            handler.setMenuHighlight(highlightMenuItemId, circleHighlight);
         } else {
-            ViewHighlighter.turnOnHighlight(anchorView, true);
+            ViewHighlighter.turnOnHighlight(anchorView, circleHighlight);
         }
     }
 
     private static void turnOffHighlightForTextBubble(AppMenuHandler handler, View anchorView) {
         if (handler != null) {
-            handler.setMenuHighlight(null);
+            handler.clearMenuHighlight();
         } else {
             ViewHighlighter.turnOffHighlight(anchorView);
         }

@@ -115,7 +115,7 @@ v8::MaybeLocal<v8::Script> CompileScriptInternal(
 
   // Allow inspector to use its own compilation cache store.
   v8::ScriptCompiler::CachedData* inspector_data = nullptr;
-  probe::consumeCompilationCache(execution_context, source_code,
+  probe::ConsumeCompilationCache(execution_context, source_code,
                                  &inspector_data);
   if (inspector_data) {
     v8::ScriptCompiler::Source source(code, origin, inspector_data);
@@ -444,7 +444,6 @@ v8::MaybeLocal<v8::Value> V8ScriptRunner::CallFunction(
   DCHECK(!frame || BindingSecurity::ShouldAllowAccessToFrame(
                        ToLocalDOMWindow(function->CreationContext()), frame,
                        BindingSecurity::ErrorReportOption::kDoNotReport));
-  CHECK(!ThreadState::Current()->IsWrapperTracingForbidden());
   v8::Isolate::SafeForTerminationScope safe_for_termination(isolate);
   v8::MicrotasksScope microtasks_scope(isolate,
                                        v8::MicrotasksScope::kRunMicrotasks);
@@ -474,7 +473,6 @@ v8::MaybeLocal<v8::Value> V8ScriptRunner::CallInternalFunction(
   RuntimeCallStatsScopedTracer rcs_scoped_tracer(isolate);
   RUNTIME_CALL_TIMER_SCOPE(isolate, RuntimeCallStats::CounterId::kV8);
 
-  CHECK(!ThreadState::Current()->IsWrapperTracingForbidden());
   v8::Isolate::SafeForTerminationScope safe_for_termination(isolate);
   v8::MicrotasksScope microtasks_scope(
       isolate, v8::MicrotasksScope::kDoNotRunMicrotasks);

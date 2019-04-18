@@ -111,10 +111,6 @@ class WallpaperControllerClient : public ash::mojom::WallpaperControllerClient {
   // Shows the wallpaper of the first user in |UserManager::GetUsers|, or a
   // default signin wallpaper if there's no user. This ensures the wallpaper is
   // shown right after boot, regardless of when the login screen is available.
-  //
-  // TODO(wzang|784495): Consider deprecating this method after views-based
-  // login is enabled. It should be fast enough to request the first wallpaper
-  // so that there's no visible delay.
   void ShowWallpaperOnLoginScreen();
 
   // ash::mojom::WallpaperControllerClient:
@@ -139,8 +135,6 @@ class WallpaperControllerClient : public ash::mojom::WallpaperControllerClient {
 
   // Observes if user names should be shown on the login screen, which
   // determines whether a user wallpaper or a default wallpaper should be shown.
-  // TODO(wzang|784495): Views-based login should observe this and send
-  // different requests accordingly.
   std::unique_ptr<chromeos::CrosSettings::ObserverSubscription>
       show_user_names_on_signin_subscription_;
 

@@ -99,8 +99,8 @@ extern const SkColor kMenuSeparatorColor;
 // system tray.
 constexpr int kTrayIconSize = 16;
 extern const SkColor kTrayIconColor;
-extern const SkColor kTrayIconBackgroundColor;
 extern const SkColor kOobeTrayIconColor;
+extern const int kTrayIconBackgroundAlpha;
 
 // The padding around network tray icon in dip.
 constexpr int kTrayNetworkIconPadding = 2;
@@ -174,7 +174,7 @@ constexpr SkColor kUnifiedFeaturePodHoverColor =
 constexpr gfx::Insets kUnifiedMenuItemPadding(0, 16, 16, 16);
 constexpr gfx::Insets kUnifiedSliderPadding(0, 16);
 
-constexpr int kUnifiedMenuVerticalPadding = 8;
+constexpr int kUnifiedMenuPadding = 8;
 constexpr int kUnifiedNotificationCenterSpacing = 16;
 constexpr int kUnifiedTrayIconSize = 20;
 constexpr int kUnifiedTraySpacingBetweenIcons = 6;
@@ -183,18 +183,24 @@ constexpr int kUnifiedTrayCornerRadius = 20;
 constexpr int kUnifiedTrayContentPadding = 8;
 constexpr int kUnifiedTopShortcutSpacing = 16;
 constexpr int kUnifiedNotificationHiddenLineHeight = 20;
+constexpr int kUnifiedTopShortcutContainerTopPadding = 12;
+constexpr int kUnifiedNotificationMinimumHeight = 40;
 constexpr gfx::Insets kUnifiedTopShortcutPadding(0, 16);
 constexpr gfx::Insets kUnifiedNotificationHiddenPadding(6, 16);
-
+constexpr gfx::Insets kUnifiedCircularButtonFocusPadding(4);
 constexpr int kStackingNotificationCounterMax = 8;
 constexpr int kStackingNotificationCounterRadius = 2;
 constexpr int kStackingNotificationCounterStartX = 18;
 constexpr int kStackingNotificationCounterDistanceX = 10;
 constexpr int kStackingNotificationCounterHeight = 20;
+constexpr int kStackingNotificationCounterWithClearAllHeight = 32;
+constexpr gfx::Insets kStackingNotificationClearAllButtonPadding(8, 16);
 constexpr SkColor kStackingNotificationCounterColor =
     SkColorSetRGB(0x5f, 0x63, 0x68);
 constexpr SkColor kStackingNotificationCounterBorderColor =
     SkColorSetRGB(0xe0, 0xe0, 0xe0);
+constexpr SkColor kStackingNotificationCounterLabelColor =
+    SkColorSetRGB(0x5f, 0x64, 0x68);
 
 // Size of an icon drawn inside top shortcut buttons.
 // A dark disc with |kTrayItemSize| diameter is drawn in the background.
@@ -202,6 +208,9 @@ constexpr int kTrayTopShortcutButtonIconSize = 20;
 
 constexpr int kUnifiedSystemInfoHeight = 16;
 constexpr int kUnifiedSystemInfoSpacing = 8;
+constexpr int kUnifiedSystemInfoSeparatorColor =
+    SkColorSetA(SK_ColorWHITE, 0x24);
+constexpr gfx::Insets kUnifiedSystemInfoDateViewPadding(3);
 
 // Constants used in FeaturePodsView of UnifiedSystemTray.
 constexpr gfx::Size kUnifiedFeaturePodIconSize(48, 48);
@@ -214,6 +223,8 @@ constexpr int kUnifiedFeaturePodLabelWidth = 80;
 constexpr int kUnifiedFeaturePodSpacing = 6;
 constexpr int kUnifiedFeaturePodHoverRadius = 4;
 constexpr int kUnifiedFeaturePodVerticalPadding = 28;
+constexpr int kUnifiedFeaturePodTopPadding = 24;
+constexpr int kUnifiedFeaturePodBottomPadding = 24;
 constexpr int kUnifiedFeaturePodHorizontalSidePadding = 12;
 constexpr int kUnifiedFeaturePodHorizontalMiddlePadding = 0;
 constexpr int kUnifiedFeaturePodCollapsedVerticalPadding = 16;

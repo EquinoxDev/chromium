@@ -32,7 +32,7 @@ void DragDropClientMac::StartDragAndDrop(
   // TODO(avi): Why must this data be cloned?
   exchange_data_ =
       std::make_unique<ui::OSExchangeData>(data.provider().Clone());
-  operation_ = operation;
+  source_operation_ = operation;
   is_drag_source_ = true;
 
   const ui::OSExchangeDataProviderMac& provider_mac =
@@ -62,12 +62,7 @@ void DragDropClientMac::StartDragAndDrop(
   NSImage* image = gfx::NSImageFromImageSkiaWithColorSpace(
       provider_mac.GetDragImage(), base::mac::GetSRGBColorSpace());
 
-  // TODO(crbug/876201): This shouldn't happen. When a repro for this
-  // is identified and the bug is fixed, change the early return to
-  // a DCHECK.
-  if (!image || NSEqualSizes([image size], NSZeroSize))
-    return;
-
+  DCHECK(!NSEqualSizes([image size], NSZeroSize));
   NSDraggingItem* drag_item = provider_mac.GetDraggingItem();
 
   // Subtract the image's height from the y location so that the mouse will be
@@ -84,7 +79,7 @@ void DragDropClientMac::StartDragAndDrop(
 
   // Since Drag and drop is asynchronous on Mac, we need to spin a nested run
   // loop for consistency with other platforms.
-  base::RunLoop run_loop;
+  base::RunLoop run_loop(base::RunLoop::Type::kNestableTasksAllowed);
   quit_closure_ = run_loop.QuitClosure();
   run_loop.Run();
 }
@@ -94,13 +89,14 @@ NSDragOperation DragDropClientMac::DragUpdate(id<NSDraggingInfo> sender) {
     exchange_data_ = std::make_unique<OSExchangeData>(
         ui::OSExchangeDataProviderMac::CreateProviderWrappingPasteboard(
             [sender draggingPasteboard]));
-    operation_ = ui::DragDropTypes::NSDragOperationToDragOperation(
+    source_operation_ = ui::DragDropTypes::NSDragOperationToDragOperation(
         [sender draggingSourceOperationMask]);
   }
 
-  int drag_operation = drop_helper_.OnDragOver(
-      *exchange_data_, LocationInView([sender draggingLocation]), operation_);
-  return ui::DragDropTypes::DragOperationToNSDragOperation(drag_operation);
+  last_operation_ = drop_helper_.OnDragOver(
+      *exchange_data_, LocationInView([sender draggingLocation]),
+      source_operation_);
+  return ui::DragDropTypes::DragOperationToNSDragOperation(last_operation_);
 }
 
 NSDragOperation DragDropClientMac::Drop(id<NSDraggingInfo> sender) {
@@ -108,7 +104,8 @@ NSDragOperation DragDropClientMac::Drop(id<NSDraggingInfo> sender) {
   std::unique_ptr<ui::OSExchangeData> exchange_data = std::move(exchange_data_);
 
   int drag_operation = drop_helper_.OnDrop(
-      *exchange_data, LocationInView([sender draggingLocation]), operation_);
+      *exchange_data, LocationInView([sender draggingLocation]),
+      last_operation_);
   return ui::DragDropTypes::DragOperationToNSDragOperation(drag_operation);
 }
 
@@ -117,10 +114,8 @@ void DragDropClientMac::EndDrag() {
   is_drag_source_ = false;
 
   // Allow a test to invoke EndDrag() without spinning the nested run loop.
-  if (!quit_closure_.is_null()) {
-    quit_closure_.Run();
-    quit_closure_.Reset();
-  }
+  if (!quit_closure_.is_null())
+    std::move(quit_closure_).Run();
 }
 
 void DragDropClientMac::DragExit() {

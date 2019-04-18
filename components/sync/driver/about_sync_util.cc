@@ -197,6 +197,8 @@ std::string GetDisableReasonsString(int disable_reasons) {
     reason_strings.push_back("User choice");
   if (disable_reasons & syncer::SyncService::DISABLE_REASON_UNRECOVERABLE_ERROR)
     reason_strings.push_back("Unrecoverable error");
+  if (disable_reasons & syncer::SyncService::DISABLE_REASON_PAUSED)
+    reason_strings.push_back("Paused");
   return base::JoinString(reason_strings, ", ");
 }
 
@@ -204,8 +206,6 @@ std::string GetTransportStateString(syncer::SyncService::TransportState state) {
   switch (state) {
     case syncer::SyncService::TransportState::DISABLED:
       return "Disabled";
-    case syncer::SyncService::TransportState::WAITING_FOR_START_REQUEST:
-      return "Waiting for start request";
     case syncer::SyncService::TransportState::START_DEFERRED:
       return "Start deferred";
     case syncer::SyncService::TransportState::INITIALIZING:
@@ -331,7 +331,6 @@ std::unique_ptr<base::DictionaryValue> ConstructAboutInformation(
   Stat<std::string>* username = section_identity->AddStringStat("Username");
   Stat<bool>* user_is_primary = section_identity->AddBoolStat("Is Primary");
   Stat<std::string>* auth_error = section_identity->AddStringStat("Auth Error");
-  // TODO(treib): Add the *time* of the auth error?
 
   Section* section_credentials = section_list.AddSection("Credentials");
   Stat<std::string>* request_token_time =
@@ -454,7 +453,8 @@ std::unique_ptr<base::DictionaryValue> ConstructAboutInformation(
   setup_in_progress->Set(service->IsSetupInProgress());
 
   SyncStatus full_status;
-  bool is_status_valid = service->QueryDetailedSyncStatus(&full_status);
+  bool is_status_valid =
+      service->QueryDetailedSyncStatusForDebugging(&full_status);
   const SyncCycleSnapshot& snapshot = service->GetLastCycleSnapshot();
   const SyncTokenStatus& token_status = service->GetSyncTokenStatus();
 
@@ -470,7 +470,9 @@ std::unique_ptr<base::DictionaryValue> ConstructAboutInformation(
   username->Set(service->GetAuthenticatedAccountInfo().email);
   user_is_primary->Set(service->IsAuthenticatedAccountPrimary());
   std::string auth_error_str = service->GetAuthError().ToString();
-  auth_error->Set(auth_error_str.empty() ? "None" : auth_error_str);
+  auth_error->Set(base::StringPrintf(
+      "%s since %s", (auth_error_str.empty() ? "OK" : auth_error_str).c_str(),
+      GetTimeStr(service->GetAuthErrorTime(), "browser startup").c_str()));
 
   // Credentials.
   request_token_time->Set(GetTimeStr(token_status.token_request_time, "n/a"));
@@ -620,8 +622,9 @@ std::unique_ptr<base::DictionaryValue> ConstructAboutInformation(
                        base::Value(unrecoverable_error_message));
   }
 
-  about_info->SetKey("type_status", base::Value::FromUniquePtrValue(
-                                        service->GetTypeStatusMap()));
+  about_info->SetKey(
+      "type_status",
+      base::Value::FromUniquePtrValue(service->GetTypeStatusMapForDebugging()));
 
   return about_info;
 }

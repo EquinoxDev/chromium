@@ -181,14 +181,13 @@
 <translation id="6810143991807788455">বর্তমান সেটিংসের প্রতিবেদন করার মাধ্যম Chromium-কে আরও উন্নত করতে সহায়তা করুন</translation>
 <translation id="6857782730669500492">Chromium - <ph name="PAGE_TITLE" /></translation>
 <translation id="6863361426438995919">Google Pay (Chromium এ কপি করা হয়েছে)</translation>
-<translation id="6877899728743402439">আপনার সিস্টেম অ্যাডমিনিস্ট্রেটর Chromium-কে অন্য ব্রাউজার খোলার জন্য কনফিগার করেছেন।</translation>
 <translation id="6893813176749746474"> Chromium আপডেট করা হয়েছে৷ কিন্তু আপনি এটি অন্ততঃপক্ষে 30 দিন ব্যবহার করতে পারবেন না৷</translation>
 <translation id="6964305034639999644">Chromium ছদ্ম&amp;বেশী উইন্ডোতে লিঙ্কটি খুলুন</translation>
 <translation id="6970811910055250180">আপনার ডিভাইস আপডেট করা হচ্ছে ...</translation>
 <translation id="6990124437352146030">এই সাইটটির জন্য Chromium কে আপনার মাইক্রোফোনে অ্যাক্সেস দিতে হবে</translation>
 <translation id="705851970750939768">Chromium আপডেট করুন</translation>
 <translation id="7066436765290594559">Chromium OS আপনার ডেটা সিঙ্ক করতে পারেনি৷ দয়া করে আপনার সিঙ্ক পাসফ্রেজ আপডেট করুন৷</translation>
-<translation id="7162152143154757523">Chromium আপনাকে Google অনুসন্ধানে ব্যবহৃত একই বানান-পরীক্ষণের প্রযুক্তি ব্যবহার করার অনুমতি দেয়, আপনি Google সার্ভার থেকে ব্রাউজারে টাইপ করেন তা পাঠিয়ে আরও স্মার্ট বানান-পরীক্ষণ সরবরাহ করতে পারে৷</translation>
+<translation id="7067091210845072982">কোনও ছবিতে যদি প্রয়োজনীয় বিবরণ দেওয়া না থাকে, তাহলে Chromium আপনাকে একটি বিবরণ দেওয়ার চেষ্টা করবে। বিবরণ তৈরির জন্য, Google-এ ছবি পাঠানো হয়।</translation>
 <translation id="7196312274710523067">Chromium চালু করা যায়নি। আবার চেষ্টা করুন।</translation>
 <translation id="7205698830395646142">Chromium মেনুর মধ্যে লুকান</translation>
 <translation id="7223968959479464213">টাস্ক ম্যানেজার - Chromium</translation>
@@ -207,6 +206,7 @@ Chromium আপনার সেটিংস পুনরুদ্ধার ক�
 <ph name="BEGIN_LINK_2" />আরো জানুন<ph name="END_LINK_2" />
 
 অতিরিক্ত নির্দেশাবলীর জন্য অনুগ্রহ করে <ph name="ACCOUNT_EMAIL" />-এ গিয়ে আপনার ইমেল দেখুন।</translation>
+<translation id="7349591376906416160"><ph name="TARGET_URL_HOSTNAME" /> অ্যাক্সেস করতে <ph name="ALTERNATIVE_BROWSER_NAME" /> ব্যবহার করার জন্য আপনার সিস্টেম অ্যাডমিনিস্ট্রেটর Chromium কনফিগার করেছে।</translation>
 <translation id="7448255348454382571">Chromium OS রিস্টার্ট করুন</translation>
 <translation id="7449453770951226939"><ph name="PAGE_TITLE" /> - Chromium Dev</translation>
 <translation id="7451052299415159299">এই সাইটটির জন্য Chromium কে আপনার ক্যামেরায় অ্যাক্সেস দিতে হবে</translation>
@@ -233,6 +233,7 @@ Chromium আপনার সেটিংস পুনরুদ্ধার ক�
 <translation id="8030318113982266900">আপনার ডিভাইস <ph name="CHANNEL_NAME" /> চ্যানেলে আপডেট করা হচ্ছে...</translation>
 <translation id="81770708095080097">এই ফাইলটি বিপজ্জনক, তাই Chromium এটিকে অবরুদ্ধ করেছে।</translation>
 <translation id="8222496066431494154">আপনার ফোনে Chromium ইনস্টল করুন। আমরা আপনার অ্যাকাউন্ট ফিরিয়ে আনার ফোন নম্বরে একটি এসএমএস পাঠাব: <ph name="PHONE_NUMBER" /></translation>
+<translation id="8248265253516264921">কোনও ছবিতে যদি প্রয়োজনীয় বিবরণ দেওয়া না থাকে, তাহলে Chromium আপনাকে একটি বিবরণ দেওয়ার চেষ্টা করবে। বিবরণ তৈরির জন্য, Google-এ ছবি পাঠানো হয়। সেটিংসে গিয়ে আপনি যেকোনও সময়ে এটি বন্ধ করতে পারেন।</translation>
 <translation id="8269379391216269538">Chromium কে আরও  করে তুলতে সাহায্য করুন৷</translation>
 <translation id="8290862415967981663">এই ফাইলটি বিপজ্জনক হতে পারে, তাই Chromium এটিকে অবরুদ্ধ করেছে।</translation>
 <translation id="8330519371938183845">আপনার সব ডিভাইস জুড়ে Chromium সিঙ্ক করতে এবং নিজের মতো সাজিয়ে নিতে সাইন-ইন করুন</translation>
@@ -267,6 +268,7 @@ Chromium আপনার সেটিংস পুনরুদ্ধার ক�
 <translation id="9089354809943900324">Chromium পুরানো হয়ে গেছে</translation>
 <translation id="91086099826398415">নতুন Chromium &amp;ট্যাবে লিঙ্ক খুলুন</translation>
 <translation id="911206726377975832">আপনার ব্রাউজিং ডেটাও মুছে দেবেন?</translation>
+<translation id="9158494823179993217"><ph name="TARGET_URL_HOSTNAME" /> অ্যাক্সেস করতে অন্য ব্রাউজার খোলার জন্য আপনার সিস্টেম অ্যাডমিনিস্ট্রেটর Chromium কনফিগার করেছেন।</translation>
 <translation id="918373042641772655"><ph name="USERNAME" /> ডিসকানেক্ট করলে তা আপনার ইতিহাস, বুকমার্ক, সেটিংস এবং এই ডিভাইসে সঞ্চিত অন্যান্য Chromium ডেটা মুছে দেবে। আপনার Google অ্যাকাউন্টে সঞ্চিত ডেটা সাফ করা হবে না এবং <ph name="GOOGLE_DASHBOARD_LINK" />Google ড্যাশবোর্ড <ph name="END_GOOGLE_DASHBOARD_LINK" />-এ তা পরিচালনা করা যেতে পারে।</translation>
 <translation id="9190841055450128916">Chromium (mDNS-In)</translation>
 <translation id="9197815481970649201">আপনি এখন Chromium এ প্রবেশ করেছেন</translation>

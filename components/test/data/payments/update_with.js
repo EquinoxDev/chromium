@@ -13,11 +13,22 @@ function buildPaymentRequest() {
     return new PaymentRequest(
         [{supportedMethods: 'basic-card'}], {
           total: {label: 'Total', amount: {currency: 'USD', value: '5.00'}},
+          displayItems: [
+            {label: 'Item1', amount: {currency: 'USD', value: '2.00'}},
+            {label: 'Item2', amount: {currency: 'USD', value: '3.00'}},
+          ],
           shippingOptions: [{
             selected: true,
             id: 'freeShipping',
             label: 'Free shipping',
             amount: {currency: 'USD', value: '0.00'},
+          }],
+          modifiers: [{
+            supportedMethods: 'basic-card',
+            additionalDisplayItems: [{
+              label: 'Discount',
+              amount: {currency: 'USD', value: '0.00'},
+            }],
           }],
         },
         {requestShipping: true});
@@ -79,6 +90,26 @@ function updateWithTotal() {  // eslint-disable-line no-unused-vars
 }
 
 /**
+ * Calls updateWith() with displayItems
+ */
+function updateWithDisplayItems() {  // eslint-disable-line no-unused-vars
+  var pr = buildPaymentRequest();
+  var updatedDetails = {
+    displayItems: [
+      {label: 'Item1', amount: {currency: 'USD', value: '3.00'}},
+      {label: 'Item2', amount: {currency: 'USD', value: '2.00'}},
+    ],
+  };
+  pr.addEventListener('shippingaddresschange', function(e) {
+    e.updateWith(updatedDetails);
+  });
+  pr.addEventListener('shippingoptionchange', function(e) {
+    e.updateWith(updatedDetails);
+  });
+  showPaymentRequest(pr);
+}
+
+/**
  * Calls updateWith() with shipping options
  */
 function updateWithShippingOptions() {  // eslint-disable-line no-unused-vars
@@ -96,6 +127,50 @@ function updateWithShippingOptions() {  // eslint-disable-line no-unused-vars
   });
   pr.addEventListener('shippingoptionchange', function(e) {
     e.updateWith(updatedDetails);
+  });
+  showPaymentRequest(pr);
+}
+
+/**
+ * Calls updateWith() with modifiers
+ */
+function updateWithModifiers() {  // eslint-disable-line no-unused-vars
+  var pr = buildPaymentRequest();
+  var updatedDetails = {
+    modifiers: [{
+      supportedMethods: 'basic-card',
+      total: {
+        label: 'Modifier total',
+        amount: {currency: 'USD', value: '4.00'},
+      },
+      additionalDisplayItems: [{
+        label: 'Discount',
+        amount: {currency: 'USD', value: '-1.00'},
+      }],
+    }],
+  };
+  pr.addEventListener('shippingaddresschange', function(e) {
+    e.updateWith(updatedDetails);
+  });
+  pr.addEventListener('shippingoptionchange', function(e) {
+    e.updateWith(updatedDetails);
+  });
+  showPaymentRequest(pr);
+}
+
+/**
+ * Calls updateWith() with an error.
+ */
+function updateWithError() {  // eslint-disable-line no-unused-vars
+  var pr = buildPaymentRequest();
+  var errorDetails = {
+    error: 'This is an error for a browsertest',
+  };
+  pr.addEventListener('shippingaddresschange', function(e) {
+    e.updateWith(errorDetails);
+  });
+  pr.addEventListener('shippingoptionchange', function(e) {
+    e.updateWith(errorDetails);
   });
   showPaymentRequest(pr);
 }

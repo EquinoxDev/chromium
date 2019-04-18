@@ -11,13 +11,14 @@
 #include "base/containers/flat_map.h"
 #include "base/macros.h"
 #include "base/memory/ref_counted.h"
+#include "base/sequence_checker.h"
 #include "chrome/browser/conflicts/installed_applications_win.h"
 #include "chrome/browser/conflicts/module_database_observer_win.h"
 #include "chrome/browser/conflicts/proto/module_list.pb.h"
 
-struct CertificateInfo;
 class ModuleListFilter;
 class PrefRegistrySimple;
+struct CertificateInfo;
 
 // Maintains a list of incompatible applications that are installed on the
 // machine. These applications cause unwanted DLLs to be loaded into Chrome.
@@ -37,6 +38,9 @@ class IncompatibleApplicationsUpdater : public ModuleDatabaseObserver {
     kUnknown = 0,
     // A shell extension or IME that is not loaded in the process yet.
     kNotLoaded,
+    // A module that is loaded into a process type where third-party modules are
+    // explicitly allowed.
+    kAllowedInProcessType,
     // Input method editors are allowed.
     kAllowedIME,
     // Shell extensions are unwanted, but does not cause trigger a warning.
@@ -53,6 +57,9 @@ class IncompatibleApplicationsUpdater : public ModuleDatabaseObserver {
     kAllowedMicrosoft,
     // Explicitly whitelisted by the Module List component.
     kAllowedWhitelisted,
+    // Module analysis was interrupted using DisableModuleAnalysis(). No warning
+    // will be emitted for that module.
+    kNotAnalyzed,
     // This module is already going to be blocked on next browser launch, so
     // don't warn about it.
     kAddedToBlacklist,
@@ -83,13 +90,15 @@ class IncompatibleApplicationsUpdater : public ModuleDatabaseObserver {
       ModuleDatabaseEventSource* module_database_event_source,
       const CertificateInfo& exe_certificate_info,
       scoped_refptr<ModuleListFilter> module_list_filter,
-      const InstalledApplications& installed_applications);
+      const InstalledApplications& installed_applications,
+      bool module_analysis_disabled);
   ~IncompatibleApplicationsUpdater() override;
 
   static void RegisterLocalStatePrefs(PrefRegistrySimple* registry);
 
-  // Returns true if the tracking of incompatible applications is enabled. Note
-  // that this is a Windows 10+ feature only.
+  // Returns true if the tracking of incompatible applications is enabled. Can
+  // be called on any thread. Notably does not check the
+  // ThirdPartyBlockingEnabled group policy.
   static bool IsWarningEnabled();
 
   // Returns true if the cache contains at least one incompatible application.
@@ -111,6 +120,10 @@ class IncompatibleApplicationsUpdater : public ModuleDatabaseObserver {
   ModuleWarningDecision GetModuleWarningDecision(
       const ModuleInfoKey& module_key) const;
 
+  // Disables the analysis of newly found modules. This is a one way switch that
+  // will apply until Chrome is restarted.
+  void DisableModuleAnalysis();
+
  private:
   ModuleDatabaseEventSource* const module_database_event_source_;
 
@@ -127,6 +140,12 @@ class IncompatibleApplicationsUpdater : public ModuleDatabaseObserver {
   // Holds the warning decision for all known modules.
   base::flat_map<ModuleInfoKey, ModuleWarningDecision>
       module_warning_decisions_;
+
+  // Indicates if the analysis of newly found modules is disabled. Used as a
+  // workaround for https://crbug.com/892294.
+  bool module_analysis_disabled_;
+
+  SEQUENCE_CHECKER(sequence_checker_);
 
   DISALLOW_COPY_AND_ASSIGN(IncompatibleApplicationsUpdater);
 };

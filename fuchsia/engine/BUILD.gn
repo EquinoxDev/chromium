@@ -5,32 +5,13 @@
 assert(is_fuchsia)
 
 import("//build/config/fuchsia/rules.gni")
+import("//build/config/fuchsia/symbol_archive.gni")
 import("//mojo/public/tools/bindings/mojom.gni")
 import("//testing/test.gni")
 import("//tools/grit/repack.gni")
 
 config("web_engine_implementation") {
   defines = [ "WEB_ENGINE_IMPLEMENTATION" ]
-}
-
-source_set("test_support") {
-  testonly = true
-  sources = [
-    "test/fake_context.cc",
-    "test/fake_context.h",
-    "test/test_common.cc",
-    "test/test_common.h",
-  ]
-  deps = [
-    "//base",
-    "//base/test:test_config",
-    "//content/test:test_support",
-    "//fuchsia/base",
-  ]
-  public_deps = [
-    "//fuchsia:web_fidl",
-    "//skia/public/interfaces",
-  ]
 }
 
 mojom("mojom") {
@@ -90,12 +71,15 @@ component("web_engine_core") {
     "//content/public/child",
     "//content/public/common",
     "//content/public/renderer",
+    "//fuchsia:web_fidl",
     "//fuchsia/base",
+    "//fuchsia/base:modular",
     "//mojo/public/cpp/bindings",
     "//services/network/public/cpp",
     "//services/service_manager/sandbox",
     "//skia/public/interfaces",
     "//third_party/blink/public/common",
+    "//third_party/fuchsia-sdk/sdk:web",
     "//ui/aura",
     "//ui/base/ime",
     "//ui/display",
@@ -110,9 +94,6 @@ component("web_engine_core") {
   data = [
     "$root_out_dir/webrunner.pak",
   ]
-  public_deps = [
-    "//fuchsia:web_fidl",
-  ]
   configs += [ ":web_engine_implementation" ]
   sources = [
     "browser/context_impl.cc",
@@ -123,39 +104,54 @@ component("web_engine_core") {
     "browser/frame_impl.h",
     "browser/message_port_impl.cc",
     "browser/message_port_impl.h",
+    "browser/web_engine_browser_context.cc",
+    "browser/web_engine_browser_context.h",
+    "browser/web_engine_browser_main.cc",
+    "browser/web_engine_browser_main.h",
+    "browser/web_engine_browser_main_parts.cc",
+    "browser/web_engine_browser_main_parts.h",
+    "browser/web_engine_content_browser_client.cc",
+    "browser/web_engine_content_browser_client.h",
     "browser/web_engine_devtools_manager_delegate.cc",
     "browser/web_engine_devtools_manager_delegate.h",
-    "browser/webrunner_browser_context.cc",
-    "browser/webrunner_browser_context.h",
-    "browser/webrunner_browser_main.cc",
-    "browser/webrunner_browser_main.h",
-    "browser/webrunner_browser_main_parts.cc",
-    "browser/webrunner_browser_main_parts.h",
-    "browser/webrunner_content_browser_client.cc",
-    "browser/webrunner_content_browser_client.h",
-    "browser/webrunner_net_log.cc",
-    "browser/webrunner_net_log.h",
-    "browser/webrunner_screen.cc",
-    "browser/webrunner_screen.h",
-    "browser/webrunner_url_request_context_getter.cc",
-    "browser/webrunner_url_request_context_getter.h",
+    "browser/web_engine_net_log.cc",
+    "browser/web_engine_net_log.h",
+    "browser/web_engine_screen.cc",
+    "browser/web_engine_screen.h",
+    "browser/web_engine_url_request_context_getter.cc",
+    "browser/web_engine_url_request_context_getter.h",
     "common.cc",
     "common.h",
     "context_provider_impl.cc",
     "context_provider_impl.h",
     "context_provider_main.cc",
     "context_provider_main.h",
+    "legacy_context_bridge.cc",
+    "legacy_context_bridge.h",
+    "legacy_context_provider_bridge.cc",
+    "legacy_context_provider_bridge.h",
+    "legacy_frame_bridge.cc",
+    "legacy_frame_bridge.h",
+    "legacy_message_port_bridge.cc",
+    "legacy_message_port_bridge.h",
+    "legacy_navigation_controller_bridge.cc",
+    "legacy_navigation_controller_bridge.h",
+    "legacy_navigation_event_listener_bridge.cc",
+    "legacy_navigation_event_listener_bridge.h",
     "renderer/on_load_script_injector.cc",
     "renderer/on_load_script_injector.h",
-    "renderer/webrunner_content_renderer_client.cc",
-    "renderer/webrunner_content_renderer_client.h",
+    "renderer/web_engine_content_renderer_client.cc",
+    "renderer/web_engine_content_renderer_client.h",
+    "web_engine_content_client.cc",
+    "web_engine_content_client.h",
     "web_engine_export.h",
-    "webrunner_content_client.cc",
-    "webrunner_content_client.h",
-    "webrunner_main_delegate.cc",
-    "webrunner_main_delegate.h",
+    "web_engine_main_delegate.cc",
+    "web_engine_main_delegate.h",
   ]
-  visibility = [ ":*" ]
+  visibility = [
+    ":*",
+    "//fuchsia/runners:cast_runner_browsertests__exec",
+  ]
 }
 
 executable("web_engine_exe") {
@@ -166,7 +162,7 @@ executable("web_engine_exe") {
     "//services/service_manager/embedder:embedder_switches",
   ]
   sources = [
-    "webrunner_main.cc",
+    "web_engine_main.cc",
   ]
   visibility = [ ":*" ]
 }
@@ -190,9 +186,9 @@ fuchsia_package_runner("web_engine_runner") {
 source_set("browsertest_core") {
   testonly = true
   sources = [
-    "test/webrunner_browser_test.cc",
-    "test/webrunner_browser_test.h",
-    "test/webrunner_test_launcher.cc",
+    "test/web_engine_browser_test.cc",
+    "test/web_engine_browser_test.h",
+    "test/web_engine_test_launcher.cc",
   ]
   deps = [
     ":web_engine_core",
@@ -201,6 +197,7 @@ source_set("browsertest_core") {
     "//fuchsia:web_fidl",
     "//net:test_support",
     "//testing/gtest",
+    "//third_party/fuchsia-sdk/sdk:web",
     "//ui/ozone",
   ]
 }
@@ -208,7 +205,9 @@ source_set("browsertest_core") {
 test("web_engine_browsertests") {
   sources = [
     "browser/context_impl_browsertest.cc",
+    "browser/context_impl_legacy_browsertest.cc",
     "browser/frame_impl_browsertest.cc",
+    "browser/frame_impl_legacy_browsertest.cc",
   ]
   defines = [ "HAS_OUT_OF_PROC_TEST_RUNNER" ]
   data = [
@@ -216,7 +215,6 @@ test("web_engine_browsertests") {
   ]
   deps = [
     ":browsertest_core",
-    ":test_support",
     ":web_engine_core",
     "//base/test:test_support",
     "//content/public/browser",
@@ -225,20 +223,36 @@ test("web_engine_browsertests") {
     "//net:test_support",
     "//testing/gmock",
     "//testing/gtest",
+    "//third_party/fuchsia-sdk/sdk:scenic_cpp",
     "//ui/ozone",
   ]
 }
 
 test("web_engine_unittests") {
   sources = [
+    "context_provider_impl_legacy_unittest.cc",
     "context_provider_impl_unittest.cc",
+    "fake_context.cc",
+    "fake_context.h",
   ]
   deps = [
-    ":test_support",
     ":web_engine_core",
     "//base/test:run_all_unittests",
     "//base/test:test_support",
+    "//fuchsia:web_fidl",
     "//testing/gmock",
     "//testing/gtest",
+    "//third_party/fuchsia-sdk/sdk:web",
   ]
 }
+
+if (is_official_build) {
+  symbol_archive("symbol_archive") {
+    deps = [
+      ":web_engine",
+    ]
+    ids_txt = "$root_gen_dir/fuchsia/engine/chromium/ids.txt"
+    archive_name =
+        "$root_gen_dir/fuchsia/engine/chromium/chromium.symbols.tar.bz2"
+  }
+}  # is_official_build

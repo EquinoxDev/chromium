@@ -15,7 +15,6 @@
 #include "cc/layers/video_frame_provider_client_impl.h"
 #include "cc/layers/video_layer.h"
 #include "content/child/child_process.h"
-#include "content/renderer/media/stream/media_stream_video_track.h"
 #include "content/renderer/media/stream/webmediaplayer_ms_compositor.h"
 #include "content/renderer/media/web_media_element_source_utils.h"
 #include "content/renderer/media/webrtc_logging.h"
@@ -39,6 +38,7 @@
 #include "third_party/blink/public/platform/web_rect.h"
 #include "third_party/blink/public/platform/web_size.h"
 #include "third_party/blink/public/platform/web_surface_layer_bridge.h"
+#include "third_party/blink/public/web/modules/mediastream/media_stream_video_track.h"
 #include "third_party/blink/public/web/web_local_frame.h"
 
 namespace {
@@ -484,7 +484,7 @@ void WebMediaPlayerMS::ReloadVideo() {
       web_stream_.VideoTracks();
 
   RendererReloadAction renderer_action = RendererReloadAction::KEEP_RENDERER;
-  if (video_tracks.IsEmpty()) {
+  if (video_tracks.empty()) {
     if (video_frame_provider_)
       renderer_action = RendererReloadAction::REMOVE_RENDERER;
     current_video_track_id_ = blink::WebString();
@@ -535,7 +535,7 @@ void WebMediaPlayerMS::ReloadAudio() {
       web_stream_.AudioTracks();
 
   RendererReloadAction renderer_action = RendererReloadAction::KEEP_RENDERER;
-  if (audio_tracks.IsEmpty()) {
+  if (audio_tracks.empty()) {
     if (audio_renderer_)
       renderer_action = RendererReloadAction::REMOVE_RENDERER;
     current_audio_track_id_ = blink::WebString();
@@ -658,11 +658,11 @@ void WebMediaPlayerMS::OnRequestPictureInPicture() {
 
 void WebMediaPlayerMS::SetSinkId(
     const blink::WebString& sink_id,
-    std::unique_ptr<blink::WebSetSinkIdCallbacks> web_callback) {
+    blink::WebSetSinkIdCompleteCallback completion_callback) {
   DVLOG(1) << __func__;
   DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
   media::OutputDeviceStatusCB callback =
-      media::ConvertToOutputDeviceStatusCB(std::move(web_callback));
+      media::ConvertToOutputDeviceStatusCB(std::move(completion_callback));
   if (audio_renderer_) {
     audio_renderer_->SwitchOutputDevice(sink_id.Utf8(), std::move(callback));
   } else {
@@ -908,6 +908,10 @@ void WebMediaPlayerMS::OnPlay() {
 
 void WebMediaPlayerMS::OnPause() {
   // TODO(perkj, magjed): See TODO in OnPlay().
+}
+
+void WebMediaPlayerMS::OnMuted(bool muted) {
+  client_->RequestMuted(muted);
 }
 
 void WebMediaPlayerMS::OnSeekForward(double seconds) {

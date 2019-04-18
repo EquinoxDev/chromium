@@ -39,10 +39,10 @@ class URLLoaderFactoryBundleInfo;
 namespace content {
 
 class AppCacheNavigationHandle;
+class ServiceWorkerObjectHost;
 class SharedWorkerContentSettingsProxyImpl;
 class SharedWorkerInstance;
 class SharedWorkerServiceImpl;
-struct SubresourceLoaderParams;
 
 // The SharedWorkerHost is the interface that represents the browser side of
 // the browser <-> worker communication channel. This is owned by
@@ -70,16 +70,13 @@ class CONTENT_EXPORT SharedWorkerHost
 
   // Starts the SharedWorker in the renderer process.
   //
-  // S13nServiceWorker:
   // |service_worker_provider_info| is sent to the renderer process and contains
   // information about its ServiceWorkerProviderHost, the browser-side host for
   // supporting the shared worker as a service worker client.
   //
-  // S13nServiceWorker (non-NetworkService):
   // |main_script_loader_factory| is sent to the renderer process and is to be
-  // used to request the shared worker's main script. Currently it's only
-  // non-null when S13nServiceWorker is enabled but NetworkService is disabled,
-  // to allow service worker machinery to observe the request.
+  // used to request the shared worker's main script. This is null when
+  // NetworkService is enabled in favor of |main_script_load_params|.
   //
   // NetworkService (PlzWorker):
   // |main_script_load_params| is sent to the renderer process and to be used to
@@ -93,14 +90,12 @@ class CONTENT_EXPORT SharedWorkerHost
   // loader factory can't load.
   //
   // NetworkService (PlzWorker):
-  // |subresource_loader_params| contains information about the default loader
-  // factory for |subresource_loader_factories_| and the service worker
-  // controller. The default loader factory can be associated with some request
-  // interceptor like AppCacheRequestHandler. This is only non-null when
+  // |controller| contains information about the service worker controller. Once
+  // a ServiceWorker object about the controller is prepared, it is registered
+  // to |controller_service_worker_object_host|. These can be non-null only when
   // NetworkService is enabled.
-  // When S13nServiceWorker is enabled but NetworkService is disabled, the
-  // default network loader factory is created by the RenderFrameHost, and
-  // service worker controller is sent via ServiceWorkerContainer#SetController.
+  // When NetworkService is disabled, the service worker controller is sent via
+  // ServiceWorkerContainer#SetController.
   void Start(
       blink::mojom::SharedWorkerFactoryPtr factory,
       blink::mojom::ServiceWorkerProviderInfoForWorkerPtr
@@ -110,11 +105,15 @@ class CONTENT_EXPORT SharedWorkerHost
       blink::mojom::WorkerMainScriptLoadParamsPtr main_script_load_params,
       std::unique_ptr<blink::URLLoaderFactoryBundleInfo>
           subresource_loader_factories,
-      base::Optional<SubresourceLoaderParams> subresource_loader_params);
+      blink::mojom::ControllerServiceWorkerInfoPtr controller,
+      base::WeakPtr<ServiceWorkerObjectHost>
+          controller_service_worker_object_host);
 
   void AllowFileSystem(const GURL& url,
                        base::OnceCallback<void(bool)> callback);
   void AllowIndexedDB(const GURL& url, base::OnceCallback<void(bool)> callback);
+  void AllowCacheStorage(const GURL& url,
+                         base::OnceCallback<void(bool)> callback);
 
   // Terminates the given worker, i.e. based on a UI action.
   void TerminateWorker();

@@ -9,7 +9,8 @@
 #include "ash/assistant/ui/assistant_view_delegate.h"
 #include "ash/assistant/ui/base/assistant_button.h"
 #include "ash/assistant/ui/dialog_plate/dialog_plate.h"
-#include "ash/assistant/ui/logo_view/base_logo_view.h"
+#include "ash/assistant/ui/dialog_plate/mic_view.h"
+#include "ash/assistant/ui/logo_view/logo_view.h"
 #include "ash/assistant/util/animation_util.h"
 #include "ash/resources/vector_icons/vector_icons.h"
 #include "ash/strings/grit/ash_strings.h"
@@ -23,7 +24,6 @@
 #include "ui/gfx/paint_vector_icon.h"
 #include "ui/views/border.h"
 #include "ui/views/controls/button/image_button.h"
-#include "ui/views/controls/separator.h"
 #include "ui/views/controls/textfield/textfield.h"
 #include "ui/views/focus/focus_manager.h"
 #include "ui/views/layout/box_layout.h"
@@ -34,15 +34,11 @@ namespace app_list {
 namespace {
 
 // Appearance.
-// TODO(wutao): need to be finalized.
-constexpr int kDialogLeftPaddingDip = 16;
-constexpr int kDialogRightPaddingDip = 16;
-constexpr int kSmallIconSizeDip = 18;
 constexpr int kIconSizeDip = 24;
 constexpr int kButtonSizeDip = 32;
-constexpr int kPreferredHeightDip = 48;
-constexpr int kSeparatorPaddingDip = 18;
-constexpr SkColor kSeparatorColor = SkColorSetA(SK_ColorBLACK, 0x1F);
+constexpr int kPaddingBottomDip = 8;
+constexpr int kPaddingHorizontalDip = 16;
+constexpr int kPaddingTopDip = 12;
 
 // Animation.
 constexpr base::TimeDelta kAnimationFadeInDelay =
@@ -74,18 +70,12 @@ DialogPlate::DialogPlate(ash::AssistantViewDelegate* delegate)
 
   // The AssistantViewDelegate should outlive DialogPlate.
   delegate_->AddInteractionModelObserver(this);
+  delegate_->AddUiModelObserver(this);
 }
 
 DialogPlate::~DialogPlate() {
+  delegate_->RemoveUiModelObserver(this);
   delegate_->RemoveInteractionModelObserver(this);
-}
-
-void DialogPlate::AddObserver(ash::DialogPlateObserver* observer) {
-  observers_.AddObserver(observer);
-}
-
-void DialogPlate::RemoveObserver(ash::DialogPlateObserver* observer) {
-  observers_.RemoveObserver(observer);
 }
 
 const char* DialogPlate::GetClassName() const {
@@ -94,10 +84,6 @@ const char* DialogPlate::GetClassName() const {
 
 gfx::Size DialogPlate::CalculatePreferredSize() const {
   return gfx::Size(INT_MAX, GetHeightForWidth(INT_MAX));
-}
-
-int DialogPlate::GetHeightForWidth(int width) const {
-  return kPreferredHeightDip;
 }
 
 void DialogPlate::ButtonPressed(views::Button* sender, const ui::Event& event) {
@@ -122,9 +108,8 @@ bool DialogPlate::HandleKeyEvent(views::Textfield* textfield,
       // Only non-empty trimmed text is consider a valid contents commit.
       // Anything else will simply result in the DialogPlate being cleared.
       if (!trimmed_text.empty()) {
-        for (ash::DialogPlateObserver& observer : observers_)
-          observer.OnDialogPlateContentsCommitted(
-              base::UTF16ToUTF8(trimmed_text));
+        delegate_->OnDialogPlateContentsCommitted(
+            base::UTF16ToUTF8(trimmed_text));
       }
 
       textfield_->SetText(base::string16());
@@ -235,6 +220,17 @@ void DialogPlate::OnCommittedQueryChanged(
   query_history_iterator_->ResetToLast();
 }
 
+void DialogPlate::OnUiVisibilityChanged(
+    ash::AssistantVisibility new_visibility,
+    ash::AssistantVisibility old_visibility,
+    base::Optional<ash::AssistantEntryPoint> entry_point,
+    base::Optional<ash::AssistantExitPoint> exit_point) {
+  // When the Assistant UI is no longer visible we need to clear the dialog
+  // plate so that text does not persist across Assistant launches.
+  if (old_visibility == ash::AssistantVisibility::kVisible)
+    textfield_->SetText(base::string16());
+}
+
 void DialogPlate::RequestFocus() {
   SetFocus(delegate_->GetInteractionModel()->input_modality());
 }
@@ -259,30 +255,16 @@ void DialogPlate::InitLayout() {
   views::BoxLayout* layout_manager =
       SetLayoutManager(std::make_unique<views::BoxLayout>(
           views::BoxLayout::Orientation::kHorizontal,
-          gfx::Insets(0, kDialogLeftPaddingDip, 0, kDialogRightPaddingDip)));
+          gfx::Insets(kPaddingTopDip, kPaddingHorizontalDip, kPaddingBottomDip,
+                      kPaddingHorizontalDip)));
 
   layout_manager->set_cross_axis_alignment(
       views::BoxLayout::CrossAxisAlignment::CROSS_AXIS_ALIGNMENT_CENTER);
 
-  // Back button.
-  back_button_ = ash::AssistantButton::Create(
-      this, ash::kShelfBackIcon, kButtonSizeDip, kSmallIconSizeDip,
-      IDS_ASH_ASSISTANT_DIALOG_PLATE_BACK_ACCNAME,
-      ash::AssistantButtonId::kBackInLauncher);
-  AddChildView(back_button_);
-
-  // Vertical separator.
-  views::Separator* separator = new views::Separator();
-  separator->SetPreferredHeight(kIconSizeDip);
-  separator->SetColor(kSeparatorColor);
-  separator->SetBorder(views::CreateEmptyBorder(0, kSeparatorPaddingDip / 2, 0,
-                                                kSeparatorPaddingDip / 2));
-  AddChildView(separator);
-
   // Molecule icon.
-  molecule_icon_ = ash::BaseLogoView::Create();
+  molecule_icon_ = ash::LogoView::Create();
   molecule_icon_->SetPreferredSize(gfx::Size(kIconSizeDip, kIconSizeDip));
-  molecule_icon_->SetState(ash::BaseLogoView::State::kMoleculeWavy,
+  molecule_icon_->SetState(ash::LogoView::State::kMoleculeWavy,
                            /*animate=*/false);
   AddChildView(molecule_icon_);
 
@@ -364,14 +346,24 @@ void DialogPlate::InitVoiceLayoutContainer() {
   layout_manager->set_cross_axis_alignment(
       views::BoxLayout::CrossAxisAlignment::CROSS_AXIS_ALIGNMENT_CENTER);
 
+  // Offset.
+  // To make the |animated_voice_input_toggle_| horizontally centered in the
+  // dialog plate we need to offset by the difference in width between the
+  // |molecule_icon_| and the |keyboard_input_toggle_|.
+  constexpr int difference =
+      /*keyboard_input_toggle_width=*/kButtonSizeDip -
+      /*molecule_icon_width=*/kIconSizeDip;
+  views::View* offset = new views::View();
+  offset->SetPreferredSize(gfx::Size(difference, 1));
+  voice_layout_container_->AddChildView(offset);
+
   // Spacer.
   views::View* spacer = new views::View();
   voice_layout_container_->AddChildView(spacer);
-
   layout_manager->SetFlexForView(spacer, 1);
 
   // Animated voice input toggle.
-  animated_voice_input_toggle_ = new ash::ActionView(
+  animated_voice_input_toggle_ = new ash::MicView(
       this, delegate_, ash::AssistantButtonId::kVoiceInputToggle);
   animated_voice_input_toggle_->SetAccessibleName(
       l10n_util::GetStringUTF16(IDS_ASH_ASSISTANT_DIALOG_PLATE_MIC_ACCNAME));
@@ -380,23 +372,7 @@ void DialogPlate::InitVoiceLayoutContainer() {
   // Spacer.
   spacer = new views::View();
   voice_layout_container_->AddChildView(spacer);
-
   layout_manager->SetFlexForView(spacer, 1);
-
-  // Spacer.
-  // To make the mic icon in the center of the |assistant_page_view_|
-  // compensate for the width of back icon, separator, molecule icon, keyboard
-  // input toggle, and paddings.
-  spacer = new views::View();
-  constexpr int spacing =
-      /*dialog_plate_padding=*/kDialogLeftPaddingDip - kDialogRightPaddingDip +
-      /*back_button_width=*/kButtonSizeDip +
-      /*separator_padding=*/kSeparatorPaddingDip +
-      /*separator_thickness=*/1 +
-      /*molecule_icon_width=*/kIconSizeDip -
-      /*keyboard_input_toggle_width*/ kButtonSizeDip;
-  spacer->SetPreferredSize(gfx::Size(spacing, 1));
-  voice_layout_container_->AddChildView(spacer);
 
   // Keyboard input toggle.
   keyboard_input_toggle_ = ash::AssistantButton::Create(
@@ -409,9 +385,7 @@ void DialogPlate::InitVoiceLayoutContainer() {
 }
 
 void DialogPlate::OnButtonPressed(ash::AssistantButtonId id) {
-  for (ash::DialogPlateObserver& observer : observers_)
-    observer.OnDialogPlateButtonPressed(id);
-
+  delegate_->OnDialogPlateButtonPressed(id);
   textfield_->SetText(base::string16());
 }
 
@@ -452,17 +426,9 @@ void DialogPlate::SetFocus(ash::InputModality input_modality) {
       textfield_->RequestFocus();
       break;
     case ash::InputModality::kVoice:
+      animated_voice_input_toggle_->RequestFocus();
+      break;
     case ash::InputModality::kStylus:
-      // When not using |kKeyboard| input modality we need to explicitly clear
-      // focus if the focused view is |textfield_| or |voice_input_toggle_| to
-      // prevent it from being read by ChromeVox. Clearing focus also allows
-      // AssistantContainerView's focus traversal to be reset.
-      views::FocusManager* focus_manager = GetFocusManager();
-      if (focus_manager &&
-          (focus_manager->GetFocusedView() == textfield_ ||
-           focus_manager->GetFocusedView() == voice_input_toggle_)) {
-        focus_manager->ClearFocus();
-      }
       break;
   }
 }

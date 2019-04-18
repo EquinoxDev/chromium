@@ -31,13 +31,15 @@ constexpr int kChipSpacing = 8;
 
 SuggestionChipContainerView::SuggestionChipContainerView(
     ContentsView* contents_view)
-    : contents_view_(contents_view) {
+    : SearchResultContainerView(
+          contents_view != nullptr
+              ? contents_view->GetAppListMainView()->view_delegate()
+              : nullptr),
+      contents_view_(contents_view) {
   SetPaintToLayer();
   layer()->SetFillsBoundsOpaquely(false);
 
   DCHECK(contents_view);
-  view_delegate_ = contents_view_->GetAppListMainView()->view_delegate();
-
   views::BoxLayout* layout_manager =
       SetLayoutManager(std::make_unique<views::BoxLayout>(
           views::BoxLayout::Orientation::kHorizontal, gfx::Insets(),
@@ -49,7 +51,7 @@ SuggestionChipContainerView::SuggestionChipContainerView(
                              AppListConfig::instance().num_start_page_tiles());
        ++i) {
     SearchResultSuggestionChipView* chip =
-        new SearchResultSuggestionChipView(view_delegate_);
+        new SearchResultSuggestionChipView(view_delegate());
     chip->SetVisible(false);
     chip->SetIndexInSuggestionChipContainer(i);
     suggestion_chip_views_.emplace_back(chip);
@@ -63,13 +65,16 @@ int SuggestionChipContainerView::DoUpdate() {
   if (IgnoreUpdateAndLayout())
     return num_results();
 
-  auto exclude_reinstall_filter = [](const SearchResult& r) -> bool {
+  // Need to filter out kArcAppShortcut since it will be confusing to users
+  // if shortcuts are displayed as suggestion chips.
+  auto filter_reinstall_and_shortcut = [](const SearchResult& r) -> bool {
     return r.display_type() == ash::SearchResultDisplayType::kRecommendation &&
-           r.result_type() != ash::SearchResultType::kPlayStoreReinstallApp;
+           r.result_type() != ash::SearchResultType::kPlayStoreReinstallApp &&
+           r.result_type() != ash::SearchResultType::kArcAppShortcut;
   };
   std::vector<SearchResult*> display_results =
       SearchModel::FilterSearchResultsByFunction(
-          results(), base::BindRepeating(exclude_reinstall_filter),
+          results(), base::BindRepeating(filter_reinstall_and_shortcut),
           AppListConfig::instance().num_start_page_tiles());
 
   // Update search results here, but wait until layout to add them as child
@@ -138,7 +143,7 @@ bool SuggestionChipContainerView::OnKeyPressed(const ui::KeyEvent& event) {
 void SuggestionChipContainerView::DisableFocusForShowingActiveFolder(
     bool disabled) {
   for (auto* chip : suggestion_chip_views_)
-    chip->suggestion_chip_view()->SetEnabled(!disabled);
+    chip->SetEnabled(!disabled);
 
   // Ignore the container view in accessibility tree so that suggestion chips
   // will not be accessed by ChromeVox.
@@ -150,14 +155,13 @@ void SuggestionChipContainerView::DisableFocusForShowingActiveFolder(
 void SuggestionChipContainerView::OnTabletModeChanged(bool started) {
   // Enable/Disable chips' background blur based on tablet mode.
   for (auto* chip : suggestion_chip_views_)
-    chip->suggestion_chip_view()->SetBackgroundBlurEnabled(started);
+    chip->SetBackgroundBlurEnabled(started);
 }
 
 bool SuggestionChipContainerView::IgnoreUpdateAndLayout() const {
   // Ignore update and layout when this view is not shown.
   const ash::AppListState state = contents_view_->GetActiveState();
-  return state != ash::AppListState::kStateStart &&
-         state != ash::AppListState::kStateApps;
+  return state != ash::AppListState::kStateApps;
 }
 
 }  // namespace app_list

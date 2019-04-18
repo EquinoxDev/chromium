@@ -21,9 +21,9 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Captor;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
-import org.robolectric.RuntimeEnvironment;
 import org.robolectric.annotation.Config;
 
+import org.chromium.base.ContextUtils;
 import org.chromium.base.test.BaseRobolectricTestRunner;
 import org.chromium.base.test.util.Feature;
 import org.chromium.chrome.browser.ChromeFeatureList;
@@ -60,7 +60,7 @@ public class BackgroundSyncBackgroundTaskSchedulerTest {
         ChromeFeatureList.setTestFeatures(features);
         doReturn(true)
                 .when(mTaskScheduler)
-                .schedule(eq(RuntimeEnvironment.application), mTaskInfo.capture());
+                .schedule(eq(ContextUtils.getApplicationContext()), mTaskInfo.capture());
     }
 
     private void verifyFixedTaskInfoValues(TaskInfo info) {
@@ -82,12 +82,12 @@ public class BackgroundSyncBackgroundTaskSchedulerTest {
                 /* shouldLaunch= */ true,
                 /* minDelayMs= */ ONE_DAY_IN_MILLISECONDS);
         verify(mTaskScheduler, times(1))
-                .schedule(eq(RuntimeEnvironment.application), eq(mTaskInfo.getValue()));
+                .schedule(eq(ContextUtils.getApplicationContext()), eq(mTaskInfo.getValue()));
 
         TaskInfo taskInfo = mTaskInfo.getValue();
         verifyFixedTaskInfoValues(taskInfo);
 
-        assertEquals(ONE_DAY_IN_MILLISECONDS, taskInfo.getOneOffInfo().getWindowEndTimeMs());
+        assertEquals(ONE_DAY_IN_MILLISECONDS, taskInfo.getOneOffInfo().getWindowStartTimeMs());
     }
 
     @Test
@@ -97,16 +97,16 @@ public class BackgroundSyncBackgroundTaskSchedulerTest {
                 /* shouldLaunch= */ true,
                 /* minDelayMs= */ ONE_DAY_IN_MILLISECONDS);
         verify(mTaskScheduler, times(1))
-                .schedule(eq(RuntimeEnvironment.application), eq(mTaskInfo.getValue()));
+                .schedule(eq(ContextUtils.getApplicationContext()), eq(mTaskInfo.getValue()));
 
         doNothing()
                 .when(mTaskScheduler)
-                .cancel(eq(RuntimeEnvironment.application),
+                .cancel(eq(ContextUtils.getApplicationContext()),
                         eq(TaskIds.BACKGROUND_SYNC_ONE_SHOT_JOB_ID));
 
         BackgroundSyncBackgroundTaskScheduler.getInstance().cancelOneShotTask();
         verify(mTaskScheduler, times(1))
-                .cancel(eq(RuntimeEnvironment.application),
+                .cancel(eq(ContextUtils.getApplicationContext()),
                         eq(TaskIds.BACKGROUND_SYNC_ONE_SHOT_JOB_ID));
     }
 
@@ -117,19 +117,19 @@ public class BackgroundSyncBackgroundTaskSchedulerTest {
                 /* shouldLaunch= */ true,
                 /* minDelayMs= */ ONE_DAY_IN_MILLISECONDS);
         verify(mTaskScheduler, times(1))
-                .schedule(eq(RuntimeEnvironment.application), eq(mTaskInfo.getValue()));
+                .schedule(eq(ContextUtils.getApplicationContext()), eq(mTaskInfo.getValue()));
 
         TaskInfo taskInfo = mTaskInfo.getValue();
-        assertEquals(ONE_DAY_IN_MILLISECONDS, taskInfo.getOneOffInfo().getWindowEndTimeMs());
+        assertEquals(ONE_DAY_IN_MILLISECONDS, taskInfo.getOneOffInfo().getWindowStartTimeMs());
 
         BackgroundSyncBackgroundTaskScheduler.getInstance().launchBrowserIfStopped(
                 /* shouldLaunch= */ true,
                 /* minDelayMs= */ ONE_WEEK_IN_MILLISECONDS);
         verify(mTaskScheduler, times(1))
-                .schedule(eq(RuntimeEnvironment.application), eq(mTaskInfo.getValue()));
+                .schedule(eq(ContextUtils.getApplicationContext()), eq(mTaskInfo.getValue()));
 
         taskInfo = mTaskInfo.getValue();
-        assertEquals(ONE_WEEK_IN_MILLISECONDS, taskInfo.getOneOffInfo().getWindowEndTimeMs());
+        assertEquals(ONE_WEEK_IN_MILLISECONDS, taskInfo.getOneOffInfo().getWindowStartTimeMs());
     }
 
     @Test
@@ -143,9 +143,9 @@ public class BackgroundSyncBackgroundTaskSchedulerTest {
                 /* minDelayMs= */ ONE_DAY_IN_MILLISECONDS);
 
         verify(mTaskScheduler, times(1))
-                .schedule(eq(RuntimeEnvironment.application), eq(mTaskInfo.getValue()));
+                .schedule(eq(ContextUtils.getApplicationContext()), eq(mTaskInfo.getValue()));
         verify(mTaskScheduler, times(1))
-                .cancel(eq(RuntimeEnvironment.application),
+                .cancel(eq(ContextUtils.getApplicationContext()),
                         eq(TaskIds.BACKGROUND_SYNC_ONE_SHOT_JOB_ID));
     }
 }

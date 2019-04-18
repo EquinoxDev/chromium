@@ -5,8 +5,10 @@
 #include "third_party/blink/renderer/core/intersection_observer/intersection_observer.h"
 
 #include <algorithm>
+#include <limits>
 
 #include "base/macros.h"
+#include "base/numerics/clamped_math.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_intersection_observer_callback.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_intersection_observer_delegate.h"
 #include "third_party/blink/renderer/core/css/parser/css_parser_token_range.h"
@@ -20,7 +22,6 @@
 #include "third_party/blink/renderer/core/intersection_observer/element_intersection_observer_data.h"
 #include "third_party/blink/renderer/core/intersection_observer/intersection_observer_controller.h"
 #include "third_party/blink/renderer/core/intersection_observer/intersection_observer_delegate.h"
-#include "third_party/blink/renderer/core/intersection_observer/intersection_observer_entry.h"
 #include "third_party/blink/renderer/core/intersection_observer/intersection_observer_init.h"
 #include "third_party/blink/renderer/core/layout/layout_view.h"
 #include "third_party/blink/renderer/core/timing/dom_window_performance.h"
@@ -41,8 +42,12 @@ class IntersectionObserverDelegateImpl final
                                    IntersectionObserver::EventCallback callback)
       : context_(context), callback_(std::move(callback)) {}
 
+  IntersectionObserver::DeliveryBehavior GetDeliveryBehavior() const override {
+    return IntersectionObserver::kDeliverDuringPostLifecycleSteps;
+  }
+
   void Deliver(const HeapVector<Member<IntersectionObserverEntry>>& entries,
-               IntersectionObserver&) override {
+               IntersectionObserver& observer) override {
     callback_.Run(entries);
   }
 
@@ -115,10 +120,10 @@ void ParseThresholds(const DoubleOrDoubleSequence& threshold_parameter,
                      ExceptionState& exception_state) {
   if (threshold_parameter.IsDouble()) {
     thresholds.push_back(
-        MakeClampedNum<float>(threshold_parameter.GetAsDouble()));
+        base::MakeClampedNum<float>(threshold_parameter.GetAsDouble()));
   } else {
     for (auto threshold_value : threshold_parameter.GetAsDoubleSequence())
-      thresholds.push_back(MakeClampedNum<float>(threshold_value));
+      thresholds.push_back(base::MakeClampedNum<float>(threshold_value));
   }
 
   for (auto threshold_value : thresholds) {
@@ -136,6 +141,8 @@ void ParseThresholds(const DoubleOrDoubleSequence& threshold_parameter,
 }  // anonymous namespace
 
 static bool throttle_delay_enabled = true;
+const float IntersectionObserver::kMinimumThreshold =
+    std::numeric_limits<float>::min();
 
 void IntersectionObserver::SetThrottleDelayEnabledForTesting(bool enabled) {
   throttle_delay_enabled = enabled;
@@ -230,7 +237,8 @@ IntersectionObserver::IntersectionObserver(
       root_is_implicit_(root ? 0 : 1),
       track_visibility_(track_visibility ? 1 : 0),
       track_fraction_of_root_(semantics == kFractionOfRoot),
-      always_report_root_bounds_(always_report_root_bounds ? 1 : 0) {
+      always_report_root_bounds_(always_report_root_bounds ? 1 : 0),
+      needs_delivery_(0) {
   switch (root_margin.size()) {
     case 0:
       break;
@@ -293,7 +301,7 @@ void IntersectionObserver::observe(Element* target,
   if (target->isConnected()) {
     target->GetDocument()
         .EnsureIntersectionObserverController()
-        .AddTrackedTarget(*target);
+        .AddTrackedTarget(*target, track_visibility_);
     if (LocalFrameView* frame_view = target_frame->View()) {
       // The IntersectionObsever spec requires that at least one observation
       // be recorded after observe() is called, even if the frame is throttled.
@@ -331,6 +339,7 @@ void IntersectionObserver::disconnect(ExceptionState& exception_state) {
 
 HeapVector<Member<IntersectionObserverEntry>> IntersectionObserver::takeRecords(
     ExceptionState& exception_state) {
+  needs_delivery_ = 0;
   HeapVector<Member<IntersectionObserverEntry>> entries;
   for (auto& observation : observations_)
     observation->TakeRecords(entries);
@@ -369,14 +378,24 @@ DOMHighResTimeStamp IntersectionObserver::GetTimeStamp() const {
   return -1;
 }
 
-unsigned IntersectionObserver::FirstThresholdGreaterThan(float ratio) const {
-  unsigned result = 0;
-  while (result < thresholds_.size() && thresholds_[result] <= ratio)
-    ++result;
-  return result;
+void IntersectionObserver::SetNeedsDelivery() {
+  if (needs_delivery_)
+    return;
+  needs_delivery_ = 1;
+  To<Document>(GetExecutionContext())
+      ->EnsureIntersectionObserverController()
+      .ScheduleIntersectionObserverForDelivery(*this);
+}
+
+IntersectionObserver::DeliveryBehavior
+IntersectionObserver::GetDeliveryBehavior() const {
+  return delegate_->GetDeliveryBehavior();
 }
 
 void IntersectionObserver::Deliver() {
+  if (!needs_delivery_)
+    return;
+  needs_delivery_ = 0;
   HeapVector<Member<IntersectionObserverEntry>> entries;
   for (auto& observation : observations_)
     observation->TakeRecords(entries);

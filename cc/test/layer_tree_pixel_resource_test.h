@@ -15,6 +15,7 @@ enum PixelResourceTestCase {
   GPU,
   ONE_COPY,
   ZERO_COPY,
+  SKIA_GL,
 };
 
 class LayerTreeHostPixelResourceTest : public LayerTreePixelTest {
@@ -30,6 +31,10 @@ class LayerTreeHostPixelResourceTest : public LayerTreePixelTest {
                             base::FilePath file_name);
   void RunPixelResourceTest(scoped_refptr<Layer> content_root,
                             const SkBitmap& expected_bitmap);
+
+  void RunPixelResourceTestWithLayerList(scoped_refptr<Layer> root_layer,
+                                         base::FilePath file_name,
+                                         PropertyTrees* property_trees);
 
  protected:
   PixelResourceTestCase test_case_;

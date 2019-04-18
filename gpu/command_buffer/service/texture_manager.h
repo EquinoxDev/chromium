@@ -32,6 +32,10 @@ namespace gl {
 class ProgressReporter;
 }
 
+namespace media {
+class SharedImageVideo;
+}
+
 namespace gpu {
 class DecoderContext;
 class ExternalVkImageBacking;
@@ -43,6 +47,9 @@ class SharedImageBackingAHB;
 class SharedImageRepresentationGLTexture;
 class SharedImageRepresentationGLTextureAHB;
 class SharedImageRepresentationSkiaGLAHB;
+class SharedImageBackingIOSurface;
+class SharedImageRepresentationGLTextureIOSurface;
+class SharedImageRepresentationSkiaIOSurface;
 
 namespace gles2 {
 class GLStreamTextureImage;
@@ -257,7 +264,9 @@ class GPU_GLES2_EXPORT Texture final : public TextureBase {
   // Set the ImageState for the image bound to the given level.
   void SetLevelImageState(GLenum target, GLint level, ImageState state);
 
-  bool CompatibleWithSamplerUniformType(GLenum type) const;
+  bool CompatibleWithSamplerUniformType(
+      GLenum type,
+      const SamplerState& sampler_state) const;
 
   // Get the image associated with a particular level. Returns NULL if level
   // does not exist.
@@ -370,11 +379,16 @@ class GPU_GLES2_EXPORT Texture final : public TextureBase {
   friend class MailboxManagerTest;
   friend class gpu::ExternalVkImageBacking;
   friend class gpu::ExternalVkImageGlRepresentation;
+  friend class media::SharedImageVideo;
   friend class gpu::SharedImageBackingGLTexture;
   friend class gpu::SharedImageBackingFactoryGLTexture;
   friend class gpu::SharedImageBackingAHB;
   friend class gpu::SharedImageRepresentationGLTextureAHB;
   friend class gpu::SharedImageRepresentationSkiaGLAHB;
+  friend class gpu::SharedImageBackingIOSurface;
+  friend class gpu::SharedImageRepresentationGLTextureIOSurface;
+  friend class gpu::SharedImageRepresentationSkiaIOSurface;
+  friend class AbstractTextureImplOnSharedContext;
   friend class TextureDefinition;
   friend class TextureManager;
   friend class TextureRef;
@@ -1019,7 +1033,11 @@ class GPU_GLES2_EXPORT TextureManager
       case GL_SAMPLER_2D_RECT_ARB:
         return black_texture_ids_[kRectangleARB];
       default:
-        NOTREACHED();
+        // The above covers ES 2, but ES 3 has many more sampler types. Rather
+        // than create a texture for all of them, just use the 0 texture, which
+        // should always be incomplete, and rely on the driver to return black
+        // when sampling it. Hopefully ES 3 drivers are better about actually
+        // returning black when sampling an incomplete texture.
         return 0;
     }
   }
@@ -1177,7 +1195,8 @@ class GPU_GLES2_EXPORT TextureManager
       const gles2::FeatureInfo* feature_info,
       GLenum format);
   static GLenum AdjustTexInternalFormat(const gles2::FeatureInfo* feature_info,
-                                        GLenum format);
+                                        GLenum format,
+                                        GLenum type);
   static GLenum AdjustTexFormat(const gles2::FeatureInfo* feature_info,
                                 GLenum format);
 

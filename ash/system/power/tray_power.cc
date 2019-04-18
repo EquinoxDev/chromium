@@ -69,12 +69,8 @@ views::View* PowerTrayView::GetTooltipHandlerForPoint(const gfx::Point& point) {
   return GetLocalBounds().Contains(point) ? this : nullptr;
 }
 
-bool PowerTrayView::GetTooltipText(const gfx::Point& p,
-                                   base::string16* tooltip) const {
-  if (tooltip_.empty())
-    return false;
-  *tooltip = tooltip_;
-  return true;
+base::string16 PowerTrayView::GetTooltipText(const gfx::Point& p) const {
+  return tooltip_;
 }
 
 void PowerTrayView::OnPowerStatusChanged() {
@@ -109,9 +105,11 @@ void PowerTrayView::UpdateImage() {
   info_ = info;
   icon_session_state_color_ = session_state;
 
+  // Note: The icon color (both fg and bg) changes when the UI in in OOBE mode.
+  SkColor icon_fg_color = TrayIconColor(session_state);
+  SkColor icon_bg_color = SkColorSetA(icon_fg_color, kTrayIconBackgroundAlpha);
   image_view()->SetImage(PowerStatus::GetBatteryImage(
-      info, kUnifiedTrayIconSize, kTrayIconBackgroundColor,
-      TrayIconColor(session_state)));
+      info, kUnifiedTrayIconSize, icon_bg_color, icon_fg_color));
 }
 
 }  // namespace tray

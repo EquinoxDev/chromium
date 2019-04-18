@@ -55,7 +55,7 @@ class NewCdmResultPromise : public ContentDecryptionModuleResultPromise {
       return;
 
     // 2.9. Let media keys be a new MediaKeys object.
-    MediaKeys* media_keys = MediaKeys::Create(
+    auto* media_keys = MakeGarbageCollected<MediaKeys>(
         GetExecutionContext(), supported_session_types_, base::WrapUnique(cdm));
 
     // 2.10. Resolve promise with media keys.
@@ -127,13 +127,13 @@ MediaKeySystemConfiguration* MediaKeySystemAccess::getConfiguration() const {
   MediaKeySystemConfiguration* result = MediaKeySystemConfiguration::Create();
   // |initDataTypes|, |audioCapabilities|, and |videoCapabilities| can only be
   // empty if they were not present in the requested configuration.
-  if (!configuration.init_data_types.IsEmpty())
+  if (!configuration.init_data_types.empty())
     result->setInitDataTypes(
         ConvertInitDataTypes(configuration.init_data_types));
-  if (!configuration.audio_capabilities.IsEmpty())
+  if (!configuration.audio_capabilities.empty())
     result->setAudioCapabilities(
         ConvertCapabilities(configuration.audio_capabilities));
-  if (!configuration.video_capabilities.IsEmpty())
+  if (!configuration.video_capabilities.empty())
     result->setVideoCapabilities(
         ConvertCapabilities(configuration.video_capabilities));
 

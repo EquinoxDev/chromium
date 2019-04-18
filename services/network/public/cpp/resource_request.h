@@ -58,7 +58,6 @@ struct COMPONENT_EXPORT(NETWORK_CPP_BASE) ResourceRequest {
   bool is_external_request = false;
   mojom::CorsPreflightPolicy cors_preflight_policy =
       mojom::CorsPreflightPolicy::kConsiderPreflight;
-  int service_worker_provider_id = -1;
   bool originated_from_service_worker = false;
   bool skip_service_worker = false;
   mojom::FetchRequestMode fetch_request_mode = mojom::FetchRequestMode::kNoCors;
@@ -90,6 +89,7 @@ struct COMPONENT_EXPORT(NETWORK_CPP_BASE) ResourceRequest {
   net::HttpRequestHeaders custom_proxy_post_cache_headers;
   bool custom_proxy_use_alternate_proxy_list = false;
   base::Optional<base::UnguessableToken> fetch_window_id;
+  base::Optional<std::string> devtools_request_id;
 };
 
 }  // namespace network

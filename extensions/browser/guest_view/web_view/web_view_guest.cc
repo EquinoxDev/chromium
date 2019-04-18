@@ -244,8 +244,8 @@ void WebViewGuest::CleanUp(content::BrowserContext* browser_context,
   // Clean up web request event listeners for the WebView.
   base::PostTaskWithTraits(
       FROM_HERE, {content::BrowserThread::IO},
-      base::Bind(&RemoveWebViewEventListenersOnIOThread, browser_context,
-                 embedder_process_id, view_instance_id));
+      base::BindOnce(&RemoveWebViewEventListenersOnIOThread, browser_context,
+                     embedder_process_id, view_instance_id));
 
   // Clean up content scripts for the WebView.
   auto* csm = WebViewContentScriptManager::Get(browser_context);
@@ -1051,11 +1051,11 @@ bool WebViewGuest::CheckMediaAccessPermission(
       render_frame_host, security_origin, type);
 }
 
-void WebViewGuest::CanDownload(
-    const GURL& url,
-    const std::string& request_method,
-    const base::Callback<void(bool)>& callback) {
-  web_view_permission_helper_->CanDownload(url, request_method, callback);
+void WebViewGuest::CanDownload(const GURL& url,
+                               const std::string& request_method,
+                               base::OnceCallback<void(bool)> callback) {
+  web_view_permission_helper_->CanDownload(url, request_method,
+                                           std::move(callback));
 }
 
 void WebViewGuest::RequestPointerLockPermission(

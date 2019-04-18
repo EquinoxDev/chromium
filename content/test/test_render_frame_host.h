@@ -62,8 +62,9 @@ class TestRenderFrameHost : public RenderFrameHostImpl,
   TestRenderViewHost* GetRenderViewHost() override;
   MockRenderProcessHost* GetProcess() override;
   TestRenderWidgetHost* GetRenderWidgetHost() override;
-  void AddMessageToConsole(ConsoleMessageLevel level,
+  void AddMessageToConsole(blink::mojom::ConsoleMessageLevel level,
                            const std::string& message) override;
+  bool IsTestRenderFrameHost() const override;
 
   // RenderFrameHostTester implementation.
   void InitializeRenderFrameIfNeeded() override;
@@ -80,10 +81,6 @@ class TestRenderFrameHost : public RenderFrameHostImpl,
       blink::mojom::FeaturePolicyFeature feature,
       const std::vector<url::Origin>& whitelist) override;
   const std::vector<std::string>& GetConsoleMessages() override;
-
-  void SendNavigateWithReplacement(int nav_entry_id,
-                                   bool did_create_new_entry,
-                                   const GURL& url);
 
   using ModificationCallback =
       base::Callback<void(FrameHostMsg_DidCommitProvisionalLoad_Params*)>;
@@ -147,7 +144,9 @@ class TestRenderFrameHost : public RenderFrameHostImpl,
   // remove this function.
   void PrepareForCommitDeprecatedForNavigationSimulator(
       const net::IPEndPoint& remote_endpoint,
-      bool is_signed_exchange_inner_response);
+      bool is_signed_exchange_inner_response,
+      net::HttpResponseInfo::ConnectionInfo connection_info,
+      base::Optional<net::SSLInfo> ssl_info);
 
   // This method does the same as PrepareForCommit.
   // PlzNavigate: Beyond doing the same as PrepareForCommit, this method will
@@ -224,6 +223,7 @@ class TestRenderFrameHost : public RenderFrameHostImpl,
           subresource_overrides,
       blink::mojom::ControllerServiceWorkerInfoPtr
           controller_service_worker_info,
+      blink::mojom::ServiceWorkerProviderInfoForWindowPtr provider_info,
       network::mojom::URLLoaderFactoryPtr prefetch_loader_factory,
       const base::UnguessableToken& devtools_navigation_token) override;
   void SendCommitFailedNavigation(
@@ -240,15 +240,17 @@ class TestRenderFrameHost : public RenderFrameHostImpl,
  private:
   void SendNavigateWithParameters(int nav_entry_id,
                                   bool did_create_new_entry,
-                                  bool should_replace_entry,
                                   const GURL& url,
                                   ui::PageTransition transition,
                                   int response_code,
                                   const ModificationCallback& callback);
 
-  void PrepareForCommitInternal(const GURL& redirect_url,
-                                const net::IPEndPoint& remote_endpoint,
-                                bool is_signed_exchange_inner_response);
+  void PrepareForCommitInternal(
+      const GURL& redirect_url,
+      const net::IPEndPoint& remote_endpoint,
+      bool is_signed_exchange_inner_response,
+      net::HttpResponseInfo::ConnectionInfo connection_info,
+      base::Optional<net::SSLInfo> ssl_info);
 
   // Computes the page ID for a pending navigation in this RenderFrameHost;
   int32_t ComputeNextPageID();
@@ -256,7 +258,6 @@ class TestRenderFrameHost : public RenderFrameHostImpl,
   std::unique_ptr<FrameHostMsg_DidCommitProvisionalLoad_Params>
   BuildDidCommitParams(int nav_entry_id,
                        bool did_create_new_entry,
-                       bool should_replace_entry,
                        const GURL& url,
                        ui::PageTransition transition,
                        int response_code);

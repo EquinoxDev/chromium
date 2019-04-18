@@ -16,13 +16,15 @@ import android.view.MenuItem;
 
 import org.chromium.base.CommandLine;
 import org.chromium.chrome.R;
+import org.chromium.chrome.browser.datareduction.DataReductionBrandingResourceProvider;
+import org.chromium.chrome.browser.datareduction.DataReductionPromoUtils;
+import org.chromium.chrome.browser.datareduction.DataReductionProxyUma;
 import org.chromium.chrome.browser.help.HelpAndFeedback;
 import org.chromium.chrome.browser.infobar.PreviewsLitePageInfoBar;
 import org.chromium.chrome.browser.net.spdyproxy.DataReductionProxySettings;
 import org.chromium.chrome.browser.preferences.ChromeSwitchPreference;
 import org.chromium.chrome.browser.preferences.PreferenceUtils;
 import org.chromium.chrome.browser.profiles.Profile;
-import org.chromium.chrome.browser.snackbar.DataReductionPromoSnackbarController;
 import org.chromium.chrome.browser.util.IntentUtils;
 
 /**
@@ -38,8 +40,6 @@ public class DataReductionPreferenceFragment extends PreferenceFragment {
 
     private boolean mIsEnabled;
     private boolean mWasEnabledAtCreation;
-    /** Whether the current Activity is started from the snackbar promo. */
-    private boolean mFromPromo;
     private boolean mFromMainMenu;
     private boolean mFromInfobar;
 
@@ -57,8 +57,6 @@ public class DataReductionPreferenceFragment extends PreferenceFragment {
 
         setHasOptionsMenu(true);
 
-        mFromPromo = IntentUtils.safeGetBoolean(
-                getArguments(), DataReductionPromoSnackbarController.FROM_PROMO, false);
         mFromMainMenu = IntentUtils.safeGetBoolean(getArguments(), FROM_MAIN_MENU, false);
         mFromInfobar = IntentUtils.safeGetBoolean(
                 getArguments(), PreviewsLitePageInfoBar.FROM_INFOBAR, false);
@@ -74,10 +72,7 @@ public class DataReductionPreferenceFragment extends PreferenceFragment {
         }
 
         int statusChange;
-        if (mFromPromo) {
-            statusChange = mIsEnabled ? DataReductionProxyUma.ACTION_SNACKBAR_LINK_CLICKED
-                                      : DataReductionProxyUma.ACTION_SNACKBAR_LINK_CLICKED_DISABLED;
-        } else if (mFromMainMenu) {
+        if (mFromMainMenu) {
             if (mWasEnabledAtCreation) {
                 statusChange = mIsEnabled ? DataReductionProxyUma.ACTION_MAIN_MENU_ON_TO_ON
                                           : DataReductionProxyUma.ACTION_MAIN_MENU_ON_TO_OFF;

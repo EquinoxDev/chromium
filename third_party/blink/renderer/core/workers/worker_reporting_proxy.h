@@ -32,10 +32,10 @@
 #define THIRD_PARTY_BLINK_RENDERER_CORE_WORKERS_WORKER_REPORTING_PROXY_H_
 
 #include <memory>
+#include "third_party/blink/public/mojom/devtools/console_message.mojom-shared.h"
 #include "third_party/blink/renderer/bindings/core/v8/source_location.h"
 #include "third_party/blink/renderer/core/core_export.h"
 #include "third_party/blink/renderer/core/frame/web_feature_forward.h"
-#include "third_party/blink/renderer/core/inspector/console_types.h"
 #include "third_party/blink/renderer/platform/heap/handle.h"
 #include "third_party/blink/renderer/platform/wtf/forward.h"
 
@@ -56,8 +56,8 @@ class CORE_EXPORT WorkerReportingProxy {
   virtual void ReportException(const String& error_message,
                                std::unique_ptr<SourceLocation>,
                                int exception_id) {}
-  virtual void ReportConsoleMessage(MessageSource,
-                                    MessageLevel,
+  virtual void ReportConsoleMessage(mojom::ConsoleMessageSource,
+                                    mojom::ConsoleMessageLevel,
                                     const String& message,
                                     SourceLocation*) {}
 
@@ -80,11 +80,11 @@ class CORE_EXPORT WorkerReportingProxy {
   // WorkerThread::InitializeOnWorkerThread(). Only invoked when the script was
   // loaded on the worker thread, i.e., via InstalledScriptsManager rather than
   // via ResourceLoader. Called before WillEvaluateClassicScript().
-  virtual void DidLoadInstalledScript() {}
+  virtual void DidLoadClassicScript() {}
 
-  // Invoked when it's failed to load the worker's main script from
-  // InstalledScriptsManager.
-  virtual void DidFailToLoadInstalledClassicScript() {}
+  // Invoked when it's failed to load the worker's main script on the worker
+  // thread.
+  virtual void DidFailToLoadClassicScript() {}
 
   // Invoked on success to fetch the worker's main classic/module script from
   // network. This is not called when the script is loaded from

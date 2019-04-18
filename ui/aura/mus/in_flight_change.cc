@@ -58,6 +58,8 @@ std::string ChangeTypeToString(ChangeType change_type) {
       return "TRANSFORM";
     case ChangeType::VISIBLE:
       return "VISIBLE";
+    case ChangeType::SET_TRANSPARENT:
+      return "SET_TRANSPARENT";
   }
 }
 
@@ -83,12 +85,14 @@ InFlightBoundsChange::InFlightBoundsChange(
     WindowTreeClient* window_tree_client,
     WindowMus* window,
     const gfx::Rect& revert_bounds,
+    ui::WindowShowState revert_show_state,
     bool from_server,
     const base::Optional<viz::LocalSurfaceIdAllocation>&
         revert_local_surface_id_allocation)
     : InFlightChange(window, ChangeType::BOUNDS),
       window_tree_client_(window_tree_client),
       revert_bounds_(revert_bounds),
+      revert_show_state_(revert_show_state),
       from_server_(from_server),
       revert_local_surface_id_allocation_(revert_local_surface_id_allocation) {
   // Should always be created with a window.
@@ -98,17 +102,17 @@ InFlightBoundsChange::InFlightBoundsChange(
 InFlightBoundsChange::~InFlightBoundsChange() {}
 
 void InFlightBoundsChange::SetRevertValueFrom(const InFlightChange& change) {
-  from_server_ = static_cast<const InFlightBoundsChange&>(change).from_server_;
-  revert_bounds_ =
-      static_cast<const InFlightBoundsChange&>(change).revert_bounds_;
+  const auto& from = static_cast<const InFlightBoundsChange&>(change);
+  from_server_ = from.from_server_;
+  revert_bounds_ = from.revert_bounds_;
+  revert_show_state_ = from.revert_show_state_;
   revert_local_surface_id_allocation_ =
-      static_cast<const InFlightBoundsChange&>(change)
-          .revert_local_surface_id_allocation_;
+      from.revert_local_surface_id_allocation_;
 }
 
 void InFlightBoundsChange::Revert() {
   window_tree_client_->SetWindowBoundsFromServer(
-      window(), revert_bounds_, from_server_,
+      window(), revert_bounds_, revert_show_state_, from_server_,
       revert_local_surface_id_allocation_);
 }
 
@@ -162,8 +166,10 @@ void InFlightTransformChange::Revert() {
 
 // CrashInFlightChange --------------------------------------------------------
 
-CrashInFlightChange::CrashInFlightChange(WindowMus* window, ChangeType type)
-    : InFlightChange(window, type) {}
+CrashInFlightChange::CrashInFlightChange(const base::Location& from_here,
+                                         WindowMus* window,
+                                         ChangeType type)
+    : InFlightChange(window, type), location_(from_here) {}
 
 CrashInFlightChange::~CrashInFlightChange() {}
 
@@ -172,10 +178,17 @@ void CrashInFlightChange::SetRevertValueFrom(const InFlightChange& change) {
 }
 
 void CrashInFlightChange::ChangeFailed() {
-  // TODO(crbug.com/912228): remove LOG(). Used to figure out why this is being
-  // hit.
-  LOG(ERROR) << "change failed, type=" << static_cast<int>(change_type());
-  CHECK(false);
+  // TODO(crbug.com/912228, crbug.com/940620): remove LOG(). Used to figure out
+  // why this is being hit.
+  LOG(FATAL) << "change failed, type=" << ChangeTypeToString(change_type())
+             << "(" << static_cast<int>(change_type()) << ")"
+             << ", window="
+             << (window() ? window()->GetWindow()->GetName() : "(null)")
+             << ", parent="
+             << (window() && window()->GetWindow()->parent()
+                     ? window()->GetWindow()->parent()->GetName()
+                     : "(null)")
+             << ", from=" << location_.ToString();
 }
 
 void CrashInFlightChange::Revert() {
@@ -313,24 +326,6 @@ void InFlightVisibleChange::SetRevertValueFrom(const InFlightChange& change) {
 
 void InFlightVisibleChange::Revert() {
   window_tree_client_->SetWindowVisibleFromServer(window(), revert_visible_);
-}
-
-// InFlightOpacityChange -------------------------------------------------------
-
-InFlightOpacityChange::InFlightOpacityChange(WindowMus* window,
-                                             float revert_value)
-    : InFlightChange(window, ChangeType::OPACITY),
-      revert_opacity_(revert_value) {}
-
-InFlightOpacityChange::~InFlightOpacityChange() {}
-
-void InFlightOpacityChange::SetRevertValueFrom(const InFlightChange& change) {
-  revert_opacity_ =
-      static_cast<const InFlightOpacityChange&>(change).revert_opacity_;
-}
-
-void InFlightOpacityChange::Revert() {
-  window()->SetOpacityFromServer(revert_opacity_);
 }
 
 // InFlightSetModalTypeChange

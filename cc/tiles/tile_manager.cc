@@ -14,7 +14,6 @@
 #include "base/bind.h"
 #include "base/json/json_writer.h"
 #include "base/logging.h"
-#include "base/macros.h"
 #include "base/metrics/histogram.h"
 #include "base/numerics/safe_conversions.h"
 #include "base/optional.h"
@@ -44,12 +43,12 @@ const bool kUseColorEstimator = true;
 DEFINE_SCOPED_UMA_HISTOGRAM_AREA_TIMER(
     ScopedSoftwareRasterTaskTimer,
     "Compositing.%s.RasterTask.RasterUs.Software",
-    "Compositing.%s.RasterTask.RasterPixelsPerMs2.Software");
+    "Compositing.%s.RasterTask.RasterPixelsPerMs2.Software")
 
 DEFINE_SCOPED_UMA_HISTOGRAM_AREA_TIMER(
     ScopedGpuRasterTaskTimer,
     "Compositing.%s.RasterTask.RasterUs.Gpu",
-    "Compositing.%s.RasterTask.RasterPixelsPerMs2.Gpu");
+    "Compositing.%s.RasterTask.RasterPixelsPerMs2.Gpu")
 
 class ScopedRasterTaskTimer {
  public:
@@ -83,7 +82,10 @@ class DispatchingImageProvider : public ImageProvider {
       : playback_image_provider_(std::move(playback_image_provider)),
         paint_worklet_image_provider_(std::move(paint_worklet_image_provider)) {
   }
+  DispatchingImageProvider(const DispatchingImageProvider&) = delete;
   ~DispatchingImageProvider() override = default;
+
+  DispatchingImageProvider& operator=(const DispatchingImageProvider&) = delete;
 
   DispatchingImageProvider(DispatchingImageProvider&& other) = default;
 
@@ -98,8 +100,6 @@ class DispatchingImageProvider : public ImageProvider {
  private:
   PlaybackImageProvider playback_image_provider_;
   PaintWorkletImageProvider paint_worklet_image_provider_;
-
-  DISALLOW_COPY_AND_ASSIGN(DispatchingImageProvider);
 };
 
 class RasterTaskImpl : public TileTask {
@@ -139,6 +139,8 @@ class RasterTaskImpl : public TileTask {
     DCHECK(origin_thread_checker_.CalledOnValidThread());
     playback_settings_.image_provider = &image_provider_;
   }
+  RasterTaskImpl(const RasterTaskImpl&) = delete;
+  RasterTaskImpl& operator=(const RasterTaskImpl&) = delete;
 
   // Overridden from Task:
   void RunOnWorkerThread() override {
@@ -205,8 +207,6 @@ class RasterTaskImpl : public TileTask {
   std::unique_ptr<RasterBuffer> raster_buffer_;
   DispatchingImageProvider image_provider_;
   GURL url_;
-
-  DISALLOW_COPY_AND_ASSIGN(RasterTaskImpl);
 };
 
 TaskCategory TaskCategoryForTileTask(TileTask* task,
@@ -334,6 +334,8 @@ class TaskSetFinishedTaskImpl : public TileTask {
         task_runner_(task_runner),
         on_task_set_finished_callback_(
             std::move(on_task_set_finished_callback)) {}
+  TaskSetFinishedTaskImpl(const TaskSetFinishedTaskImpl&) = delete;
+  TaskSetFinishedTaskImpl& operator=(const TaskSetFinishedTaskImpl&) = delete;
 
   // Overridden from Task:
   void RunOnWorkerThread() override {
@@ -354,8 +356,6 @@ class TaskSetFinishedTaskImpl : public TileTask {
  private:
   base::SequencedTaskRunner* task_runner_;
   const base::RepeatingClosure on_task_set_finished_callback_;
-
-  DISALLOW_COPY_AND_ASSIGN(TaskSetFinishedTaskImpl);
 };
 
 class DidFinishRunningAllTilesTask : public TileTask {
@@ -584,6 +584,8 @@ bool TileManager::PrepareTiles(
 
   // Schedule tile tasks.
   ScheduleTasks(std::move(prioritized_work));
+
+  image_controller_.paint_worklet_image_cache()->NotifyDidPrepareTiles();
 
   TRACE_EVENT_INSTANT1("cc", "DidPrepareTiles", TRACE_EVENT_SCOPE_THREAD,
                        "state", BasicStateAsValue());
@@ -1170,7 +1172,7 @@ scoped_refptr<TileTask> TileManager::CreateRasterTask(
         tile->id(), tile->invalidated_content_rect(), tile->invalidated_id(),
         &invalidated_rect);
   }
-  const RasterColorSpace& raster_color_space = client_->GetRasterColorSpace();
+  const gfx::ColorSpace& raster_color_space = client_->GetRasterColorSpace();
   bool partial_tile_decode = false;
   if (resource) {
     resource_content_id = tile->invalidated_id();
@@ -1179,7 +1181,7 @@ scoped_refptr<TileTask> TileManager::CreateRasterTask(
   } else {
     resource = resource_pool_->AcquireResource(tile->desired_texture_size(),
                                                DetermineResourceFormat(tile),
-                                               raster_color_space.color_space);
+                                               raster_color_space);
     DCHECK(resource);
   }
 
@@ -1267,9 +1269,6 @@ scoped_refptr<TileTask> TileManager::CreateRasterTask(
 
   PlaybackImageProvider image_provider(image_controller_.cache(),
                                        std::move(settings));
-
-  playback_settings.raster_color_space = raster_color_space;
-
   PaintWorkletImageProvider paint_worklet_image_provider(
       image_controller_.paint_worklet_image_cache());
   DispatchingImageProvider dispatching_image_provider(

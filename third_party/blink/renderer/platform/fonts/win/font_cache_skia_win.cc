@@ -37,7 +37,7 @@
 #include "base/debug/alias.h"
 #include "base/stl_util.h"
 #include "base/trace_event/trace_event.h"
-#include "third_party/blink/renderer/platform/fonts/bitmap_glyphs_blacklist.h"
+#include "third_party/blink/renderer/platform/fonts/bitmap_glyphs_block_list.h"
 #include "third_party/blink/renderer/platform/fonts/font_description.h"
 #include "third_party/blink/renderer/platform/fonts/font_face_creation_params.h"
 #include "third_party/blink/renderer/platform/fonts/font_platform_data.h"
@@ -91,7 +91,8 @@ sk_sp<SkTypeface> FindUniqueFontNameFromSideloadedFonts(
   for (auto& sideloaded_font : sideloaded_fonts->Values()) {
     // Open ttc index zero as we can assume that we do not sideload TrueType
     // collections.
-    SkStreamAsset* typeface_stream = sideloaded_font->openStream(0);
+    std::unique_ptr<SkStreamAsset> typeface_stream(
+        sideloaded_font->openStream(nullptr));
     CHECK(typeface_stream->getMemoryBase());
     std::string font_family_name;
     FT_Face font_face;
@@ -487,7 +488,7 @@ std::unique_ptr<FontPlatformData> FontCache::CreateFontPlatformData(
       font_description.Orientation());
 
   result->SetAvoidEmbeddedBitmaps(
-      BitmapGlyphsBlacklist::AvoidEmbeddedBitmapsForTypeface(typeface.get()));
+      BitmapGlyphsBlockList::ShouldAvoidEmbeddedBitmapsForTypeface(*typeface));
 
   return result;
 }

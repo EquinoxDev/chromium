@@ -10,7 +10,7 @@
 #include "base/bind.h"
 #include "base/files/file_util.h"
 #include "base/files/important_file_writer.h"
-#include "base/hash.h"
+#include "base/hash/hash.h"
 #include "base/logging.h"
 #include "base/optional.h"
 #include "base/task/post_task.h"
@@ -43,7 +43,7 @@ void SaveProtoToDisk(const base::FilePath& filepath,
   bool write_result;
   {
     base::ScopedBlockingCall scoped_blocking_call(
-        base::BlockingType::MAY_BLOCK);
+        FROM_HERE, base::BlockingType::MAY_BLOCK);
     write_result = base::ImportantFileWriter::WriteFileAtomically(
         filepath, proto_str, "RecurrenceRanker");
   }
@@ -56,7 +56,8 @@ void SaveProtoToDisk(const base::FilePath& filepath,
 // to be non-null.
 std::unique_ptr<RecurrenceRankerProto> LoadProtoFromDisk(
     const base::FilePath& filepath) {
-  base::ScopedBlockingCall scoped_blocking_call(base::BlockingType::MAY_BLOCK);
+  base::ScopedBlockingCall scoped_blocking_call(FROM_HERE,
+                                                base::BlockingType::MAY_BLOCK);
 
   std::string proto_str;
   if (!base::ReadFileToString(filepath, &proto_str)) {

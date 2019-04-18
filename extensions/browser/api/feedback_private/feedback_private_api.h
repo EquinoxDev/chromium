@@ -42,7 +42,8 @@ class FeedbackPrivateAPI : public BrowserContextKeyedAPI {
                               const std::string& extra_diagnostics,
                               const GURL& page_url,
                               api::feedback_private::FeedbackFlow flow,
-                              bool from_assistant = false);
+                              bool from_assistant = false,
+                              bool include_bluetooth_logs = false);
 
   // BrowserContextKeyedAPI implementation.
   static BrowserContextKeyedAPIFactory<FeedbackPrivateAPI>*
@@ -139,21 +140,20 @@ class FeedbackPrivateSendFeedbackFunction : public UIThreadExtensionFunction {
   ResponseAction Run() override;
 
  private:
-  void OnAllLogsFetched(
-      scoped_refptr<feedback::FeedbackData> feedback_data,
-      bool send_bluetooth_logs,
-      std::unique_ptr<FeedbackCommon::SystemLogsMap> sys_logs);
+  void OnAllLogsFetched(bool send_histograms,
+                        bool send_bluetooth_logs,
+                        scoped_refptr<feedback::FeedbackData> feedback_data);
   void OnCompleted(api::feedback_private::LandingPageType type, bool success);
 };
 
-class FeedbackPrivateLogSrtPromptResultFunction
+class FeedbackPrivateLoginFeedbackCompleteFunction
     : public UIThreadExtensionFunction {
  public:
-  DECLARE_EXTENSION_FUNCTION("feedbackPrivate.logSrtPromptResult",
-                             FEEDBACKPRIVATE_LOGSRTPROMPTRESULT)
+  DECLARE_EXTENSION_FUNCTION("feedbackPrivate.loginFeedbackComplete",
+                             FEEDBACKPRIVATE_LOGINFEEDBACKCOMPLETE)
 
  protected:
-  ~FeedbackPrivateLogSrtPromptResultFunction() override {}
+  ~FeedbackPrivateLoginFeedbackCompleteFunction() override {}
   ResponseAction Run() override;
 };
 

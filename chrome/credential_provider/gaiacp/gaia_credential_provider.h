@@ -7,8 +7,12 @@
 
 #include <limits>
 #include <memory>
+#include <set>
 #include <vector>
 
+#include "base/strings/string16.h"
+#include "base/synchronization/waitable_event.h"
+#include "base/win/scoped_handle.h"
 #include "chrome/credential_provider/gaiacp/gaia_credential.h"
 #include "chrome/credential_provider/gaiacp/gaia_credential_provider_i.h"
 #include "chrome/credential_provider/gaiacp/gaia_resources.h"
@@ -21,7 +25,6 @@ class ATL_NO_VTABLE CGaiaCredentialProvider
       public CComCoClass<CGaiaCredentialProvider,
                          &CLSID_GaiaCredentialProvider>,
       public IGaiaCredentialProvider,
-      public IGaiaCredentialProviderForTesting,
       public ICredentialProviderSetUserArray,
       public ICredentialProvider {
  public:
@@ -34,7 +37,6 @@ class ATL_NO_VTABLE CGaiaCredentialProvider
 
   BEGIN_COM_MAP(CGaiaCredentialProvider)
   COM_INTERFACE_ENTRY(IGaiaCredentialProvider)
-  COM_INTERFACE_ENTRY(IGaiaCredentialProviderForTesting)
   COM_INTERFACE_ENTRY(ICredentialProviderSetUserArray)
   COM_INTERFACE_ENTRY(ICredentialProvider)
   END_COM_MAP()
@@ -44,17 +46,38 @@ class ATL_NO_VTABLE CGaiaCredentialProvider
   HRESULT FinalConstruct();
   void FinalRelease();
 
+  // Returns true if the given usage scenario is supported by GCPW. Currently
+  // only CPUS_LOGON and CPUS_UNLOCK_WORKSTATION are supported.
   static bool IsUsageScenarioSupported(CREDENTIAL_PROVIDER_USAGE_SCENARIO cpus);
 
- private:
-  HRESULT CreateGaiaCredential();
-  HRESULT DestroyCredentials();
-  void ClearTransient();
-  void CleanupStaleTokenHandles();
-  void CleanupOlderVersions();
+  // Returns true if a new user can be added in the current usage scenario. This
+  // function also checks other settings controlled by registry settings to
+  // determine the result of this query.
+  static bool CanNewUsersBeCreated(CREDENTIAL_PROVIDER_USAGE_SCENARIO cpus);
 
-  // Checks of any of the Google account users need to re-auth.
-  static unsigned __stdcall CheckReauthStatus(void* param);
+ private:
+  HRESULT DestroyCredentials();
+
+  // Functions to create credentials during the processing of SetUserArray.
+
+  // Creates necessary anonymous credentials given the state of the sign in
+  // screen (currently only whether |showing_other_user| set influences this
+  // behavior.
+  HRESULT CreateAnonymousCredentialIfNeeded(bool showing_other_user);
+
+  // Creates all the reauth credentials from the users that is returned from
+  // |users|. Fills |reauth_sids| with the list of user sids for which a reauth
+  // credential was created.
+  HRESULT CreateReauthCredentials(ICredentialProviderUserArray* users);
+
+  // This function will always add |cred| to |users_| and will also try to
+  // check if the |sid| matches the one set in |set_serialization_sid_| to
+  // allow auto logon of remote connections.
+  void AddCredentialAndCheckAutoLogon(const CComPtr<IGaiaCredential>& cred,
+                                      const base::string16& sid);
+
+  void ClearTransient();
+  void CleanupOlderVersions();
 
   // IGaiaCredentialProvider
   IFACEMETHODIMP GetUsageScenario(DWORD* cpus) override;
@@ -63,11 +86,6 @@ class ATL_NO_VTABLE CGaiaCredentialProvider
                                      BSTR password,
                                      BSTR sid,
                                      BOOL fire_credentials_changed) override;
-  IFACEMETHODIMP HasInternetConnection() override;
-
-  // IGaiaCredentialProviderForTesting
-  IFACEMETHODIMP SetHasInternetConnection(
-      HasInternetConnectionCheckType has_internet_connection) override;
 
   // ICredentialProviderSetUserArray
   IFACEMETHODIMP SetUserArray(ICredentialProviderUserArray* users) override;
@@ -95,7 +113,6 @@ class ATL_NO_VTABLE CGaiaCredentialProvider
   DWORD cpus_flags_ = 0;
   UINT_PTR advise_context_;
   CComPtr<ICredentialProviderEvents> events_;
-
   // List of credentials exposed by this provider.  The first is always the
   // Gaia credential for creating new users.  The rest are reauth credentials.
   std::vector<CComPtr<IGaiaCredential>> users_;
@@ -107,13 +124,22 @@ class ATL_NO_VTABLE CGaiaCredentialProvider
   // authentication.
   size_t index_ = std::numeric_limits<size_t>::max();
 
-  // Used during tests to force the credential provider to believe if an
-  // internet connection is possible or not.  In production the value is
-  // always set to HIC_CHECK_ALWAYS to perform a real check at runtime.
-  HasInternetConnectionCheckType has_internet_connection_ = kHicCheckAlways;
+  base::string16 set_serialization_sid_;
 };
 
+// OBJECT_ENTRY_AUTO() contains an extra semicolon.
+// TODO(thakis): Make -Wextra-semi not warn on semicolons that are from a
+// macro in a system header, then remove the pragma, https://llvm.org/PR40874
+#if defined(__clang__)
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wextra-semi"
+#endif
+
 OBJECT_ENTRY_AUTO(__uuidof(GaiaCredentialProvider), CGaiaCredentialProvider)
+
+#if defined(__clang__)
+#pragma clang diagnostic pop
+#endif
 
 }  // namespace credential_provider
 

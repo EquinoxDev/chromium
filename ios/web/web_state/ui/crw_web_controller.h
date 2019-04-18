@@ -7,6 +7,7 @@
 
 #import <UIKit/UIKit.h>
 
+#import "ios/web/navigation/crw_session_controller.h"
 #import "ios/web/public/web_state/js/crw_js_injection_evaluator.h"
 #include "ios/web/public/web_state/url_verification_constants.h"
 #import "ios/web/public/web_state/web_state.h"
@@ -42,7 +43,6 @@ class GURL;
 
 namespace web {
 class NavigationItem;
-class WebState;
 class WebStateImpl;
 }
 
@@ -53,9 +53,9 @@ class WebStateImpl;
 // web view.
 // This is an abstract class which must not be instantiated directly.
 // TODO(stuartmorgan): Move all of the navigation APIs out of this class.
-@interface CRWWebController : NSObject<CRWJSInjectionEvaluator,
-                                       CRWTouchTrackingDelegate,
-                                       UIGestureRecognizerDelegate>
+@interface CRWWebController : NSObject <CRWJSInjectionEvaluator,
+                                        CRWSessionControllerDelegate,
+                                        CRWTouchTrackingDelegate>
 
 // Whether or not a UIWebView is allowed to exist in this CRWWebController.
 // Defaults to NO; this should be enabled before attempting to access the view.
@@ -64,8 +64,6 @@ class WebStateImpl;
 @property(nonatomic, weak) id<CRWNativeContentProvider> nativeProvider;
 @property(nonatomic, weak) id<CRWSwipeRecognizerProvider>
     swipeRecognizerProvider;
-@property(nonatomic, readonly) web::WebState* webState;
-@property(nonatomic, readonly) web::WebStateImpl* webStateImpl;
 
 // The container view used to display content.  If the view has been purged due
 // to low memory, this will recreate it.
@@ -89,9 +87,6 @@ class WebStateImpl;
 // (nothing loaded) and 1.0 (fully loaded).
 @property(nonatomic, readonly) double loadingProgress;
 
-// Returns the x, y offset the content has been scrolled.
-@property(nonatomic, readonly) CGPoint scrollPosition;
-
 // YES if the web process backing WebView is believed to currently be crashed.
 @property(nonatomic, assign, getter=isWebProcessCrashed) BOOL webProcessCrashed;
 
@@ -103,9 +98,21 @@ class WebStateImpl;
 // back-forward list navigations.
 @property(nonatomic) BOOL allowsBackForwardNavigationGestures;
 
+// The receiver of JavaScripts.
+@property(nonatomic, strong, readonly)
+    CRWJSInjectionReceiver* jsInjectionReceiver;
+
+// Whether the WebController should attempt to keep the render process alive.
+@property(nonatomic, assign, getter=shouldKeepRenderProcessAlive)
+    BOOL keepsRenderProcessAlive;
+
 // Designated initializer. Initializes web controller with |webState|. The
 // calling code must retain the ownership of |webState|.
 - (instancetype)initWithWebState:(web::WebStateImpl*)webState;
+
+// Returns the latest navigation item created for new navigation, which is
+// stored in navigation context.
+- (web::NavigationItemImpl*)lastPendingItemForNewNavigation;
 
 // Replaces the currently displayed content with |contentView|.  The content
 // view will be dismissed for the next navigation.
@@ -153,9 +160,6 @@ class WebStateImpl;
 // navigation. |isRendererInitiated| is NO for browser-initiated navigation.
 - (void)reloadWithRendererInitiatedNavigation:(BOOL)isRendererInitiated;
 
-// Stops web view loading.
-- (void)stopLoading;
-
 // Loads the URL indicated by current session state.
 - (void)loadCurrentURLWithRendererInitiatedNavigation:(BOOL)rendererInitiated;
 
@@ -166,6 +170,7 @@ class WebStateImpl;
 
 // Loads |data| of type |MIMEType| and replaces last committed URL with the
 // given |URL|.
+// If a load is in progress, it will be stopped before the data is loaded.
 - (void)loadData:(NSData*)data
         MIMEType:(NSString*)MIMEType
           forURL:(const GURL&)URL;
@@ -178,8 +183,11 @@ class WebStateImpl;
 - (void)stopLoading;
 
 // Executes |script| in the web view, registering user interaction.
+// |result| will be backed up by different classes depending on resulting JS
+// type: NSString (string), NSNumber (number or boolean), NSDictionary (object),
+// NSArray (array), NSNull (null), NSDate (Date), nil (undefined).
 - (void)executeUserJavaScript:(NSString*)script
-            completionHandler:(web::JavaScriptResultBlock)completion;
+            completionHandler:(void (^)(id result, NSError*))completion;
 
 // Requires that the next load rebuild the web view. This is expensive, and
 // should be used only in the case where something has changed that the web view
@@ -195,13 +203,6 @@ class WebStateImpl;
 
 // Notifies the CRWWebController that it has been hidden.
 - (void)wasHidden;
-
-// Adds |recognizer| as a gesture recognizer to the web view.
-- (void)addGestureRecognizerToWebView:(UIGestureRecognizer*)recognizer;
-// Removes |recognizer| from the web view.
-- (void)removeGestureRecognizerFromWebView:(UIGestureRecognizer*)recognizer;
-
-- (CRWJSInjectionReceiver*)jsInjectionReceiver;
 
 // Returns the native controller (if any) current mananging the content.
 - (id<CRWNativeContent>)nativeController;
@@ -233,6 +234,9 @@ class WebStateImpl;
 #pragma mark Testing
 
 @interface CRWWebController (UsedOnlyForTesting)  // Testing or internal API.
+
+@property(nonatomic, readonly) web::WebState* webState;
+@property(nonatomic, readonly) web::WebStateImpl* webStateImpl;
 
 // Returns whether the user is interacting with the page.
 @property(nonatomic, readonly) BOOL userIsInteracting;

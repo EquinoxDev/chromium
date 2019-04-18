@@ -105,6 +105,9 @@ class WKBasedNavigationManagerImpl : public NavigationManagerImpl {
       NavigationInitiationType initiation_type,
       UserAgentOverrideOption user_agent_override_option) override;
   void CommitPendingItem() override;
+  void CommitPendingItem(std::unique_ptr<NavigationItemImpl> item) override;
+  std::unique_ptr<web::NavigationItemImpl> ReleasePendingItem() override;
+  void SetPendingItem(std::unique_ptr<web::NavigationItemImpl> item) override;
   int GetIndexForOffset(int offset) const override;
   // Returns the previous navigation item in the main frame.
   int GetPreviousItemIndex() const override;

@@ -126,12 +126,6 @@ suite('SiteDetails', function() {
     // flag string.
     const optionalSiteDetailsContentSettingsTypes =
         /** @type {!settings.ContentSettingsType : string} */ ({});
-    optionalSiteDetailsContentSettingsTypes[settings.ContentSettingsTypes
-                                                .SOUND] =
-        'enableSoundContentSetting';
-    optionalSiteDetailsContentSettingsTypes[settings.ContentSettingsTypes
-                                                .CLIPBOARD] =
-        'enableClipboardContentSetting';
     optionalSiteDetailsContentSettingsTypes[settings.ContentSettingsTypes.ADS] =
         'enableSafeBrowsingSubresourceFilter';
 
@@ -141,6 +135,9 @@ suite('SiteDetails', function() {
     optionalSiteDetailsContentSettingsTypes[settings.ContentSettingsTypes
                                                 .PAYMENT_HANDLER] =
         'enablePaymentHandlerContentSetting';
+    optionalSiteDetailsContentSettingsTypes[settings.ContentSettingsTypes
+                                                .SERIAL_PORTS] =
+        'enableExperimentalWebPlatformFeatures';
     browserProxy.setPrefs(prefs);
 
     // First, explicitly set all the optional settings to false.
@@ -218,7 +215,7 @@ suite('SiteDetails', function() {
     // Replace it with a mock version.
     let usageCleared = false;
     Polymer({
-      is: 'mock-website-usage-private-api',
+      is: 'mock-website-usage-private-api-storage',
 
       fetchUsageTotal: function(host) {
         testElement.storedData_ = '1 KB';
@@ -228,7 +225,8 @@ suite('SiteDetails', function() {
         usageCleared = true;
       },
     });
-    let api = document.createElement('mock-website-usage-private-api');
+    const api =
+        document.createElement('mock-website-usage-private-api-storage');
     testElement.$.usageApi = api;
     Polymer.dom(parent).appendChild(api);
     Polymer.dom.flush();
@@ -247,12 +245,54 @@ suite('SiteDetails', function() {
     });
   });
 
+  test('cookies gets deleted properly', function() {
+    const origin = 'https://foo.com:443';
+    browserProxy.setPrefs(prefs);
+    loadTimeData.overrideValues({enableSiteSettings: true});
+    testElement = createSiteDetails(origin);
+
+    // Remove the current website-usage-private-api element.
+    const parent = testElement.$.usageApi.parentNode;
+    assertTrue(parent != undefined);
+    testElement.$.usageApi.remove();
+
+    // Replace it with a mock version.
+    let usageCleared = false;
+    Polymer({
+      is: 'mock-website-usage-private-api-cookies',
+
+      fetchUsageTotal: function(host) {
+        testElement.numCookies_ = '10 cookies';
+      },
+
+      clearUsage: function(origin, task) {
+        usageCleared = true;
+      },
+    });
+    const api =
+        document.createElement('mock-website-usage-private-api-cookies');
+    testElement.$.usageApi = api;
+    Polymer.dom(parent).appendChild(api);
+    Polymer.dom.flush();
+
+    // Call onOriginChanged_() manually to simulate a new navigation.
+    testElement.currentRouteChanged(settings.Route);
+    return browserProxy.whenCalled('getOriginPermissions').then(() => {
+      // Ensure the mock's methods were called and check usage was cleared on
+      // clicking the trash button.
+      assertEquals('10 cookies', testElement.numCookies_);
+      assertTrue(testElement.$$('#noStorage').hidden);
+      assertFalse(testElement.$$('#storage').hidden);
+
+      testElement.$$('#confirmClearStorage .action-button').click();
+      assertTrue(usageCleared);
+    });
+  });
+
   test('correct pref settings are shown', function() {
     browserProxy.setPrefs(prefs);
     // Make sure all the possible content settings are shown for this test.
-    loadTimeData.overrideValues({enableSoundContentSetting: true});
     loadTimeData.overrideValues({enableSafeBrowsingSubresourceFilter: true});
-    loadTimeData.overrideValues({enableClipboardContentSetting: true});
     loadTimeData.overrideValues({enableSensorsContentSetting: true});
     loadTimeData.overrideValues({enablePaymentHandlerContentSetting: true});
     testElement = createSiteDetails('https://foo.com:443');

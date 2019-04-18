@@ -4,13 +4,18 @@
 
 #include "ios/chrome/browser/unified_consent/unified_consent_service_factory.h"
 
+#include <string>
+#include <vector>
+
 #include "components/keyed_service/ios/browser_state_dependency_manager.h"
 #include "components/sync/driver/sync_service.h"
+#include "components/sync_preferences/pref_service_syncable.h"
 #include "components/unified_consent/feature.h"
 #include "components/unified_consent/unified_consent_metrics.h"
 #include "components/unified_consent/unified_consent_service.h"
 #include "ios/chrome/browser/application_context.h"
 #include "ios/chrome/browser/browser_state/chrome_browser_state.h"
+#include "ios/chrome/browser/pref_names.h"
 #include "ios/chrome/browser/signin/identity_manager_factory.h"
 #include "ios/chrome/browser/sync/profile_sync_service_factory.h"
 
@@ -51,7 +56,8 @@ UnifiedConsentServiceFactory::BuildServiceInstanceFor(
     web::BrowserState* context) const {
   ios::ChromeBrowserState* browser_state =
       ios::ChromeBrowserState::FromBrowserState(context);
-  PrefService* user_pref_service = browser_state->GetPrefs();
+  sync_preferences::PrefServiceSyncable* user_pref_service =
+      browser_state->GetSyncablePrefs();
 
   identity::IdentityManager* identity_manager =
       IdentityManagerFactory::GetForBrowserState(browser_state);
@@ -67,6 +73,12 @@ UnifiedConsentServiceFactory::BuildServiceInstanceFor(
     return nullptr;
   }
 
+  // List of synced prefs that can be configured during the settings opt-in
+  // flow.
+  std::vector<std::string> synced_service_pref_names;
+  synced_service_pref_names.push_back(prefs::kSearchSuggestEnabled);
+
   return std::make_unique<unified_consent::UnifiedConsentService>(
-      user_pref_service, identity_manager, sync_service);
+      user_pref_service, identity_manager, sync_service,
+      synced_service_pref_names);
 }

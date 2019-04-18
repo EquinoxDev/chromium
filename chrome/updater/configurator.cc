@@ -4,12 +4,24 @@
 
 #include "chrome/updater/configurator.h"
 
+#include <utility>
 #include "base/version.h"
+#include "build/build_config.h"
+#include "chrome/updater/patcher.h"
+#include "chrome/updater/prefs.h"
+#include "chrome/updater/unzipper.h"
+#include "chrome/updater/updater_constants.h"
+#include "components/prefs/pref_service.h"
 #include "components/update_client/network.h"
+#include "components/update_client/patcher.h"
 #include "components/update_client/protocol_handler.h"
+#include "components/update_client/unzipper.h"
 #include "components/version_info/version_info.h"
-#include "services/service_manager/public/cpp/connector.h"
 #include "url/gurl.h"
+
+#if defined(OS_WIN)
+#include "chrome/updater/win/net/network.h"
+#endif
 
 namespace {
 
@@ -17,14 +29,14 @@ namespace {
 const int kDelayOneMinute = 60;
 const int kDelayOneHour = kDelayOneMinute * 60;
 
-const char kUpdaterJSONDefaultUrl[] =
-    "https://update.googleapis.com/service/update2/json";
-
 }  // namespace
 
 namespace updater {
 
-Configurator::Configurator() = default;
+Configurator::Configurator()
+    : pref_service_(CreatePrefService()),
+      unzip_factory_(base::MakeRefCounted<UnzipperFactory>()),
+      patch_factory_(base::MakeRefCounted<PatcherFactory>()) {}
 Configurator::~Configurator() = default;
 
 int Configurator::InitialDelay() const {
@@ -68,7 +80,7 @@ std::string Configurator::GetBrand() const {
 }
 
 std::string Configurator::GetLang() const {
-  return {};
+  return "en-US";
 }
 
 std::string Configurator::GetOSLongName() const {
@@ -77,7 +89,7 @@ std::string Configurator::GetOSLongName() const {
 
 base::flat_map<std::string, std::string> Configurator::ExtraRequestParams()
     const {
-  return {};
+  return {{"testrequest", "1"}, {"testsource", "dev"}};
 }
 
 std::string Configurator::GetDownloadPreference() const {
@@ -86,12 +98,23 @@ std::string Configurator::GetDownloadPreference() const {
 
 scoped_refptr<update_client::NetworkFetcherFactory>
 Configurator::GetNetworkFetcherFactory() {
+#if defined(OS_WIN)
+  if (!network_fetcher_factory_) {
+    network_fetcher_factory_ = base::MakeRefCounted<NetworkFetcherFactory>();
+  }
+  return network_fetcher_factory_;
+#else
   return nullptr;
+#endif
 }
 
-std::unique_ptr<service_manager::Connector>
-Configurator::CreateServiceManagerConnector() const {
-  return nullptr;
+scoped_refptr<update_client::UnzipperFactory>
+Configurator::GetUnzipperFactory() {
+  return unzip_factory_;
+}
+
+scoped_refptr<update_client::PatcherFactory> Configurator::GetPatcherFactory() {
+  return patch_factory_;
 }
 
 bool Configurator::EnabledDeltas() const {
@@ -111,7 +134,7 @@ bool Configurator::EnabledCupSigning() const {
 }
 
 PrefService* Configurator::GetPrefService() const {
-  return nullptr;
+  return pref_service_.get();
 }
 
 update_client::ActivityDataService* Configurator::GetActivityDataService()

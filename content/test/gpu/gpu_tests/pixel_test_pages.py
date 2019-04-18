@@ -812,21 +812,42 @@ def ExperimentalCanvasFeaturesPages(base_name):
       'pixel_canvas_display_linear-rgb.html',
       base_name + '_CanvasDisplayLinearRGBAccelerated2D',
       test_rect=[0, 0, 140, 140],
-      revision=7,
+      revision=8,
       browser_args=browser_args),
 
     PixelTestPage(
       'pixel_canvas_display_linear-rgb.html',
       base_name + '_CanvasDisplayLinearRGBUnaccelerated2D',
       test_rect=[0, 0, 140, 140],
-      revision=1,
+      revision=2,
       browser_args=browser_args + unaccelerated_args),
 
     PixelTestPage(
       'pixel_canvas_display_linear-rgb.html',
       base_name + '_CanvasDisplayLinearRGBUnaccelerated2DGPUCompositing',
       test_rect=[0, 0, 140, 140],
-      revision=7,
+      revision=8,
+      browser_args=browser_args + ['--disable-accelerated-2d-canvas']),
+
+    PixelTestPage(
+      'pixel_canvas_display_srgb.html',
+      base_name + '_CanvasDisplaySRGBAccelerated2D',
+      test_rect=[0, 0, 140, 140],
+      revision=0, # not used, unsupported
+      browser_args=browser_args),
+
+    PixelTestPage(
+      'pixel_canvas_display_srgb.html',
+      base_name + '_CanvasDisplaySRGBUnaccelerated2D',
+      test_rect=[0, 0, 140, 140],
+      revision=1,
+      browser_args=browser_args + unaccelerated_args),
+
+    PixelTestPage(
+      'pixel_canvas_display_srgb.html',
+      base_name + '_CanvasDisplaySRGBUnaccelerated2DGPUCompositing',
+      test_rect=[0, 0, 140, 140],
+      revision=1,
       browser_args=browser_args + ['--disable-accelerated-2d-canvas']),
 
     PixelTestPage(

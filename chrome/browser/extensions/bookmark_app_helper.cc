@@ -10,6 +10,7 @@
 #include <utility>
 
 #include "base/bind.h"
+#include "base/bind_helpers.h"
 #include "base/command_line.h"
 #include "base/feature_list.h"
 #include "base/macros.h"
@@ -37,7 +38,6 @@
 #include "chrome/browser/web_applications/components/web_app_icon_downloader.h"
 #include "chrome/browser/web_applications/components/web_app_install_utils.h"
 #include "chrome/browser/web_applications/extensions/bookmark_app_util.h"
-#include "chrome/browser/webshare/share_target_pref_helper.h"
 #include "chrome/common/chrome_features.h"
 #include "chrome/common/extensions/api/url_handlers/url_handlers_parser.h"
 #include "chrome/common/extensions/extension_constants.h"
@@ -50,6 +50,7 @@
 #include "content/public/browser/notification_source.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/content_switches.h"
+#include "extensions/browser/extension_registry.h"
 #include "extensions/browser/extension_system.h"
 #include "extensions/browser/notification_types.h"
 #include "extensions/browser/pref_names.h"
@@ -81,7 +82,7 @@ class BookmarkAppInstaller : public base::RefCounted<BookmarkAppInstaller>,
         urls_to_download_.push_back(icon.url);
     }
 
-    if (urls_to_download_.size()) {
+    if (!urls_to_download_.empty()) {
       // Matched in OnIconsDownloaded.
       AddRef();
       SetupWebContents();
@@ -295,8 +296,9 @@ void BookmarkAppHelper::Create(const CreateBookmarkAppCallback& callback) {
       // Do not wait for a service worker if it doesn't exist.
       params.has_worker = !bypass_service_worker_check_;
       installable_manager_->GetData(
-          params, base::Bind(&BookmarkAppHelper::OnDidPerformInstallableCheck,
-                             weak_factory_.GetWeakPtr()));
+          params,
+          base::BindOnce(&BookmarkAppHelper::OnDidPerformInstallableCheck,
+                         weak_factory_.GetWeakPtr()));
     }
   } else {
     for_installable_site_ = web_app::ForInstallableSite::kNo;
@@ -318,21 +320,12 @@ void BookmarkAppHelper::OnDidPerformInstallableCheck(
     return;
   }
 
-  for_installable_site_ =
-      data.error_code == NO_ERROR_DETECTED && !shortcut_app_requested_
-          ? web_app::ForInstallableSite::kYes
-          : web_app::ForInstallableSite::kNo;
+  for_installable_site_ = data.errors.empty() && !shortcut_app_requested_
+                              ? web_app::ForInstallableSite::kYes
+                              : web_app::ForInstallableSite::kNo;
 
   web_app::UpdateWebAppInfoFromManifest(*data.manifest, &web_app_info_,
                                         for_installable_site_);
-
-  // TODO(mgiuca): Web Share Target should have its own flag, rather than using
-  // the experimental-web-platform-features flag. https://crbug.com/736178.
-  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
-          ::switches::kEnableExperimentalWebPlatformFeatures)) {
-    UpdateShareTargetInPrefs(data.manifest_url, *data.manifest,
-                             profile_->GetPrefs());
-  }
 
   const std::vector<GURL> web_app_info_icon_urls =
       web_app::GetValidIconUrlsToDownload(data, web_app_info_);
@@ -470,17 +463,48 @@ void BookmarkAppHelper::FinishInstallation(const Extension* extension) {
 
   web_app::RecordAppBanner(contents_, web_app_info_.app_url);
 
-  if (create_shortcuts_)
-    BookmarkAppCreateOsShortcuts(profile_, extension);
+  // TODO(ortuno): Make adding a shortcut to the applications menu independent
+  // from adding a shortcut to desktop.
+  if (add_to_applications_menu_ && CanBookmarkAppCreateOsShortcuts()) {
+    BookmarkAppCreateOsShortcuts(
+        profile_, extension, add_to_desktop_,
+        base::BindOnce(&BookmarkAppHelper::OnShortcutCreationCompleted,
+                       weak_factory_.GetWeakPtr(), extension->id()));
+  } else {
+    OnShortcutCreationCompleted(extension->id(), false /* shortcuts_created */);
+  }
+}
+
+void BookmarkAppHelper::OnShortcutCreationCompleted(
+    const std::string& extension_id,
+    bool shortcut_created) {
+  // Note that the extension may have been deleted since this task was posted,
+  // so use |extension_id| as a weak pointer.
+  const Extension* extension =
+      ExtensionRegistry::Get(profile_)->enabled_extensions().GetByID(
+          extension_id);
+  if (!extension) {
+    callback_.Run(nullptr, web_app_info_);
+    return;
+  }
+
+  if (add_to_quick_launch_bar_ && CanBookmarkAppBePinnedToShelf())
+    BookmarkAppPinToShelf(extension);
 
   // If there is a browser, it means that the app is being installed in the
-  // foreground: window reparenting needed.
+  // foreground.
   const bool reparent_tab =
       (chrome::FindBrowserWithWebContents(contents_) != nullptr);
+
   // TODO(loyso): Reparenting must be implemented in
   // chrome/browser/ui/web_applications/ UI layer as a post-install step.
-  if (reparent_tab)
-    BookmarkAppReparentTab(profile_, contents_, extension, launch_type);
+  if (reparent_tab &&
+      CanBookmarkAppReparentTab(profile_, extension, shortcut_created)) {
+    DCHECK(!profile_->IsOffTheRecord());
+    BookmarkAppReparentTab(contents_, extension);
+    if (CanBookmarkAppRevealAppShim())
+      BookmarkAppRevealAppShim(profile_, extension);
+  }
 
   callback_.Run(extension, web_app_info_);
 }

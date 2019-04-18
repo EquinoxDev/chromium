@@ -42,11 +42,11 @@
 #include "net/ssl/channel_id_service.h"
 #include "net/ssl/ssl_connection_status_flags.h"
 #include "net/ssl/ssl_info.h"
-#include "net/third_party/quic/core/http/quic_client_promised_info.h"
-#include "net/third_party/quic/core/http/spdy_utils.h"
-#include "net/third_party/quic/core/quic_utils.h"
-#include "net/third_party/quic/platform/api/quic_flags.h"
-#include "net/third_party/quic/platform/api/quic_ptr_util.h"
+#include "net/third_party/quiche/src/quic/core/http/quic_client_promised_info.h"
+#include "net/third_party/quiche/src/quic/core/http/spdy_utils.h"
+#include "net/third_party/quiche/src/quic/core/quic_utils.h"
+#include "net/third_party/quiche/src/quic/platform/api/quic_flags.h"
+#include "net/third_party/quiche/src/quic/platform/api/quic_ptr_util.h"
 #include "net/traffic_annotation/network_traffic_annotation.h"
 #include "third_party/boringssl/src/include/openssl/ssl.h"
 
@@ -74,12 +74,6 @@ const int kDefaultRTTMilliSecs = 300;
 
 // The maximum size of uncompressed QUIC headers that will be allowed.
 const size_t kMaxUncompressedHeaderSize = 256 * 1024;
-
-// The maximum time allowed to have no retransmittable packets on the wire
-// (after sending the first retransmittable packet) if
-// |migrate_session_early_v2_| is true. PING frames will be sent as needed to
-// enforce this.
-const size_t kDefaultRetransmittableOnWireTimeoutMillisecs = 100;
 
 // Histograms for tracking down the crashes from http://crbug.com/354669
 // Note: these values must be kept in sync with the corresponding values in:
@@ -684,6 +678,8 @@ QuicChromiumClientSession::QuicChromiumClientSession(
     bool migrate_session_early_v2,
     bool migrate_sessions_on_network_change_v2,
     NetworkChangeNotifier::NetworkHandle default_network,
+    quic::QuicTime::Delta retransmittable_on_wire_timeout,
+    bool migrate_idle_session,
     base::TimeDelta idle_migration_period,
     base::TimeDelta max_time_on_non_default_network,
     int max_migrations_to_non_default_network_on_write_error,
@@ -713,6 +709,7 @@ QuicChromiumClientSession::QuicChromiumClientSession(
       migrate_session_early_v2_(migrate_session_early_v2),
       migrate_session_on_network_change_v2_(
           migrate_sessions_on_network_change_v2),
+      migrate_idle_session_(migrate_idle_session),
       idle_migration_period_(idle_migration_period),
       max_time_on_non_default_network_(max_time_on_non_default_network),
       max_migrations_to_non_default_network_on_write_error_(
@@ -793,8 +790,7 @@ QuicChromiumClientSession::QuicChromiumClientSession(
   connect_timing_.dns_end = dns_resolution_end_time;
   if (migrate_session_early_v2_) {
     connection->set_retransmittable_on_wire_timeout(
-        quic::QuicTime::Delta::FromMilliseconds(
-            kDefaultRetransmittableOnWireTimeoutMillisecs));
+        retransmittable_on_wire_timeout);
   }
 }
 
@@ -1223,7 +1219,6 @@ bool QuicChromiumClientSession::GetSSLInfo(SSLInfo* ssl_info) const {
 
   ssl_info->connection_status = ssl_connection_status;
   ssl_info->client_cert_sent = false;
-  ssl_info->channel_id_sent = crypto_stream_->WasChannelIDSent();
   ssl_info->handshake_type = SSLInfo::HANDSHAKE_FULL;
   ssl_info->pinning_failure_log = pinning_failure_log_;
   ssl_info->is_fatal_cert_error = is_fatal_cert_error_;
@@ -1810,8 +1805,17 @@ void QuicChromiumClientSession::MigrateSessionOnWriteError(
 
   current_connection_migration_cause_ = ON_WRITE_ERROR;
 
-  if (CheckIdleTimeExceedsIdleMigrationPeriod())
+  if (migrate_idle_session_ && CheckIdleTimeExceedsIdleMigrationPeriod())
     return;
+
+  if (!migrate_idle_session_ && GetNumActiveStreams() == 0 &&
+      GetNumDrainingStreams() == 0) {
+    // connection close packet to be sent since socket may be borked.
+    connection()->CloseConnection(quic::QUIC_PACKET_WRITE_ERROR,
+                                  "Write error for non-migratable session",
+                                  quic::ConnectionCloseBehavior::SILENT_CLOSE);
+    return;
+  }
 
   // Do not migrate if connection migration is disabled.
   if (config()->DisableConnectionMigration()) {
@@ -1964,7 +1968,17 @@ void QuicChromiumClientSession::OnProbeNetworkSucceeded(
   // Close streams that are not migratable to the probed |network|.
   ResetNonMigratableStreams();
 
-  if (CheckIdleTimeExceedsIdleMigrationPeriod())
+  if (!migrate_idle_session_ && GetNumActiveStreams() == 0 &&
+      GetNumDrainingStreams() == 0) {
+    // If idle sessions won't be migrated, close the connection.
+    CloseSessionOnErrorLater(
+        ERR_NETWORK_CHANGED,
+        quic::QUIC_CONNECTION_MIGRATION_NO_MIGRATABLE_STREAMS,
+        quic::ConnectionCloseBehavior::SEND_CONNECTION_CLOSE_PACKET);
+    return;
+  }
+
+  if (migrate_idle_session_ && CheckIdleTimeExceedsIdleMigrationPeriod())
     return;
 
   // Migrate to the probed socket immediately: socket, writer and reader will
@@ -2150,7 +2164,19 @@ void QuicChromiumClientSession::MigrateNetworkImmediately(
   // - otherwise, it's brought to default network, cancel the running timer to
   //   migrate back.
 
-  if (CheckIdleTimeExceedsIdleMigrationPeriod())
+  if (!migrate_idle_session_ && GetNumActiveStreams() == 0 &&
+      GetNumDrainingStreams() == 0) {
+    HistogramAndLogMigrationFailure(net_log_,
+                                    MIGRATION_STATUS_NO_MIGRATABLE_STREAMS,
+                                    connection_id(), "No active streams");
+    CloseSessionOnErrorLater(
+        ERR_NETWORK_CHANGED,
+        quic::QUIC_CONNECTION_MIGRATION_NO_MIGRATABLE_STREAMS,
+        quic::ConnectionCloseBehavior::SILENT_CLOSE);
+    return;
+  }
+
+  if (migrate_idle_session_ && CheckIdleTimeExceedsIdleMigrationPeriod())
     return;
 
   // Do not migrate if connection migration is disabled.
@@ -2296,8 +2322,8 @@ void QuicChromiumClientSession::OnPathDegrading() {
       NetLogEventType::QUIC_CONNECTION_MIGRATION_TRIGGERED);
 }
 
-bool QuicChromiumClientSession::HasOpenDynamicStreams() const {
-  return quic::QuicSession::HasOpenDynamicStreams() ||
+bool QuicChromiumClientSession::ShouldKeepConnectionAlive() const {
+  return quic::QuicSpdySession::ShouldKeepConnectionAlive() ||
          GetNumDrainingOutgoingStreams() > 0;
 }
 
@@ -2434,7 +2460,19 @@ ProbingResult QuicChromiumClientSession::StartProbeNetwork(
 
   CHECK_NE(NetworkChangeNotifier::kInvalidNetworkHandle, network);
 
-  if (CheckIdleTimeExceedsIdleMigrationPeriod())
+  if (!migrate_idle_session_ && GetNumActiveStreams() == 0 &&
+      GetNumDrainingStreams() == 0) {
+    HistogramAndLogMigrationFailure(migration_net_log,
+                                    MIGRATION_STATUS_NO_MIGRATABLE_STREAMS,
+                                    connection_id(), "No active streams");
+    CloseSessionOnErrorLater(
+        ERR_NETWORK_CHANGED,
+        quic::QUIC_CONNECTION_MIGRATION_NO_MIGRATABLE_STREAMS,
+        quic::ConnectionCloseBehavior::SEND_CONNECTION_CLOSE_PACKET);
+    return ProbingResult::DISABLED_WITH_IDLE_SESSION;
+  }
+
+  if (migrate_idle_session_ && CheckIdleTimeExceedsIdleMigrationPeriod())
     return ProbingResult::DISABLED_WITH_IDLE_SESSION;
 
   // Abort probing if connection migration is disabled by config.
@@ -2560,6 +2598,9 @@ void QuicChromiumClientSession::MaybeRetryMigrateBackToDefaultNetwork() {
 }
 
 bool QuicChromiumClientSession::CheckIdleTimeExceedsIdleMigrationPeriod() {
+  if (!migrate_idle_session_)
+    return false;
+
   if (GetNumActiveStreams() != 0 || GetNumDrainingStreams() != 0) {
     return false;
   }
@@ -2830,6 +2871,17 @@ MigrationResult QuicChromiumClientSession::Migrate(
   if (network != NetworkChangeNotifier::kInvalidNetworkHandle) {
     // This is a migration attempt from connection migration.
     ResetNonMigratableStreams();
+    if (!migrate_idle_session_ && GetNumActiveStreams() == 0 &&
+        GetNumDrainingStreams() == 0) {
+      // If idle sessions can not be migrated, close the session if needed.
+      if (close_session_on_error) {
+        CloseSessionOnErrorLater(
+            ERR_NETWORK_CHANGED,
+            quic::QUIC_CONNECTION_MIGRATION_NO_MIGRATABLE_STREAMS,
+            quic::ConnectionCloseBehavior::SILENT_CLOSE);
+      }
+      return MigrationResult::FAILURE;
+    }
   }
 
   // Create and configure socket on |network|.

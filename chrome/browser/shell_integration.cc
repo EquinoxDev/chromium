@@ -90,7 +90,8 @@ base::CommandLine CommandLineArgsForLauncher(
     const GURL& url,
     const std::string& extension_app_id,
     const base::FilePath& profile_path) {
-  base::ScopedBlockingCall scoped_blocking_call(base::BlockingType::MAY_BLOCK);
+  base::ScopedBlockingCall scoped_blocking_call(FROM_HERE,
+                                                base::BlockingType::MAY_BLOCK);
   base::CommandLine new_cmd_line(base::CommandLine::NO_PROGRAM);
 
   AppendProfileArgs(
@@ -188,17 +189,19 @@ void DefaultWebClientWorker::OnCheckIsDefaultComplete(
 // DefaultWebClientWorker, private:
 
 void DefaultWebClientWorker::CheckIsDefault(bool is_following_set_as_default) {
-  base::ScopedBlockingCall scoped_blocking_call(base::BlockingType::MAY_BLOCK);
+  base::ScopedBlockingCall scoped_blocking_call(FROM_HERE,
+                                                base::BlockingType::MAY_BLOCK);
 
   DefaultWebClientState state = CheckIsDefaultImpl();
   base::PostTaskWithTraits(
       FROM_HERE, {BrowserThread::UI},
-      base::Bind(&DefaultBrowserWorker::OnCheckIsDefaultComplete, this, state,
-                 is_following_set_as_default));
+      base::BindOnce(&DefaultBrowserWorker::OnCheckIsDefaultComplete, this,
+                     state, is_following_set_as_default));
 }
 
 void DefaultWebClientWorker::SetAsDefault() {
-  base::ScopedBlockingCall scoped_blocking_call(base::BlockingType::MAY_BLOCK);
+  base::ScopedBlockingCall scoped_blocking_call(FROM_HERE,
+                                                base::BlockingType::MAY_BLOCK);
 
   // SetAsDefaultImpl will make sure the callback is executed exactly once.
   SetAsDefaultImpl(

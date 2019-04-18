@@ -47,12 +47,11 @@ class MockPasswordAccessoryController : public PasswordAccessoryController {
 
 class MockPasswordGenerationController : public PasswordGenerationController {
  public:
-  MOCK_METHOD3(
-      OnAutomaticGenerationStatusChanged,
-      void(bool,
-           const base::Optional<
-               autofill::password_generation::PasswordGenerationUIData>&,
+  MOCK_METHOD2(
+      OnAutomaticGenerationAvailable,
+      void(const autofill::password_generation::PasswordGenerationUIData&,
            const base::WeakPtr<password_manager::PasswordManagerDriver>&));
+  MOCK_METHOD0(OnGenerationElementLostFocus, void());
   MOCK_METHOD0(OnGenerationRequested, void());
   MOCK_METHOD1(GeneratedPasswordAccepted, void(const base::string16&));
   MOCK_METHOD0(GeneratedPasswordRejected, void());
@@ -82,6 +81,7 @@ class MockPasswordAccessoryView : public ManualFillingViewInterface {
 autofill::AccessorySheetData dummy_accessory_sheet_data() {
   constexpr char kExampleAccessorySheetDataTitle[] = "Example title";
   return autofill::AccessorySheetData(
+      autofill::FallbackSheetType::CREDIT_CARD,
       base::ASCIIToUTF16(kExampleAccessorySheetDataTitle));
 }
 

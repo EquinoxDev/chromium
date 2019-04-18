@@ -326,7 +326,7 @@ void WindowTypeLauncher::ExecuteCommand(int id, int event_flags) {
   }
 }
 
-void WindowTypeLauncher::ShowContextMenuForView(
+void WindowTypeLauncher::ShowContextMenuForViewImpl(
     views::View* source,
     const gfx::Point& point,
     ui::MenuSourceType source_type) {
@@ -340,7 +340,7 @@ void WindowTypeLauncher::ShowContextMenuForView(
   menu_runner_.reset(new MenuRunner(
       root, MenuRunner::HAS_MNEMONICS | views::MenuRunner::CONTEXT_MENU));
   menu_runner_->RunMenuAt(GetWidget(), NULL, gfx::Rect(point, gfx::Size()),
-                          views::MENU_ANCHOR_TOPLEFT, source_type);
+                          views::MenuAnchorPosition::kTopLeft, source_type);
 }
 
 }  // namespace shell

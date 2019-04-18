@@ -46,12 +46,6 @@ class MODULES_EXPORT IDBFactory final : public ScriptWrappable {
   DEFINE_WRAPPERTYPEINFO();
 
  public:
-  static IDBFactory* Create() { return MakeGarbageCollected<IDBFactory>(); }
-  static IDBFactory* CreateForTest(
-      std::unique_ptr<WebIDBFactory> web_idb_factory) {
-    return MakeGarbageCollected<IDBFactory>(std::move(web_idb_factory));
-  }
-
   IDBFactory();
   IDBFactory(std::unique_ptr<WebIDBFactory>);
 
@@ -64,10 +58,10 @@ class MODULES_EXPORT IDBFactory final : public ScriptWrappable {
   IDBOpenDBRequest* deleteDatabase(ScriptState*,
                                    const String& name,
                                    ExceptionState&);
-  short cmp(ScriptState*,
-            const ScriptValue& first,
-            const ScriptValue& second,
-            ExceptionState&);
+  int16_t cmp(ScriptState*,
+              const ScriptValue& first,
+              const ScriptValue& second,
+              ExceptionState&);
 
   // These are not exposed to the web applications and only used by DevTools.
   IDBRequest* GetDatabaseNames(ScriptState*, ExceptionState&);

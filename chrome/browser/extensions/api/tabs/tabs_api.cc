@@ -28,6 +28,7 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/api/tabs/tabs_constants.h"
+#include "chrome/browser/extensions/api/tabs/tabs_util.h"
 #include "chrome/browser/extensions/api/tabs/windows_util.h"
 #include "chrome/browser/extensions/browser_extension_window_controller.h"
 #include "chrome/browser/extensions/extension_service.h"
@@ -35,6 +36,7 @@
 #include "chrome/browser/extensions/tab_helper.h"
 #include "chrome/browser/extensions/window_controller.h"
 #include "chrome/browser/extensions/window_controller_list.h"
+#include "chrome/browser/platform_util.h"
 #include "chrome/browser/prefs/incognito_mode_prefs.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/resource_coordinator/tab_lifecycle_unit_external.h"
@@ -95,19 +97,6 @@
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/base/models/list_selection_model.h"
 #include "ui/base/ui_base_types.h"
-
-#if defined(OS_CHROMEOS)
-#include "ash/public/cpp/window_pin_type.h"
-#include "ash/public/cpp/window_properties.h"
-#include "ash/public/interfaces/window_pin_type.mojom.h"
-#include "chrome/browser/ui/ash/chrome_screenshot_grabber.h"
-#include "chrome/browser/ui/browser_command_controller.h"
-#include "content/public/browser/devtools_agent_host.h"
-#include "ui/aura/window.h"
-#include "ui/base/clipboard/clipboard.h"
-#include "ui/base/clipboard/clipboard_types.h"
-#include "ui/base/ui_base_features.h"
-#endif
 
 using content::BrowserThread;
 using content::NavigationController;
@@ -287,34 +276,6 @@ bool ExtensionHasLockedFullscreenPermission(const Extension* extension) {
   return extension->permissions_data()->HasAPIPermission(
       APIPermission::kLockWindowFullscreenPrivate);
 }
-
-#if defined(OS_CHROMEOS)
-void SetLockedFullscreenState(Browser* browser, bool locked) {
-  UMA_HISTOGRAM_BOOLEAN("Extensions.LockedFullscreenStateRequest", locked);
-
-  aura::Window* window = browser->window()->GetNativeWindow();
-  // TRUSTED_PINNED is used here because that one locks the window fullscreen
-  // without allowing the user to exit (as opposed to regular PINNED).
-  window->SetProperty(ash::kWindowPinTypeKey,
-                      locked ? ash::mojom::WindowPinType::TRUSTED_PINNED
-                             : ash::mojom::WindowPinType::NONE);
-
-  // Update the set of available browser commands.
-  browser->command_controller()->LockedFullscreenStateChanged();
-
-  // Disallow screenshots in locked fullscreen mode.
-  // TODO(isandrk, 816900): ChromeScreenshotGrabber isn't implemented in Mash
-  // yet, remove this conditional when it becomes available.
-  if (!features::IsMultiProcessMash())
-    ChromeScreenshotGrabber::Get()->set_screenshots_allowed(!locked);
-
-  // Reset the clipboard and kill dev tools when entering or exiting locked
-  // fullscreen (security concerns).
-  ui::Clipboard::GetForCurrentThread()->Clear(ui::CLIPBOARD_TYPE_COPY_PASTE);
-  content::DevToolsAgentHost::DetachAllClients();
-}
-
-#endif  // defined(OS_CHROMEOS)
 
 }  // namespace
 
@@ -632,7 +593,9 @@ ExtensionFunction::ResponseAction WindowsCreateFunction::Run() {
         ConvertToWindowShowState(create_data->state);
   }
 
-  Browser* new_window = new Browser(create_params);
+  Browser* new_window = Browser::Create(create_params);
+  if (!new_window)
+    return RespondNow(Error(tabs_constants::kBrowserWindowNotAllowed));
 
   for (const GURL& url : urls) {
     NavigateParams navigate_params(new_window, url, ui::PAGE_TRANSITION_LINK);
@@ -669,22 +632,20 @@ ExtensionFunction::ResponseAction WindowsCreateFunction::Run() {
   if (!contents && urls.empty() && window_type != Browser::TYPE_POPUP) {
     chrome::NewTab(new_window);
   }
-  chrome::SelectNumberedTab(new_window, 0);
+  chrome::SelectNumberedTab(new_window, 0, {TabStripModel::GestureType::kNone});
 
   if (focused)
     new_window->window()->Show();
   else
     new_window->window()->ShowInactive();
 
-#if defined(OS_CHROMEOS)
   // Lock the window fullscreen only after the new tab has been created
   // (otherwise the tabstrip is empty), and window()->show() has been called
   // (otherwise that resets the locked mode for devices in tablet mode).
   if (create_data &&
       create_data->state == windows::WINDOW_STATE_LOCKED_FULLSCREEN) {
-    SetLockedFullscreenState(new_window, true);
+    tabs_util::SetLockedFullscreenState(new_window, true);
   }
-#endif
 
   std::unique_ptr<base::Value> result;
   if (new_window->profile()->IsOffTheRecord() &&
@@ -718,35 +679,28 @@ ExtensionFunction::ResponseAction WindowsUpdateFunction::Run() {
   // state (crbug.com/703733).
   ReportRequestedWindowState(params->update_info.state);
 
-  if (params->update_info.state == windows::WINDOW_STATE_LOCKED_FULLSCREEN &&
-      !ExtensionHasLockedFullscreenPermission(extension())) {
-    return RespondNow(
-        Error(tabs_constants::kMissingLockWindowFullscreenPrivatePermission));
-  }
-
-#if defined(OS_CHROMEOS)
-  const bool is_window_trusted_pinned =
-      ash::IsWindowTrustedPinned(browser->window());
   // Don't allow locked fullscreen operations on a window without the proper
   // permission (also don't allow any operations on a locked window if the
   // extension doesn't have the permission).
-  if (is_window_trusted_pinned &&
+  const bool is_locked_fullscreen =
+      platform_util::IsBrowserLockedFullscreen(browser);
+  if ((params->update_info.state == windows::WINDOW_STATE_LOCKED_FULLSCREEN ||
+       is_locked_fullscreen) &&
       !ExtensionHasLockedFullscreenPermission(extension())) {
     return RespondNow(
         Error(tabs_constants::kMissingLockWindowFullscreenPrivatePermission));
   }
   // state will be WINDOW_STATE_NONE if the state parameter wasn't passed from
   // the JS side, and in that case we don't want to change the locked state.
-  if (is_window_trusted_pinned &&
+  if (is_locked_fullscreen &&
       params->update_info.state != windows::WINDOW_STATE_LOCKED_FULLSCREEN &&
       params->update_info.state != windows::WINDOW_STATE_NONE) {
-    SetLockedFullscreenState(browser, false);
-  } else if (!is_window_trusted_pinned &&
+    tabs_util::SetLockedFullscreenState(browser, false);
+  } else if (!is_locked_fullscreen &&
              params->update_info.state ==
                  windows::WINDOW_STATE_LOCKED_FULLSCREEN) {
-    SetLockedFullscreenState(browser, true);
+    tabs_util::SetLockedFullscreenState(browser, true);
   }
-#endif
 
   ui::WindowShowState show_state =
       ConvertToWindowShowState(params->update_info.state);
@@ -852,13 +806,11 @@ ExtensionFunction::ResponseAction WindowsRemoveFunction::Run() {
     return RespondNow(Error(error));
   }
 
-#if defined(OS_CHROMEOS)
-  if (ash::IsWindowTrustedPinned(browser->window()) &&
+  if (platform_util::IsBrowserLockedFullscreen(browser) &&
       !ExtensionHasLockedFullscreenPermission(extension())) {
     return RespondNow(
         Error(tabs_constants::kMissingLockWindowFullscreenPrivatePermission));
   }
-#endif
 
   WindowController* controller = browser->extension_window_controller();
   WindowController::Reason reason;
@@ -1318,7 +1270,7 @@ ExtensionFunction::ResponseAction TabsUpdateFunction::Run() {
 
   if (active) {
     if (tab_strip->active_index() != tab_index) {
-      tab_strip->ActivateTabAt(tab_index, false);
+      tab_strip->ActivateTabAt(tab_index);
       DCHECK_EQ(contents, tab_strip->GetActiveWebContents());
     }
   }

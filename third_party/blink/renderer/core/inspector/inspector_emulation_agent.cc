@@ -128,7 +128,7 @@ void InspectorEmulationAgent::Restore() {
 
 Response InspectorEmulationAgent::disable() {
   if (enabled_)
-    instrumenting_agents_->removeInspectorEmulationAgent(this);
+    instrumenting_agents_->RemoveInspectorEmulationAgent(this);
   setUserAgentOverride(String(), protocol::Maybe<String>(),
                        protocol::Maybe<String>());
   if (!web_local_frame_)
@@ -201,9 +201,9 @@ Response InspectorEmulationAgent::setTouchEmulationEnabled(
     return response;
   int max_points = max_touch_points.fromMaybe(1);
   if (max_points < 1 || max_points > WebTouchEvent::kTouchesLengthCap) {
-    return Response::InvalidParams(
-        "Touch points must be between 1 and " +
-        String::Number(WebTouchEvent::kTouchesLengthCap));
+    return Response::InvalidParams("Touch points must be between 1 and " +
+                                   String::Number(static_cast<uint16_t>(
+                                       WebTouchEvent::kTouchesLengthCap)));
   }
   touch_event_emulation_enabled_.Set(enabled);
   max_touch_points_.Set(max_points);
@@ -351,14 +351,13 @@ void InspectorEmulationAgent::FrameStartedLoading(LocalFrame*) {
 }
 
 void InspectorEmulationAgent::PrepareRequest(
-    ExecutionContext* execution_context,
     DocumentLoader* loader,
     ResourceRequest& request,
     const FetchInitiatorInfo& initiator_info,
     ResourceType resource_type) {
   if (!accept_language_override_.Get().IsEmpty() &&
       request.HttpHeaderField("Accept-Language").IsEmpty()) {
-    request.SetHTTPHeaderField(
+    request.SetHttpHeaderField(
         "Accept-Language",
         AtomicString(network_utils::GenerateAcceptLanguageHeader(
             accept_language_override_.Get())));
@@ -465,7 +464,7 @@ void InspectorEmulationAgent::InnerEnable() {
   if (enabled_)
     return;
   enabled_ = true;
-  instrumenting_agents_->addInspectorEmulationAgent(this);
+  instrumenting_agents_->AddInspectorEmulationAgent(this);
 }
 
 Response InspectorEmulationAgent::AssertPage() {

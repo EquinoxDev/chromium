@@ -16,13 +16,15 @@
 #include "base/files/file_path.h"
 #include "base/macros.h"
 #include "base/memory/ref_counted.h"
+#include "base/optional.h"
+#include "base/time/time.h"
 #include "content/browser/notifications/notification_database.h"
 #include "content/browser/notifications/notification_id_generator.h"
 #include "content/browser/service_worker/service_worker_context_core_observer.h"
 #include "content/common/content_export.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/platform_notification_context.h"
-#include "third_party/blink/public/platform/modules/notifications/notification_service.mojom.h"
+#include "third_party/blink/public/mojom/notifications/notification_service.mojom.h"
 
 class GURL;
 
@@ -39,6 +41,7 @@ namespace content {
 class BlinkNotificationServiceImpl;
 class BrowserContext;
 struct NotificationDatabaseData;
+class PlatformNotificationServiceProxy;
 class ServiceWorkerContextWrapper;
 
 // Implementation of the Web Notification storage context. The public methods
@@ -80,6 +83,9 @@ class CONTENT_EXPORT PlatformNotificationContextImpl
       const GURL& origin,
       Interaction interaction,
       ReadResultCallback callback) override;
+  void ReadNotificationResources(const std::string& notification_id,
+                                 const GURL& origin,
+                                 ReadResourcesResultCallback callback) override;
   void WriteNotificationData(int64_t persistent_notification_id,
                              int64_t service_worker_registration_id,
                              const GURL& origin,
@@ -92,6 +98,7 @@ class CONTENT_EXPORT PlatformNotificationContextImpl
       const GURL& origin,
       int64_t service_worker_registration_id,
       ReadAllResultCallback callback) override;
+  void TriggerNotifications() override;
 
   // ServiceWorkerContextCoreObserver implementation.
   void OnRegistrationDeleted(int64_t registration_id,
@@ -100,6 +107,7 @@ class CONTENT_EXPORT PlatformNotificationContextImpl
 
  private:
   friend class PlatformNotificationContextTest;
+  friend class PlatformNotificationContextTriggerTest;
 
   ~PlatformNotificationContextImpl() override;
 
@@ -112,6 +120,9 @@ class CONTENT_EXPORT PlatformNotificationContextImpl
   // |task_runner_| thread. If everything is available, |callback| will be
   // called with true, otherwise it will be called with false.
   void LazyInitialize(InitializeResultCallback callback);
+
+  // Marks this notification as shown and displays it.
+  void DoTriggerNotification(const NotificationDatabaseData& database_data);
 
   // Opens the database. Must be called on the |task_runner_| thread. |callback|
   // will be invoked on the |task_runner_| thread. When the database has been
@@ -127,6 +138,27 @@ class CONTENT_EXPORT PlatformNotificationContextImpl
                               Interaction interaction,
                               ReadResultCallback callback,
                               bool initialized);
+
+  // Actually reads the notification resources from the database. Must only be
+  // called on the |task_runner_| thread. |callback| will be invoked on the
+  // UI thread when the operation has completed.
+  void DoReadNotificationResources(const std::string& notification_id,
+                                   const GURL& origin,
+                                   ReadResourcesResultCallback callback,
+                                   bool initialized);
+
+  // Synchronize displayed notifications. This removes all non-displayed
+  // notifications from the database.
+  void DoSyncNotificationData(bool supports_synchronization,
+                              std::set<std::string> displayed_notifications,
+                              bool initialized);
+
+  // Checks if the given notification is still valid, otherwise deletes it from
+  // the database.
+  void DoHandleSyncNotification(
+      bool supports_synchronization,
+      const std::set<std::string>& displayed_notifications,
+      const NotificationDatabaseData& data);
 
   // Updates the database (and the result callback) based on
   // |displayed_notifications| if |supports_synchronization|.
@@ -147,6 +179,10 @@ class CONTENT_EXPORT PlatformNotificationContextImpl
       std::set<std::string> displayed_notifications,
       bool supports_synchronization,
       bool initialized);
+
+  // Checks if the number of notifications scheduled for |origin| does not
+  // exceed the quota.
+  bool DoCheckNotificationTriggerQuota(const GURL& origin);
 
   // Actually writes the notification database to the database. Must only be
   // called on the |task_runner_| thread. |callback| will be invoked on the
@@ -197,8 +233,11 @@ class CONTENT_EXPORT PlatformNotificationContextImpl
 
   NotificationIdGenerator notification_id_generator_;
 
-  // Indicates whether the database should be pruned when it's opened.
-  bool prune_database_on_open_ = false;
+  // Keeps track of the next trigger timestamp.
+  base::Optional<base::Time> next_trigger_;
+
+  // Calls through to PlatformNotificationService methods.
+  std::unique_ptr<PlatformNotificationServiceProxy> service_proxy_;
 
   // The notification services are owned by the platform context, and will be
   // removed when either this class is destroyed or the Mojo pipe disconnects.

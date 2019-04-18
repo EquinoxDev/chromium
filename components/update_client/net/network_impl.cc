@@ -7,6 +7,7 @@
 #include <utility>
 
 #include "base/bind.h"
+#include "base/numerics/safe_conversions.h"
 #include "components/update_client/net/network_chromium.h"
 #include "net/base/load_flags.h"
 #include "net/http/http_response_headers.h"
@@ -21,19 +22,26 @@ namespace {
 const net::NetworkTrafficAnnotationTag traffic_annotation =
     net::DefineNetworkTrafficAnnotation("update_client", R"(
         semantics {
-          sender: "Component Updater"
+          sender: "Component Updater and Extension Updater"
           description:
-            "The component updater in Chrome is responsible for updating code "
-            "and data modules such as Flash, CrlSet, Origin Trials, etc. These "
-            "modules are updated on cycles independent of the Chrome release "
-            "tracks. It runs in the browser process and communicates with a "
-            "set of servers using the Omaha protocol to find the latest "
-            "versions of components, download them, and register them with the "
-            "rest of Chrome."
+            "This network module is used by both the component and the "
+            "extension updaters in Chrome. "
+            "The component updater is responsible for updating code and data "
+            "modules such as Flash, CrlSet, Origin Trials, etc. These modules "
+            "are updated on cycles independent of the Chrome release tracks. "
+            "It runs in the browser process and communicates with a set of "
+            "servers using the Omaha protocol to find the latest versions of "
+            "components, download them, and register them with the rest of "
+            "Chrome. "
+            "The extension updater works similarly, but it updates user "
+            "extensions instead of Chrome components. "
           trigger: "Manual or automatic software updates."
           data:
             "Various OS and Chrome parameters such as version, bitness, "
-            "release tracks, etc."
+            "release tracks, etc. The component and the extension ids are also "
+            "present in both the request and the response from the servers. "
+            "The URL that refers to a component CRX payload is obfuscated for "
+            "most components."
           destination: GOOGLE_OWNED_SERVICE
         }
         policy {
@@ -92,6 +100,7 @@ void NetworkFetcherImpl::PostRequest(
     const std::string& post_data,
     const base::flat_map<std::string, std::string>& post_additional_headers,
     ResponseStartedCallback response_started_callback,
+    ProgressCallback progress_callback,
     PostRequestCompleteCallback post_request_complete_callback) {
   DCHECK(!simple_url_loader_);
   auto resource_request = std::make_unique<network::ResourceRequest>();
@@ -111,6 +120,9 @@ void NetworkFetcherImpl::PostRequest(
   simple_url_loader_->SetOnResponseStartedCallback(base::BindOnce(
       &NetworkFetcherImpl::OnResponseStartedCallback, base::Unretained(this),
       std::move(response_started_callback)));
+  simple_url_loader_->SetOnDownloadProgressCallback(base::BindRepeating(
+      &NetworkFetcherImpl::OnProgressCallback, base::Unretained(this),
+      std::move(progress_callback)));
   constexpr size_t kMaxResponseSize = 1024 * 1024;
   simple_url_loader_->DownloadToString(
       shared_url_network_factory_.get(),
@@ -131,6 +143,7 @@ void NetworkFetcherImpl::DownloadToFile(
     const GURL& url,
     const base::FilePath& file_path,
     ResponseStartedCallback response_started_callback,
+    ProgressCallback progress_callback,
     DownloadToFileCompleteCallback download_to_file_complete_callback) {
   DCHECK(!simple_url_loader_);
   auto resource_request = std::make_unique<network::ResourceRequest>();
@@ -148,6 +161,9 @@ void NetworkFetcherImpl::DownloadToFile(
   simple_url_loader_->SetOnResponseStartedCallback(base::BindOnce(
       &NetworkFetcherImpl::OnResponseStartedCallback, base::Unretained(this),
       std::move(response_started_callback)));
+  simple_url_loader_->SetOnDownloadProgressCallback(base::BindRepeating(
+      &NetworkFetcherImpl::OnProgressCallback, base::Unretained(this),
+      std::move(progress_callback)));
   simple_url_loader_->DownloadToFile(
       shared_url_network_factory_.get(),
       base::BindOnce(
@@ -171,6 +187,11 @@ void NetworkFetcherImpl::OnResponseStartedCallback(
       .Run(final_url,
            response_head.headers ? response_head.headers->response_code() : -1,
            response_head.content_length);
+}
+
+void NetworkFetcherImpl::OnProgressCallback(ProgressCallback progress_callback,
+                                            uint64_t current) {
+  progress_callback.Run(base::saturated_cast<int64_t>(current));
 }
 
 NetworkFetcherChromiumFactory::NetworkFetcherChromiumFactory(

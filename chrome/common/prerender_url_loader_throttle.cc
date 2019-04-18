@@ -91,7 +91,7 @@ void PrerenderURLLoaderThrottle::WillStartRequest(
     // invalid requests.  For prefetches, cancel invalid requests but keep the
     // prefetch going.
     delegate_->CancelWithError(net::ERR_ABORTED);
-    if (mode_ == FULL_PRERENDER) {
+    if (mode_ == DEPRECATED_FULL_PRERENDER) {
       canceler_getter_task_runner_->PostTask(
           FROM_HERE, base::BindOnce(CancelPrerenderForUnsupportedMethod,
                                     std::move(canceler_getter_)));
@@ -158,8 +158,11 @@ void PrerenderURLLoaderThrottle::WillRedirectRequest(
   }
 
   std::string follow_only_when_prerender_shown_header;
-  response_head.headers->GetNormalizedHeader(
-      kFollowOnlyWhenPrerenderShown, &follow_only_when_prerender_shown_header);
+  if (response_head.headers) {
+    response_head.headers->GetNormalizedHeader(
+        kFollowOnlyWhenPrerenderShown,
+        &follow_only_when_prerender_shown_header);
+  }
   // Abort any prerenders with requests which redirect to invalid schemes.
   if (!DoesURLHaveValidScheme(redirect_info->new_url)) {
     delegate_->CancelWithError(net::ERR_ABORTED);

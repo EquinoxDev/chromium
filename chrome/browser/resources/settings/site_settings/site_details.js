@@ -45,6 +45,23 @@ Polymer({
       value: '',
     },
 
+    /**
+     * The number of cookies stored for the origin.
+     * @private
+     */
+    numCookies_: {
+      type: String,
+      value: '',
+    },
+
+    /** @private */
+    enableExperimentalWebPlatformFeatures_: {
+      type: Boolean,
+      value: function() {
+        return loadTimeData.getBoolean('enableExperimentalWebPlatformFeatures');
+      },
+    },
+
     /** @private */
     enableSiteSettings_: {
       type: Boolean,
@@ -84,6 +101,9 @@ Polymer({
    * @protected
    */
   currentRouteChanged: function(route) {
+    if (route != settings.routes.SITE_SETTINGS_SITE_DETAILS) {
+      return;
+    }
     const site = settings.getQueryParameters().get('site');
     if (!site) {
       return;
@@ -216,7 +236,8 @@ Polymer({
   onClearStorage_: function(e) {
     // Since usage is only shown when "Site Settings" is enabled, don't
     // clear it when it's not shown.
-    if (this.enableSiteSettings_ && this.storedData_ != '') {
+    if (this.enableSiteSettings_ &&
+        this.hasUsage_(this.storedData_, this.numCookies_)) {
       this.$.usageApi.clearUsage(this.toUrl(this.origin_).href);
     }
 
@@ -232,6 +253,7 @@ Polymer({
   onUsageDeleted_: function(event) {
     if (event.detail.origin == this.toUrl(this.origin_).href) {
       this.storedData_ = '';
+      this.numCookies_ = '';
     }
   },
 
@@ -251,8 +273,27 @@ Polymer({
    *     disk or battery).
    * @private
    */
-  hasUsage_: function(storage) {
-    return storage != '';
+  hasUsage_: function(storage, cookies) {
+    return storage != '' || cookies != '';
   },
 
+  /**
+   * Checks whether this site has both storage and cookies information to show.
+   * @return {boolean} Whether there are both storage and cookies information to
+   *     show.
+   * @private
+   */
+  hasDataAndCookies_: function(storage, cookies) {
+    return storage != '' && cookies != '';
+  },
+
+  /** @private */
+  onResetSettingsDialogClosed_: function() {
+    cr.ui.focusWithoutInk(assert(this.$$('#resetSettingsButton')));
+  },
+
+  /** @private */
+  onClearStorageDialogClosed_: function() {
+    cr.ui.focusWithoutInk(assert(this.$$('#clearStorage')));
+  },
 });

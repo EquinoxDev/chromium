@@ -44,7 +44,7 @@
 #include "third_party/blink/renderer/platform/heap/marking_visitor.h"
 #include "third_party/blink/renderer/platform/heap/page_memory.h"
 #include "third_party/blink/renderer/platform/heap/page_pool.h"
-#include "third_party/blink/renderer/platform/heap/thread_state.h"
+#include "third_party/blink/renderer/platform/heap/thread_state_scopes.h"
 #include "third_party/blink/renderer/platform/histogram.h"
 #include "third_party/blink/renderer/platform/instrumentation/tracing/trace_event.h"
 #include "third_party/blink/renderer/platform/instrumentation/tracing/web_memory_allocator_dump.h"
@@ -177,12 +177,8 @@ void ThreadHeap::DecommitCallbackStacks() {
     NotFullyConstructedItem item;
     while (not_fully_constructed_worklist_->Pop(WorklistTaskId::MainThread,
                                                 &item)) {
-      BasePage* const page = PageFromObject(item);
-      HeapObjectHeader* const header =
-          page->IsLargeObjectPage()
-              ? static_cast<LargeObjectPage*>(page)->ObjectHeader()
-              : static_cast<NormalPage*>(page)->FindHeaderFromAddress(
-                    reinterpret_cast<Address>(const_cast<void*>(item)));
+      HeapObjectHeader* const header = HeapObjectHeader::FromInnerAddress(
+          reinterpret_cast<Address>(const_cast<void*>(item)));
       DCHECK(header->IsMarked());
     }
 #else
@@ -194,7 +190,7 @@ void ThreadHeap::DecommitCallbackStacks() {
 
 HeapCompact* ThreadHeap::Compaction() {
   if (!compaction_)
-    compaction_ = HeapCompact::Create(this);
+    compaction_ = std::make_unique<HeapCompact>(this);
   return compaction_.get();
 }
 
@@ -517,8 +513,7 @@ void ThreadHeap::TakeSnapshot(SnapshotType type) {
   // gcInfoIndex.
   ThreadState::GCSnapshotInfo info(GCInfoTable::Get().GcInfoIndex() + 1);
   String thread_dump_name =
-      String::Format("blink_gc/thread_%lu",
-                     static_cast<unsigned long>(thread_state_->ThreadId()));
+      String("blink_gc/thread_") + String::Number(thread_state_->ThreadId());
   const String heaps_dump_name = thread_dump_name + "/heaps";
   const String classes_dump_name = thread_dump_name + "/classes";
 
@@ -612,12 +607,8 @@ void ThreadHeap::WriteBarrier(void* value) {
   // '-1' is used to indicate deleted values.
   DCHECK_NE(value, reinterpret_cast<void*>(-1));
 
-  BasePage* const page = PageFromObject(value);
-  HeapObjectHeader* const header =
-      page->IsLargeObjectPage()
-          ? static_cast<LargeObjectPage*>(page)->ObjectHeader()
-          : static_cast<NormalPage*>(page)->FindHeaderFromAddress(
-                reinterpret_cast<Address>(const_cast<void*>(value)));
+  HeapObjectHeader* const header = HeapObjectHeader::FromInnerAddress(
+      reinterpret_cast<Address>(const_cast<void*>(value)));
   if (header->IsMarked())
     return;
 
@@ -632,7 +623,7 @@ void ThreadHeap::WriteBarrier(void* value) {
   marking_worklist_->Push(
       WorklistTaskId::MainThread,
       {header->Payload(),
-       GCInfoTable::Get().GCInfoFromIndex(header->GcInfoIndex())->trace_});
+       GCInfoTable::Get().GCInfoFromIndex(header->GcInfoIndex())->trace});
 }
 
 ThreadHeap* ThreadHeap::main_thread_heap_ = nullptr;

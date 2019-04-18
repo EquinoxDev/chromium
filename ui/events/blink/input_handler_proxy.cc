@@ -146,7 +146,8 @@ enum ScrollingThreadStatus {
 namespace ui {
 
 InputHandlerProxy::InputHandlerProxy(cc::InputHandler* input_handler,
-                                     InputHandlerProxyClient* client)
+                                     InputHandlerProxyClient* client,
+                                     bool force_input_to_main_thread)
     : client_(client),
       input_handler_(input_handler),
       synchronous_input_handler_(nullptr),
@@ -165,7 +166,8 @@ InputHandlerProxy::InputHandlerProxy(cc::InputHandler* input_handler,
       tick_clock_(base::DefaultTickClock::GetInstance()),
       snap_fling_controller_(std::make_unique<cc::SnapFlingController>(this)),
       compositor_touch_action_enabled_(
-          base::FeatureList::IsEnabled(features::kCompositorTouchAction)) {
+          base::FeatureList::IsEnabled(features::kCompositorTouchAction)),
+      force_input_to_main_thread_(force_input_to_main_thread) {
   DCHECK(client);
   input_handler_->BindToClient(this);
   cc::ScrollElasticityHelper* scroll_elasticity_helper =
@@ -298,12 +300,8 @@ void InputHandlerProxy::DispatchQueuedInputEvents() {
   base::TimeTicks now = tick_clock_->NowTicks();
   while (!compositor_event_queue_->empty()) {
     std::unique_ptr<EventWithCallback> event_with_callback =
-        compositor_event_queue_->Pop();
-    if (scroll_predictor_) {
-      scroll_predictor_->ResampleScrollEvents(
-          event_with_callback->original_events(), now,
-          event_with_callback->event_pointer());
-    }
+        scroll_predictor_->ResampleScrollEvents(compositor_event_queue_->Pop(),
+                                                now);
 
     DispatchSingleInputEvent(std::move(event_with_callback), now);
   }
@@ -312,6 +310,9 @@ void InputHandlerProxy::DispatchQueuedInputEvents() {
 InputHandlerProxy::EventDisposition InputHandlerProxy::HandleInputEvent(
     const WebInputEvent& event) {
   DCHECK(input_handler_);
+
+  if (force_input_to_main_thread_)
+    return DID_NOT_HANDLE;
 
   if (IsGestureScroll(event.GetType()) &&
       (snap_fling_controller_->FilterEventForSnap(
@@ -706,14 +707,9 @@ InputHandlerProxy::EventDisposition InputHandlerProxy::HandleGestureScrollEnd(
   DCHECK(expect_scroll_update_end_);
   expect_scroll_update_end_ = false;
 #endif
-  if (ShouldAnimate(gesture_event.data.scroll_end.delta_units !=
-                    blink::WebGestureEvent::ScrollUnits::kPixels)) {
-    // Do nothing if the scroll is being animated; the scroll animation will
-    // generate the ScrollEnd when it is done.
-  } else {
-    cc::ScrollState scroll_state = CreateScrollStateForGesture(gesture_event);
-    input_handler_->ScrollEnd(&scroll_state, true);
-  }
+
+  cc::ScrollState scroll_state = CreateScrollStateForGesture(gesture_event);
+  input_handler_->ScrollEnd(&scroll_state, true);
 
   if (scroll_sequence_ignored_)
     return DROP_EVENT;

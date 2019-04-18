@@ -34,10 +34,10 @@ const char* PointerTypeNameForWebPointPointerType(
   }
 }
 
-unsigned short ButtonToButtonsBitfield(WebPointerProperties::Button button) {
+uint16_t ButtonToButtonsBitfield(WebPointerProperties::Button button) {
 #define CASE_BUTTON_TO_BUTTONS(enumLabel)       \
   case WebPointerProperties::Button::enumLabel: \
-    return static_cast<unsigned short>(WebPointerProperties::Buttons::enumLabel)
+    return static_cast<uint16_t>(WebPointerProperties::Buttons::enumLabel)
 
   switch (button) {
     CASE_BUTTON_TO_BUTTONS(kNoButton);
@@ -73,7 +73,7 @@ const AtomicString& PointerEventNameForEventType(WebInputEvent::Type type) {
   }
 }
 
-float GetPointerEventPressure(float force, int buttons) {
+float GetPointerEventPressure(float force, uint16_t buttons) {
   if (!buttons)
     return 0;
   if (std::isnan(force))
@@ -165,6 +165,10 @@ HeapVector<Member<PointerEvent>> PointerEventFactory::CreateEventSequence(
       new_event_init->setBubbles(false);
       UpdateCommonPointerEventInit(event, last_global_position, view,
                                    new_event_init);
+      UIEventWithKeyState::SetFromWebInputEventModifiers(
+          new_event_init,
+          static_cast<WebInputEvent::Modifiers>(event.GetModifiers()));
+
       last_global_position = event.PositionInScreen();
 
       PointerEvent* pointer_event =
@@ -282,7 +286,7 @@ PointerEvent* PointerEventFactory::Create(
       type = event_type_names::kPointermove;
   } else {
     pointer_event_init->setButton(
-        static_cast<int>(WebPointerProperties::Button::kNoButton));
+        static_cast<int16_t>(WebPointerProperties::Button::kNoButton));
   }
 
   pointer_event_init->setView(view);
@@ -384,6 +388,12 @@ PointerEvent* PointerEventFactory::CreatePointerEventFrom(
   pointer_event_init->setView(pointer_event->view());
 
   SetEventSpecificFields(pointer_event_init, type);
+
+  if (UIEventWithKeyState* key_state_event =
+          FindEventWithKeyState(pointer_event)) {
+    UIEventWithKeyState::SetFromWebInputEventModifiers(
+        pointer_event_init, key_state_event->GetModifiers());
+  }
 
   if (related_target)
     pointer_event_init->setRelatedTarget(related_target);

@@ -30,6 +30,8 @@ const char* ToString(ax::mojom::Event event) {
       return "documentSelectionChanged";
     case ax::mojom::Event::kDocumentTitleChanged:
       return "documentTitleChanged";
+    case ax::mojom::Event::kEndOfTest:
+      return "endOfTest";
     case ax::mojom::Event::kExpandedChanged:
       return "expandedChanged";
     case ax::mojom::Event::kFocus:
@@ -148,6 +150,8 @@ ax::mojom::Event ParseEvent(const char* event) {
     return ax::mojom::Event::kDocumentSelectionChanged;
   if (0 == strcmp(event, "documentTitleChanged"))
     return ax::mojom::Event::kDocumentTitleChanged;
+  if (0 == strcmp(event, "endOfTest"))
+    return ax::mojom::Event::kEndOfTest;
   if (0 == strcmp(event, "expandedChanged"))
     return ax::mojom::Event::kExpandedChanged;
   if (0 == strcmp(event, "focus"))
@@ -1099,6 +1103,14 @@ const char* ToString(ax::mojom::Action action) {
       return "showContextMenu";
     case ax::mojom::Action::kGetTextLocation:
       return "getTextLocation";
+    case ax::mojom::Action::kAnnotatePageImages:
+      return "annotatePageImages";
+    case ax::mojom::Action::kSignalEndOfTest:
+      return "signalEndOfTest";
+    case ax::mojom::Action::kShowTooltip:
+      return "showTooltip";
+    case ax::mojom::Action::kHideTooltip:
+      return "hideTooltip";
   }
 
   return "";
@@ -1107,6 +1119,8 @@ const char* ToString(ax::mojom::Action action) {
 ax::mojom::Action ParseAction(const char* action) {
   if (0 == strcmp(action, "none"))
     return ax::mojom::Action::kNone;
+  if (0 == strcmp(action, "annotatePageImages"))
+    return ax::mojom::Action::kAnnotatePageImages;
   if (0 == strcmp(action, "blur"))
     return ax::mojom::Action::kBlur;
   if (0 == strcmp(action, "clearAccessibilityFocus"))
@@ -1159,6 +1173,12 @@ ax::mojom::Action ParseAction(const char* action) {
     return ax::mojom::Action::kSetValue;
   if (0 == strcmp(action, "showContextMenu"))
     return ax::mojom::Action::kShowContextMenu;
+  if (0 == strcmp(action, "signalEndOfTest"))
+    return ax::mojom::Action::kSignalEndOfTest;
+  if (0 == strcmp(action, "showTooltip"))
+    return ax::mojom::Action::kShowTooltip;
+  if (0 == strcmp(action, "hideTooltip"))
+    return ax::mojom::Action::kHideTooltip;
   return ax::mojom::Action::kNone;
 }
 
@@ -1316,6 +1336,8 @@ const char* ToString(ax::mojom::StringAttribute string_attribute) {
       return "role";
     case ax::mojom::StringAttribute::kRoleDescription:
       return "roleDescription";
+    case ax::mojom::StringAttribute::kTooltip:
+      return "tooltip";
     case ax::mojom::StringAttribute::kUrl:
       return "url";
     case ax::mojom::StringAttribute::kValue:
@@ -1372,6 +1394,8 @@ ax::mojom::StringAttribute ParseStringAttribute(const char* string_attribute) {
     return ax::mojom::StringAttribute::kRole;
   if (0 == strcmp(string_attribute, "roleDescription"))
     return ax::mojom::StringAttribute::kRoleDescription;
+  if (0 == strcmp(string_attribute, "tooltip"))
+    return ax::mojom::StringAttribute::kTooltip;
   if (0 == strcmp(string_attribute, "url"))
     return ax::mojom::StringAttribute::kUrl;
   if (0 == strcmp(string_attribute, "value"))
@@ -1479,6 +1503,12 @@ const char* ToString(ax::mojom::IntAttribute int_attribute) {
       return "textPosition";
     case ax::mojom::IntAttribute::kTextStyle:
       return "textStyle";
+    case ax::mojom::IntAttribute::kTextOverlineStyle:
+      return "textOverlineStyle";
+    case ax::mojom::IntAttribute::kTextStrikethroughStyle:
+      return "textStrikethroughStyle";
+    case ax::mojom::IntAttribute::kTextUnderlineStyle:
+      return "textUnderlineStyle";
     case ax::mojom::IntAttribute::kPreviousFocusId:
       return "previousFocusId";
     case ax::mojom::IntAttribute::kNextFocusId:
@@ -1589,6 +1619,12 @@ ax::mojom::IntAttribute ParseIntAttribute(const char* int_attribute) {
     return ax::mojom::IntAttribute::kTextPosition;
   if (0 == strcmp(int_attribute, "textStyle"))
     return ax::mojom::IntAttribute::kTextStyle;
+  if (0 == strcmp(int_attribute, "textOverlineStyle"))
+    return ax::mojom::IntAttribute::kTextOverlineStyle;
+  if (0 == strcmp(int_attribute, "textStrikethroughStyle"))
+    return ax::mojom::IntAttribute::kTextStrikethroughStyle;
+  if (0 == strcmp(int_attribute, "textUnderlineStyle"))
+    return ax::mojom::IntAttribute::kTextUnderlineStyle;
   if (0 == strcmp(int_attribute, "previousFocusId"))
     return ax::mojom::IntAttribute::kPreviousFocusId;
   if (0 == strcmp(int_attribute, "nextFocusId"))
@@ -1612,6 +1648,8 @@ const char* ToString(ax::mojom::FloatAttribute float_attribute) {
       return "stepValueForRange";
     case ax::mojom::FloatAttribute::kFontSize:
       return "fontSize";
+    case ax::mojom::FloatAttribute::kFontWeight:
+      return "fontWeight";
   }
 
   return "";
@@ -1630,6 +1668,8 @@ ax::mojom::FloatAttribute ParseFloatAttribute(const char* float_attribute) {
     return ax::mojom::FloatAttribute::kStepValueForRange;
   if (0 == strcmp(float_attribute, "fontSize"))
     return ax::mojom::FloatAttribute::kFontSize;
+  if (0 == strcmp(float_attribute, "fontWeight"))
+    return ax::mojom::FloatAttribute::kFontWeight;
   return ax::mojom::FloatAttribute::kNone;
 }
 
@@ -1934,6 +1974,42 @@ ax::mojom::MarkerType ParseMarkerType(const char* marker_type) {
   return ax::mojom::MarkerType::kNone;
 }
 
+const char* ToString(ax::mojom::TextDecorationStyle text_decoration_style) {
+  switch (text_decoration_style) {
+    case ax::mojom::TextDecorationStyle::kNone:
+      return "none";
+    case ax::mojom::TextDecorationStyle::kSolid:
+      return "solid";
+    case ax::mojom::TextDecorationStyle::kDashed:
+      return "dashed";
+    case ax::mojom::TextDecorationStyle::kDotted:
+      return "dotted";
+    case ax::mojom::TextDecorationStyle::kDouble:
+      return "double";
+    case ax::mojom::TextDecorationStyle::kWavy:
+      return "wavy";
+  }
+
+  return "";
+}
+
+ax::mojom::TextDecorationStyle ParseTextDecorationStyle(
+    const char* text_decoration_style) {
+  if (0 == strcmp(text_decoration_style, "none"))
+    return ax::mojom::TextDecorationStyle::kNone;
+  if (0 == strcmp(text_decoration_style, "solid"))
+    return ax::mojom::TextDecorationStyle::kSolid;
+  if (0 == strcmp(text_decoration_style, "dashed"))
+    return ax::mojom::TextDecorationStyle::kDashed;
+  if (0 == strcmp(text_decoration_style, "dotted"))
+    return ax::mojom::TextDecorationStyle::kDotted;
+  if (0 == strcmp(text_decoration_style, "double"))
+    return ax::mojom::TextDecorationStyle::kDouble;
+  if (0 == strcmp(text_decoration_style, "wavy"))
+    return ax::mojom::TextDecorationStyle::kWavy;
+  return ax::mojom::TextDecorationStyle::kNone;
+}
+
 const char* ToString(ax::mojom::TextDirection text_direction) {
   switch (text_direction) {
     case ax::mojom::TextDirection::kNone:
@@ -1998,6 +2074,8 @@ const char* ToString(ax::mojom::TextStyle text_style) {
       return "underline";
     case ax::mojom::TextStyle::kLineThrough:
       return "lineThrough";
+    case ax::mojom::TextStyle::kOverline:
+      return "overline";
     case ax::mojom::TextStyle::kNone:
       return "none";
   }
@@ -2014,6 +2092,8 @@ ax::mojom::TextStyle ParseTextStyle(const char* text_style) {
     return ax::mojom::TextStyle::kUnderline;
   if (0 == strcmp(text_style, "lineThrough"))
     return ax::mojom::TextStyle::kLineThrough;
+  if (0 == strcmp(text_style, "overline"))
+    return ax::mojom::TextStyle::kOverline;
   return ax::mojom::TextStyle::kNone;
 }
 
@@ -2280,8 +2360,6 @@ const char* ToString(ax::mojom::DescriptionFrom description_from) {
       return "attribute";
     case ax::mojom::DescriptionFrom::kContents:
       return "contents";
-    case ax::mojom::DescriptionFrom::kPlaceholder:
-      return "placeholder";
     case ax::mojom::DescriptionFrom::kRelatedElement:
       return "relatedElement";
   }
@@ -2298,8 +2376,6 @@ ax::mojom::DescriptionFrom ParseDescriptionFrom(const char* description_from) {
     return ax::mojom::DescriptionFrom::kAttribute;
   if (0 == strcmp(description_from, "contents"))
     return ax::mojom::DescriptionFrom::kContents;
-  if (0 == strcmp(description_from, "placeholder"))
-    return ax::mojom::DescriptionFrom::kPlaceholder;
   if (0 == strcmp(description_from, "relatedElement"))
     return ax::mojom::DescriptionFrom::kRelatedElement;
   return ax::mojom::DescriptionFrom::kNone;

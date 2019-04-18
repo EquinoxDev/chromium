@@ -44,7 +44,7 @@
 #include "ui/views/controls/separator.h"
 #include "ui/views/layout/box_layout.h"
 #include "ui/views/painter.h"
-#include "ui/views/view_properties.h"
+#include "ui/views/view_class_properties.h"
 #include "ui/views/view_targeter.h"
 #include "ui/views/widget/widget.h"
 
@@ -166,6 +166,12 @@ FindBarView::FindBarView(FindBarHost* host)
   find_text_->SetTextInputFlags(ui::TEXT_INPUT_FLAG_AUTOCORRECT_OFF);
   AddChildView(find_text_);
 
+  match_count_text_->SetEventTargeter(
+      std::make_unique<views::ViewTargeter>(this));
+  AddChildView(match_count_text_);
+
+  AddChildView(separator_);
+
   find_previous_button_->set_id(VIEW_ID_FIND_IN_PAGE_PREVIOUS_BUTTON);
   find_previous_button_->SetFocusForPlatform();
   find_previous_button_->SetTooltipText(
@@ -195,14 +201,6 @@ FindBarView::FindBarView(FindBarHost* host)
 
   EnableCanvasFlippingForRTLUI(true);
 
-  match_count_text_->SetEventTargeter(
-      std::make_unique<views::ViewTargeter>(this));
-  AddChildViewAt(match_count_text_, 1);
-
-  ChromeLayoutProvider* provider = ChromeLayoutProvider::Get();
-
-  AddChildViewAt(separator_, 2);
-
   // Normally we could space objects horizontally by simply passing a constant
   // value to BoxLayout for between-child spacing.  But for the vector image
   // buttons, we want the spacing to apply between the inner "glyph" portions
@@ -211,6 +209,7 @@ FindBarView::FindBarView(FindBarHost* host)
   // we place views directly adjacent, with horizontal margins on each view
   // that will add up to the right spacing amounts.
 
+  ChromeLayoutProvider* provider = ChromeLayoutProvider::Get();
   const gfx::Insets horizontal_margin(
       0,
       provider->GetDistanceMetric(DISTANCE_UNRELATED_CONTROL_HORIZONTAL) / 2);
@@ -512,8 +511,11 @@ void FindBarView::OnNativeThemeChanged(const ui::NativeTheme* theme) {
                   0xFF);
   auto border = std::make_unique<views::BubbleBorder>(
       views::BubbleBorder::NONE, views::BubbleBorder::SMALL_SHADOW, bg_color);
-  border->SetCornerRadius(
-      ChromeLayoutProvider::Get()->GetCornerRadiusMetric(views::EMPHASIS_HIGH));
+  // TODO(sajadm): Remove when fixing https://crbug.com/822075 and use
+  // EMPHASIS_HIGH metric values from the LayoutProvider to get the
+  // corner radius.
+  border->SetCornerRadius(2);
+
   SetBackground(std::make_unique<views::BubbleBackground>(border.get()));
   SetBorder(std::move(border));
 

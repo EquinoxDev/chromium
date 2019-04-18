@@ -17,6 +17,8 @@ const base::Feature kIPHDummyFeature{"IPH_Dummy",
 #if defined(OS_ANDROID)
 const base::Feature kIPHDataSaverDetailFeature{
     "IPH_DataSaverDetail", base::FEATURE_DISABLED_BY_DEFAULT};
+const base::Feature kIPHDataSaverMilestonePromoFeature{
+    "IPH_DataSaverMilestonePromo", base::FEATURE_DISABLED_BY_DEFAULT};
 const base::Feature kIPHDataSaverPreviewFeature{
     "IPH_DataSaverPreview", base::FEATURE_DISABLED_BY_DEFAULT};
 const base::Feature kIPHDownloadHomeFeature{"IPH_DownloadHome",
@@ -55,6 +57,12 @@ const base::Feature kIPHNewTabPageButtonFeature{
     "IPH_NewTabPageButton", base::FEATURE_DISABLED_BY_DEFAULT};
 const base::Feature kIPHPreviewsOmniboxUIFeature{
     "IPH_PreviewsOmniboxUI", base::FEATURE_DISABLED_BY_DEFAULT};
+const base::Feature kIPHTabGroupsQuicklyComparePagesFeature{
+    "IPH_TabGroupsQuicklyComparePages", base::FEATURE_DISABLED_BY_DEFAULT};
+const base::Feature kIPHTabGroupsTapToSeeAnotherTabFeature{
+    "IPH_TabGroupsTapToSeeAnotherTab", base::FEATURE_DISABLED_BY_DEFAULT};
+const base::Feature kIPHTabGroupsYourTabsAreTogetherFeature{
+    "IPH_TabGroupsYourTabsTogether", base::FEATURE_DISABLED_BY_DEFAULT};
 const base::Feature kIPHTranslateMenuButtonFeature{
     "IPH_TranslateMenuButton", base::FEATURE_ENABLED_BY_DEFAULT};
 #endif  // defined(OS_ANDROID)
@@ -81,6 +89,8 @@ const base::Feature kIPHNewIncognitoTabTipFeature{
     "IPH_NewIncognitoTabTip", base::FEATURE_DISABLED_BY_DEFAULT};
 const base::Feature kIPHBadgedReadingListFeature{
     "IPH_BadgedReadingList", base::FEATURE_ENABLED_BY_DEFAULT};
+const base::Feature kIPHBadgedTranslateManualTriggerFeature{
+    "IPH_BadgedTranslateManualTrigger", base::FEATURE_DISABLED_BY_DEFAULT};
 #endif  // defined(OS_IOS)
 
 }  // namespace feature_engagement

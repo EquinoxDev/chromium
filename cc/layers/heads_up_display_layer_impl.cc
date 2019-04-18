@@ -107,9 +107,7 @@ HeadsUpDisplayLayerImpl::HeadsUpDisplayLayerImpl(LayerTreeImpl* tree_impl,
       internal_contents_scale_(1.f),
       fps_graph_(60.0, 80.0),
       paint_time_graph_(16.0, 48.0),
-      fade_step_(0),
-      raster_color_space_(gfx::ColorSpace::CreateSRGB(),
-                          gfx::ColorSpace::GetNextId()) {}
+      fade_step_(0) {}
 
 HeadsUpDisplayLayerImpl::~HeadsUpDisplayLayerImpl() {
   ReleaseResources();
@@ -262,7 +260,8 @@ void HeadsUpDisplayLayerImpl::UpdateHudTexture(
                            ? raster_context_provider->ContextCapabilities()
                            : context_provider->ContextCapabilities();
     viz::ResourceFormat format =
-        viz::PlatformColor::BestSupportedRenderBufferFormat(caps);
+        gpu_raster ? viz::PlatformColor::BestSupportedRenderBufferFormat(caps)
+                   : viz::PlatformColor::BestSupportedTextureFormat(caps);
     pool_resource = pool_->AcquireResource(internal_content_bounds_, format,
                                            gfx::ColorSpace());
 
@@ -278,13 +277,13 @@ void HeadsUpDisplayLayerImpl::UpdateHudTexture(
               ->settings()
               .resource_settings.use_gpu_memory_buffer_resources);
 
-      uint32_t flags = 0;
+      uint32_t flags = gpu::SHARED_IMAGE_USAGE_DISPLAY;
       if (use_oopr) {
-        flags = gpu::SHARED_IMAGE_USAGE_RASTER |
-                gpu::SHARED_IMAGE_USAGE_OOP_RASTERIZATION;
+        flags |= gpu::SHARED_IMAGE_USAGE_RASTER |
+                 gpu::SHARED_IMAGE_USAGE_OOP_RASTERIZATION;
       } else if (gpu_raster) {
-        flags = gpu::SHARED_IMAGE_USAGE_GLES2 |
-                gpu::SHARED_IMAGE_USAGE_GLES2_FRAMEBUFFER_HINT;
+        flags |= gpu::SHARED_IMAGE_USAGE_GLES2 |
+                 gpu::SHARED_IMAGE_USAGE_GLES2_FRAMEBUFFER_HINT;
       }
       if (backing->overlay_candidate)
         flags |= gpu::SHARED_IMAGE_USAGE_SCANOUT;
@@ -358,13 +357,16 @@ void HeadsUpDisplayLayerImpl::UpdateHudTexture(
       constexpr GLuint msaa_sample_count = -1;
       constexpr bool can_use_lcd_text = true;
       ri->BeginRasterCHROMIUM(background_color, msaa_sample_count,
-                              can_use_lcd_text, raster_color_space_,
+                              can_use_lcd_text, gfx::ColorSpace::CreateSRGB(),
                               backing->mailbox.name);
       gfx::Vector2dF post_translate(0.f, 0.f);
       DummyImageProvider image_provider;
+      size_t max_op_size_limit =
+          gpu::raster::RasterInterface::kDefaultMaxOpSizeHint;
       ri->RasterCHROMIUM(display_item_list.get(), &image_provider, size,
                          gfx::Rect(size), gfx::Rect(size), post_translate,
-                         1.f /* post_scale */, false /* requires_clear */);
+                         1.f /* post_scale */, false /* requires_clear */,
+                         &max_op_size_limit);
       ri->EndRasterCHROMIUM();
       backing->mailbox_sync_token =
           viz::ClientResourceProvider::GenerateSyncTokenHelper(ri);
@@ -376,7 +378,8 @@ void HeadsUpDisplayLayerImpl::UpdateHudTexture(
       {
         ScopedGpuRaster gpu_raster(context_provider);
         viz::ClientResourceProvider::ScopedSkSurface scoped_surface(
-            context_provider->GrContext(), mailbox_texture_id,
+            context_provider->GrContext(),
+            pool_resource.color_space().ToSkColorSpace(), mailbox_texture_id,
             backing->texture_target, pool_resource.size(),
             pool_resource.format(), false /* can_use_lcd_text */,
             0 /* msaa_sample_count */);
@@ -836,8 +839,8 @@ SkRect HeadsUpDisplayLayerImpl::DrawMemoryDisplay(PaintCanvas* canvas,
   const SkScalar pos[] = {SkFloatToScalar(0.2f), SkFloatToScalar(0.4f),
                           SkFloatToScalar(0.6f), SkFloatToScalar(0.8f),
                           SkFloatToScalar(1.0f)};
-  flags.setShader(PaintShader::MakeSweepGradient(
-      cx, cy, colors, pos, 5, SkShader::kClamp_TileMode, 0, 360));
+  flags.setShader(PaintShader::MakeSweepGradient(cx, cy, colors, pos, 5,
+                                                 SkTileMode::kClamp, 0, 360));
   flags.setAntiAlias(true);
 
   // Draw current status.

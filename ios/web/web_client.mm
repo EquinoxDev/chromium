@@ -6,8 +6,8 @@
 
 #import <Foundation/Foundation.h>
 
+#include "ios/web/common/features.h"
 #include "ios/web/public/app/web_main_parts.h"
-#include "ios/web/public/features.h"
 #include "services/service_manager/public/cpp/service.h"
 
 #if !defined(__has_feature) || !__has_feature(objc_arc)
@@ -102,12 +102,18 @@ bool WebClient::IsSlimNavigationManagerEnabled() const {
   return base::FeatureList::IsEnabled(web::features::kSlimNavigationManager);
 }
 
-void WebClient::PrepareErrorPage(NSError* error,
+void WebClient::PrepareErrorPage(WebState* web_state,
+                                 const GURL& url,
+                                 NSError* error,
                                  bool is_post,
                                  bool is_off_the_record,
                                  NSString** error_html) {
   DCHECK(error);
   *error_html = error.localizedDescription;
+}
+
+UIView* WebClient::GetWindowedContainer() {
+  return nullptr;
 }
 
 }  // namespace web

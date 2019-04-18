@@ -26,6 +26,7 @@
 #include "content/browser/frame_host/navigation_entry_impl.h"
 #include "content/browser/loader/resource_dispatcher_host_impl.h"
 #include "content/browser/renderer_host/render_widget_host_impl.h"
+#include "content/browser/renderer_host/render_widget_host_input_event_router.h"
 #include "content/browser/web_contents/web_contents_impl.h"
 #include "content/browser/web_contents/web_contents_view.h"
 #include "content/common/frame_messages.h"
@@ -424,7 +425,7 @@ IN_PROC_BROWSER_TEST_F(WebContentsImplBrowserTest,
     || defined(THREAD_SANITIZER)
 #define MAYBE_GetSizeForNewRenderView DISABLED_GetSizeForNewRenderView
 #else
-#define MAYBE_GetSizeForNewRenderView GetSizeForNewRenderView
+#define MAYBE_GetSizeForNewRenderView DISABLED_GetSizeForNewRenderView
 #endif
 // Test that RenderViewHost is created and updated at the size specified by
 // WebContentsDelegate::GetSizeForNewRenderView().
@@ -433,7 +434,7 @@ IN_PROC_BROWSER_TEST_F(WebContentsImplBrowserTest,
   ASSERT_TRUE(embedded_test_server()->Start());
   // Create a new server with a different site.
   net::EmbeddedTestServer https_server(net::EmbeddedTestServer::TYPE_HTTPS);
-  https_server.ServeFilesFromSourceDirectory("content/test/data");
+  https_server.ServeFilesFromSourceDirectory(GetTestDataFilePath());
   ASSERT_TRUE(https_server.Start());
 
   std::unique_ptr<RenderViewSizeDelegate> delegate(
@@ -1809,6 +1810,8 @@ void NavigateToDataURLAndCheckForTerminationDisabler(
   NavigateToURL(shell, GURL("data:text/html," + html));
   RenderFrameHostImpl* rfh =
       static_cast<RenderFrameHostImpl*>(shell->web_contents()->GetMainFrame());
+  EXPECT_EQ(expect_onunload || expect_onbeforeunload,
+            shell->web_contents()->NeedToFireBeforeUnload());
   EXPECT_EQ(expect_onunload,
             rfh->GetSuddenTerminationDisablerState(blink::kUnloadHandler));
   EXPECT_EQ(expect_onbeforeunload, rfh->GetSuddenTerminationDisablerState(
@@ -1819,6 +1822,22 @@ void NavigateToDataURLAndCheckForTerminationDisabler(
 IN_PROC_BROWSER_TEST_F(WebContentsImplBrowserTest,
                        SuddenTerminationDisablerNone) {
   const std::string NO_HANDLERS_HTML = "<html><body>foo</body></html>";
+  NavigateToDataURLAndCheckForTerminationDisabler(shell(), NO_HANDLERS_HTML,
+                                                  false, false);
+}
+
+IN_PROC_BROWSER_TEST_F(
+    WebContentsImplBrowserTest,
+    SuddenTerminationDisablerNoneProcessTerminationDisallowed) {
+  const std::string NO_HANDLERS_HTML = "<html><body>foo</body></html>";
+  // The WebContents termination disabler should be independent of the
+  // RenderProcessHost termination disabler, as process termination can depend
+  // on more than the presence of a beforeunload/unload handler.
+  shell()
+      ->web_contents()
+      ->GetMainFrame()
+      ->GetProcess()
+      ->SetSuddenTerminationAllowed(false);
   NavigateToDataURLAndCheckForTerminationDisabler(shell(), NO_HANDLERS_HTML,
                                                   false, false);
 }
@@ -3263,6 +3282,105 @@ IN_PROC_BROWSER_TEST_F(WebContentsImplBrowserTest, SetVisibilityBeforeLoad) {
 
   EXPECT_TRUE(NavigateToURL(web_contents.get(), url));
   EXPECT_TRUE(EvalJs(web_contents.get(), "document.hidden").ExtractBool());
+}
+
+// This test verifies that if we attach an inner WebContents that has
+// descendants in the WebContentsTree, that the descendants also have their
+// views registered with the top-level WebContents' InputEventRouter. This
+// ensures the descendants will receive events that should be routed to them.
+IN_PROC_BROWSER_TEST_F(WebContentsImplBrowserTest,
+                       AttachNestedInnerWebContents) {
+  ASSERT_TRUE(embedded_test_server()->Start());
+  GURL main_url(embedded_test_server()->GetURL(
+      "a.com", "/cross_site_iframe_factory.html?a(a)"));
+  EXPECT_TRUE(NavigateToURL(shell(), main_url));
+
+  auto* root_web_contents =
+      static_cast<WebContentsImpl*>(shell()->web_contents());
+  FrameTreeNode* root = root_web_contents->GetFrameTree()->root();
+  ASSERT_EQ(1u, root->child_count());
+  FrameTreeNode* child_to_replace = root->child_at(0);
+  auto* child_to_replace_rfh = child_to_replace->current_frame_host();
+
+  WebContents::CreateParams inner_params(
+      root_web_contents->GetBrowserContext());
+
+  std::unique_ptr<WebContents> child_contents_ptr =
+      WebContents::Create(inner_params);
+  auto* child_rfh =
+      static_cast<RenderFrameHostImpl*>(child_contents_ptr->GetMainFrame());
+
+  std::unique_ptr<WebContents> grandchild_contents_ptr =
+      WebContents::Create(inner_params);
+
+  // Attach grandchild to child.
+  child_contents_ptr->AttachInnerWebContents(std::move(grandchild_contents_ptr),
+                                             child_rfh);
+
+  // At this point the child hasn't been attached to the root.
+  EXPECT_EQ(1U, root_web_contents->GetInputEventRouter()
+                    ->RegisteredViewCountForTesting());
+
+  // Attach child+grandchild subtree to root.
+  root_web_contents->AttachInnerWebContents(std::move(child_contents_ptr),
+                                            child_to_replace_rfh);
+
+  // Verify views registered for both child and grandchild.
+  EXPECT_EQ(3U, root_web_contents->GetInputEventRouter()
+                    ->RegisteredViewCountForTesting());
+}
+
+IN_PROC_BROWSER_TEST_F(WebContentsImplBrowserTest,
+                       ShutdownDuringSpeculativeNavigation) {
+  ASSERT_TRUE(embedded_test_server()->Start());
+  GURL url(embedded_test_server()->GetURL("/hello.html"));
+
+  WebContents* attached_web_contents = shell()->web_contents();
+
+  WebContents::CreateParams create_params(
+      attached_web_contents->GetBrowserContext(), /*site_instance=*/nullptr);
+  create_params.initial_size = gfx::Size(100, 100);
+  std::unique_ptr<WebContents> public_web_contents =
+      WebContents::Create(create_params);
+  auto* web_contents = static_cast<WebContentsImpl*>(public_web_contents.get());
+
+  FrameTreeNode* root = web_contents->GetFrameTree()->root();
+
+  // Complete a navigation.
+  GURL url1 = embedded_test_server()->GetURL("a.com", "/title1.html");
+  EXPECT_TRUE(NavigateToURL(web_contents, url1));
+
+  // Start navigating to a second page.
+  GURL url2 = embedded_test_server()->GetURL("b.com", "/title2.html");
+  TestNavigationManager manager(web_contents, url2);
+  web_contents->GetController().LoadURL(
+      url2, Referrer(), ui::PAGE_TRANSITION_LINK, std::string());
+  EXPECT_TRUE(manager.WaitForRequestStart());
+
+  // While there is a speculative RenderFrameHost in the root FrameTreeNode...
+  ASSERT_TRUE(root->render_manager()->speculative_frame_host());
+
+  auto* frame_process = static_cast<RenderProcessHostImpl*>(
+      root->render_manager()->speculative_frame_host()->GetProcess());
+  int frame_routing_id =
+      root->render_manager()->speculative_frame_host()->GetRoutingID();
+
+  std::vector<int> deleted_routing_ids;
+  auto watcher = base::BindRepeating(
+      [](std::vector<int>* deleted_routing_ids, const IPC::Message& message) {
+        if (message.type() == FrameMsg_Delete::ID) {
+          deleted_routing_ids->push_back(message.routing_id());
+        }
+      },
+      &deleted_routing_ids);
+  frame_process->SetIpcSendWatcherForTesting(watcher);
+
+  // ...shutdown the WebContents.
+  public_web_contents.reset();
+
+  // What should have happened is the speculative RenderFrameHost deletes the
+  // provisional RenderFrame. The |watcher| verifies that this happened.
+  EXPECT_THAT(deleted_routing_ids, testing::Contains(frame_routing_id));
 }
 
 }  // namespace content

@@ -13,6 +13,7 @@ import android.support.v7.app.AlertDialog;
 import org.chromium.chrome.R;
 import org.chromium.chrome.browser.ChromeFeatureList;
 import org.chromium.chrome.browser.profiles.ProfileAccountManagementMetrics;
+import org.chromium.components.signin.GAIAServiceType;
 
 /**
  * Shows the dialog that explains the user the consequences of signing out of Chrome.
@@ -46,14 +47,12 @@ public class SignOutDialogFragment extends DialogFragment implements
     private boolean mSignOutClicked;
 
     /**
-     * The GAIA service that's prompted this dialog. Values can be any constant in
-     * signin::GAIAServiceType
+     * The GAIA service that's prompted this dialog.
      */
-    private int mGaiaServiceType;
+    private @GAIAServiceType int mGaiaServiceType = GAIAServiceType.GAIA_SERVICE_TYPE_NONE;
 
     @Override
     public Dialog onCreateDialog(Bundle savedInstanceState) {
-        mGaiaServiceType = AccountManagementScreenHelper.GAIA_SERVICE_TYPE_NONE;
         if (getArguments() != null) {
             mGaiaServiceType = getArguments().getInt(
                     SHOW_GAIA_SERVICE_TYPE_EXTRA, mGaiaServiceType);
@@ -94,8 +93,7 @@ public class SignOutDialogFragment extends DialogFragment implements
     @Override
     public void onClick(DialogInterface dialog, int which) {
         if (which == AlertDialog.BUTTON_POSITIVE) {
-            AccountManagementScreenHelper.logEvent(
-                    ProfileAccountManagementMetrics.SIGNOUT_SIGNOUT, mGaiaServiceType);
+            SigninUtils.logEvent(ProfileAccountManagementMetrics.SIGNOUT_SIGNOUT, mGaiaServiceType);
 
             mSignOutClicked = true;
             SignOutDialogListener targetFragment = (SignOutDialogListener) getTargetFragment();
@@ -106,8 +104,7 @@ public class SignOutDialogFragment extends DialogFragment implements
     @Override
     public void onDismiss(DialogInterface dialog) {
         super.onDismiss(dialog);
-        AccountManagementScreenHelper.logEvent(
-                ProfileAccountManagementMetrics.SIGNOUT_CANCEL, mGaiaServiceType);
+        SigninUtils.logEvent(ProfileAccountManagementMetrics.SIGNOUT_CANCEL, mGaiaServiceType);
 
         SignOutDialogListener targetFragment = (SignOutDialogListener) getTargetFragment();
         targetFragment.onSignOutDialogDismissed(mSignOutClicked);

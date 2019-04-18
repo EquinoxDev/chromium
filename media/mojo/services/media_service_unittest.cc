@@ -240,9 +240,8 @@ class MediaServiceTest : public testing::Test {
   void InitializeRenderer(const VideoDecoderConfig& video_config,
                           bool expected_result) {
     base::RunLoop run_loop;
-    interface_factory_->CreateRenderer(
-        media::mojom::HostedRendererType::kDefault, std::string(),
-        mojo::MakeRequest(&renderer_));
+    interface_factory_->CreateDefaultRenderer(std::string(),
+                                              mojo::MakeRequest(&renderer_));
 
     video_stream_.set_video_decoder_config(video_config);
 
@@ -260,7 +259,7 @@ class MediaServiceTest : public testing::Test {
         .WillOnce(QuitLoop(&run_loop));
     renderer_->Initialize(
         std::move(client_ptr_info), std::move(streams), base::nullopt,
-        base::nullopt,
+        base::nullopt, /* allow_credentials */ false,
         base::BindOnce(&MediaServiceTest::OnRendererInitialized,
                        base::Unretained(this)));
     run_loop.Run();

@@ -13,7 +13,7 @@ third_party {
     type: GIT
     value: "https://github.com/grpc/grpc"
   }
-  version: "318c67782a752a8324233ff95e594a19f85578a7"
-  last_upgrade_date { year: 2019 month: 2 day: 3 }
+  version: "b245ad4ae810ed6bc13378421edfd3986a8ffac3"
+  last_upgrade_date { year: 2019 month: 3 day: 20 }
   license_type: NOTICE
 }

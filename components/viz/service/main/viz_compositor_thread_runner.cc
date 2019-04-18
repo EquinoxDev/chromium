@@ -49,15 +49,12 @@ std::unique_ptr<VizCompositorThreadType> CreateAndStartCompositorThread() {
   auto thread = std::make_unique<base::Thread>(kThreadName);
 
   base::Thread::Options thread_options;
-#if defined(OS_WIN)
-  // Windows needs a UI message loop for child HWND.
-  thread_options.message_loop_type = base::MessageLoop::TYPE_UI;
-#elif defined(USE_OZONE)
+#if defined(USE_OZONE)
   // We may need a non-default message loop type for the platform surface.
   thread_options.message_loop_type =
       ui::OzonePlatform::GetInstance()->GetMessageLoopTypeForGpu();
 #endif
-#if defined(OS_CHROMEOS)
+#if defined(OS_CHROMEOS) || defined(USE_OZONE)
   thread_options.priority = base::ThreadPriority::DISPLAY;
 #endif
 
@@ -91,7 +88,7 @@ void VizCompositorThreadRunner::CreateFrameSinkManager(
 
 void VizCompositorThreadRunner::CreateFrameSinkManager(
     mojom::FrameSinkManagerParamsPtr params,
-    scoped_refptr<gpu::CommandBufferTaskExecutor> task_executor,
+    gpu::CommandBufferTaskExecutor* task_executor,
     GpuServiceImpl* gpu_service) {
   // All of the unretained objects are owned on the GPU thread and destroyed
   // after VizCompositorThread has been shutdown.
@@ -99,8 +96,8 @@ void VizCompositorThreadRunner::CreateFrameSinkManager(
       FROM_HERE,
       base::BindOnce(
           &VizCompositorThreadRunner::CreateFrameSinkManagerOnCompositorThread,
-          base::Unretained(this), std::move(params), std::move(task_executor),
-          base::Unretained(gpu_service)));
+          base::Unretained(this), std::move(params),
+          base::Unretained(task_executor), base::Unretained(gpu_service)));
 }
 
 #if defined(USE_VIZ_DEVTOOLS)
@@ -128,7 +125,7 @@ void VizCompositorThreadRunner::CleanupForShutdown(
 
 void VizCompositorThreadRunner::CreateFrameSinkManagerOnCompositorThread(
     mojom::FrameSinkManagerParamsPtr params,
-    scoped_refptr<gpu::CommandBufferTaskExecutor> task_executor,
+    gpu::CommandBufferTaskExecutor* task_executor,
     GpuServiceImpl* gpu_service) {
   DCHECK(task_runner_->BelongsToCurrentThread());
   DCHECK(!frame_sink_manager_);
@@ -152,7 +149,7 @@ void VizCompositorThreadRunner::CreateFrameSinkManagerOnCompositorThread(
             gpu_service->sync_point_manager());
     auto* image_factory = gpu_service->gpu_image_factory();
     display_provider_ = std::make_unique<GpuDisplayProvider>(
-        params->restart_id, gpu_service, std::move(task_executor), gpu_service,
+        params->restart_id, gpu_service, task_executor, gpu_service,
         std::move(gpu_memory_buffer_manager), image_factory,
         server_shared_bitmap_manager_.get(), headless,
         run_all_compositor_stages_before_draw);

@@ -27,6 +27,7 @@
 #include "content/public/browser/browser_task_traits.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/content_browser_client.h"
+#include "content/public/common/content_features.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/process_type.h"
 #include "content/public/common/sandboxed_process_launcher_delegate.h"
@@ -111,6 +112,10 @@ class UtilitySandboxedProcessLauncherDelegate
         // Default policy is disabled for audio process to allow audio drivers
         // to read device properties (https://crbug.com/883326).
         return true;
+      case service_manager::SANDBOX_TYPE_NETWORK:
+        // Default policy is disabled for network process to allow incremental
+        // sandbox mitigations to be applied via experiments.
+        return true;
       case service_manager::SANDBOX_TYPE_XRCOMPOSITING:
         return base::FeatureList::IsEnabled(
             service_manager::features::kXRSandbox);
@@ -126,7 +131,7 @@ class UtilitySandboxedProcessLauncherDelegate
 
   bool PreSpawnTarget(sandbox::TargetPolicy* policy) override {
     if (sandbox_type_ == service_manager::SANDBOX_TYPE_NETWORK)
-      return network::NetworkPreSpawnTarget(policy);
+      return network::NetworkPreSpawnTarget(policy, cmd_line_);
 
     if (sandbox_type_ == service_manager::SANDBOX_TYPE_AUDIO)
       return audio::AudioPreSpawnTarget(policy);
@@ -258,6 +263,24 @@ void UtilityProcessHost::BindInterface(
                                               std::move(interface_pipe));
 }
 
+void UtilityProcessHost::RunService(
+    const std::string& service_name,
+    mojo::PendingReceiver<service_manager::mojom::Service> receiver,
+    service_manager::Service::CreatePackagedServiceInstanceCallback callback) {
+  if (launch_state_ == LaunchState::kLaunchFailed) {
+    std::move(callback).Run(base::nullopt);
+    return;
+  }
+
+  process_->GetHost()->RunService(service_name, std::move(receiver));
+  if (launch_state_ == LaunchState::kLaunchComplete) {
+    std::move(callback).Run(process_->GetProcess().Pid());
+  } else {
+    DCHECK_EQ(launch_state_, LaunchState::kLaunchInProgress);
+    pending_run_service_callbacks_.push_back(std::move(callback));
+  }
+}
+
 void UtilityProcessHost::SetMetricsName(const std::string& metrics_name) {
   metrics_name_ = metrics_name;
 }
@@ -269,12 +292,6 @@ void UtilityProcessHost::SetName(const base::string16& name) {
 void UtilityProcessHost::SetServiceIdentity(
     const service_manager::Identity& identity) {
   service_identity_ = identity;
-}
-
-void UtilityProcessHost::SetLaunchCallback(
-    base::OnceCallback<void(base::ProcessId)> callback) {
-  DCHECK(!launched_);
-  launch_callback_ = std::move(callback);
 }
 
 bool UtilityProcessHost::StartProcess() {
@@ -309,6 +326,10 @@ bool UtilityProcessHost::StartProcess() {
     // not needed on Android anyway. See crbug.com/500854.
     std::unique_ptr<base::CommandLine> cmd_line =
         std::make_unique<base::CommandLine>(base::CommandLine::NO_PROGRAM);
+    if (sandbox_type_ == service_manager::SANDBOX_TYPE_NETWORK &&
+        base::FeatureList::IsEnabled(features::kWarmUpNetworkProcess)) {
+      process_->EnableWarmUpConnection();
+    }
 #else
     int child_flags = child_flags_;
 
@@ -368,7 +389,7 @@ bool UtilityProcessHost::StartProcess() {
       switches::kProxyServer,
       switches::kDisableAcceleratedMjpegDecode,
       switches::kUseFakeDeviceForMediaStream,
-      switches::kUseFakeJpegDecodeAccelerator,
+      switches::kUseFakeMjpegDecodeAccelerator,
       switches::kUseFileForFakeVideoCapture,
       switches::kUseMockCertVerifierForTesting,
       switches::kUtilityStartupDialog,
@@ -386,7 +407,6 @@ bool UtilityProcessHost::StartProcess() {
       switches::kFailAudioStreamCreation,
       switches::kMuteAudio,
       switches::kUseFileForFakeAudioCapture,
-      switches::kAecRefinedAdaptiveFilter,
       switches::kAgcStartupMinVolume,
 #if defined(OS_LINUX) || defined(OS_FREEBSD) || defined(OS_SOLARIS)
       switches::kAlsaInputDevice,
@@ -442,12 +462,18 @@ bool UtilityProcessHost::OnMessageReceived(const IPC::Message& message) {
 }
 
 void UtilityProcessHost::OnProcessLaunched() {
-  launched_ = true;
-  if (launch_callback_)
-    std::move(launch_callback_).Run(process_->GetProcess().Pid());
+  launch_state_ = LaunchState::kLaunchComplete;
+  for (auto& callback : pending_run_service_callbacks_)
+    std::move(callback).Run(process_->GetProcess().Pid());
+  pending_run_service_callbacks_.clear();
 }
 
 void UtilityProcessHost::OnProcessLaunchFailed(int error_code) {
+  launch_state_ = LaunchState::kLaunchFailed;
+  for (auto& callback : pending_run_service_callbacks_)
+    std::move(callback).Run(base::nullopt);
+  pending_run_service_callbacks_.clear();
+
   if (!client_.get())
     return;
 

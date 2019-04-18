@@ -58,7 +58,7 @@ FakeCredentialProviderUser::GetValue(REFPROPERTYKEY key, PROPVARIANT* value) {
   return E_NOTIMPL;
 }
 
-IMPL_IUNKOWN_NOQI_NOREF(FakeCredentialProviderUser);
+IMPL_IUNKOWN_NOQI_NOREF(FakeCredentialProviderUser)
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -72,8 +72,10 @@ HRESULT FakeCredentialProviderUserArray::SetProviderFilter(
 }
 
 HRESULT FakeCredentialProviderUserArray::GetAccountOptions(
-    CREDENTIAL_PROVIDER_ACCOUNT_OPTIONS* credentialProviderAccountOptions) {
-  return E_NOTIMPL;
+    CREDENTIAL_PROVIDER_ACCOUNT_OPTIONS* cpao) {
+  DCHECK(cpao);
+  *cpao = cpao_;
+  return S_OK;
 }
 
 HRESULT FakeCredentialProviderUserArray::GetCount(DWORD* count) {
@@ -88,7 +90,7 @@ HRESULT FakeCredentialProviderUserArray::GetAt(DWORD index,
   return S_OK;
 }
 
-IMPL_IUNKOWN_NOQI_NOREF(FakeCredentialProviderUserArray);
+IMPL_IUNKOWN_NOQI_NOREF(FakeCredentialProviderUserArray)
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -102,7 +104,7 @@ HRESULT FakeCredentialProviderEvents::CredentialsChanged(
   return S_OK;
 }
 
-IMPL_IUNKOWN_NOQI_NOREF(FakeCredentialProviderEvents);
+IMPL_IUNKOWN_NOQI_NOREF(FakeCredentialProviderEvents)
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -112,7 +114,7 @@ FakeGaiaCredentialProvider::~FakeGaiaCredentialProvider() {}
 
 HRESULT FakeGaiaCredentialProvider::GetUsageScenario(DWORD* cpus) {
   DCHECK(cpus);
-  *cpus = static_cast<DWORD>(CPUS_LOGON);
+  *cpus = static_cast<DWORD>(cpus_);
   return S_OK;
 }
 
@@ -129,19 +131,6 @@ HRESULT FakeGaiaCredentialProvider::OnUserAuthenticated(
   return S_OK;
 }
 
-HRESULT FakeGaiaCredentialProvider::HasInternetConnection() {
-  return has_internet_connection_ == kHicForceYes ? S_OK : S_FALSE;
-}
-
-// IGaiaCredentialProviderForTesting //////////////////////////////////////////
-
-HRESULT FakeGaiaCredentialProvider::SetHasInternetConnection(
-    HasInternetConnectionCheckType has_internet_connection) {
-  DCHECK(has_internet_connection != kHicCheckAlways);
-  has_internet_connection_ = has_internet_connection;
-  return S_OK;
-}
-
-IMPL_IUNKOWN_NOQI_NOREF(FakeGaiaCredentialProvider);
+IMPL_IUNKOWN_NOQI_NOREF(FakeGaiaCredentialProvider)
 
 }  // namespace credential_provider

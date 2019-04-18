@@ -17,6 +17,7 @@ enum NTPTabOpeningPostOpeningAction {
   FOCUS_OMNIBOX,
   NTP_TAB_OPENING_POST_OPENING_ACTION_COUNT,
   SEARCH_TEXT,
+  SEARCH_IMAGE,
 };
 
 class GURL;
@@ -41,16 +42,17 @@ class GURL;
 @property(nonatomic, assign) std::map<std::string, std::string>
     externalURLParams;
 
-//// Boolean to track if a voice search is requested at startup.
-//@property(nonatomic, readwrite, assign) BOOL launchVoiceSearch;
 // Boolean to track if the app should launch in incognito mode.
 @property(nonatomic, readwrite, assign) BOOL launchInIncognito;
+// Action to be taken after opening the initial NTP.
 @property(nonatomic, readwrite, assign)
     NTPTabOpeningPostOpeningAction postOpeningAction;
 // Boolean to track if a Payment Request response is requested at startup.
 @property(nonatomic, readwrite, assign) BOOL completePaymentRequest;
 // Text query that should be executed on startup.
 @property(nonatomic, readwrite, copy) NSString* textQuery;
+// Data for UIImage for image query that should be executed on startup.
+@property(nonatomic, readwrite, strong) NSData* imageSearchData;
 
 - (instancetype)init NS_UNAVAILABLE;
 

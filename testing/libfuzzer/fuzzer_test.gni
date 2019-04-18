@@ -35,7 +35,7 @@ import("//testing/test.gni")
 # config (.options file) file would be generated or modified in root output
 # dir (next to test).
 template("fuzzer_test") {
-  if (!disable_libfuzzer && (use_fuzzing_engine || use_drfuzz || is_linux)) {
+  if (!disable_libfuzzer && (use_fuzzing_engine || is_linux)) {
     assert(defined(invoker.sources), "Need sources in $target_name.")
 
     test_deps = [ "//testing/libfuzzer:libfuzzer_main" ]
@@ -72,6 +72,12 @@ template("fuzzer_test") {
           foreach(seed_corpus_path, invoker.seed_corpuses) {
             args += [ rebase_path(seed_corpus_path, root_build_dir) ]
           }
+        }
+
+        # Tell the script not to actually zip the seed corpus if we have been
+        # instructed not to build it.
+        if (!archive_seed_corpus) {
+          args += [ "--dry_run" ]
         }
 
         outputs = [

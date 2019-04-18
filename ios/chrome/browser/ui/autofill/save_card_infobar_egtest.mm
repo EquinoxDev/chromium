@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#import <EarlGrey/EarlGrey.h>
+
 #include <memory>
 
 #include "base/logging.h"
@@ -12,7 +14,7 @@
 #include "components/autofill/core/browser/autofill_metrics.h"
 #include "components/autofill/core/browser/form_data_importer.h"
 #include "components/autofill/core/browser/personal_data_manager.h"
-#include "components/autofill/core/common/autofill_features.h"
+#include "components/autofill/core/common/autofill_payments_features.h"
 #include "components/autofill/ios/browser/autofill_driver_ios.h"
 #import "components/autofill/ios/browser/credit_card_save_manager_test_observer_bridge.h"
 #include "components/autofill/ios/browser/ios_test_event_waiter.h"
@@ -311,7 +313,7 @@ class SaveCardInfobarEGTestHelper {
              @"Save card infobar failed to show.");
 }
 
-- (void)testOfferLocalSave_FullData_RequestFails_StikeDatabaseDisabled {
+- (void)testOfferLocalSave_FullData_RequestFails_StrikeDatabaseDisabled {
   base::test::ScopedFeatureList feature_list;
   feature_list.InitAndDisableFeature(
       autofill::features::kAutofillSaveCreditCardUsesStrikeSystemV2);
@@ -319,7 +321,7 @@ class SaveCardInfobarEGTestHelper {
   chrome_test_util::RemoveAllInfoBars();
 }
 
-- (void)testOfferLocalSave_FullData_RequestFails_StikeDatabaseEnabled {
+- (void)testOfferLocalSave_FullData_RequestFails_StrikeDatabaseEnabled {
   base::test::ScopedFeatureList feature_list;
   feature_list.InitAndEnableFeature(
       autofill::features::kAutofillSaveCreditCardUsesStrikeSystemV2);
@@ -355,7 +357,7 @@ class SaveCardInfobarEGTestHelper {
              @"Save card infobar failed to show.");
 }
 
-- (void)testOfferLocalSave_FullData_PaymentsDeclines_StikeDatabaseDisabled {
+- (void)testOfferLocalSave_FullData_PaymentsDeclines_StrikeDatabaseDisabled {
   base::test::ScopedFeatureList feature_list;
   feature_list.InitAndDisableFeature(
       autofill::features::kAutofillSaveCreditCardUsesStrikeSystemV2);
@@ -363,7 +365,7 @@ class SaveCardInfobarEGTestHelper {
   chrome_test_util::RemoveAllInfoBars();
 }
 
-- (void)testOfferLocalSave_FullData_PaymentsDeclines_StikeDatabaseEnabled {
+- (void)testOfferLocalSave_FullData_PaymentsDeclines_StrikeDatabaseEnabled {
   base::test::ScopedFeatureList feature_list;
   feature_list.InitAndEnableFeature(
       autofill::features::kAutofillSaveCreditCardUsesStrikeSystemV2);
@@ -421,7 +423,7 @@ class SaveCardInfobarEGTestHelper {
              @"Save card infobar failed to show.");
 }
 
-- (void)testOfferUpstream_FullData_PaymentsAccepts_StikeDatabaseDisabled {
+- (void)testOfferUpstream_FullData_PaymentsAccepts_StrikeDatabaseDisabled {
   base::test::ScopedFeatureList feature_list;
   feature_list.InitAndDisableFeature(
       autofill::features::kAutofillSaveCreditCardUsesStrikeSystemV2);
@@ -429,7 +431,7 @@ class SaveCardInfobarEGTestHelper {
   chrome_test_util::RemoveAllInfoBars();
 }
 
-- (void)testOfferUpstream_FullData_PaymentsAccepts_StikeDatabaseEnabled {
+- (void)testOfferUpstream_FullData_PaymentsAccepts_StrikeDatabaseEnabled {
   base::test::ScopedFeatureList feature_list;
   feature_list.InitAndEnableFeature(
       autofill::features::kAutofillSaveCreditCardUsesStrikeSystemV2);
@@ -464,7 +466,7 @@ class SaveCardInfobarEGTestHelper {
              @"Save card infobar failed to show.");
 }
 
-- (void)testOfferUpstream_PartialData_PaymentsAccepts_StikeDatabaseDisabled {
+- (void)testOfferUpstream_PartialData_PaymentsAccepts_StrikeDatabaseDisabled {
   base::test::ScopedFeatureList feature_list;
   feature_list.InitAndDisableFeature(
       autofill::features::kAutofillSaveCreditCardUsesStrikeSystemV2);
@@ -472,7 +474,7 @@ class SaveCardInfobarEGTestHelper {
   chrome_test_util::RemoveAllInfoBars();
 }
 
-- (void)testOfferUpstream_PartialData_PaymentsAccepts_StikeDatabaseEnabled {
+- (void)testOfferUpstream_PartialData_PaymentsAccepts_StrikeDatabaseEnabled {
   base::test::ScopedFeatureList feature_list;
   feature_list.InitAndEnableFeature(
       autofill::features::kAutofillSaveCreditCardUsesStrikeSystemV2);
@@ -537,7 +539,7 @@ class SaveCardInfobarEGTestHelper {
   histogram_tester.ExpectTotalCount("Autofill.UploadAcceptedCardOrigin", 0);
 }
 
-- (void)testUMA_Upstream_UserDeclines_StikeDatabaseDisabled {
+- (void)testUMA_Upstream_UserDeclines_StrikeDatabaseDisabled {
   // TODO(crbug.com/925670): re-enable when fixed.
   EARL_GREY_TEST_DISABLED(@"Failing regularly on the bots.");
 
@@ -547,7 +549,7 @@ class SaveCardInfobarEGTestHelper {
   [self UMA_Upstream_UserDeclines];
 }
 
-- (void)testUMA_Upstream_UserDeclines_StikeDatabaseEnabled {
+- (void)testUMA_Upstream_UserDeclines_StrikeDatabaseEnabled {
   // TODO(crbug.com/925670): re-enable when fixed.
   EARL_GREY_TEST_DISABLED(@"Failing regularly on the bots.");
 
@@ -665,7 +667,7 @@ class SaveCardInfobarEGTestHelper {
                   @"No credit card should have been saved.");
 }
 
-- (void)testUserData_LocalSave_UserDeclines_StikeDatabaseDisabled {
+- (void)testUserData_LocalSave_UserDeclines_StrikeDatabaseDisabled {
   // TODO(crbug.com/925670): re-enable when fixed.
   EARL_GREY_TEST_DISABLED(@"Failing regularly on the bots.");
 
@@ -675,7 +677,7 @@ class SaveCardInfobarEGTestHelper {
   [self userData_LocalSave_UserDeclines];
 }
 
-- (void)testUserData_LocalSave_UserDeclines_StikeDatabaseEnabled {
+- (void)testUserData_LocalSave_UserDeclines_StrikeDatabaseEnabled {
   // TODO(crbug.com/925670): re-enable when fixed.
   EARL_GREY_TEST_DISABLED(@"Failing regularly on the bots.");
 

@@ -20,11 +20,12 @@
 
 namespace cc {
 struct ElementId;
+class EffectTree;
 class Layer;
-class LayerTreeHost;
 }
 
 namespace gfx {
+class Vector2dF;
 class ScrollOffset;
 }
 
@@ -59,14 +60,10 @@ class PLATFORM_EXPORT PaintArtifactCompositor final
   USING_FAST_MALLOC(PaintArtifactCompositor);
 
  public:
-  ~PaintArtifactCompositor();
-
-  static std::unique_ptr<PaintArtifactCompositor> Create(
+  PaintArtifactCompositor(
       base::RepeatingCallback<void(const gfx::ScrollOffset&,
-                                   const cc::ElementId&)> scroll_callback) {
-    return base::WrapUnique(
-        new PaintArtifactCompositor(std::move(scroll_callback)));
-  }
+                                   const cc::ElementId&)> scroll_callback);
+  ~PaintArtifactCompositor();
 
   struct ViewportProperties {
     const TransformPaintPropertyNode* page_scale = nullptr;
@@ -87,6 +84,9 @@ class PLATFORM_EXPORT PaintArtifactCompositor final
               CompositorElementIdSet& composited_element_ids,
               const ViewportProperties& viewport_properties,
               const Settings& settings);
+
+  bool DirectlyUpdateCompositedOpacityValue(const EffectPaintPropertyNode&);
+  bool DirectlyUpdateScrollOffsetTransform(const TransformPaintPropertyNode&);
 
   // The root layer of the tree managed by this object.
   cc::Layer* RootLayer() const { return root_layer_.get(); }
@@ -127,11 +127,13 @@ class PLATFORM_EXPORT PaintArtifactCompositor final
   // Update the cc::Layer's touch action region from the touch action rects of
   // the paint chunks.
   static void UpdateTouchActionRects(cc::Layer*,
+                                     const gfx::Vector2dF& layer_offset,
                                      const PropertyTreeState& layer_state,
                                      const PaintChunkSubset& paint_chunks);
 
   void SetNeedsUpdate() { needs_update_ = true; }
   bool NeedsUpdate() const { return needs_update_; }
+  void ClearNeedsUpdateForTesting() { needs_update_ = false; }
 
  private:
   // A pending layer is a collection of paint chunks that will end up in
@@ -161,10 +163,6 @@ class PLATFORM_EXPORT PaintArtifactCompositor final
     PropertyTreeState property_tree_state;
     bool requires_own_layer;
   };
-
-  PaintArtifactCompositor(
-      base::RepeatingCallback<void(const gfx::ScrollOffset&,
-                                   const cc::ElementId&)> scroll_callback);
 
   // Collects the PaintChunks into groups which will end up in the same
   // cc layer. This is the entry point of the layerization algorithm.
@@ -234,8 +232,12 @@ class PLATFORM_EXPORT PaintArtifactCompositor final
       CompositorElementId& mask_isolation_id,
       CompositorElementId& mask_effect_id) final;
 
-  static void UpdateRenderSurfaceForEffects(cc::LayerTreeHost&,
-                                            const cc::LayerList&);
+  static void UpdateRenderSurfaceForEffects(
+      cc::EffectTree&,
+      const cc::LayerList&,
+      const Vector<const EffectPaintPropertyNode*>&);
+
+  cc::PropertyTrees* GetPropertyTreesForDirectUpdate();
 
   // Provides a callback for notifying blink of composited scrolling.
   base::RepeatingCallback<void(const gfx::ScrollOffset&, const cc::ElementId&)>
@@ -254,6 +256,8 @@ class PLATFORM_EXPORT PaintArtifactCompositor final
   std::vector<SynthesizedClipEntry> synthesized_clip_cache_;
 
   Vector<scoped_refptr<cc::Layer>> scroll_hit_test_layers_;
+
+  PropertyTreeManager property_tree_manager_;
 
   bool extra_data_for_testing_enabled_ = false;
   std::unique_ptr<ExtraDataForTesting> extra_data_for_testing_;

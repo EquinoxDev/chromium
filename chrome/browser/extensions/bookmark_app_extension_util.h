@@ -5,7 +5,7 @@
 #ifndef CHROME_BROWSER_EXTENSIONS_BOOKMARK_APP_EXTENSION_UTIL_H_
 #define CHROME_BROWSER_EXTENSIONS_BOOKMARK_APP_EXTENSION_UTIL_H_
 
-#include "extensions/common/constants.h"
+#include "base/callback_forward.h"
 
 class Profile;
 
@@ -17,12 +17,24 @@ namespace extensions {
 
 class Extension;
 
-void BookmarkAppCreateOsShortcuts(Profile* profile, const Extension* extension);
+bool CanBookmarkAppCreateOsShortcuts();
+void BookmarkAppCreateOsShortcuts(
+    Profile* profile,
+    const Extension* extension,
+    bool add_to_desktop,
+    base::OnceCallback<void(bool created_shortcuts)> callback);
 
-void BookmarkAppReparentTab(Profile* profile,
-                            content::WebContents* contents,
-                            const Extension* extension,
-                            LaunchType launch_type);
+bool CanBookmarkAppBePinnedToShelf();
+void BookmarkAppPinToShelf(const Extension* extension);
+
+bool CanBookmarkAppReparentTab(Profile* profile,
+                               const Extension* extension,
+                               bool shortcut_created);
+void BookmarkAppReparentTab(content::WebContents* contents,
+                            const Extension* extension);
+
+bool CanBookmarkAppRevealAppShim();
+void BookmarkAppRevealAppShim(Profile* profile, const Extension* extension);
 
 }  // namespace extensions
 

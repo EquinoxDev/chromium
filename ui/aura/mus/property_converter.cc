@@ -72,16 +72,21 @@ PropertyConverter::CreateAcceptAnyValueCallback() {
 
 PropertyConverter::PropertyConverter() {
   // Add known aura properties with associated mus properties.
-  RegisterImageSkiaProperty(client::kAppIconKey,
-                            ws::mojom::WindowManager::kAppIcon_Property);
-  RegisterImageSkiaProperty(client::kWindowIconKey,
-                            ws::mojom::WindowManager::kWindowIcon_Property);
+  RegisterImageSkiaProperty(client::kAppIconLargeKey,
+                            ws::mojom::WindowManager::kAppIconLarge_Property);
+  RegisterImageSkiaProperty(client::kAppIconSmallKey,
+                            ws::mojom::WindowManager::kAppIconSmall_Property);
+  RegisterImageSkiaProperty(client::kAvatarIconKey,
+                            ws::mojom::WindowManager::kAvatarIcon_Property);
   RegisterPrimitiveProperty(client::kAlwaysOnTopKey,
                             ws::mojom::WindowManager::kAlwaysOnTop_Property,
                             CreateAcceptAnyValueCallback());
   RegisterPrimitiveProperty(client::kDrawAttentionKey,
                             ws::mojom::WindowManager::kDrawAttention_Property,
                             CreateAcceptAnyValueCallback());
+  RegisterRectProperty(
+      client::kEmbeddedWindowEnsureNotInRect,
+      ws::mojom::WindowManager::kEmbeddedWindowEnsureNotInRect);
   RegisterPrimitiveProperty(client::kResizeBehaviorKey,
                             ws::mojom::WindowManager::kResizeBehavior_Property,
                             base::Bind(&ValidateResizeBehaviour));
@@ -114,8 +119,8 @@ PropertyConverter::PropertyConverter() {
       client::kChildModalParentKey,
       ws::mojom::WindowManager::kChildModalParent_Property);
   RegisterPrimitiveProperty(
-      client::kClientWindowHasContent,
-      ws::mojom::WindowManager::kClientWindowHasContent_Property,
+      client::kWindowLayerDrawn,
+      ws::mojom::WindowManager::kWindowLayerDrawn_Property,
       CreateAcceptAnyValueCallback());
 }
 

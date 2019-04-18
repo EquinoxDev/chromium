@@ -7,6 +7,7 @@
 #include <stddef.h>
 
 #include <memory>
+#include <set>
 #include <string>
 #include <utility>
 #include <vector>
@@ -14,6 +15,7 @@
 #include "base/bind.h"
 #include "base/macros.h"
 #include "base/memory/weak_ptr.h"
+#include "base/stl_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/test/scoped_feature_list.h"
 #include "chrome/browser/chromeos/drive/file_system_util.h"
@@ -26,7 +28,7 @@
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/testing_profile.h"
 #include "chromeos/constants/chromeos_features.h"
-#include "chromeos/dbus/fake_power_manager_client.h"
+#include "chromeos/dbus/power/fake_power_manager_client.h"
 #include "chromeos/dbus/power_manager/suspend.pb.h"
 #include "chromeos/disks/disk.h"
 #include "chromeos/disks/disk_mount_manager.h"
@@ -244,11 +246,17 @@ class VolumeManagerTest : public testing::Test {
   };
 
   void SetUp() override {
-    power_manager_client_ =
-        std::make_unique<chromeos::FakePowerManagerClient>();
+    chromeos::PowerManagerClient::InitializeFake();
     disk_mount_manager_ = std::make_unique<FakeDiskMountManager>();
     main_profile_ = std::make_unique<ProfileEnvironment>(
-        power_manager_client_.get(), disk_mount_manager_.get());
+        chromeos::PowerManagerClient::Get(), disk_mount_manager_.get());
+  }
+
+  void TearDown() override {
+    main_profile_.reset();
+    disk_mount_manager_.reset();
+    chromeos::PowerManagerClient::Shutdown();
+    thread_bundle_.RunUntilIdle();
   }
 
   Profile* profile() const { return main_profile_->profile(); }
@@ -258,7 +266,6 @@ class VolumeManagerTest : public testing::Test {
 
   content::TestBrowserThreadBundle thread_bundle_;
   content::TestServiceManagerContext context_;
-  std::unique_ptr<chromeos::FakePowerManagerClient> power_manager_client_;
   std::unique_ptr<FakeDiskMountManager> disk_mount_manager_;
   std::unique_ptr<ProfileEnvironment> main_profile_;
 };
@@ -624,9 +631,9 @@ TEST_F(VolumeManagerTest, OnMountEvent_Remounting) {
 
   // Emulate system suspend and then resume.
   {
-    power_manager_client_->SendSuspendImminent(
+    chromeos::FakePowerManagerClient::Get()->SendSuspendImminent(
         power_manager::SuspendImminent_Reason_OTHER);
-    power_manager_client_->SendSuspendDone();
+    chromeos::FakePowerManagerClient::Get()->SendSuspendDone();
 
     // After resume, the device is unmounted and then mounted.
     volume_manager()->OnMountEvent(DiskMountManager::UNMOUNTING,
@@ -741,16 +748,24 @@ TEST_F(VolumeManagerTest, OnFormatEvent_CompletedFailed) {
 }
 
 TEST_F(VolumeManagerTest, OnExternalStorageDisabledChanged) {
-  // Here create two mount points.
+  // Here create four mount points.
   disk_mount_manager_->MountPath("mount1", "", "", {},
                                  chromeos::MOUNT_TYPE_DEVICE,
                                  chromeos::MOUNT_ACCESS_MODE_READ_WRITE);
   disk_mount_manager_->MountPath("mount2", "", "", {},
                                  chromeos::MOUNT_TYPE_DEVICE,
                                  chromeos::MOUNT_ACCESS_MODE_READ_ONLY);
+  disk_mount_manager_->MountPath("mount3", "", "", {},
+                                 chromeos::MOUNT_TYPE_NETWORK_STORAGE,
+                                 chromeos::MOUNT_ACCESS_MODE_READ_ONLY);
+  disk_mount_manager_->MountPath("failed_unmount", "", "", {},
+                                 chromeos::MOUNT_TYPE_DEVICE,
+                                 chromeos::MOUNT_ACCESS_MODE_READ_WRITE);
+  disk_mount_manager_->FailUnmountRequest("failed_unmount",
+                                          chromeos::MOUNT_ERROR_UNKNOWN);
 
-  // Initially, there are two mount points.
-  ASSERT_EQ(2U, disk_mount_manager_->mount_points().size());
+  // Initially, there are four mount points.
+  ASSERT_EQ(4U, disk_mount_manager_->mount_points().size());
   ASSERT_EQ(0U, disk_mount_manager_->unmount_requests().size());
 
   // Emulate to set kExternalStorageDisabled to false.
@@ -758,7 +773,7 @@ TEST_F(VolumeManagerTest, OnExternalStorageDisabledChanged) {
   volume_manager()->OnExternalStorageDisabledChanged();
 
   // Expect no effects.
-  EXPECT_EQ(2U, disk_mount_manager_->mount_points().size());
+  EXPECT_EQ(4U, disk_mount_manager_->mount_points().size());
   EXPECT_EQ(0U, disk_mount_manager_->unmount_requests().size());
 
   // Emulate to set kExternalStorageDisabled to true.
@@ -769,21 +784,25 @@ TEST_F(VolumeManagerTest, OnExternalStorageDisabledChanged) {
   // all the mount points will be invoked.
   disk_mount_manager_->FinishAllUnmountPathRequests();
 
-  // The all mount points should be unmounted.
-  EXPECT_EQ(0U, disk_mount_manager_->mount_points().size());
+  // The external media mount points should be unmounted. Other mount point
+  // types should remain. The failing unmount should also remain.
+  EXPECT_EQ(2U, disk_mount_manager_->mount_points().size());
 
-  EXPECT_EQ(2U, disk_mount_manager_->unmount_requests().size());
-  const FakeDiskMountManager::UnmountRequest& unmount_request1 =
-      disk_mount_manager_->unmount_requests()[0];
-  EXPECT_EQ("mount1", unmount_request1.mount_path);
-
-  const FakeDiskMountManager::UnmountRequest& unmount_request2 =
-      disk_mount_manager_->unmount_requests()[1];
-  EXPECT_EQ("mount2", unmount_request2.mount_path);
+  std::set<std::string> expected_unmount_requests = {
+      "mount1",
+      "mount2",
+      "failed_unmount",
+  };
+  for (const auto& request : disk_mount_manager_->unmount_requests()) {
+    EXPECT_TRUE(
+        base::ContainsKey(expected_unmount_requests, request.mount_path));
+    expected_unmount_requests.erase(request.mount_path);
+  }
+  EXPECT_TRUE(expected_unmount_requests.empty());
 }
 
 TEST_F(VolumeManagerTest, ExternalStorageDisabledPolicyMultiProfile) {
-  ProfileEnvironment secondary(power_manager_client_.get(),
+  ProfileEnvironment secondary(chromeos::PowerManagerClient::Get(),
                                disk_mount_manager_.get());
   volume_manager()->Initialize();
   secondary.volume_manager()->Initialize();

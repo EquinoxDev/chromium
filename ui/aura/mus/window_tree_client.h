@@ -147,6 +147,8 @@ class AURA_EXPORT WindowTreeClient
   void SetHitTestInsets(WindowMus* window,
                         const gfx::Insets& mouse,
                         const gfx::Insets& touch);
+  void SetShape(WindowMus* window,
+                std::unique_ptr<std::vector<gfx::Rect>> shape);
   void TrackOcclusionState(WindowMus* window);
   void PauseWindowOcclusionTracking();
   void UnpauseWindowOcclusionTracking();
@@ -335,6 +337,7 @@ class AURA_EXPORT WindowTreeClient
   void SetWindowBoundsFromServer(
       WindowMus* window,
       const gfx::Rect& revert_bounds,
+      ui::WindowShowState state,
       bool from_server,
       const base::Optional<viz::LocalSurfaceIdAllocation>&
           local_surface_id_allocation);
@@ -356,8 +359,8 @@ class AURA_EXPORT WindowTreeClient
 
   // Called from OnWindowMusBoundsChanged() and SetRootWindowBounds().
   void ScheduleInFlightBoundsChange(WindowMus* window,
-                                    const gfx::Rect& old_bounds,
-                                    const gfx::Rect& new_bounds);
+                                    const gfx::Rect& old_bounds_in_dip,
+                                    const gfx::Rect& new_bounds_in_dip);
 
   // Following are called from WindowMus.
   void OnWindowMusCreated(WindowMus* window);
@@ -374,6 +377,7 @@ class AURA_EXPORT WindowTreeClient
                             size_t current_index,
                             size_t dest_index);
   void OnWindowMusSetVisible(WindowMus* window, bool visible);
+  void OnWindowMusSetTransparent(WindowMus* window, bool transparent);
   std::unique_ptr<ui::PropertyData> OnWindowMusWillChangeProperty(
       WindowMus* window,
       const void* key);
@@ -412,6 +416,7 @@ class AURA_EXPORT WindowTreeClient
   void OnWindowBoundsChanged(
       ws::Id window_id,
       const gfx::Rect& new_bounds,
+      ui::WindowShowState state,
       const base::Optional<viz::LocalSurfaceIdAllocation>&
           local_surface_id_allocation) override;
   void OnWindowTransformChanged(ws::Id window_id,
@@ -430,8 +435,6 @@ class AURA_EXPORT WindowTreeClient
                          ws::mojom::OrderDirection direction) override;
   void OnWindowDeleted(ws::Id window_id) override;
   void OnWindowVisibilityChanged(ws::Id window_id, bool visible) override;
-  void OnWindowOpacityChanged(ws::Id window_id,
-                              float new_opacity) override;
   void OnWindowDisplayChanged(ws::Id window_id, int64_t display_id) override;
   void OnWindowParentDrawnStateChanged(ws::Id window_id, bool drawn) override;
   void OnWindowSharedPropertyChanged(
@@ -480,6 +483,8 @@ class AURA_EXPORT WindowTreeClient
       const base::flat_map<ws::Id, ws::mojom::OcclusionState>&
           occlusion_changes) override;
   void CleanupGestureState(ws::Id window_id) override;
+  void OnWindowResizeLoopStarted(ws::Id window_id) override;
+  void OnWindowResizeLoopEnded(ws::Id window_id) override;
 
   // ws::mojom::ScreenProviderObserver:
   void OnDisplaysChanged(std::vector<ws::mojom::WsDisplayPtr> ws_displays,
@@ -512,6 +517,8 @@ class AURA_EXPORT WindowTreeClient
   std::unique_ptr<WindowPortMus> CreateWindowPortForTopLevel(
       const std::map<std::string, std::vector<uint8_t>>* properties) override;
   void OnWindowTreeHostCreated(WindowTreeHostMus* window_tree_host) override;
+  void ConnectToImeEngine(ime::mojom::ImeEngineRequest engine_request,
+                          ime::mojom::ImeEngineClientPtr client) override;
 
   // client::TransientWindowClientObserver:
   void OnTransientChildWindowAdded(Window* parent,

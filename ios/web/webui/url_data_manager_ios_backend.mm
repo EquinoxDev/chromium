@@ -49,10 +49,9 @@ namespace web {
 
 namespace {
 
-// TODO(tsepez) remove unsafe-eval when bidichecker_packaged.js fixed.
 const char kChromeURLContentSecurityPolicyHeaderBase[] =
     "Content-Security-Policy: script-src chrome://resources "
-    "'self' 'unsafe-eval'; ";
+    "'self'; ";
 
 const char kChromeURLXFrameOptionsHeader[] = "X-Frame-Options: DENY";
 
@@ -395,8 +394,8 @@ void GetMimeTypeOnUI(URLDataSourceIOSImpl* source,
   std::string mime_type = source->source()->GetMimeType(path);
   base::PostTaskWithTraits(
       FROM_HERE, {WebThread::IO},
-      base::Bind(&URLRequestChromeJob::MimeTypeAvailable, job,
-                 base::RetainedRef(source), mime_type));
+      base::BindOnce(&URLRequestChromeJob::MimeTypeAvailable, job,
+                     base::RetainedRef(source), mime_type));
 }
 
 }  // namespace

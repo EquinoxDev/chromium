@@ -45,6 +45,10 @@ import android.view.inputmethod.InputConnection;
 import android.view.textclassifier.TextClassifier;
 import android.webkit.JavascriptInterface;
 
+import org.chromium.android_webview.gfx.AwDrawFnImpl;
+import org.chromium.android_webview.gfx.AwFunctor;
+import org.chromium.android_webview.gfx.AwGLFunctor;
+import org.chromium.android_webview.gfx.AwPicture;
 import org.chromium.android_webview.permission.AwGeolocationCallback;
 import org.chromium.android_webview.permission.AwPermissionRequest;
 import org.chromium.android_webview.renderer_priority.RendererPriority;
@@ -62,6 +66,7 @@ import org.chromium.base.metrics.RecordHistogram;
 import org.chromium.base.task.AsyncTask;
 import org.chromium.base.task.PostTask;
 import org.chromium.components.autofill.AutofillProvider;
+import org.chromium.components.content_capture.ContentCaptureConsumer;
 import org.chromium.components.navigation_interception.InterceptNavigationDelegate;
 import org.chromium.components.navigation_interception.NavigationParams;
 import org.chromium.content_public.browser.ChildProcessImportance;
@@ -93,6 +98,7 @@ import org.chromium.device.gamepad.GamepadList;
 import org.chromium.net.NetworkChangeNotifier;
 import org.chromium.network.mojom.ReferrerPolicy;
 import org.chromium.ui.base.ActivityWindowAndroid;
+import org.chromium.ui.base.Clipboard;
 import org.chromium.ui.base.PageTransition;
 import org.chromium.ui.base.ViewAndroidDelegate;
 import org.chromium.ui.base.WindowAndroid;
@@ -450,8 +456,6 @@ public class AwContents implements SmartClipProvider {
     // when in this state.
     private boolean mTemporarilyDetached;
 
-    private Handler mHandler;
-
     // True when this AwContents has been destroyed.
     // Do not use directly, call isDestroyed() instead.
     private boolean mIsDestroyed;
@@ -476,6 +480,8 @@ public class AwContents implements SmartClipProvider {
     private WebContentsInternals mWebContentsInternals;
 
     private JavascriptInjector mJavascriptInjector;
+
+    private ContentCaptureConsumer mContentCaptureConsumer;
 
     private static class WebContentsInternalsHolder implements WebContents.InternalsHolder {
         private final WeakReference<AwContents> mAwContentsRef;
@@ -820,7 +826,6 @@ public class AwContents implements SmartClipProvider {
         @Override
         public void onConfigurationChanged(Configuration configuration) {
             updateDefaultLocale();
-            mSettings.updateAcceptLanguages();
         }
     };
 
@@ -872,8 +877,8 @@ public class AwContents implements SmartClipProvider {
             AwSettings settings, DependencyFactory dependencyFactory) {
         try (ScopedSysTraceEvent e1 = ScopedSysTraceEvent.scoped("AwContents.constructor")) {
             mRendererPriority = RendererPriority.HIGH;
+            mSettings = settings;
             updateDefaultLocale();
-            settings.updateAcceptLanguages();
 
             mBrowserContext = browserContext;
 
@@ -883,7 +888,6 @@ public class AwContents implements SmartClipProvider {
             mContainerView = containerView;
             mContainerView.setWillNotDraw(false);
 
-            mHandler = new Handler();
             mContext = context;
             mAutofillProvider = dependencyFactory.createAutofillProvider(context, mContainerView);
             mAppTargetSdkVersion = mContext.getApplicationInfo().targetSdkVersion;
@@ -896,7 +900,6 @@ public class AwContents implements SmartClipProvider {
             mFullScreenTransitionsState = new FullScreenTransitionsState(
                     mContainerView, mInternalAccessAdapter, mAwViewMethods);
             mLayoutSizer = dependencyFactory.createLayoutSizer();
-            mSettings = settings;
             mLayoutSizer.setDelegate(new AwLayoutSizerDelegate());
             mWebContentsDelegate = new AwWebContentsDelegateAdapter(
                     this, contentsClient, settings, mContext, mContainerView);
@@ -1167,9 +1170,13 @@ public class AwContents implements SmartClipProvider {
         return wrapper;
     }
 
-    // Set current locales to native.
+    /**
+     * Set current locales to native. Propagates this information to the Accept-Language header for
+     * subsequent requests. Note that this will affect <b>all</b> AwContents, not just this
+     * instance, as all WebViews share the same NetworkContext/UrlRequestContextGetter.
+     */
     @VisibleForTesting
-    public static void updateDefaultLocale() {
+    public void updateDefaultLocale() {
         String locales = LocaleUtils.getDefaultLocaleListString();
         if (!sCurrentLocales.equals(locales)) {
             sCurrentLocales = locales;
@@ -1179,6 +1186,7 @@ public class AwContents implements SmartClipProvider {
             // it is not guaranteed to be listed at the first of sCurrentLocales. Therefore,
             // both values are passed to native.
             nativeUpdateDefaultLocale(LocaleUtils.getDefaultLocaleString(), sCurrentLocales);
+            mSettings.updateAcceptLanguages();
         }
     }
 
@@ -1210,6 +1218,9 @@ public class AwContents implements SmartClipProvider {
             TextClassifier textClassifier = mWebContents != null ? getTextClassifier() : null;
             setNewAwContentsPreO(newAwContentsPtr);
             if (textClassifier != null) setTextClassifier(textClassifier);
+        }
+        if (mContentCaptureConsumer != null) {
+            mContentCaptureConsumer.onWebContentsChanged(mWebContents);
         }
     }
 
@@ -1402,6 +1413,11 @@ public class AwContents implements SmartClipProvider {
         if (TRACE) Log.i(TAG, "%s destroy", this);
         if (isDestroyed(NO_WARN)) return;
 
+        if (mContentCaptureConsumer != null) {
+            mContentCaptureConsumer.destroy();
+            mContentCaptureConsumer = null;
+        }
+
         // Remove pending messages
         mContentsClient.getCallbackHelper().removeCallbacksAndMessages();
 
@@ -1412,7 +1428,7 @@ public class AwContents implements SmartClipProvider {
         }
         mIsNoOperation = true;
         mIsDestroyed = true;
-        mHandler.post(() -> destroyNatives());
+        PostTask.postTask(UiThreadTaskTraits.DEFAULT, () -> destroyNatives());
     }
 
     /**
@@ -1549,6 +1565,10 @@ public class AwContents implements SmartClipProvider {
         return sLocalGlobalVisibleRect;
     }
 
+    public void setContentCaptureConsumer(ContentCaptureConsumer consumer) {
+        mContentCaptureConsumer = consumer;
+    }
+
     //--------------------------------------------------------------------------------------------
     //  WebView[Provider] method implementations
     //--------------------------------------------------------------------------------------------
@@ -1648,7 +1668,7 @@ public class AwContents implements SmartClipProvider {
                 }
             }
 
-            ThreadUtils.runOnUiThread(() -> {
+            PostTask.runOrPostTask(UiThreadTaskTraits.DEFAULT, () -> {
                 if (!isDestroyedOrNoOperation(NO_WARN)) {
                     nativeAddVisitedLinks(mNativeAwContents, value);
                 }
@@ -2573,7 +2593,7 @@ public class AwContents implements SmartClipProvider {
                 // application callback is executed without any native code on the stack. This
                 // so that any exception thrown by the application callback won't have to be
                 // propagated through a native call stack.
-                mHandler.post(() -> callback.onResult(jsonResult));
+                PostTask.postTask(UiThreadTaskTraits.DEFAULT, () -> callback.onResult(jsonResult));
             };
         }
 
@@ -2816,7 +2836,7 @@ public class AwContents implements SmartClipProvider {
         // To prevent this flip of CVC visibility, post the task to update CVC
         // visibility during attach, detach and window visibility change.
         mIsUpdateVisibilityTaskPending = true;
-        mHandler.post(mUpdateVisibilityRunnable);
+        PostTask.postTask(UiThreadTaskTraits.DEFAULT, mUpdateVisibilityRunnable);
     }
 
     private void updateWebContentsVisibility() {
@@ -3152,7 +3172,7 @@ public class AwContents implements SmartClipProvider {
         if (isDestroyedOrNoOperation(NO_WARN)) return;
         // Posting avoids invoking the callback inside invoking_composite_
         // (see synchronous_compositor_impl.cc and crbug/452530).
-        mHandler.post(() -> callback.onComplete(requestId));
+        PostTask.postTask(UiThreadTaskTraits.DEFAULT, () -> callback.onComplete(requestId));
     }
 
     // Called as a result of nativeUpdateLastHitTestData.
@@ -3202,7 +3222,7 @@ public class AwContents implements SmartClipProvider {
 
     @CalledByNative
     private void updateScrollState(int maxContainerViewScrollOffsetX,
-            int maxContainerViewScrollOffsetY, int contentWidthDip, int contentHeightDip,
+            int maxContainerViewScrollOffsetY, float contentWidthDip, float contentHeightDip,
             float pageScaleFactor, float minPageScaleFactor, float maxPageScaleFactor) {
         mContentWidthDip = contentWidthDip;
         mContentHeightDip = contentHeightDip;
@@ -3357,7 +3377,7 @@ public class AwContents implements SmartClipProvider {
         if (path == null || isDestroyedOrNoOperation(WARN)) {
             if (callback == null) return;
 
-            ThreadUtils.runOnUiThread(() -> callback.onResult(null));
+            PostTask.runOrPostTask(UiThreadTaskTraits.DEFAULT, () -> callback.onResult(null));
         } else {
             nativeGenerateMHTML(mNativeAwContents, path, callback);
         }
@@ -3667,7 +3687,6 @@ public class AwContents implements SmartClipProvider {
             postUpdateWebContentsVisibility();
 
             updateDefaultLocale();
-            mSettings.updateAcceptLanguages();
 
             if (mComponentCallbacks != null) return;
             mComponentCallbacks = new AwComponentCallbacks();
@@ -3704,6 +3723,7 @@ public class AwContents implements SmartClipProvider {
             if (isDestroyedOrNoOperation(NO_WARN)) return;
             mWindowFocused = hasWindowFocus;
             mViewEventSink.onWindowFocusChanged(hasWindowFocus);
+            Clipboard.getInstance().onWindowFocusChanged(hasWindowFocus);
         }
 
         @Override

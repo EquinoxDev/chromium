@@ -121,7 +121,7 @@ void TimeDomain::SetNextWakeUpForQueue(
   }
 }
 
-void TimeDomain::WakeUpReadyDelayedQueues(LazyNow* lazy_now) {
+void TimeDomain::MoveReadyDelayedTasksToWorkQueues(LazyNow* lazy_now) {
   DCHECK_CALLED_ON_VALID_THREAD(associated_thread_->thread_checker);
   // Wake up any queues with pending delayed work.  Note std::multimap stores
   // the elements sorted by key, so the begin() iterator points to the earliest
@@ -129,7 +129,7 @@ void TimeDomain::WakeUpReadyDelayedQueues(LazyNow* lazy_now) {
   while (!delayed_wake_up_queue_.empty() &&
          delayed_wake_up_queue_.Min().wake_up.time <= lazy_now->Now()) {
     internal::TaskQueueImpl* queue = delayed_wake_up_queue_.Min().queue;
-    queue->WakeUpForDelayedWork(lazy_now);
+    queue->MoveReadyDelayedTasksToWorkQueue(lazy_now);
   }
 }
 
@@ -158,6 +158,10 @@ void TimeDomain::AsValueIntoInternal(trace_event::TracedValue* state) const {
 
 bool TimeDomain::HasPendingHighResolutionTasks() const {
   return pending_high_res_wake_up_count_;
+}
+
+bool TimeDomain::Empty() const {
+  return delayed_wake_up_queue_.empty();
 }
 
 }  // namespace sequence_manager

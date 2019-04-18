@@ -35,7 +35,6 @@
 #include "content/public/test/test_utils.h"
 
 #if defined(OS_CHROMEOS)
-#include "ash/public/cpp/window_pin_type.h"
 #include "ash/public/cpp/window_properties.h"
 #include "ash/public/interfaces/window_pin_type.mojom.h"
 #include "chromeos/constants/chromeos_switches.h"
@@ -44,7 +43,7 @@
 
 namespace chrome {
 
-class BrowserCommandControllerBrowserTest: public InProcessBrowserTest {
+class BrowserCommandControllerBrowserTest : public InProcessBrowserTest {
  public:
   BrowserCommandControllerBrowserTest() {}
   ~BrowserCommandControllerBrowserTest() override {}
@@ -77,7 +76,7 @@ IN_PROC_BROWSER_TEST_F(BrowserCommandControllerBrowserTest, DisableFind) {
   EXPECT_TRUE(chrome::IsCommandEnabled(browser(), IDC_FIND));
 
   // Switching back to the blocked tab should disable it again.
-  browser()->tab_strip_model()->ActivateTabAt(0, false);
+  browser()->tab_strip_model()->ActivateTabAt(0);
   EXPECT_FALSE(chrome::IsCommandEnabled(browser(), IDC_FIND));
 
   // Closing the constrained window should reenable it.
@@ -118,12 +117,12 @@ IN_PROC_BROWSER_TEST_F(BrowserCommandControllerBrowserTest,
   TemplateURLServiceFactory::GetForProfile(guest)->set_loaded(true);
 
   const CommandUpdater* command_updater = browser->command_controller();
-  #if defined(OS_CHROMEOS)
-    // Chrome OS uses system tray menu to handle multi-profiles.
-    EXPECT_FALSE(command_updater->IsCommandEnabled(IDC_SHOW_AVATAR_MENU));
-  #else
-    EXPECT_TRUE(command_updater->IsCommandEnabled(IDC_SHOW_AVATAR_MENU));
-  #endif
+#if defined(OS_CHROMEOS)
+  // Chrome OS uses system tray menu to handle multi-profiles.
+  EXPECT_FALSE(command_updater->IsCommandEnabled(IDC_SHOW_AVATAR_MENU));
+#else
+  EXPECT_TRUE(command_updater->IsCommandEnabled(IDC_SHOW_AVATAR_MENU));
+#endif
 }
 
 #if defined(OS_CHROMEOS)

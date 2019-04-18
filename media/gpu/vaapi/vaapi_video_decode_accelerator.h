@@ -75,7 +75,7 @@ class MEDIA_GPU_EXPORT VaapiVideoDecodeAccelerator
   void ImportBufferForPicture(
       int32_t picture_buffer_id,
       VideoPixelFormat pixel_format,
-      const gfx::GpuMemoryBufferHandle& gpu_memory_buffer_handle) override;
+      gfx::GpuMemoryBufferHandle gpu_memory_buffer_handle) override;
 #endif
   void ReusePictureBuffer(int32_t picture_buffer_id) override;
   void Flush() override;
@@ -198,6 +198,8 @@ class MEDIA_GPU_EXPORT VaapiVideoDecodeAccelerator
     // Similar to kSuperReduced, but we have to increase slightly the amount of
     // PictureBuffers allocated for the |client_|.
     kReduced,
+
+    // VaapiVideoDecodeAccelerator can work with this mode on all platforms.
     // Using |client_|s provided PictureBuffers and as many internally
     // allocated.
     kNormal,

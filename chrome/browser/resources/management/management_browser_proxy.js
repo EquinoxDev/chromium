@@ -5,8 +5,8 @@
 cr.exportPath('management');
 /**
  * @typedef {{
- *    name: string,
- *    permissions: !Array<string>
+ *   name: string,
+ *   permissions: !Array<string>
  * }}
  */
 management.Extension;
@@ -16,16 +16,62 @@ management.ReportingType = {
   SECURITY: 'security',
   DEVICE: 'device',
   USER: 'user',
+  USER_ACTIVITY: 'user-activity',
   EXTENSIONS: 'extensions'
 };
 
 /**
  * @typedef {{
- *    messageId: string,
- *    reportingType: !management.ReportingType,
+ *   messageId: string,
+ *   reportingType: !management.ReportingType,
  * }}
  */
 management.BrowserReportingResponse;
+
+/**
+ * @typedef {{
+ *   overview: string,
+ *   setup: string,
+ *   data: string,
+ * }}
+ */
+management.ManagedInfo;
+
+/**
+ * @typedef {{
+ *   accountManagedInfo: ?management.ManagedInfo,
+ *   browserManagementNotice: string,
+ *   deviceManagedInfo: ?management.ManagedInfo,
+ *   extensionReportingTitle: string,
+ *   pageSubtitle: string,
+ *   overview: string,
+ * }}
+ */
+management.ManagedDataResponse;
+
+// <if expr="chromeos">
+/**
+ * @enum {string} Look at ToJSDeviceReportingType usage in
+ *    management_ui_handler.cc for more details.
+ */
+management.DeviceReportingType = {
+  SUPERVISED_USER: 'supervised user',
+  DEVICE_ACTIVITY: 'device activity',
+  STATISTIC: 'device statistics',
+  DEVICE: 'device',
+  LOGS: 'logs',
+  PRINT: 'print'
+};
+
+
+/**
+ * @typedef {{
+ *   messageId: string,
+ *   reportingType: !management.DeviceReportingType,
+ * }}
+ */
+management.DeviceReportingResponse;
+// </if>
 
 cr.define('management', function() {
   /** @interface */
@@ -39,7 +85,16 @@ cr.define('management', function() {
      *     or not.
      */
     getLocalTrustRootsInfo() {}
+
+    /**
+     * @return {!Promise<!Array<management.DeviceReportingResponse>>} List of
+     *     items to display in device reporting section.
+     */
+    getDeviceReportingInfo() {}
     // </if>
+
+    /** @return {!Promise<!management.ManagedDataResponse>} */
+    getContextualManagedData() {}
 
     /**
      * @return {!Promise<!Array<!management.BrowserReportingResponse>>} The list
@@ -60,7 +115,17 @@ cr.define('management', function() {
     getLocalTrustRootsInfo() {
       return cr.sendWithPromise('getLocalTrustRootsInfo');
     }
+
+    /** @override */
+    getDeviceReportingInfo() {
+      return cr.sendWithPromise('getDeviceReportingInfo');
+    }
     // </if>
+
+    /** @override */
+    getContextualManagedData() {
+      return cr.sendWithPromise('getContextualManagedData');
+    }
 
     /** @override */
     initBrowserReportingInfo() {

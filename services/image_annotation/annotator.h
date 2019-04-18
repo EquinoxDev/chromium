@@ -18,10 +18,15 @@
 #include "base/time/time.h"
 #include "base/timer/timer.h"
 #include "mojo/public/cpp/bindings/binding_set.h"
+#include "services/data_decoder/public/mojom/json_parser.mojom.h"
 #include "services/image_annotation/public/mojom/image_annotation.mojom.h"
 #include "services/network/public/cpp/shared_url_loader_factory.h"
 #include "services/network/public/cpp/simple_url_loader.h"
 #include "url/gurl.h"
+
+namespace service_manager {
+class Connector;
+}  // namespace service_manager
 
 namespace image_annotation {
 
@@ -40,6 +45,12 @@ class Annotator : public mojom::Annotator {
  public:
   // The HTTP request header in which the API key should be transmitted.
   static constexpr char kGoogApiKeyHeader[] = "X-Goog-Api-Key";
+
+  // The minimum side length needed to request description annotations.
+  static constexpr int32_t kDescMinDimension = 150;
+
+  // The maximum aspect ratio permitted to request description annotations.
+  static constexpr double kDescMaxAspectRatio = 2.5;
 
   // Constructs an annotator.
   //  |server_url|        : the URL of the server with which the annotator
@@ -61,7 +72,8 @@ class Annotator : public mojom::Annotator {
             base::TimeDelta throttle,
             int batch_size,
             double min_ocr_confidence,
-            scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory);
+            scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory,
+            service_manager::Connector* connector);
   ~Annotator() override;
 
   // Start providing behavior for the given Mojo request.
@@ -84,34 +96,47 @@ class Annotator : public mojom::Annotator {
   using UrlLoaderList = std::list<std::unique_ptr<network::SimpleURLLoader>>;
 
   // A queue of the data needed to make HTTP requests to the image annotation
-  // server. Each entry is a (source ID, image bytes) pair.
+  // server. Each entry is a (source ID, image bytes, desc) triple, where desc
+  // is a bool that specifies whether or not description annotations should be
+  // requested.
   using HttpRequestQueue =
-      std::deque<std::pair<std::string, std::vector<uint8_t>>>;
+      std::deque<std::tuple<std::string, std::vector<uint8_t>, bool>>;
 
-  // Constructs and returns a JSON object containing an OCR request for the
+  // Returns true if the given dimensions fit the policy of the description
+  // backend (i.e. the image has size / shape on which it is acceptable to run
+  // the description model).
+  static bool IsWithinDescPolicy(int32_t width, int32_t height);
+
+  // Constructs and returns a JSON object containing an request for the
   // given images.
-  static std::string FormatJsonOcrRequest(HttpRequestQueue::iterator begin_it,
-                                          HttpRequestQueue::iterator end_it);
+  static std::string FormatJsonRequest(HttpRequestQueue::iterator begin_it,
+                                       HttpRequestQueue::iterator end_it);
 
-  // Creates a URL loader that calls the image annotation server with an OCR
-  // request for the given images.
-  static std::unique_ptr<network::SimpleURLLoader> MakeOcrRequestLoader(
+  // Creates a URL loader that calls the image annotation server with an
+  // annotation request for the given images.
+  static std::unique_ptr<network::SimpleURLLoader> MakeRequestLoader(
       const GURL& server_url,
       const std::string& api_key,
       HttpRequestQueue::iterator begin_it,
       HttpRequestQueue::iterator end_it);
 
+  // Create or reuse a connection to the data decoder service for safe JSON
+  // parsing.
+  data_decoder::mojom::JsonParser& GetJsonParser();
+
   // Removes the given request, reassigning local processing if its associated
   // image processor had some ongoing.
   void RemoveRequestInfo(const std::string& source_id,
                          RequestInfoList::iterator request_info_it,
-                         mojom::AnnotateImageError error);
+                         bool canceled);
 
   // Called when a local handler returns compressed image data for the given
   // source ID.
   void OnJpgImageDataReceived(const std::string& source_id,
                               RequestInfoList::iterator request_info_it,
-                              const std::vector<uint8_t>& image_bytes);
+                              const std::vector<uint8_t>& image_bytes,
+                              int32_t width,
+                              int32_t height);
 
   // Called periodically to send the next batch of requests to the image
   // annotation server.
@@ -123,9 +148,20 @@ class Annotator : public mojom::Annotator {
                                 UrlLoaderList::iterator http_request_it,
                                 std::unique_ptr<std::string> json_response);
 
-  // Maps from source ID to previously-obtained OCR result.
+  // Called when the data decoder service provides parsed JSON data for a server
+  // response.
+  void OnResponseJsonParsed(const std::set<std::string>& source_ids,
+                            base::Optional<base::Value> json_data,
+                            const base::Optional<std::string>& error);
+
+  // Adds the given results to the cache (if successful) and notifies clients.
+  void ProcessResults(
+      const std::set<std::string>& source_ids,
+      const std::map<std::string, mojom::AnnotateImageResultPtr>& results);
+
+  // Maps from source ID to previously-obtained annotation results.
   // TODO(crbug.com/916420): periodically clear entries from this cache.
-  std::map<std::string, std::string> cached_results_;
+  std::map<std::string, mojom::AnnotateImageResultPtr> cached_results_;
 
   // Maps from source ID to the list of request info (i.e. info of clients that
   // have made requests) for that source.
@@ -150,7 +186,12 @@ class Annotator : public mojom::Annotator {
 
   scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory_;
 
+  service_manager::Connector* const connector_;
+
   mojo::BindingSet<mojom::Annotator> bindings_;
+
+  // Should not be used directly; GetJsonParser() should be called instead.
+  data_decoder::mojom::JsonParserPtr json_parser_;
 
   // A timer used to throttle HTTP request frequency.
   base::RepeatingTimer http_request_timer_;

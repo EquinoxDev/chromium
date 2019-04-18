@@ -25,8 +25,8 @@
 #include "media/base/video_frame.h"
 #include "media/base/video_rotation.h"
 #include "media/base/video_types.h"
-#include "media/gpu/fake_command_buffer_helper.h"
 #include "media/gpu/ipc/service/picture_buffer_manager.h"
+#include "media/gpu/test/fake_command_buffer_helper.h"
 #include "media/video/mock_video_decode_accelerator.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -103,8 +103,8 @@ class VdaVideoDecoderTest : public testing::TestWithParam<bool> {
                        base::Unretained(this)),
         base::BindOnce(&VdaVideoDecoderTest::CreateCommandBufferHelper,
                        base::Unretained(this)),
-        base::BindOnce(&VdaVideoDecoderTest::CreateAndInitializeVda,
-                       base::Unretained(this)),
+        base::BindRepeating(&VdaVideoDecoderTest::CreateAndInitializeVda,
+                            base::Unretained(this)),
         GetCapabilities()));
     client_ = vdavd_.get();
   }

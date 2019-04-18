@@ -33,12 +33,14 @@ void EphemeralTabLayer::SetProperties(
     float panel_y,
     float panel_width,
     float panel_height,
+    int bar_background_color,
     float bar_margin_side,
     float bar_height,
     bool bar_border_visible,
     float bar_border_height,
     bool bar_shadow_visible,
     float bar_shadow_opacity,
+    int icon_color,
     bool progress_bar_visible,
     float progress_bar_height,
     float progress_bar_opacity,
@@ -47,77 +49,25 @@ void EphemeralTabLayer::SetProperties(
   bar_height = floor(bar_height);
   float bar_top = 0.f;
   float bar_bottom = bar_top + bar_height;
-  bool should_render_progress_bar =
-      progress_bar_visible && progress_bar_opacity > 0.f;
 
   // Title needs no rendering in the base layer as it can be rendered
   // together with caption below. Make it invisible.
   float title_opacity = 0.f;
   OverlayPanelLayer::SetProperties(
       dp_to_px, content_layer, bar_height, panel_x, panel_y, panel_width,
-      panel_height, bar_margin_side, bar_height, 0.0f, title_opacity,
-      bar_border_visible, bar_border_height, bar_shadow_visible,
-      bar_shadow_opacity, 1.0f /* icon opacity */);
+      panel_height, bar_background_color, bar_margin_side, bar_height, 0.0f,
+      title_opacity, bar_border_visible, bar_border_height, bar_shadow_visible,
+      bar_shadow_opacity, icon_color, 1.0f /* icon opacity */);
 
   SetupTextLayer(bar_top, bar_height, text_layer_min_height,
                  caption_view_resource_id, caption_animation_percentage,
                  caption_visible, title_view_resource_id,
                  title_caption_spacing);
 
-  // ---------------------------------------------------------------------------
-  // Progress Bar
-  // ---------------------------------------------------------------------------
-
-  if (should_render_progress_bar) {
-    ui::NinePatchResource* progress_bar_background_resource =
-        ui::NinePatchResource::From(resource_manager_->GetResource(
-            ui::ANDROID_RESOURCE_TYPE_STATIC,
-            progress_bar_background_resource_id));
-    ui::NinePatchResource* progress_bar_resource =
-        ui::NinePatchResource::From(resource_manager_->GetResource(
-            ui::ANDROID_RESOURCE_TYPE_STATIC, progress_bar_resource_id));
-
-    DCHECK(progress_bar_background_resource);
-    DCHECK(progress_bar_resource);
-
-    // Progress Bar Background
-    if (progress_bar_background_->parent() != layer_)
-      layer_->AddChild(progress_bar_background_);
-
-    float progress_bar_y = bar_bottom - progress_bar_height;
-    gfx::Size progress_bar_background_size(panel_width, progress_bar_height);
-
-    progress_bar_background_->SetUIResourceId(
-        progress_bar_background_resource->ui_resource()->id());
-    progress_bar_background_->SetBorder(
-        progress_bar_background_resource->Border(progress_bar_background_size));
-    progress_bar_background_->SetAperture(
-        progress_bar_background_resource->aperture());
-    progress_bar_background_->SetBounds(progress_bar_background_size);
-    progress_bar_background_->SetPosition(gfx::PointF(0.f, progress_bar_y));
-    progress_bar_background_->SetOpacity(progress_bar_opacity);
-
-    // Progress Bar
-    if (progress_bar_->parent() != layer_)
-      layer_->AddChild(progress_bar_);
-
-    float progress_bar_width =
-        floor(panel_width * progress_bar_completion / 100.f);
-    gfx::Size progress_bar_size(progress_bar_width, progress_bar_height);
-    progress_bar_->SetUIResourceId(progress_bar_resource->ui_resource()->id());
-    progress_bar_->SetBorder(progress_bar_resource->Border(progress_bar_size));
-    progress_bar_->SetAperture(progress_bar_resource->aperture());
-    progress_bar_->SetBounds(progress_bar_size);
-    progress_bar_->SetPosition(gfx::PointF(0.f, progress_bar_y));
-    progress_bar_->SetOpacity(progress_bar_opacity);
-  } else {
-    // Removes Progress Bar and its Background from the Layer Tree.
-    if (progress_bar_background_.get() && progress_bar_background_->parent())
-      progress_bar_background_->RemoveFromParent();
-
-    if (progress_bar_.get() && progress_bar_->parent())
-      progress_bar_->RemoveFromParent();
-  }
+  OverlayPanelLayer::SetProgressBar(
+      progress_bar_background_resource_id, progress_bar_resource_id,
+      progress_bar_visible, bar_bottom, progress_bar_height,
+      progress_bar_opacity, progress_bar_completion, panel_width);
 }
 
 void EphemeralTabLayer::SetupTextLayer(float bar_top,
@@ -235,14 +185,7 @@ EphemeralTabLayer::EphemeralTabLayer(ui::ResourceManager* resource_manager)
     : OverlayPanelLayer(resource_manager),
       title_(cc::UIResourceLayer::Create()),
       caption_(cc::UIResourceLayer::Create()),
-      text_layer_(cc::UIResourceLayer::Create()),
-      progress_bar_(cc::NinePatchLayer::Create()),
-      progress_bar_background_(cc::NinePatchLayer::Create()) {
-  progress_bar_background_->SetIsDrawable(true);
-  progress_bar_background_->SetFillCenter(true);
-  progress_bar_->SetIsDrawable(true);
-  progress_bar_->SetFillCenter(true);
-
+      text_layer_(cc::UIResourceLayer::Create()) {
   // Content layer
   text_layer_->SetIsDrawable(true);
 

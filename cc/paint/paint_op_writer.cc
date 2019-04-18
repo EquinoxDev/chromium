@@ -173,18 +173,27 @@ void PaintOpWriter::Write(const SkPath& path) {
   auto id = path.getGenerationID();
   Write(id);
 
+  if (options_.paint_cache->Get(PaintCacheDataType::kPath, id)) {
+    Write(static_cast<uint32_t>(PaintCacheEntryState::kCached));
+    return;
+  }
+
+  // The SkPath may fail to serialize if the bytes required would overflow.
+  uint64_t bytes_required = path.writeToMemory(nullptr);
+  if (bytes_required == 0u) {
+    Write(static_cast<uint32_t>(PaintCacheEntryState::kEmpty));
+    return;
+  }
+
+  Write(static_cast<uint32_t>(PaintCacheEntryState::kInlined));
   uint64_t* bytes_to_skip = WriteSize(0u);
   if (!valid_)
     return;
 
-  if (options_.paint_cache->Get(PaintCacheDataType::kPath, id))
-    return;
-  uint64_t bytes_required = path.writeToMemory(nullptr);
   if (bytes_required > remaining_bytes_) {
     valid_ = false;
     return;
   }
-
   size_t bytes_written = path.writeToMemory(memory_);
   DCHECK_EQ(bytes_written, bytes_required);
   options_.paint_cache->Put(PaintCacheDataType::kPath, id, bytes_written);
@@ -359,8 +368,10 @@ sk_sp<PaintShader> PaintOpWriter::TransformShaderIfNecessary(
                                         &quality, paint_image_needs_mips);
   }
 
-  if (type == PaintShader::Type::kPaintRecord)
-    return original->CreateScaledPaintRecord(ctm, paint_record_post_scale);
+  if (type == PaintShader::Type::kPaintRecord) {
+    return original->CreateScaledPaintRecord(ctm, options_.max_texture_size,
+                                             paint_record_post_scale);
+  }
 
   return sk_ref_sp<PaintShader>(original);
 }
@@ -397,7 +408,7 @@ void PaintOpWriter::Write(const PaintShader* shader, SkFilterQuality quality) {
   WriteSimple(shader->flags_);
   WriteSimple(shader->end_radius_);
   WriteSimple(shader->start_radius_);
-  // SkShader::TileMode does not have an explicitly defined backing type, so
+  // SkTileMode does not have an explicitly defined backing type, so
   // write a consistently sized value.
   Write(static_cast<int32_t>(shader->tx_));
   Write(static_cast<int32_t>(shader->ty_));
@@ -671,12 +682,26 @@ void PaintOpWriter::Write(const ImagePaintFilter& filter) {
 
 void PaintOpWriter::Write(const RecordPaintFilter& filter) {
   WriteSimple(filter.record_bounds());
-  Write(filter.record().get(), gfx::Rect(), gfx::SizeF(1.f, 1.f),
-        options_.canvas ? options_.canvas->getTotalMatrix() : SkMatrix::I());
+  if (!options_.canvas) {
+    Write(filter.record().get(), gfx::Rect(), gfx::SizeF(1.f, 1.f),
+          SkMatrix::I());
+    return;
+  }
+
+  // The logic here to only use the scale component of the matrix during
+  // analysis is for consistency with the rasterization of the filter later in
+  // pipeline in skia. For every draw with a filter, SkCanvas creates a layer
+  // for the draw and modifies the scale for these filters.
+  // See SkCanvas::internalSaveLayer.
+  SkMatrix mat = options_.canvas->getTotalMatrix();
+  SkSize scale;
+  if (!mat.isScaleTranslate() && mat.decomposeScale(&scale))
+    mat = SkMatrix::MakeScale(scale.width(), scale.height());
+  Write(filter.record().get(), gfx::Rect(), gfx::SizeF(1.f, 1.f), mat);
 }
 
 void PaintOpWriter::Write(const MergePaintFilter& filter) {
-  WriteSimple(filter.input_count());
+  WriteSize(filter.input_count());
   for (size_t i = 0; i < filter.input_count(); ++i)
     Write(filter.input_at(i));
 }

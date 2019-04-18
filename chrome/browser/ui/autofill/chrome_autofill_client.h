@@ -17,13 +17,13 @@
 #include "build/build_config.h"
 #include "chrome/browser/profiles/profile.h"
 #include "components/autofill/core/browser/autofill_client.h"
-#include "components/autofill/core/browser/ui/card_unmask_prompt_controller_impl.h"
+#include "components/autofill/core/browser/ui/payments/card_unmask_prompt_controller_impl.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "content/public/browser/web_contents_user_data.h"
 
 #if !defined(OS_ANDROID)
-#include "chrome/browser/ui/autofill/manage_migration_ui_controller.h"
-#include "components/autofill/core/browser/ui/save_card_bubble_controller.h"
+#include "chrome/browser/ui/autofill/payments/manage_migration_ui_controller.h"
+#include "components/autofill/core/browser/ui/payments/save_card_bubble_controller.h"
 #include "components/zoom/zoom_observer.h"
 #endif  // !defined(OS_ANDROID)
 
@@ -34,8 +34,6 @@ class WebContents;
 namespace autofill {
 
 class AutofillPopupControllerImpl;
-class CardExpirationDateFixFlowViewAndroid;
-class CardNameFixFlowViewAndroid;
 
 // Chrome implementation of AutofillClient.
 class ChromeAutofillClient
@@ -88,21 +86,20 @@ class ChromeAutofillClient
                                   base::OnceClosure callback) override;
   void ConfirmSaveCreditCardLocally(
       const CreditCard& card,
-      bool show_prompt,
+      SaveCreditCardOptions options,
       LocalSaveCardPromptCallback callback) override;
 #if defined(OS_ANDROID)
   void ConfirmAccountNameFixFlow(
       base::OnceCallback<void(const base::string16&)> callback) override;
   void ConfirmExpirationDateFixFlow(
+      const CreditCard& card,
       base::OnceCallback<void(const base::string16&, const base::string16&)>
           callback) override;
 #endif  // defined(OS_ANDROID)
   void ConfirmSaveCreditCardToCloud(
       const CreditCard& card,
       std::unique_ptr<base::DictionaryValue> legal_message,
-      bool should_request_name_from_user,
-      bool should_request_expiration_date_from_user,
-      bool show_prompt,
+      SaveCreditCardOptions options,
       UploadSaveCardPromptCallback callback) override;
   void ConfirmCreditCardFillAssist(const CreditCard& card,
                                    base::OnceClosure callback) override;
@@ -161,12 +158,6 @@ class ChromeAutofillClient
   std::unique_ptr<FormDataImporter> form_data_importer_;
   base::WeakPtr<AutofillPopupControllerImpl> popup_controller_;
   CardUnmaskPromptControllerImpl unmask_controller_;
-
-#if defined(OS_ANDROID)
-  std::unique_ptr<CardNameFixFlowViewAndroid> card_name_fix_flow_view_android_;
-  std::unique_ptr<CardExpirationDateFixFlowViewAndroid>
-      card_expiration_date_fix_flow_view_android_;
-#endif  // defined(OS_ANDROID)
 
   WEB_CONTENTS_USER_DATA_KEY_DECL();
 

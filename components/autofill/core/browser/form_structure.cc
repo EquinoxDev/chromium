@@ -37,6 +37,7 @@
 #include "components/autofill/core/browser/validation.h"
 #include "components/autofill/core/common/autofill_constants.h"
 #include "components/autofill/core/common/autofill_features.h"
+#include "components/autofill/core/common/autofill_payments_features.h"
 #include "components/autofill/core/common/autofill_regex_constants.h"
 #include "components/autofill/core/common/autofill_regexes.h"
 #include "components/autofill/core/common/autofill_util.h"
@@ -900,7 +901,7 @@ bool FormStructure::ShouldBeUploaded() const {
 
 void FormStructure::RetrieveFromCache(
     const FormStructure& cached_form,
-    const bool apply_is_autofilled,
+    const bool should_keep_cached_value,
     const bool only_server_and_autofill_state) {
   // Map from field signatures to cached fields.
   std::map<base::string16, const AutofillField*> cached_fields;
@@ -921,14 +922,23 @@ void FormStructure::RetrieveFromCache(
         field->set_only_fill_when_focused(
             cached_field->second->only_fill_when_focused());
       }
-      if (apply_is_autofilled) {
+      if (should_keep_cached_value) {
         field->is_autofilled = cached_field->second->is_autofilled;
       }
-      if (field->form_control_type != "select-one" &&
-          field->value == cached_field->second->value) {
-        // From the perspective of learning user data, text fields containing
-        // default values are equivalent to empty fields.
-        field->value = base::string16();
+      if (field->form_control_type != "select-one") {
+        bool is_credit_card_field =
+            AutofillType(cached_field->second->Type().GetStorableType())
+                .group() == CREDIT_CARD;
+        if (should_keep_cached_value && is_credit_card_field &&
+            base::FeatureList::IsEnabled(
+                features::kAutofillImportDynamicForms)) {
+          field->value = cached_field->second->value;
+          value_from_dynamic_change_form_ = true;
+        } else if (field->value == cached_field->second->value) {
+          // From the perspective of learning user data, text fields containing
+          // default values are equivalent to empty fields.
+          field->value = base::string16();
+        }
       }
       field->set_server_type(cached_field->second->server_type());
       field->set_previously_autofilled(
@@ -1219,24 +1229,6 @@ std::set<base::string16> FormStructure::PossibleValues(ServerFieldType type) {
   }
 
   return values;
-}
-
-base::string16 FormStructure::GetUniqueValue(HtmlFieldType type) const {
-  base::string16 value;
-  for (const auto& field : fields_) {
-    if (field->html_type() != type)
-      continue;
-
-    // More than one value found; abort rather than choosing one arbitrarily.
-    if (!value.empty() && !field->value.empty()) {
-      value.clear();
-      break;
-    }
-
-    value = field->value;
-  }
-
-  return value;
 }
 
 const AutofillField* FormStructure::field(size_t index) const {
@@ -1719,7 +1711,14 @@ void FormStructure::RationalizeRepeatedFields(
 void FormStructure::RationalizeFieldTypePredictions() {
   RationalizeCreditCardFieldPredictions();
   for (const auto& field : fields_) {
-    field->SetTypeTo(field->Type());
+    if (base::FeatureList::IsEnabled(features::kAutofillOffNoServerData) &&
+        !field->should_autocomplete && field->server_type() == NO_SERVER_DATA) {
+      // When the field has autocomplete off, and the server returned no
+      // prediction, then assume Autofill is not useful for the current field.
+      field->SetTypeTo(AutofillType(UNKNOWN_TYPE));
+    } else {
+      field->SetTypeTo(field->Type());
+    }
   }
 }
 

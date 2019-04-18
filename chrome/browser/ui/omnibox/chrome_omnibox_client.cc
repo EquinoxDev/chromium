@@ -58,8 +58,8 @@
 #include "components/omnibox/browser/autocomplete_result.h"
 #include "components/omnibox/browser/location_bar_model.h"
 #include "components/omnibox/browser/omnibox_controller_emitter.h"
-#include "components/omnibox/browser/omnibox_field_trial.h"
 #include "components/omnibox/browser/search_provider.h"
+#include "components/omnibox/common/omnibox_features.h"
 #include "components/prefs/pref_service.h"
 #include "components/search/search.h"
 #include "components/search_engines/search_engines_pref_names.h"
@@ -411,6 +411,16 @@ gfx::Image ChromeOmniboxClient::GetFaviconForDefaultSearchProvider(
     return gfx::Image();
 
   return favicon_cache_.GetFaviconForIconUrl(default_provider->favicon_url(),
+                                             std::move(on_favicon_fetched));
+}
+
+gfx::Image ChromeOmniboxClient::GetFaviconForKeywordSearchProvider(
+    const TemplateURL* template_url,
+    FaviconFetchedCallback on_favicon_fetched) {
+  if (!template_url)
+    return gfx::Image();
+
+  return favicon_cache_.GetFaviconForIconUrl(template_url->favicon_url(),
                                              std::move(on_favicon_fetched));
 }
 

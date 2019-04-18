@@ -78,9 +78,9 @@ void SliderThumbElement::SetPositionFromValue() {
   }
 }
 
-LayoutObject* SliderThumbElement::CreateLayoutObject(
-    const ComputedStyle& style) {
-  return LayoutObjectFactory::CreateBlockFlow(*this, style);
+LayoutObject* SliderThumbElement::CreateLayoutObject(const ComputedStyle& style,
+                                                     LegacyLayout legacy) {
+  return LayoutObjectFactory::CreateBlockFlow(*this, style, legacy);
 }
 
 bool SliderThumbElement::IsDisabledFormControl() const {
@@ -238,8 +238,9 @@ void SliderThumbElement::DefaultEventHandler(Event& event) {
   }
 
   auto& mouse_event = ToMouseEvent(event);
-  bool is_left_button = mouse_event.button() ==
-                        static_cast<short>(WebPointerProperties::Button::kLeft);
+  bool is_left_button =
+      mouse_event.button() ==
+      static_cast<int16_t>(WebPointerProperties::Button::kLeft);
   const AtomicString& event_type = event.type();
 
   // We intentionally do not call event->setDefaultHandled() here because
@@ -360,7 +361,8 @@ HTMLInputElement* SliderContainerElement::HostInput() const {
   return ToHTMLInputElement(OwnerShadowHost());
 }
 
-LayoutObject* SliderContainerElement::CreateLayoutObject(const ComputedStyle&) {
+LayoutObject* SliderContainerElement::CreateLayoutObject(const ComputedStyle&,
+                                                         LegacyLayout) {
   return new LayoutSliderContainer(this);
 }
 

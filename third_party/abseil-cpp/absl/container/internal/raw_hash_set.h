@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//      http://www.apache.org/licenses/LICENSE-2.0
+//      https://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -446,9 +446,7 @@ using Group = GroupPortableImpl;
 template <class Policy, class Hash, class Eq, class Alloc>
 class raw_hash_set;
 
-inline bool IsValidCapacity(size_t n) {
-  return ((n + 1) & n) == 0 && n >= Group::kWidth - 1;
-}
+inline bool IsValidCapacity(size_t n) { return ((n + 1) & n) == 0 && n > 0; }
 
 // PRECONDITION:
 //   IsValidCapacity(capacity)
@@ -470,13 +468,9 @@ inline void ConvertDeletedToEmptyAndFullToDeleted(
   ctrl[capacity] = kSentinel;
 }
 
-// Rounds up the capacity to the next power of 2 minus 1 and ensures it is
-// greater or equal to Group::kWidth - 1.
+// Rounds up the capacity to the next power of 2 minus 1, with a minimum of 1.
 inline size_t NormalizeCapacity(size_t n) {
-  constexpr size_t kMinCapacity = Group::kWidth - 1;
-  return n <= kMinCapacity
-             ? kMinCapacity
-             : (std::numeric_limits<size_t>::max)() >> LeadingZeros(n);
+  return n ? ~size_t{} >> LeadingZeros(n) : 1;
 }
 
 // We use 7/8th as maximum load factor.
@@ -515,7 +509,7 @@ inline size_t GrowthToLowerboundCapacity(size_t growth) {
 // if they are equal, false if they are not. If two keys compare equal, then
 // their hash values as defined by Hash MUST be equal.
 //
-// Allocator: an Allocator [http://devdocs.io/cpp/concept/allocator] with which
+// Allocator: an Allocator [https://devdocs.io/cpp/concept/allocator] with which
 // the storage of the hashtable will be allocated and the elements will be
 // constructed and destroyed.
 template <class Policy, class Hash, class Eq, class Alloc>
@@ -763,8 +757,8 @@ class raw_hash_set {
   // that accept std::initializer_list<T> and std::initializer_list<init_type>.
   // This is advantageous for performance.
   //
-  //   // Turns {"abc", "def"} into std::initializer_list<std::string>, then copies
-  //   // the strings into the set.
+  //   // Turns {"abc", "def"} into std::initializer_list<std::string>, then
+  //   // copies the strings into the set.
   //   std::unordered_set<std::string> s = {"abc", "def"};
   //
   //   // Turns {"abc", "def"} into std::initializer_list<const char*>, then
@@ -936,7 +930,7 @@ class raw_hash_set {
       reset_growth_left();
     }
     assert(empty());
-    infoz_.RecordStorageChanged(size_, capacity_);
+    infoz_.RecordStorageChanged(0, capacity_);
   }
 
   // This overload kicks in when the argument is an rvalue of insertable and
@@ -1226,7 +1220,7 @@ class raw_hash_set {
     if (n == 0 && capacity_ == 0) return;
     if (n == 0 && size_ == 0) {
       destroy_slots();
-      infoz_.RecordStorageChanged(size_, capacity_);
+      infoz_.RecordStorageChanged(0, 0);
       return;
     }
     // bitor is a faster way of doing `max` here. We will round up to the next
@@ -1483,11 +1477,14 @@ class raw_hash_set {
     capacity_ = new_capacity;
     initialize_slots();
 
+    size_t total_probe_length = 0;
     for (size_t i = 0; i != old_capacity; ++i) {
       if (IsFull(old_ctrl[i])) {
         size_t hash = PolicyTraits::apply(HashElement{hash_ref()},
                                           PolicyTraits::element(old_slots + i));
-        size_t new_i = find_first_non_full(hash).offset;
+        auto target = find_first_non_full(hash);
+        size_t new_i = target.offset;
+        total_probe_length += target.probe_length;
         set_ctrl(new_i, H2(hash));
         PolicyTraits::transfer(&alloc_ref(), slots_ + new_i, old_slots + i);
       }
@@ -1499,10 +1496,12 @@ class raw_hash_set {
       Deallocate<Layout::Alignment()>(&alloc_ref(), old_ctrl,
                                       layout.AllocSize());
     }
+    infoz_.RecordRehash(total_probe_length);
   }
 
   void drop_deletes_without_resize() ABSL_ATTRIBUTE_NOINLINE {
     assert(IsValidCapacity(capacity_));
+    assert(!is_small());
     // Algorithm:
     // - mark all DELETED slots as EMPTY
     // - mark all FULL slots as DELETED
@@ -1522,12 +1521,15 @@ class raw_hash_set {
     ConvertDeletedToEmptyAndFullToDeleted(ctrl_, capacity_);
     typename std::aligned_storage<sizeof(slot_type), alignof(slot_type)>::type
         raw;
+    size_t total_probe_length = 0;
     slot_type* slot = reinterpret_cast<slot_type*>(&raw);
     for (size_t i = 0; i != capacity_; ++i) {
       if (!IsDeleted(ctrl_[i])) continue;
       size_t hash = PolicyTraits::apply(HashElement{hash_ref()},
                                         PolicyTraits::element(slots_ + i));
-      size_t new_i = find_first_non_full(hash).offset;
+      auto target = find_first_non_full(hash);
+      size_t new_i = target.offset;
+      total_probe_length += target.probe_length;
 
       // Verify if the old and new i fall within the same group wrt the hash.
       // If they do, we don't need to move the object as it falls already in the
@@ -1560,11 +1562,12 @@ class raw_hash_set {
       }
     }
     reset_growth_left();
+    infoz_.RecordRehash(total_probe_length);
   }
 
   void rehash_and_grow_if_necessary() {
     if (capacity_ == 0) {
-      resize(Group::kWidth - 1);
+      resize(1);
     } else if (size() <= CapacityToGrowth(capacity()) / 2) {
       // Squash DELETED without growing if there is enough capacity.
       drop_deletes_without_resize();
@@ -1611,17 +1614,15 @@ class raw_hash_set {
       auto mask = g.MatchEmptyOrDeleted();
       if (mask) {
 #if !defined(NDEBUG)
-        // We want to force small tables to have random entries too, so
-        // in debug build we will randomly insert in either the front or back of
+        // We want to add entropy even when ASLR is not enabled.
+        // In debug build we will randomly insert in either the front or back of
         // the group.
         // TODO(kfm,sbenza): revisit after we do unconditional mixing
-        if (ShouldInsertBackwards(hash, ctrl_))
+        if (!is_small() && ShouldInsertBackwards(hash, ctrl_)) {
           return {seq.offset(mask.HighestBitSet()), seq.index()};
-        else
-          return {seq.offset(mask.LowestBitSet()), seq.index()};
-#else
-        return {seq.offset(mask.LowestBitSet()), seq.index()};
+        }
 #endif
+        return {seq.offset(mask.LowestBitSet()), seq.index()};
       }
       assert(seq.index() < capacity_ && "full table!");
       seq.next();
@@ -1724,10 +1725,27 @@ class raw_hash_set {
     }
 
     ctrl_[i] = h;
-    ctrl_[((i - Group::kWidth) & capacity_) + Group::kWidth] = h;
+    ctrl_[((i - Group::kWidth) & capacity_) + 1 +
+          ((Group::kWidth - 1) & capacity_)] = h;
   }
 
   size_t& growth_left() { return settings_.template get<0>(); }
+
+  // The representation of the object has two modes:
+  //  - small: For capacities < kWidth-1
+  //  - large: For the rest.
+  //
+  // Differences:
+  //  - In small mode we are able to use the whole capacity. The extra control
+  //  bytes give us at least one "empty" control byte to stop the iteration.
+  //  This is important to make 1 a valid capacity.
+  //
+  //  - In small mode only the first `capacity()` control bytes after the
+  //  sentinel are valid. The rest contain dummy kEmpty values that do not
+  //  represent a real slot. This is important to take into account on
+  //  find_first_non_full(), where we never try ShouldInsertBackwards() for
+  //  small tables.
+  bool is_small() const { return capacity_ < Group::kWidth - 1; }
 
   hasher& hash_ref() { return settings_.template get<1>(); }
   const hasher& hash_ref() const { return settings_.template get<1>(); }

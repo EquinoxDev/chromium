@@ -16,6 +16,7 @@
 #include "base/metrics/field_trial_params.h"
 #include "base/no_destructor.h"
 #include "base/task/post_task.h"
+#include "base/time/default_tick_clock.h"
 #include "chrome/browser/android/chrome_feature_list.h"
 #include "chrome/browser/autofill/android/personal_data_manager_android.h"
 #include "chrome/browser/autofill/personal_data_manager_factory.h"
@@ -43,13 +44,13 @@ using base::android::JavaRef;
 namespace autofill_assistant {
 namespace switches {
 const char* const kAutofillAssistantServerKey = "autofill-assistant-key";
+const char* const kAutofillAssistantUrl = "autofill-assistant-url";
 }  // namespace switches
 
 namespace {
 
-const base::FeatureParam<std::string> kAutofillAssistantServerUrl{
-    &autofill_assistant::features::kAutofillAssistant, "url",
-    "https://automate-pa.googleapis.com"};
+const char* const kDefaultAutofillAssistantServerUrl =
+    "https://automate-pa.googleapis.com";
 
 // Fills a map from two Java arrays of strings of the same length.
 void FillParametersFromJava(JNIEnv* env,
@@ -83,7 +84,13 @@ ClientAndroid::ClientAndroid(content::WebContents* web_contents)
       java_object_(Java_AutofillAssistantClient_create(
           AttachCurrentThread(),
           reinterpret_cast<intptr_t>(this))),
-      weak_ptr_factory_(this) {}
+      weak_ptr_factory_(this) {
+  server_url_ = base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
+      switches::kAutofillAssistantUrl);
+  if (server_url_.empty()) {
+    server_url_ = kDefaultAutofillAssistantServerUrl;
+  }
+}
 
 ClientAndroid::~ClientAndroid() {
   if (controller_ != nullptr) {
@@ -111,13 +118,49 @@ base::android::ScopedJavaLocalRef<jobject> ClientAndroid::GetJavaObject() {
 void ClientAndroid::Start(JNIEnv* env,
                           const JavaParamRef<jobject>& jcaller,
                           const JavaParamRef<jstring>& jinitial_url,
+                          const JavaParamRef<jstring>& jexperiment_ids,
                           const JavaParamRef<jobjectArray>& parameterNames,
                           const JavaParamRef<jobjectArray>& parameterValues) {
   CreateController();
   GURL initial_url(base::android::ConvertJavaStringToUTF8(env, jinitial_url));
   std::map<std::string, std::string> parameters;
   FillParametersFromJava(env, parameterNames, parameterValues, &parameters);
-  controller_->Start(initial_url, parameters);
+  controller_->Start(initial_url, std::make_unique<TriggerContext>(
+                                      std::move(parameters),
+                                      base::android::ConvertJavaStringToUTF8(
+                                          env, jexperiment_ids)));
+}
+
+void ClientAndroid::DestroyUI(
+    JNIEnv* env,
+    const base::android::JavaParamRef<jobject>& jcaller) {
+  DestroyUI();
+}
+
+void ClientAndroid::TransferUITo(
+    JNIEnv* env,
+    const base::android::JavaParamRef<jobject>& jcaller,
+    const base::android::JavaParamRef<jobject>& jother_web_contents) {
+  if (!ui_controller_android_)
+    return;
+
+  auto ui_ptr = std::move(ui_controller_android_);
+  // From this point on, the UIController, in ui_ptr, is either transferred or
+  // deleted.
+
+  if (!jother_web_contents)
+    return;
+
+  auto* other_web_contents =
+      content::WebContents::FromJavaWebContents(jother_web_contents);
+  DCHECK_NE(other_web_contents, web_contents_);
+
+  ClientAndroid* other_client =
+      ClientAndroid::FromWebContents(other_web_contents);
+  if (!other_client || !other_client->NeedsUI())
+    return;
+
+  other_client->SetUI(std::move(ui_ptr));
 }
 
 base::android::ScopedJavaLocalRef<jstring> ClientAndroid::GetPrimaryAccountName(
@@ -147,16 +190,14 @@ void ClientAndroid::ShowUI() {
     // onboarding.
   }
   if (!ui_controller_android_) {
-    ui_controller_android_ = std::make_unique<UiControllerAndroid>(
-        web_contents_, /* client= */ this, controller_.get());
+    std::unique_ptr<UiControllerAndroid> ui_ptr =
+        UiControllerAndroid::CreateFromWebContents(web_contents_);
+    if (ui_ptr)
+      SetUI(std::move(ui_ptr));
   }
 }
 
 void ClientAndroid::DestroyUI() {
-  if (!ui_controller_android_)
-    return;
-
-  ui_controller_android_->Destroy();
   ui_controller_android_.reset();
 }
 
@@ -191,7 +232,7 @@ autofill::PersonalDataManager* ClientAndroid::GetPersonalDataManager() {
 }
 
 std::string ClientAndroid::GetServerUrl() {
-  return kAutofillAssistantServerUrl.Get();
+  return server_url_;
 }
 
 UiController* ClientAndroid::GetUiController() {
@@ -221,10 +262,14 @@ void ClientAndroid::Shutdown(Metrics::DropOutReason reason) {
     // done.
     return;
   }
-  ui_controller_android_.reset();
 
   Metrics::RecordDropOut(reason);
-  controller_.reset();
+
+  // Delete the controller in a separate task. This avoids tricky ordering
+  // issues when Shutdown is called from the controller.
+  base::PostTaskWithTraits(FROM_HERE, {content::BrowserThread::UI},
+                           base::BindOnce(&ClientAndroid::DestroyController,
+                                          weak_ptr_factory_.GetWeakPtr()));
 }
 
 void ClientAndroid::FetchAccessToken(
@@ -247,9 +292,24 @@ void ClientAndroid::CreateController() {
   if (controller_) {
     return;
   }
-  controller_ = std::make_unique<Controller>(web_contents_, /* client= */ this);
+  controller_ = std::make_unique<Controller>(
+      web_contents_, /* client= */ this, base::DefaultTickClock::GetInstance());
 }
 
-WEB_CONTENTS_USER_DATA_KEY_IMPL(ClientAndroid);
+void ClientAndroid::DestroyController() {
+  controller_.reset();
+}
+
+bool ClientAndroid::NeedsUI() {
+  return !ui_controller_android_ && controller_ && controller_->NeedsUI();
+}
+
+void ClientAndroid::SetUI(
+    std::unique_ptr<UiControllerAndroid> ui_controller_android) {
+  ui_controller_android_ = std::move(ui_controller_android);
+  ui_controller_android_->Attach(web_contents_, this, controller_.get());
+}
+
+WEB_CONTENTS_USER_DATA_KEY_IMPL(ClientAndroid)
 
 }  // namespace autofill_assistant.

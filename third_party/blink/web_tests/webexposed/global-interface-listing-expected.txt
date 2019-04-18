@@ -452,6 +452,7 @@ interface BarProp
     getter visible
     method constructor
 interface BarcodeDetector
+    static method getSupportedFormats
     attribute @@toStringTag
     method constructor
     method detect
@@ -1474,6 +1475,7 @@ interface DetectedBarcode
     attribute @@toStringTag
     getter boundingBox
     getter cornerPoints
+    getter format
     getter rawValue
     method constructor
     method toJSON
@@ -1614,6 +1616,7 @@ interface Document : Node
     getter onmouseover
     getter onmouseup
     getter onmousewheel
+    getter onoverscroll
     getter onpaste
     getter onpause
     getter onplay
@@ -1636,6 +1639,7 @@ interface Document : Node
     getter onresize
     getter onresume
     getter onscroll
+    getter onscrollend
     getter onsearch
     getter onsecuritypolicyviolation
     getter onseeked
@@ -1802,6 +1806,7 @@ interface Document : Node
     setter onmouseover
     setter onmouseup
     setter onmousewheel
+    setter onoverscroll
     setter onpaste
     setter onpause
     setter onplay
@@ -1824,6 +1829,7 @@ interface Document : Node
     setter onresize
     setter onresume
     setter onscroll
+    setter onscrollend
     setter onsearch
     setter onsecuritypolicyviolation
     setter onseeked
@@ -2352,6 +2358,9 @@ interface Gyroscope : Sensor
     getter y
     getter z
     method constructor
+interface HID : EventTarget
+    attribute @@toStringTag
+    method constructor
 interface HTMLAllCollection
     attribute @@toStringTag
     getter length
@@ -2701,6 +2710,7 @@ interface HTMLElement : Element
     getter onmouseover
     getter onmouseup
     getter onmousewheel
+    getter onoverscroll
     getter onpaste
     getter onpause
     getter onplay
@@ -2719,6 +2729,7 @@ interface HTMLElement : Element
     getter onreset
     getter onresize
     getter onscroll
+    getter onscrollend
     getter onseeked
     getter onseeking
     getter onselect
@@ -2805,6 +2816,7 @@ interface HTMLElement : Element
     setter onmouseover
     setter onmouseup
     setter onmousewheel
+    setter onoverscroll
     setter onpaste
     setter onpause
     setter onplay
@@ -2823,6 +2835,7 @@ interface HTMLElement : Element
     setter onreset
     setter onresize
     setter onscroll
+    setter onscrollend
     setter onseeked
     setter onseeking
     setter onselect
@@ -3552,6 +3565,7 @@ interface HTMLPortalElement : HTMLElement
     getter src
     method activate
     method constructor
+    method postMessage
     setter src
 interface HTMLPreElement : HTMLElement
     attribute @@toStringTag
@@ -3903,6 +3917,7 @@ interface HTMLVideoElement : HTMLMediaElement
     getter intrinsicSize
     getter onenterpictureinpicture
     getter onleavepictureinpicture
+    getter playsInline
     getter poster
     getter videoHeight
     getter videoWidth
@@ -3924,6 +3939,7 @@ interface HTMLVideoElement : HTMLMediaElement
     setter intrinsicSize
     setter onenterpictureinpicture
     setter onleavepictureinpicture
+    setter playsInline
     setter poster
     setter width
 interface HashChangeEvent : Event
@@ -4116,16 +4132,19 @@ interface IdleDeadline
     getter didTimeout
     method constructor
     method timeRemaining
-interface IdleManager
-    attribute @@toStringTag
-    method constructor
-    method query
-interface IdleStatus : EventTarget
+interface IdleDetector : EventTarget
     attribute @@toStringTag
     getter onchange
     getter state
     method constructor
+    method start
+    method stop
     setter onchange
+interface IdleState
+    attribute @@toStringTag
+    getter screen
+    getter user
+    method constructor
 interface Image
     attribute @@toStringTag
     getter align
@@ -4611,6 +4630,12 @@ interface MediaStreamTrackEvent : Event
     attribute @@toStringTag
     getter track
     method constructor
+interface MerchantValidationEvent : Event
+    attribute @@toStringTag
+    getter methodName
+    getter validationURL
+    method complete
+    method constructor
 interface MessageChannel
     attribute @@toStringTag
     getter port1
@@ -4804,7 +4829,7 @@ interface Navigator
     getter doNotTrack
     getter geolocation
     getter hardwareConcurrency
-    getter idle
+    getter hid
     getter keyboard
     getter language
     getter languages
@@ -4956,6 +4981,7 @@ interface Notification : EventTarget
     getter onshow
     getter renotify
     getter requireInteraction
+    getter showTrigger
     getter silent
     getter tag
     getter timestamp
@@ -5109,6 +5135,11 @@ interface OverconstrainedError
     getter message
     getter name
     method constructor
+interface OverscrollEvent : Event
+    attribute @@toStringTag
+    getter deltaX
+    getter deltaY
+    method constructor
 interface PageTransitionEvent : Event
     attribute @@toStringTag
     getter persisted
@@ -5205,6 +5236,7 @@ interface PaymentRequest : EventTarget
     method abort
     method canMakePayment
     method constructor
+    method hasEnrolledInstrument
     method show
     setter onpaymentmethodchange
     setter onshippingaddresschange
@@ -5259,7 +5291,12 @@ interface Performance : EventTarget
     setter onresourcetimingbufferfull
 interface PerformanceElementTiming : PerformanceEntry
     attribute @@toStringTag
+    getter id
+    getter identifier
     getter intersectionRect
+    getter naturalHeight
+    getter naturalWidth
+    getter responseEnd
     method constructor
     method toJSON
 interface PerformanceEntry
@@ -5456,6 +5493,8 @@ interface PopStateEvent : Event
     method constructor
 interface PortalActivateEvent : Event
     attribute @@toStringTag
+    getter data
+    method adoptPredecessor
     method constructor
 interface PortalHost : EventTarget
     attribute @@toStringTag
@@ -5684,7 +5723,6 @@ interface RTCPeerConnection : EventTarget
     getter currentRemoteDescription
     getter iceConnectionState
     getter iceGatheringState
-    getter id
     getter localDescription
     getter onaddstream
     getter onconnectionstatechange
@@ -5699,6 +5737,7 @@ interface RTCPeerConnection : EventTarget
     getter pendingLocalDescription
     getter pendingRemoteDescription
     getter remoteDescription
+    getter sctp
     getter signalingState
     method addIceCandidate
     method addStream
@@ -5776,6 +5815,7 @@ interface RTCQuicTransport : EventTarget
 interface RTCRtpReceiver
     static method getCapabilities
     attribute @@toStringTag
+    getter jitterBufferDelayHint
     getter rtcp_transport
     getter track
     getter transport
@@ -5784,6 +5824,7 @@ interface RTCRtpReceiver
     method getParameters
     method getStats
     method getSynchronizationSources
+    setter jitterBufferDelayHint
 interface RTCRtpSender
     static method getCapabilities
     attribute @@toStringTag
@@ -5806,6 +5847,15 @@ interface RTCRtpTransceiver
     getter stopped
     method constructor
     setter direction
+interface RTCSctpTransport : EventTarget
+    attribute @@toStringTag
+    getter maxChannels
+    getter maxMessageSize
+    getter onstatechange
+    getter state
+    getter transport
+    method constructor
+    setter onstatechange
 interface RTCSessionDescription
     attribute @@toStringTag
     getter sdp
@@ -6163,6 +6213,7 @@ interface SVGElement : Element
     getter onmouseover
     getter onmouseup
     getter onmousewheel
+    getter onoverscroll
     getter onpaste
     getter onpause
     getter onplay
@@ -6181,6 +6232,7 @@ interface SVGElement : Element
     getter onreset
     getter onresize
     getter onscroll
+    getter onscrollend
     getter onseeked
     getter onseeking
     getter onselect
@@ -6253,6 +6305,7 @@ interface SVGElement : Element
     setter onmouseover
     setter onmouseup
     setter onmousewheel
+    setter onoverscroll
     setter onpaste
     setter onpause
     setter onplay
@@ -6271,6 +6324,7 @@ interface SVGElement : Element
     setter onreset
     setter onresize
     setter onscroll
+    setter onscrollend
     setter onseeked
     setter onseeking
     setter onselect
@@ -7116,6 +7170,7 @@ interface ScriptedTaskQueueController
 interface ScrollTimeline : AnimationTimeline
     attribute @@toStringTag
     getter endScrollOffset
+    getter fill
     getter orientation
     getter scrollSource
     getter startScrollOffset
@@ -7314,6 +7369,7 @@ interface SpeechSynthesisErrorEvent : SpeechSynthesisEvent
 interface SpeechSynthesisEvent : Event
     attribute @@toStringTag
     getter charIndex
+    getter charLength
     getter elapsedTime
     getter name
     getter utterance
@@ -7572,6 +7628,10 @@ interface TimeRanges
     method constructor
     method end
     method start
+interface TimestampTrigger
+    attribute @@toStringTag
+    getter timestamp
+    method constructor
 interface Touch
     attribute @@toStringTag
     getter clientX
@@ -8020,6 +8080,7 @@ interface WebGL2ComputeRenderingContext
     attribute ACTIVE_VARIABLES
     attribute ALIASED_LINE_WIDTH_RANGE
     attribute ALIASED_POINT_SIZE_RANGE
+    attribute ALL_BARRIER_BITS
     attribute ALPHA
     attribute ALPHA_BITS
     attribute ALREADY_SIGNALED
@@ -10175,20 +10236,12 @@ interface WebGLUniformLocation
 interface WebGLVertexArrayObject
     attribute @@toStringTag
     method constructor
-interface WebGPU
+interface WebGLVideoFrameInfo
     attribute @@toStringTag
+    getter currentTime
+    getter textureHeight
+    getter textureWidth
     method constructor
-    method getAdapter
-interface WebGPUAdapter
-    attribute @@toStringTag
-    getter name
-    method constructor
-    method createDevice
-interface WebGPUDevice
-    attribute @@toStringTag
-    getter adapter
-    method constructor
-    method dummy
 interface WebKitCSSMatrix : DOMMatrixReadOnly
     attribute @@toStringTag
     getter a
@@ -10317,6 +10370,7 @@ interface Worklet
 interface WorkletAnimation
     attribute @@toStringTag
     getter currentTime
+    getter effect
     getter playState
     getter playbackRate
     getter startTime
@@ -10437,25 +10491,23 @@ interface XRFrame
     attribute @@toStringTag
     getter session
     method constructor
-    method getInputPose
+    method getPose
     method getViewerPose
 interface XRHitResult
     attribute @@toStringTag
     getter hitMatrix
     method constructor
-interface XRInputPose
-    attribute @@toStringTag
-    getter emulatedPosition
-    getter gripTransform
-    getter targetRay
-    method constructor
 interface XRInputSource
     attribute @@toStringTag
+    getter gamepad
+    getter gripSpace
     getter handedness
     getter targetRayMode
+    getter targetRaySpace
     method constructor
 interface XRInputSourceEvent : Event
     attribute @@toStringTag
+    getter buttonIndex
     getter frame
     getter inputSource
     method constructor
@@ -10489,9 +10541,11 @@ interface XRRenderState
     getter baseLayer
     getter depthFar
     getter depthNear
+    getter outputContext
     method constructor
 interface XRRigidTransform
     attribute @@toStringTag
+    getter inverse
     getter matrix
     getter orientation
     getter position
@@ -10504,8 +10558,8 @@ interface XRSession : EventTarget
     getter onend
     getter onfocus
     getter onresetpose
-    getter outputContext
     getter renderState
+    getter viewerSpace
     method cancelAnimationFrame
     method constructor
     method end
@@ -10525,7 +10579,6 @@ interface XRSessionEvent : Event
 interface XRSpace : EventTarget
     attribute @@toStringTag
     method constructor
-    method getTransformTo
 interface XRStageBounds
     attribute @@toStringTag
     getter geometry
@@ -10542,7 +10595,6 @@ interface XRView
     getter eye
     getter projectionMatrix
     getter transform
-    getter viewMatrix
     method constructor
 interface XRViewerPose : XRPose
     attribute @@toStringTag
@@ -10565,6 +10617,7 @@ interface XRWebGLLayer : XRLayer
     getter framebuffer
     getter framebufferHeight
     getter framebufferWidth
+    getter ignoreDepthValues
     getter stencil
     method constructor
     method getViewport
@@ -10608,7 +10661,6 @@ interface webkitRTCPeerConnection : EventTarget
     getter currentRemoteDescription
     getter iceConnectionState
     getter iceGatheringState
-    getter id
     getter localDescription
     getter onaddstream
     getter onconnectionstatechange
@@ -10623,6 +10675,7 @@ interface webkitRTCPeerConnection : EventTarget
     getter pendingLocalDescription
     getter pendingRemoteDescription
     getter remoteDescription
+    getter sctp
     getter signalingState
     method addIceCandidate
     method addStream
@@ -10859,6 +10912,7 @@ interface webkitURL
     getter onmousewheel
     getter onoffline
     getter ononline
+    getter onoverscroll
     getter onpagehide
     getter onpageshow
     getter onpause
@@ -10881,6 +10935,7 @@ interface webkitURL
     getter onreset
     getter onresize
     getter onscroll
+    getter onscrollend
     getter onsearch
     getter onseeked
     getter onseeking
@@ -10931,7 +10986,6 @@ interface webkitURL
     getter taskWorklet
     getter toolbar
     getter visualViewport
-    getter webgpu
     getter webkitStorageInfo
     method NodeFilter
     method alert
@@ -11054,6 +11108,7 @@ interface webkitURL
     setter onmousewheel
     setter onoffline
     setter ononline
+    setter onoverscroll
     setter onpagehide
     setter onpageshow
     setter onpause
@@ -11076,6 +11131,7 @@ interface webkitURL
     setter onreset
     setter onresize
     setter onscroll
+    setter onscrollend
     setter onsearch
     setter onseeked
     setter onseeking
@@ -11121,7 +11177,6 @@ interface webkitURL
     setter statusbar
     setter toolbar
     setter visualViewport
-    setter webgpu
 PASS successfullyParsed is true
 
 TEST COMPLETE

@@ -12,7 +12,6 @@
 #include "base/barrier_closure.h"
 #include "base/bind.h"
 #include "base/bind_helpers.h"
-#include "base/debug/stack_trace.h"
 #include "base/memory/ptr_util.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/metrics/histogram_macros.h"
@@ -129,14 +128,12 @@ void SessionStorageContextMojo::OpenSessionStorage(
     int process_id,
     const std::string& namespace_id,
     mojo::ReportBadMessageCallback bad_message_callback,
-    blink::mojom::SessionStorageNamespaceRequest request,
-    base::OnceClosure bind_done) {
+    blink::mojom::SessionStorageNamespaceRequest request) {
   if (connection_state_ != CONNECTION_FINISHED) {
     RunWhenConnected(
         base::BindOnce(&SessionStorageContextMojo::OpenSessionStorage,
                        weak_ptr_factory_.GetWeakPtr(), process_id, namespace_id,
-                       std::move(bad_message_callback), std::move(request),
-                       std::move(bind_done)));
+                       std::move(bad_message_callback), std::move(request)));
     return;
   }
   auto found = namespaces_.find(namespace_id);
@@ -152,7 +149,7 @@ void SessionStorageContextMojo::OpenSessionStorage(
   }
 
   PurgeUnusedAreasIfNeeded();
-  found->second->Bind(std::move(request), process_id, std::move(bind_done));
+  found->second->Bind(std::move(request), process_id);
 
   size_t total_cache_size, unused_area_count;
   GetStatistics(&total_cache_size, &unused_area_count);
@@ -240,12 +237,14 @@ void SessionStorageContextMojo::DeleteSessionNamespace(
     bool should_persist) {
   auto namespace_it = namespaces_.find(namespace_id);
   // If the namespace has pending clones, do the clone now before destroying it.
-  if (namespace_it->second->HasNamespacesWaitingForClone()) {
-    namespace_it->second->CloneAllNamespacesWaitingForClone();
+  if (namespace_it != namespaces_.end()) {
+    if (namespace_it->second->HasNamespacesWaitingForClone())
+      namespace_it->second->CloneAllNamespacesWaitingForClone();
+
+    // The object hierarchy uses iterators bound to the metadata object, so
+    // make sure to delete the object hierarchy first.
+    namespaces_.erase(namespace_it);
   }
-  // The object hierarchy uses iterators bound to the metadata object, so make
-  // sure to delete the object hierarchy first.
-  namespaces_.erase(namespace_it);
 
   if (!has_scavenged_ && should_persist)
     protected_namespaces_from_scavenge_.insert(namespace_id);
@@ -341,6 +340,12 @@ void SessionStorageContextMojo::PerformStorageCleanup(
 
 void SessionStorageContextMojo::ShutdownAndDelete() {
   DCHECK_NE(connection_state_, CONNECTION_SHUTDOWN);
+
+  // The namespaces will DCHECK if they are destructed with pending clones. It
+  // is valid for to drop these on shutdown.
+  for (auto& namespace_pair : namespaces_) {
+    namespace_pair.second->ClearNamespacesWaitingForClone();
+  }
 
   // Nothing to do if no connection to the database was ever finished.
   if (connection_state_ != CONNECTION_FINISHED) {

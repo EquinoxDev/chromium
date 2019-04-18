@@ -16,7 +16,7 @@
 #include "media/filters/gpu_video_decoder.h"
 #include "media/media_buildflags.h"
 #include "media/video/gpu_video_accelerator_factories.h"
-#include "third_party/libaom/av1_buildflags.h"
+#include "third_party/libaom/libaom_buildflags.h"
 
 #if !defined(OS_ANDROID)
 #include "media/filters/decrypting_audio_decoder.h"
@@ -27,7 +27,7 @@
 #include "media/filters/fuchsia/fuchsia_video_decoder.h"
 #endif
 
-#if BUILDFLAG(ENABLE_AV1_DECODER)
+#if BUILDFLAG(ENABLE_LIBAOM_DECODER)
 #include "media/filters/aom_video_decoder.h"
 #endif
 
@@ -93,9 +93,7 @@ void DefaultDecoderFactory::CreateVideoDecoders(
 
   // Perfer an external decoder since one will only exist if it is hardware
   // accelerated.
-  // Remember that |gpu_factories| will be null if HW video decode is turned
-  // off in chrome://flags.
-  if (gpu_factories) {
+  if (gpu_factories && gpu_factories->IsGpuVideoAcceleratorEnabled()) {
     // |gpu_factories_| requires that its entry points be called on its
     // |GetTaskRunner()|. Since |pipeline_| will own decoders created from the
     // factories, require that their message loops are identical.
@@ -123,11 +121,8 @@ void DefaultDecoderFactory::CreateVideoDecoders(
 #endif
 
 #if BUILDFLAG(ENABLE_DAV1D_DECODER)
-  if (base::FeatureList::IsEnabled(kDav1dVideoDecoder))
-    video_decoders->push_back(std::make_unique<Dav1dVideoDecoder>(media_log));
-  else
-    video_decoders->push_back(std::make_unique<AomVideoDecoder>(media_log));
-#elif BUILDFLAG(ENABLE_AV1_DECODER)
+  video_decoders->push_back(std::make_unique<Dav1dVideoDecoder>(media_log));
+#elif BUILDFLAG(ENABLE_LIBAOM_DECODER)
   video_decoders->push_back(std::make_unique<AomVideoDecoder>(media_log));
 #endif
 

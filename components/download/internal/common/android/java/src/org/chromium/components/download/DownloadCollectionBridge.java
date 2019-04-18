@@ -10,7 +10,6 @@ import android.os.ParcelFileDescriptor;
 
 import org.chromium.base.ContextUtils;
 import org.chromium.base.Log;
-import org.chromium.base.ThreadUtils;
 import org.chromium.base.annotations.CalledByNative;
 import org.chromium.base.annotations.JNINamespace;
 
@@ -22,14 +21,40 @@ public class DownloadCollectionBridge {
     // Singleton instance that allows embedders to replace their implementation.
     private static DownloadCollectionBridge sDownloadCollectionBridge;
     private static final String TAG = "DownloadCollection";
+    // Guards access to sDownloadCollectionBridge.
+    private static final Object sLock = new Object();
+
+    /**
+     *  Class representing the Uri and display name pair for downloads.
+     */
+    protected static class DisplayNameInfo {
+        private final String mUri;
+        private final String mDisplayName;
+
+        public DisplayNameInfo(String uri, String displayName) {
+            mUri = uri;
+            mDisplayName = displayName;
+        }
+
+        @CalledByNative("DisplayNameInfo")
+        private String getDownloadUri() {
+            return mUri;
+        }
+
+        @CalledByNative("DisplayNameInfo")
+        private String getDisplayName() {
+            return mDisplayName;
+        }
+    }
 
     /**
      * Return getDownloadCollectionBridge singleton.
      */
     public static DownloadCollectionBridge getDownloadCollectionBridge() {
-        ThreadUtils.assertOnUiThread();
-        if (sDownloadCollectionBridge == null) {
-            sDownloadCollectionBridge = new DownloadCollectionBridge();
+        synchronized (sLock) {
+            if (sDownloadCollectionBridge == null) {
+                sDownloadCollectionBridge = new DownloadCollectionBridge();
+            }
         }
         return sDownloadCollectionBridge;
     }
@@ -38,8 +63,9 @@ public class DownloadCollectionBridge {
      * Sets the singlton object to use later.
      */
     public static void setDownloadCollectionBridge(DownloadCollectionBridge bridge) {
-        ThreadUtils.assertOnUiThread();
-        sDownloadCollectionBridge = bridge;
+        synchronized (sLock) {
+            sDownloadCollectionBridge = bridge;
+        }
     }
 
     /**
@@ -88,6 +114,51 @@ public class DownloadCollectionBridge {
     protected Uri publishCompletedDownload(final String pendingUri) {
         return null;
     }
+
+    /**
+     * @return whether a download with the file name exists.
+     */
+    protected boolean checkFileNameExists(final String fileName) {
+        return false;
+    }
+
+    /**
+     * Renames a download Uri with a display name.
+     * @param downloadUri Uri of the download.
+     * @param displayName New display name for the download.
+     * @return whether rename was successful.
+     */
+    protected boolean rename(final String downloadUri, final String displayName) {
+        return false;
+    }
+
+    /**
+     * @return  Whether download display names needs to be retrieved.
+     */
+    protected boolean needToGetDisplayNames() {
+        return false;
+    }
+
+    /**
+     * Gets the display names for all downloads
+     * @return an array of download Uri and display name pair.
+     */
+    protected DisplayNameInfo[] getDisplayNames() {
+        return null;
+    }
+
+    /**
+     * @return whether download collection is supported.
+     */
+    protected boolean isDownloadCollectionSupported() {
+        return false;
+    }
+
+    /**
+     *  Refreshes the expiration date so the unpublished download won't get abandoned.
+     *  @param intermediateUri The intermediate Uri that is not yet published.
+     */
+    protected void refreshExpirationDate(final String intermediateUri) {}
 
     /**
      * Creates an intermediate URI for download to be written into. On completion, call
@@ -158,10 +229,63 @@ public class DownloadCollectionBridge {
             ContentResolver resolver = ContextUtils.getApplicationContext().getContentResolver();
             ParcelFileDescriptor pfd =
                     resolver.openFileDescriptor(Uri.parse(intermediateUri), "rw");
+            getDownloadCollectionBridge().refreshExpirationDate(intermediateUri);
             return pfd.detachFd();
         } catch (Exception e) {
             Log.e(TAG, "Cannot open intermediate Uri.", e);
         }
         return -1;
     }
+
+    /**
+     * @return whether a download with the file name exists.
+     */
+    @CalledByNative
+    private static boolean fileNameExists(final String fileName) {
+        return getDownloadCollectionBridge().checkFileNameExists(fileName);
+    }
+
+    /**
+     * Renames a download Uri with a display name.
+     * @param downloadUri Uri of the download.
+     * @param displayName New display name for the download.
+     * @return whether rename was successful.
+     */
+    @CalledByNative
+    private static boolean renameDownloadUri(final String downloadUri, final String displayName) {
+        return getDownloadCollectionBridge().rename(downloadUri, displayName);
+    }
+
+    /**
+     * @return  Whether download display names needs to be retrieved.
+     */
+    @CalledByNative
+    private static boolean needToRetrieveDisplayNames() {
+        return getDownloadCollectionBridge().needToGetDisplayNames();
+    }
+
+    /**
+     * Gets the display names for all downloads
+     * @return an array of download Uri and display name pair.
+     */
+    @CalledByNative
+    private static DisplayNameInfo[] getDisplayNamesForDownloads() {
+        return getDownloadCollectionBridge().getDisplayNames();
+    }
+
+    /**
+     * @return whether download collection is supported.
+     */
+    public static boolean supportsDownloadCollection() {
+        return getDownloadCollectionBridge().isDownloadCollectionSupported();
+    }
+
+    /**
+     * @return number of days for an intermediate download to expire.
+     */
+    public static int getExpirationDurationInDays() {
+        return nativeGetExpirationDurationInDays();
+    }
+
+    private static native int nativeGetExpirationDurationInDays();
 }

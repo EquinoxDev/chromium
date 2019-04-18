@@ -368,13 +368,36 @@ void NativeWidgetMac::SetSize(const gfx::Size& size) {
 }
 
 void NativeWidgetMac::StackAbove(gfx::NativeView native_view) {
-  NSInteger view_parent = native_view.GetNativeNSView().window.windowNumber;
-  [GetNativeWindow().GetNativeNSWindow() orderWindow:NSWindowAbove
-                                          relativeTo:view_parent];
+  if (!bridge())
+    return;
+
+  auto* sibling_host =
+      BridgedNativeWidgetHostImpl::GetFromNativeView(native_view);
+
+  if (!sibling_host) {
+    // This will only work if |this| is in-process.
+    DCHECK(!bridge_host_->bridge_factory_host());
+    NSInteger view_parent = native_view.GetNativeNSView().window.windowNumber;
+    [GetNativeWindow().GetNativeNSWindow() orderWindow:NSWindowAbove
+                                            relativeTo:view_parent];
+    return;
+  }
+
+  if (bridge_host_->bridge_factory_host() ==
+      sibling_host->bridge_factory_host()) {
+    // Check if |native_view|'s BridgedNativeWidgetHostImpl corresponds to the
+    // same process as |this|.
+    bridge()->StackAbove(sibling_host->bridged_native_widget_id());
+    return;
+  }
+
+  NOTREACHED() << "|native_view|'s BridgedNativeWidgetHostImpl isn't same "
+                  "process |this|";
 }
 
 void NativeWidgetMac::StackAtTop() {
-  NOTIMPLEMENTED();
+  if (bridge())
+    bridge()->StackAtTop();
 }
 
 void NativeWidgetMac::SetShape(std::unique_ptr<Widget::ShapeRects> shape) {
@@ -506,6 +529,14 @@ bool NativeWidgetMac::IsFullscreen() const {
   return bridge_host_ && bridge_host_->target_fullscreen_state();
 }
 
+void NativeWidgetMac::SetCanAppearInExistingFullscreenSpaces(
+    bool can_appear_in_existing_fullscreen_spaces) {
+  if (!bridge())
+    return;
+  bridge()->SetCanAppearInExistingFullscreenSpaces(
+      can_appear_in_existing_fullscreen_spaces);
+}
+
 void NativeWidgetMac::SetOpacity(float opacity) {
   if (!bridge())
     return;
@@ -543,6 +574,12 @@ void NativeWidgetMac::SchedulePaintInRect(const gfx::Rect& rect) {
   [GetNativeView().GetNativeNSView() setNeedsDisplayInRect:target_rect];
   if (bridge_host_ && bridge_host_->layer())
     bridge_host_->layer()->SchedulePaint(rect);
+}
+
+void NativeWidgetMac::ScheduleLayout() {
+  ui::Compositor* compositor = GetCompositor();
+  if (compositor)
+    compositor->ScheduleDraw();
 }
 
 void NativeWidgetMac::SetCursor(gfx::NativeCursor cursor) {
@@ -653,7 +690,7 @@ std::string NativeWidgetMac::GetName() const {
 
 // static
 void NativeWidgetMac::SetInitNativeWidgetCallback(
-    const base::RepeatingCallback<void(NativeWidgetMac*)>& callback) {
+    base::RepeatingCallback<void(NativeWidgetMac*)> callback) {
   DCHECK(!g_init_native_widget_callback || callback.is_null());
   if (callback.is_null()) {
     if (g_init_native_widget_callback) {
@@ -663,7 +700,7 @@ void NativeWidgetMac::SetInitNativeWidgetCallback(
     return;
   }
   g_init_native_widget_callback =
-      new base::RepeatingCallback<void(NativeWidgetMac*)>(callback);
+      new base::RepeatingCallback<void(NativeWidgetMac*)>(std::move(callback));
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -676,22 +713,6 @@ NativeWidgetMacNSWindow* NativeWidgetMac::CreateNSWindow(
 
 BridgeFactoryHost* NativeWidgetMac::GetBridgeFactoryHost() {
   return nullptr;
-}
-
-bool NativeWidgetMac::RedispatchKeyEvent(NSEvent* event) {
-  // If the target window is in-process, then redispatch the event directly,
-  // and give an accurate return value.
-  if (bridge_impl())
-    return bridge_impl()->RedispatchKeyEvent(event);
-
-  // If the target window is out of process then always report the event as
-  // handled (because it should never be handled in this process).
-  bridge()->RedispatchKeyEvent(
-      [event type], [event modifierFlags], [event timestamp],
-      base::SysNSStringToUTF16([event characters]),
-      base::SysNSStringToUTF16([event charactersIgnoringModifiers]),
-      [event keyCode]);
-  return true;
 }
 
 views_bridge_mac::mojom::BridgedNativeWidget* NativeWidgetMac::bridge() const {

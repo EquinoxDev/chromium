@@ -56,6 +56,36 @@
 #endif
 
 namespace cc {
+namespace {
+
+// A wrapper around SkiaOutputSurfaceImpl that can be used to change settings
+// for tests.
+class PixelTestSkiaOutputSurfaceImpl : public viz::SkiaOutputSurfaceImpl {
+ public:
+  PixelTestSkiaOutputSurfaceImpl(
+      viz::GpuServiceImpl* gpu_service,
+      gpu::SurfaceHandle surface_handle,
+      viz::SyntheticBeginFrameSource* synthetic_begin_frame_source,
+      const viz::RendererSettings& renderer_settings,
+      bool flipped_output_surface)
+      : SkiaOutputSurfaceImpl(gpu_service,
+                              surface_handle,
+                              synthetic_begin_frame_source,
+                              renderer_settings),
+        flipped_output_surface_(flipped_output_surface) {}
+
+  // |capabilities_| is set in InitializeForGL(), so wrap BindToClient() and set
+  // |flipped_output_surface| once that is complete.
+  void BindToClient(viz::OutputSurfaceClient* client) override {
+    SkiaOutputSurfaceImpl::BindToClient(client);
+    SetCapabilitiesForTesting(flipped_output_surface_);
+  }
+
+ private:
+  const bool flipped_output_surface_;
+};
+
+}  // namespace
 
 PixelTest::PixelTest()
     : device_viewport_size_(gfx::Size(200, 200)),
@@ -255,7 +285,8 @@ void PixelTest::SetUpGpuServiceOnGpuThread(base::WaitableEvent* event) {
 #if BUILDFLAG(ENABLE_VULKAN)
     vulkan_implementation_ = gpu::CreateVulkanImplementation();
     if (!vulkan_implementation_ ||
-        !vulkan_implementation_->InitializeVulkanInstance()) {
+        !vulkan_implementation_->InitializeVulkanInstance(
+            !gpu_preferences.disable_vulkan_surface)) {
       LOG(FATAL) << "Failed to create and initialize Vulkan implementation.";
     }
 #else
@@ -286,8 +317,9 @@ void PixelTest::SetUpGpuServiceOnGpuThread(base::WaitableEvent* event) {
   gpu_service_->InitializeWithHost(
       std::move(gpu_host_proxy), gpu::GpuProcessActivityFlags(),
       gl::init::CreateOffscreenGLSurface(gfx::Size()),
-      nullptr /* sync_point_manager */, nullptr /* shutdown_event */);
-  task_executor_ = base::MakeRefCounted<gpu::GpuInProcessThreadService>(
+      nullptr /* sync_point_manager */, nullptr /* shared_image_manager */,
+      nullptr /* shutdown_event */);
+  task_executor_ = std::make_unique<gpu::GpuInProcessThreadService>(
       gpu_thread_->task_runner(), gpu_service_->scheduler(),
       gpu_service_->sync_point_manager(), gpu_service_->mailbox_manager(),
       gpu_service_->share_group(),
@@ -301,7 +333,7 @@ void PixelTest::SetUpGpuServiceOnGpuThread(base::WaitableEvent* event) {
   event->Signal();
 }
 
-void PixelTest::SetUpSkiaRenderer() {
+void PixelTest::SetUpSkiaRenderer(bool flipped_output_surface) {
   // Set up the GPU service.
   const char enable_features[] = "VizDisplayCompositor,UseSkiaRenderer";
   const char disable_features[] = "";
@@ -320,10 +352,10 @@ void PixelTest::SetUpSkiaRenderer() {
   event.Wait();
 
   // Set up the skia renderer.
-  output_surface_ = std::make_unique<viz::SkiaOutputSurfaceImpl>(
+  output_surface_ = std::make_unique<PixelTestSkiaOutputSurfaceImpl>(
       gpu_service_.get(), gpu::kNullSurfaceHandle,
-      nullptr /* synthetic_begin_frame_source */,
-      renderer_settings_.show_overdraw_feedback);
+      nullptr /* synthetic_begin_frame_source */, renderer_settings_,
+      flipped_output_surface);
   output_surface_->BindToClient(output_surface_client_.get());
   resource_provider_ = std::make_unique<viz::DisplayResourceProvider>(
       viz::DisplayResourceProvider::kGpu,
@@ -331,7 +363,7 @@ void PixelTest::SetUpSkiaRenderer() {
       nullptr /* shared_bitmap_manager */);
   renderer_ = std::make_unique<viz::SkiaRenderer>(
       &renderer_settings_, output_surface_.get(), resource_provider_.get(),
-      static_cast<viz::SkiaOutputSurfaceImpl*>(output_surface_.get()),
+      static_cast<viz::SkiaOutputSurface*>(output_surface_.get()),
       viz::SkiaRenderer::DrawMode::DDL);
   renderer_->Initialize();
   renderer_->SetVisible(true);
@@ -353,7 +385,7 @@ void PixelTest::SetUpSkiaRenderer() {
 #endif
   child_context_provider_ =
       base::MakeRefCounted<viz::VizProcessContextProvider>(
-          task_executor_, gpu::kNullSurfaceHandle,
+          task_executor_.get(), gpu::kNullSurfaceHandle,
           gpu_memory_buffer_manager_.get(), image_factory,
           gpu_channel_manager_delegate, renderer_settings);
   child_context_provider_->BindToCurrentThread();

@@ -15,6 +15,7 @@
 #include "base/test/scoped_feature_list.h"
 #include "cc/test/fake_output_surface_client.h"
 #include "cc/test/pixel_test_utils.h"
+#include "components/viz/common/display/renderer_settings.h"
 #include "components/viz/common/frame_sinks/copy_output_request.h"
 #include "components/viz/common/frame_sinks/copy_output_result.h"
 #include "components/viz/common/frame_sinks/copy_output_util.h"
@@ -82,7 +83,7 @@ class SkiaOutputSurfaceImplTest : public testing::Test {
 #endif
 
   std::unique_ptr<base::Thread> io_thread_;
-  scoped_refptr<gpu::CommandBufferTaskExecutor> task_executor_;
+  std::unique_ptr<gpu::CommandBufferTaskExecutor> task_executor_;
   std::unique_ptr<cc::FakeOutputSurfaceClient> output_surface_client_;
   std::unique_ptr<base::test::ScopedFeatureList> scoped_feature_list_;
   base::WaitableEvent wait_;
@@ -107,7 +108,8 @@ void SkiaOutputSurfaceImplTest::SetUpGpuServiceOnGpuThread() {
 #if BUILDFLAG(ENABLE_VULKAN)
     vulkan_implementation_ = gpu::CreateVulkanImplementation();
     if (!vulkan_implementation_ ||
-        !vulkan_implementation_->InitializeVulkanInstance()) {
+        !vulkan_implementation_->InitializeVulkanInstance(
+            !gpu_preferences.disable_vulkan_surface)) {
       LOG(FATAL) << "Failed to create and initialize Vulkan implementation.";
     }
 #else
@@ -134,8 +136,9 @@ void SkiaOutputSurfaceImplTest::SetUpGpuServiceOnGpuThread() {
   gpu_service_->InitializeWithHost(
       std::move(gpu_host_proxy), gpu::GpuProcessActivityFlags(),
       gl::init::CreateOffscreenGLSurface(gfx::Size()),
-      nullptr /* sync_point_manager */, nullptr /* shutdown_event */);
-  task_executor_ = base::MakeRefCounted<gpu::GpuInProcessThreadService>(
+      nullptr /* sync_point_manager */, nullptr /* shared_image_manager */,
+      nullptr /* shutdown_event */);
+  task_executor_ = std::make_unique<gpu::GpuInProcessThreadService>(
       gpu_thread_->task_runner(), gpu_service_->scheduler(),
       gpu_service_->sync_point_manager(), gpu_service_->mailbox_manager(),
       gpu_service_->share_group(),
@@ -150,7 +153,7 @@ void SkiaOutputSurfaceImplTest::SetUpGpuServiceOnGpuThread() {
 }
 
 void SkiaOutputSurfaceImplTest::TearDownGpuServiceOnGpuThread() {
-  task_executor_ = nullptr;
+  task_executor_.reset();
   gpu_service_ = nullptr;
   UnblockMainThread();
 }
@@ -174,7 +177,7 @@ void SkiaOutputSurfaceImplTest::TearDown() {
 
 void SkiaOutputSurfaceImplTest::SetUpSkiaOutputSurfaceImpl() {
   // SkiaOutputSurfaceImplOnGpu requires UseSkiaRenderer.
-  const char enable_features[] = "UseSkiaRenderer";
+  const char enable_features[] = "VizDisplayCompositor,UseSkiaRenderer";
   const char disable_features[] = "";
   scoped_feature_list_ = std::make_unique<base::test::ScopedFeatureList>();
   scoped_feature_list_->InitFromCommandLine(enable_features, disable_features);
@@ -194,8 +197,7 @@ void SkiaOutputSurfaceImplTest::SetUpSkiaOutputSurfaceImpl() {
   // Set up the SkiaOutputSurfaceImpl.
   output_surface_ = std::make_unique<SkiaOutputSurfaceImpl>(
       gpu_service_.get(), gpu::kNullSurfaceHandle,
-      nullptr /* synthetic_begin_frame_source */,
-      false /*show_overdraw_feedback*/);
+      nullptr /* synthetic_begin_frame_source */, RendererSettings());
   output_surface_->BindToClient(output_surface_client_.get());
 }
 

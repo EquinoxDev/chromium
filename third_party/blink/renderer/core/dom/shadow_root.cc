@@ -57,7 +57,7 @@ void ShadowRoot::Distribute() {
 
 struct SameSizeAsShadowRoot : public DocumentFragment, public TreeScope {
   Member<void*> member[3];
-  unsigned counters_and_flags[1];
+  unsigned flags[1];
 };
 
 static_assert(sizeof(ShadowRoot) == sizeof(SameSizeAsShadowRoot),
@@ -68,10 +68,10 @@ ShadowRoot::ShadowRoot(Document& document, ShadowRootType type)
       TreeScope(*this, document),
       style_sheet_list_(nullptr),
       child_shadow_root_count_(0),
-      type_(static_cast<unsigned short>(type)),
+      type_(static_cast<unsigned>(type)),
       registered_with_parent_shadow_root_(false),
       delegates_focus_(false),
-      slotting_(static_cast<unsigned short>(ShadowRootSlotting::kAuto)),
+      slotting_(static_cast<unsigned>(ShadowRootSlotting::kAuto)),
       needs_distribution_recalc_(false),
       unused_(0) {
   if (IsV0())
@@ -82,7 +82,7 @@ ShadowRoot::~ShadowRoot() = default;
 
 SlotAssignment& ShadowRoot::EnsureSlotAssignment() {
   if (!slot_assignment_)
-    slot_assignment_ = SlotAssignment::Create(*this);
+    slot_assignment_ = MakeGarbageCollected<SlotAssignment>(*this);
   return *slot_assignment_;
 }
 
@@ -110,7 +110,7 @@ Node* ShadowRoot::Clone(Document&, CloneChildrenFlag) const {
 }
 
 void ShadowRoot::SetSlotting(ShadowRootSlotting slotting) {
-  slotting_ = static_cast<unsigned short>(slotting);
+  slotting_ = static_cast<unsigned>(slotting);
 }
 
 String ShadowRoot::InnerHTMLAsString() const {
@@ -167,8 +167,7 @@ Node::InsertionNotificationRequest ShadowRoot::InsertedInto(
   if (!insertion_point.isConnected())
     return kInsertionDone;
 
-  if (HasAdoptedStyleSheets())
-    GetDocument().GetStyleEngine().SetNeedsActiveStyleUpdate(*this);
+  GetDocument().GetStyleEngine().ShadowRootInsertedToDocument(*this);
 
   GetDocument().GetSlotAssignmentEngine().Connected(*this);
 
@@ -231,7 +230,7 @@ void ShadowRoot::ChildrenChanged(const ChildrenChange& change) {
 
 StyleSheetList& ShadowRoot::StyleSheets() {
   if (!style_sheet_list_)
-    SetStyleSheets(StyleSheetList::Create(this));
+    SetStyleSheets(MakeGarbageCollected<StyleSheetList>(this));
   return *style_sheet_list_;
 }
 

@@ -4,7 +4,7 @@
 
 #include "chrome/browser/ui/android/autofill/card_expiration_date_fix_flow_view_android.h"
 #include "chrome/browser/android/resource_mapper.h"
-#include "components/autofill/core/browser/ui/card_expiration_date_fix_flow_view_delegate_mobile.h"
+#include "components/autofill/core/browser/ui/payments/card_expiration_date_fix_flow_view_delegate_mobile.h"
 #include "content/public/browser/web_contents.h"
 #include "jni/AutofillExpirationDateFixFlowBridge_jni.h"
 #include "memory"
@@ -37,9 +37,12 @@ void CardExpirationDateFixFlowViewAndroid::Show() {
   ScopedJavaLocalRef<jstring> confirm = base::android::ConvertUTF16ToJavaString(
       env, delegate_->GetSaveButtonLabel());
 
+  ScopedJavaLocalRef<jstring> card_label =
+      base::android::ConvertUTF16ToJavaString(env, delegate_->card_label());
+
   java_object_.Reset(Java_AutofillExpirationDateFixFlowBridge_create(
       env, reinterpret_cast<intptr_t>(this), dialog_title, confirm,
-      ResourceMapper::MapFromChromiumId(delegate_->GetIconId())));
+      ResourceMapper::MapFromChromiumId(delegate_->GetIconId()), card_label));
 
   Java_AutofillExpirationDateFixFlowBridge_show(
       env, java_object_, view_android->GetWindowAndroid()->GetJavaObject());

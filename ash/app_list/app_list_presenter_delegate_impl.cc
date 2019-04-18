@@ -6,7 +6,10 @@
 
 #include "ash/app_list/app_list_controller_impl.h"
 #include "ash/app_list/presenter/app_list_presenter_impl.h"
+#include "ash/app_list/views/app_list_main_view.h"
 #include "ash/app_list/views/app_list_view.h"
+#include "ash/app_list/views/contents_view.h"
+#include "ash/app_list/views/search_box_view.h"
 #include "ash/public/cpp/app_list/app_list_switches.h"
 #include "ash/public/cpp/ash_switches.h"
 #include "ash/public/cpp/shelf_types.h"
@@ -82,9 +85,8 @@ void AppListPresenterDelegateImpl::Init(app_list::AppListView* view,
   const bool is_tablet_mode = IsTabletMode();
   aura::Window* parent_window =
       RootWindowController::ForWindow(root_window)
-          ->GetContainer(is_tablet_mode
-                             ? kShellWindowId_AppListTabletModeContainer
-                             : kShellWindowId_AppListContainer);
+          ->GetContainer(is_tablet_mode ? kShellWindowId_HomeScreenContainer
+                                        : kShellWindowId_AppListContainer);
   params.parent = parent_window;
   params.initial_apps_page = current_apps_page;
   params.is_tablet_mode = is_tablet_mode;
@@ -110,6 +112,7 @@ void AppListPresenterDelegateImpl::OnClosing() {
   DCHECK(is_visible_);
   DCHECK(view_);
   is_visible_ = false;
+  Shell::Get()->RemovePreTargetHandler(this);
   controller_->ViewClosing();
 }
 
@@ -228,7 +231,7 @@ void AppListPresenterDelegateImpl::ProcessLocatedEvent(
   }
 
   aura::Window* window = view_->GetWidget()->GetNativeView()->parent();
-  if (!window->Contains(target) && !presenter_->CloseOpenedPage() &&
+  if (!window->Contains(target) && !presenter_->HandleCloseOpenFolder() &&
       !app_list::switches::ShouldNotDismissOnBlur() && !IsTabletMode()) {
     const aura::Window* status_window =
         shelf->shelf_widget()->status_area_widget()->GetNativeWindow();
@@ -240,9 +243,28 @@ void AppListPresenterDelegateImpl::ProcessLocatedEvent(
     if (status_window && status_window->Contains(target))
       auto_hide_lock.emplace(shelf);
 
+    // Since event happened outside the app list, close the open search box if
+    // it is open.
+    presenter_->HandleCloseOpenSearchBox();
+
     // Keep app list opened if event happened in the shelf area.
     if (!shelf_window || !shelf_window->Contains(target))
       presenter_->Dismiss(event->time_stamp());
+  }
+
+  if (IsTabletMode() && presenter_->IsShowingEmbeddedAssistantUI()) {
+    auto* contents_view =
+        presenter_->GetView()->app_list_main_view()->contents_view();
+    if (target == contents_view->GetWidget()->GetNativeWindow() &&
+        contents_view->bounds().Contains(event->location())) {
+      // Keep Assistant open if event happen inside.
+      return;
+    }
+
+    // Touching anywhere else closes Assistant.
+    view_->Back();
+    view_->search_box_view()->ClearSearch();
+    view_->search_box_view()->SetSearchBoxActive(false, ui::ET_UNKNOWN);
   }
 }
 

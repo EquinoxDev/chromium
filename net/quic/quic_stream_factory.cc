@@ -51,14 +51,15 @@
 #include "net/socket/socket_performance_watcher.h"
 #include "net/socket/socket_performance_watcher_factory.h"
 #include "net/socket/udp_client_socket.h"
-#include "net/third_party/quic/core/crypto/proof_verifier.h"
-#include "net/third_party/quic/core/crypto/quic_random.h"
-#include "net/third_party/quic/core/http/quic_client_promised_info.h"
-#include "net/third_party/quic/core/quic_connection.h"
-#include "net/third_party/quic/core/quic_utils.h"
-#include "net/third_party/quic/core/tls_client_handshaker.h"
-#include "net/third_party/quic/platform/api/quic_clock.h"
-#include "net/third_party/quic/platform/api/quic_flags.h"
+#include "net/third_party/quiche/src/quic/core/crypto/null_decrypter.h"
+#include "net/third_party/quiche/src/quic/core/crypto/proof_verifier.h"
+#include "net/third_party/quiche/src/quic/core/crypto/quic_random.h"
+#include "net/third_party/quiche/src/quic/core/http/quic_client_promised_info.h"
+#include "net/third_party/quiche/src/quic/core/quic_connection.h"
+#include "net/third_party/quiche/src/quic/core/quic_utils.h"
+#include "net/third_party/quiche/src/quic/core/tls_client_handshaker.h"
+#include "net/third_party/quiche/src/quic/platform/api/quic_clock.h"
+#include "net/third_party/quiche/src/quic/platform/api/quic_flags.h"
 #include "third_party/boringssl/src/include/openssl/aead.h"
 #include "url/gurl.h"
 #include "url/url_constants.h"
@@ -150,14 +151,6 @@ void LogPlatformNotificationInHistogram(
     enum QuicPlatformNotification notification) {
   UMA_HISTOGRAM_ENUMERATION("Net.QuicSession.PlatformNotification",
                             notification, NETWORK_NOTIFICATION_MAX);
-}
-
-void LogStaleHostRacing(bool used) {
-  UMA_HISTOGRAM_BOOLEAN("Net.QuicSession.StaleHostRacing", used);
-}
-
-void LogStaleAndFreshHostMatched(bool matched) {
-  UMA_HISTOGRAM_BOOLEAN("Net.QuicSession.StaleAndFreshHostMatched", matched);
 }
 
 void LogConnectionIpPooling(bool pooled) {
@@ -428,6 +421,32 @@ class QuicStreamFactory::Job {
     return false;
   }
 
+  void LogStaleHostRacing(bool used) {
+    if (used) {
+      net_log_.AddEvent(
+          NetLogEventType::
+              QUIC_STREAM_FACTORY_JOB_STALE_HOST_TRIED_ON_CONNECTION);
+    } else {
+      net_log_.AddEvent(
+          NetLogEventType::
+              QUIC_STREAM_FACTORY_JOB_STALE_HOST_NOT_USED_ON_CONNECTION);
+    }
+    UMA_HISTOGRAM_BOOLEAN("Net.QuicSession.StaleHostRacing", used);
+  }
+
+  void LogStaleAndFreshHostMatched(bool matched) {
+    if (matched) {
+      net_log_.AddEvent(
+          NetLogEventType::
+              QUIC_STREAM_FACTORY_JOB_STALE_HOST_RESOLUTION_MATCHED);
+    } else {
+      net_log_.AddEvent(
+          NetLogEventType::
+              QUIC_STREAM_FACTORY_JOB_STALE_HOST_RESOLUTION_NO_MATCH);
+    }
+    UMA_HISTOGRAM_BOOLEAN("Net.QuicSession.StaleAndFreshHostMatched", matched);
+  }
+
   IoState io_state_;
   QuicStreamFactory* factory_;
   quic::QuicTransportVersion quic_version_;
@@ -557,6 +576,7 @@ void QuicStreamFactory::Job::OnResolveHostComplete(int rv) {
 
   if (fresh_resolve_host_request_) {
     DCHECK(race_stale_dns_on_connection_);
+    dns_resolution_end_time_ = base::TimeTicks::Now();
     if (rv != OK) {
       CloseStaleHostConnection();
       resolve_host_request_ = std::move(fresh_resolve_host_request_);
@@ -580,9 +600,6 @@ void QuicStreamFactory::Job::OnResolveHostComplete(int rv) {
         return;
       }
       LogStaleAndFreshHostMatched(false);
-      net_log_.AddEvent(
-          NetLogEventType::
-              QUIC_STREAM_FACTORY_JOB_STALE_HOST_RESOLUTION_NO_MATCH);
       CloseStaleHostConnection();
       resolve_host_request_ = std::move(fresh_resolve_host_request_);
       io_state_ = STATE_RESOLVE_HOST_COMPLETE;
@@ -774,8 +791,6 @@ int QuicStreamFactory::Job::DoValidateHost() {
   }
 
   LogStaleAndFreshHostMatched(false);
-  net_log_.AddEvent(
-      NetLogEventType::QUIC_STREAM_FACTORY_JOB_STALE_HOST_RESOLUTION_NO_MATCH);
   resolve_host_request_ = std::move(fresh_resolve_host_request_);
   CloseStaleHostConnection();
   io_state_ = STATE_RESOLVE_HOST_COMPLETE;
@@ -1006,11 +1021,13 @@ QuicStreamFactory::QuicStreamFactory(
     bool mark_quic_broken_when_network_blackholes,
     int idle_connection_timeout_seconds,
     int reduced_ping_timeout_seconds,
+    int retransmittable_on_wire_timeout_milliseconds,
     int max_time_before_crypto_handshake_seconds,
     int max_idle_time_before_crypto_handshake_seconds,
     bool migrate_sessions_on_network_change_v2,
     bool migrate_sessions_early_v2,
     bool retry_on_alternate_network_before_handshake,
+    bool migrate_idle_sessions,
     base::TimeDelta idle_session_migration_period,
     base::TimeDelta max_time_on_non_default_network,
     int max_migrations_to_non_default_network_on_write_error,
@@ -1056,6 +1073,8 @@ QuicStreamFactory::QuicStreamFactory(
       ping_timeout_(quic::QuicTime::Delta::FromSeconds(quic::kPingTimeoutSecs)),
       reduced_ping_timeout_(
           quic::QuicTime::Delta::FromSeconds(reduced_ping_timeout_seconds)),
+      retransmittable_on_wire_timeout_(quic::QuicTime::Delta::FromMilliseconds(
+          retransmittable_on_wire_timeout_milliseconds)),
       yield_after_packets_(kQuicYieldAfterPacketsRead),
       yield_after_duration_(quic::QuicTime::Delta::FromMilliseconds(
           kQuicYieldAfterDurationMilliseconds)),
@@ -1070,6 +1089,8 @@ QuicStreamFactory::QuicStreamFactory(
           retry_on_alternate_network_before_handshake &&
           migrate_sessions_on_network_change_v2_),
       default_network_(NetworkChangeNotifier::kInvalidNetworkHandle),
+      migrate_idle_sessions_(migrate_idle_sessions &&
+                             migrate_sessions_on_network_change_v2_),
       idle_session_migration_period_(idle_session_migration_period),
       max_time_on_non_default_network_(max_time_on_non_default_network),
       max_migrations_to_non_default_network_on_write_error_(
@@ -1701,7 +1722,7 @@ int QuicStreamFactory::ConfigureSocket(DatagramClientSocket* socket,
   // Set a buffer large enough to contain the initial CWND's worth of packet
   // to work around the problem with CHLO packets being sent out with the
   // wrong encryption level, when the send buffer is full.
-  rv = socket->SetSendBufferSize(quic::kMaxPacketSize * 20);
+  rv = socket->SetSendBufferSize(quic::kMaxOutgoingPacketSize * 20);
   if (rv != OK) {
     HistogramCreateSessionFailure(CREATION_ERROR_SETTING_SEND_BUFFER);
     return rv;
@@ -1825,7 +1846,8 @@ int QuicStreamFactory::CreateSession(
       clock_, transport_security_state_, ssl_config_service_,
       std::move(server_info), key.session_key(), require_confirmation,
       migrate_sessions_early_v2_, migrate_sessions_on_network_change_v2_,
-      default_network_, idle_session_migration_period_,
+      default_network_, retransmittable_on_wire_timeout_,
+      migrate_idle_sessions_, idle_session_migration_period_,
       max_time_on_non_default_network_,
       max_migrations_to_non_default_network_on_write_error_,
       max_migrations_to_non_default_network_on_path_degrading_,
@@ -1848,6 +1870,11 @@ int QuicStreamFactory::CreateSession(
     DLOG(DFATAL) << "Session closed during initialize";
     *session = nullptr;
     return ERR_CONNECTION_CLOSED;
+  }
+  if (connection->version().KnowsWhichDecrypterToUse()) {
+    connection->InstallDecrypter(quic::ENCRYPTION_FORWARD_SECURE,
+                                 quic::QuicMakeUnique<quic::NullDecrypter>(
+                                     quic::Perspective::IS_CLIENT));
   }
   return OK;
 }

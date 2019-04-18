@@ -8,7 +8,7 @@
 
 #include "base/bind.h"
 #include "base/command_line.h"
-#include "base/hash.h"
+#include "base/hash/hash.h"
 #include "base/logging.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/stringprintf.h"
@@ -582,7 +582,7 @@ bool WebrtcLoggingPrivateStartEventLoggingFunction::RunAsync() {
   base::PostTaskWithTraits(
       FROM_HERE, {BrowserThread::UI},
       base::BindOnce(&WebRtcLoggingHandlerHost::StartEventLogging,
-                     webrtc_logging_handler_host, params->peer_connection_id,
+                     webrtc_logging_handler_host, params->session_id,
                      params->max_log_size_bytes, params->output_period_ms,
                      params->web_app_id, callback));
 

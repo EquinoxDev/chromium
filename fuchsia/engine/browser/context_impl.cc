@@ -11,6 +11,7 @@
 #include "base/fuchsia/fuchsia_logging.h"
 #include "content/public/browser/web_contents.h"
 #include "fuchsia/engine/browser/frame_impl.h"
+#include "fuchsia/engine/legacy_frame_bridge.h"
 
 ContextImpl::ContextImpl(content::BrowserContext* browser_context)
     : browser_context_(browser_context) {}
@@ -18,11 +19,13 @@ ContextImpl::ContextImpl(content::BrowserContext* browser_context)
 ContextImpl::~ContextImpl() = default;
 
 void ContextImpl::CreateFrame(
-    fidl::InterfaceRequest<chromium::web::Frame> frame_request) {
-  auto web_contents = content::WebContents::Create(
-      content::WebContents::CreateParams(browser_context_, nullptr));
+    fidl::InterfaceRequest<fuchsia::web::Frame> frame) {
+  content::WebContents::CreateParams create_params(browser_context_, nullptr);
+  create_params.initially_hidden = true;
+  auto web_contents = content::WebContents::Create(create_params);
+
   frames_.insert(std::make_unique<FrameImpl>(std::move(web_contents), this,
-                                             std::move(frame_request)));
+                                             std::move(frame)));
 }
 
 void ContextImpl::DestroyFrame(FrameImpl* frame) {
@@ -34,8 +37,7 @@ bool ContextImpl::IsJavaScriptInjectionAllowed() {
   return allow_javascript_injection_;
 }
 
-FrameImpl* ContextImpl::GetFrameImplForTest(
-    chromium::web::FramePtr* frame_ptr) {
+FrameImpl* ContextImpl::GetFrameImplForTest(fuchsia::web::FramePtr* frame_ptr) {
   DCHECK(frame_ptr);
 
   // Find the FrameImpl whose channel is connected to |frame_ptr| by inspecting
@@ -58,4 +60,16 @@ FrameImpl* ContextImpl::GetFrameImplForTest(
   }
 
   return nullptr;
+}
+
+FrameImpl* ContextImpl::GetFrameImplForTest(
+    chromium::web::FramePtr* frame_ptr) {
+  DCHECK(frame_ptr);
+
+  fuchsia::web::FramePtr* fuchsia_frame_ptr =
+      LegacyFrameBridge::GetFramePtrForTest(frame_ptr);
+  if (!fuchsia_frame_ptr)
+    return nullptr;
+
+  return GetFrameImplForTest(fuchsia_frame_ptr);
 }

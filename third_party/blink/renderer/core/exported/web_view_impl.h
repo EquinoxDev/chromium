@@ -35,6 +35,7 @@
 
 #include "base/memory/scoped_refptr.h"
 #include "build/build_config.h"
+#include "cc/input/overscroll_behavior.h"
 #include "third_party/blink/public/common/manifest/web_display_mode.h"
 #include "third_party/blink/public/platform/web_float_size.h"
 #include "third_party/blink/public/platform/web_gesture_event.h"
@@ -63,7 +64,6 @@
 #include "third_party/blink/renderer/platform/graphics/graphics_layer.h"
 #include "third_party/blink/renderer/platform/graphics/touch_action.h"
 #include "third_party/blink/renderer/platform/heap/member.h"
-#include "third_party/blink/renderer/platform/wtf/compiler.h"
 #include "third_party/blink/renderer/platform/wtf/hash_set.h"
 #include "third_party/blink/renderer/platform/wtf/std_lib_extras.h"
 #include "third_party/blink/renderer/platform/wtf/vector.h"
@@ -74,7 +74,6 @@ class ScopedDeferMainFrameUpdate;
 }
 
 namespace blink {
-class AnimationWorkletMutatorDispatcherImpl;
 class BrowserControls;
 class DevToolsEmulator;
 class Frame;
@@ -108,8 +107,14 @@ class CORE_EXPORT WebViewImpl final : public WebView,
   // they should be rendered by WebKit (which is the default).
   static bool UseExternalPopupMenus();
 
+  // Returns whether frames under this WebView are backed by a compositor. When
+  // false there may be no WebWidgetClient present. When true, there must be a
+  // WebWidgetClient while a local main frame is attached.
+  bool does_composite() const { return does_composite_; }
+
   // WebView methods:
-  void SetWebWidgetClient(WebWidgetClient*) override;
+  void DidAttachLocalMainFrame(WebWidgetClient*) override;
+  void DidAttachRemoteMainFrame(WebWidgetClient*) override;
   void SetPrerendererClient(WebPrerendererClient*) override;
   WebSettings* GetSettings() override;
   WebString PageEncoding() const override;
@@ -132,7 +137,7 @@ class CORE_EXPORT WebViewImpl final : public WebView,
   void FocusDocumentView(WebFrame*) override;
   void SetInitialFocus(bool reverse) override;
   void ClearFocusedElement() override;
-  void SmoothScroll(int target_x, int target_y, long duration_ms) override;
+  void SmoothScroll(int target_x, int target_y, uint64_t duration_ms) override;
   void AdvanceFocus(bool reverse) override;
   void AdvanceFocusAcrossFrames(WebFocusType,
                                 WebRemoteFrame* from,
@@ -173,7 +178,7 @@ class CORE_EXPORT WebViewImpl final : public WebView,
   WebHitTestResult HitTestResultAt(const gfx::Point&) override;
   WebHitTestResult HitTestResultForTap(const gfx::Point&,
                                        const WebSize&) override;
-  unsigned long CreateUniqueIdentifierForRequest() override;
+  uint64_t CreateUniqueIdentifierForRequest() override;
   void EnableDeviceEmulation(const WebDeviceEmulationParams&) override;
   void DisableDeviceEmulation() override;
   void SetSelectionColors(unsigned active_background_color,
@@ -238,8 +243,11 @@ class CORE_EXPORT WebViewImpl final : public WebView,
     return dev_tools_emulator_.Get();
   }
 
-  // Returns the main frame associated with this view. This may be null when
-  // the page is shutting down, but will be valid at all other times.
+  // Returns the main frame associated with this view. This will be null when
+  // the main frame is remote.
+  // Internally during startup/shutdown this can be null when no main frame
+  // (local or remote) is attached, but this should not generally matter to code
+  // outside this class.
   WebLocalFrameImpl* MainFrameImpl() const;
 
   // Event related methods:
@@ -358,8 +366,6 @@ class CORE_EXPORT WebViewImpl final : public WebView,
   // changed.
   void DidUpdateBrowserControls();
 
-  void SetOverscrollBehavior(const cc::OverscrollBehavior&);
-
   void ForceNextWebGLContextCreationToFail() override;
   void ForceNextDrawingBufferCreationToFail() override;
 
@@ -401,7 +407,7 @@ class CORE_EXPORT WebViewImpl final : public WebView,
 
   void DeferMainFrameUpdateForTesting();
 
-  void StartDeferringCommits();
+  void StartDeferringCommits(base::TimeDelta timeout);
   void StopDeferringCommits();
 
  private:
@@ -432,22 +438,23 @@ class CORE_EXPORT WebViewImpl final : public WebView,
   void SetSuppressFrameRequestsWorkaroundFor704763Only(bool) override;
   void BeginFrame(base::TimeTicks last_frame_time,
                   bool record_main_frame_metrics) override;
+  void DidBeginFrame() override;
   void BeginRafAlignedInput() override;
   void EndRafAlignedInput() override;
+  void BeginUpdateLayers() override;
+  void EndUpdateLayers() override;
+  void BeginCommitCompositorFrame() override;
+  void EndCommitCompositorFrame() override;
   void RecordStartOfFrameMetrics() override;
   void RecordEndOfFrameMetrics(base::TimeTicks frame_begin_time) override;
   void UpdateLifecycle(LifecycleUpdate requested_update,
                        LifecycleUpdateReason reason) override;
-  void UpdateAllLifecyclePhasesAndCompositeForTesting(bool do_raster) override;
-  void RequestPresentationCallbackForTesting(
-      base::OnceClosure callback) override;
   void PaintContent(cc::PaintCanvas*, const WebRect&) override;
-  void CompositeAndReadbackAsync(
-      base::OnceCallback<void(const SkBitmap&)> callback) override;
   void ThemeChanged() override;
   WebInputEventResult HandleInputEvent(const WebCoalescedInputEvent&) override;
   WebInputEventResult DispatchBufferedTouchEvents() override;
   void SetCursorVisibilityState(bool is_visible) override;
+  void OnFallbackCursorModeToggled(bool is_on) override;
   void ApplyViewportChanges(const ApplyViewportChangesArgs& args) override;
   void RecordWheelAndTouchScrollingCount(bool has_scrolled_by_wheel,
                                          bool has_scrolled_by_touch) override;
@@ -466,7 +473,9 @@ class CORE_EXPORT WebViewImpl final : public WebView,
   void ShowContextMenu(WebMenuSourceType) override;
   WebURL GetURLForDebugTrace() override;
 
-  void SetPageScaleFactorAndLocation(float, const FloatPoint&);
+  void SetPageScaleFactorAndLocation(float scale,
+                                     bool is_pinch_gesture_active,
+                                     const FloatPoint&);
   void PropagateZoomFactorToLocalFrameRoots(Frame*, float);
 
   float MaximumLegiblePageScale() const;
@@ -484,6 +493,7 @@ class CORE_EXPORT WebViewImpl final : public WebView,
   friend class WebView;  // So WebView::Create can call our constructor
   friend class WebViewFrameWidget;
   friend class WTF::RefCounted<WebViewImpl>;
+  friend class SimCompositor;
 
   WebViewImpl(WebViewClient*,
               bool is_hidden,
@@ -498,12 +508,12 @@ class CORE_EXPORT WebViewImpl final : public WebView,
   void SetIsAcceleratedCompositingActive(bool);
   void DoComposite();
   void ReallocateRenderer();
-  void UpdateLayerTreeViewPageScale();
-  void UpdateLayerTreeBackgroundColor();
   void UpdateDeviceEmulationTransform();
 
   // Helper function: Widens the width of |source| by the specified margins
   // while keeping it smaller than page width.
+  //
+  // This method can only be called if the main frame is local.
   WebRect WidenRectWithinPageBounds(const WebRect& source,
                                     int target_margin,
                                     int minimum_margin);
@@ -530,12 +540,6 @@ class CORE_EXPORT WebViewImpl final : public WebView,
 
   LocalFrame* FocusedLocalFrameInWidget() const;
   LocalFrame* FocusedLocalFrameAvailableForIme() const;
-
-  // Create or return cached mutation distributor.  The WeakPtr must only be
-  // dereferenced on the returned |mutator_task_runner|.
-  base::WeakPtr<AnimationWorkletMutatorDispatcherImpl>
-  EnsureCompositorMutatorDispatcher(
-      scoped_refptr<base::SingleThreadTaskRunner>* mutator_task_runner);
 
   bool ScrollFocusedEditableElementIntoView();
   // Finds the zoom and scroll parameters for zooming into an editable element
@@ -687,12 +691,6 @@ class CORE_EXPORT WebViewImpl final : public WebView,
 
   FloatSize elastic_overscroll_;
 
-  // This is owned by the LayerTreeHostImpl, and should only be used on the
-  // compositor thread, so we keep the TaskRunner where you post tasks to
-  // make that happen.
-  base::WeakPtr<AnimationWorkletMutatorDispatcherImpl> mutator_dispatcher_;
-  scoped_refptr<base::SingleThreadTaskRunner> mutator_task_runner_;
-
   Persistent<EventListener> popup_mouse_wheel_event_listener_;
 
   // The local root whose document has |popup_mouse_wheel_event_listener_|
@@ -708,7 +706,10 @@ class CORE_EXPORT WebViewImpl final : public WebView,
 
   Persistent<ResizeViewportAnchor> resize_viewport_anchor_;
 
-  base::TimeTicks raf_aligned_input_start_time_;
+  // Set when a measurement begins, reset when the measurement is taken.
+  base::Optional<base::TimeTicks> raf_aligned_input_start_time_;
+  base::Optional<base::TimeTicks> update_layers_start_time_;
+  base::Optional<base::TimeTicks> commit_compositor_frame_start_time_;
 };
 
 // We have no ways to check if the specified WebView is an instance of

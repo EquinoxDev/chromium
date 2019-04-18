@@ -5,7 +5,7 @@
 /**
  * @enum {string}
  */
-var NavigationModelItemType = {
+const NavigationModelItemType = {
   SHORTCUT: 'shortcut',
   VOLUME: 'volume',
   RECENT: 'recent',
@@ -25,7 +25,7 @@ var NavigationModelItemType = {
  *      - CLOUD: Drive and FSPs.
  * @enum {string}
  */
-var NavigationSection = {
+const NavigationSection = {
   TOP: 'top',
   MY_FILES: 'my_files',
   REMOVABLE: 'removable',
@@ -112,7 +112,7 @@ class NavigationModelVolumeItem extends NavigationModelItem {
     this.volumeInfo_ = volumeInfo;
     // Start resolving the display root because it is used
     // for determining executability of commands.
-    this.volumeInfo_.resolveDisplayRoot(function() {}, function() {});
+    this.volumeInfo_.resolveDisplayRoot(() => {}, () => {});
   }
 
   get volumeInfo() {
@@ -180,8 +180,7 @@ class NavigationListModel extends cr.EventTarget {
 
     /**
      * Root folder for crostini Linux files.
-     * This field will be set asynchronously after calling
-     * chrome.fileManagerPrivate.isCrostiniEnabled.
+     * This field will be modified when crostini is enabled/disabled.
      * @private {NavigationModelFakeItem}
      */
     this.linuxFilesItem_ = null;
@@ -220,21 +219,21 @@ class NavigationListModel extends cr.EventTarget {
     /** @private {?NavigationModelFakeItem} */
     this.fakeDriveItem_;
 
-    var volumeInfoToModelItem = function(volumeInfo) {
+    const volumeInfoToModelItem = volumeInfo => {
       return new NavigationModelVolumeItem(volumeInfo.label, volumeInfo);
-    }.bind(this);
+    };
 
-    var entryToModelItem = function(entry) {
-      var item = new NavigationModelShortcutItem(entry.name, entry);
+    const entryToModelItem = entry => {
+      const item = new NavigationModelShortcutItem(entry.name, entry);
       return item;
-    }.bind(this);
+    };
 
     /**
      * Type of updated list.
      * @enum {number}
      * @const
      */
-    var ListType = {VOLUME_LIST: 1, SHORTCUT_LIST: 2};
+    const ListType = {VOLUME_LIST: 1, SHORTCUT_LIST: 2};
     Object.freeze(ListType);
 
     // Generates this.volumeList_ and this.shortcutList_ from the models.
@@ -245,10 +244,10 @@ class NavigationListModel extends cr.EventTarget {
     }
 
     this.shortcutList_ = [];
-    for (var i = 0; i < this.shortcutListModel_.length; i++) {
-      var shortcutEntry =
+    for (let i = 0; i < this.shortcutListModel_.length; i++) {
+      const shortcutEntry =
           /** @type {!Entry} */ (this.shortcutListModel_.item(i));
-      var volumeInfo = this.volumeManager_.getVolumeInfo(shortcutEntry);
+      const volumeInfo = this.volumeManager_.getVolumeInfo(shortcutEntry);
       this.shortcutList_.push(entryToModelItem(shortcutEntry));
     }
 
@@ -257,23 +256,23 @@ class NavigationListModel extends cr.EventTarget {
 
     // Generates a combined 'permuted' event from an event of either volumeList
     // or shortcutList.
-    var permutedHandler = function(listType, event) {
-      var permutation;
+    const permutedHandler = function(listType, event) {
+      let permutation;
 
       // Build the volumeList.
       if (listType == ListType.VOLUME_LIST) {
         // The volume is mounted or unmounted.
-        var newList = [];
+        const newList = [];
 
         // Use the old instances if they just move.
-        for (var i = 0; i < event.permutation.length; i++) {
+        for (let i = 0; i < event.permutation.length; i++) {
           if (event.permutation[i] >= 0) {
             newList[event.permutation[i]] = this.volumeList_[i];
           }
         }
 
         // Create missing instances.
-        for (var i = 0; i < event.newLength; i++) {
+        for (let i = 0; i < event.newLength; i++) {
           if (!newList[i]) {
             newList[i] = volumeInfoToModelItem(
                 this.volumeManager_.volumeInfoList.item(i));
@@ -285,7 +284,7 @@ class NavigationListModel extends cr.EventTarget {
 
         // shortcutList part has not been changed, so the permutation should be
         // just identity mapping with a shift.
-        for (var i = 0; i < this.shortcutList_.length; i++) {
+        for (let i = 0; i < this.shortcutList_.length; i++) {
           permutation.push(i + this.volumeList_.length);
         }
       } else {
@@ -295,17 +294,17 @@ class NavigationListModel extends cr.EventTarget {
         // identity mapping.
 
         permutation = [];
-        for (var i = 0; i < this.volumeList_.length; i++) {
+        for (let i = 0; i < this.volumeList_.length; i++) {
           permutation[i] = i;
         }
 
-        var modelIndex = 0;
-        var oldListIndex = 0;
-        var newList = [];
+        let modelIndex = 0;
+        let oldListIndex = 0;
+        const newList = [];
         while (modelIndex < this.shortcutListModel_.length &&
                oldListIndex < this.shortcutList_.length) {
-          var shortcutEntry = this.shortcutListModel_.item(modelIndex);
-          var cmp = this.shortcutListModel_.compare(
+          const shortcutEntry = this.shortcutListModel_.item(modelIndex);
+          const cmp = this.shortcutListModel_.compare(
               /** @type {Entry} */ (shortcutEntry),
               this.shortcutList_[oldListIndex].entry);
           if (cmp > 0) {
@@ -329,7 +328,7 @@ class NavigationListModel extends cr.EventTarget {
 
         // Add remaining (new) shortcuts if necessary.
         for (; modelIndex < this.shortcutListModel_.length; modelIndex++) {
-          var shortcutEntry = this.shortcutListModel_.item(modelIndex);
+          const shortcutEntry = this.shortcutListModel_.item(modelIndex);
           newList.push(entryToModelItem(shortcutEntry));
         }
 
@@ -345,7 +344,7 @@ class NavigationListModel extends cr.EventTarget {
       this.reorderNavigationItems_();
 
       // Dispatch permuted event.
-      var permutedEvent = new Event('permuted');
+      const permutedEvent = new Event('permuted');
       permutedEvent.newLength =
           this.volumeList_.length + this.shortcutList_.length;
       permutedEvent.permutation = permutation;
@@ -373,8 +372,6 @@ class NavigationListModel extends cr.EventTarget {
 
   /**
    * Set the crostini Linux files root and reorder items.
-   * This setter is provided separate to the constructor since
-   * this field is set async after calling fileManagerPrivate.isCrostiniEnabled.
    * @param {NavigationModelFakeItem} item Linux files root.
    */
   set linuxFilesItem(item) {
@@ -472,7 +469,7 @@ class NavigationListModel extends cr.EventTarget {
      *     type to be filtered from volumeList.
      * @return {NavigationModelVolumeItem}
      */
-    const getSingleVolume = function(volumeType) {
+    const getSingleVolume = volumeType => {
       return volumeList[volumeIndexes[volumeType]];
     };
 
@@ -481,7 +478,7 @@ class NavigationListModel extends cr.EventTarget {
      *     type to be filtered from volumeList.
      * @return Array<!NavigationModelVolumeItem>
      */
-    const getVolumes = function(volumeType) {
+    const getVolumes = volumeType => {
       const indexes = volumeIndexes[volumeType] || [];
       return indexes.map(idx => volumeList[idx]);
     };
@@ -491,7 +488,7 @@ class NavigationListModel extends cr.EventTarget {
      * grouped.
      * @return !Map<string, !Array<!NavigationModelVolumeItem>>
      */
-    const groupRemovables = function() {
+    const groupRemovables = () => {
       const removableGroups = new Map();
       const removableVolumes =
           getVolumes(VolumeManagerCommon.VolumeType.REMOVABLE);
@@ -662,29 +659,41 @@ class NavigationListModel extends cr.EventTarget {
 
       // Multiple partitions found.
       let removableModel;
+      let removableEntry;
       if (this.removableModels_.has(devicePath)) {
         // Removable model has been seen before. Use the same reference.
         removableModel = this.removableModels_.get(devicePath);
+        removableEntry = removableModel.entry;
       } else {
         // Create an EntryList for new removable group.
         const rootLabel = removableGroup[0].volumeInfo.driveLabel ?
             removableGroup[0].volumeInfo.driveLabel :
             /*default*/ 'External Drive';
-        const removableEntry = new EntryList(
+        removableEntry = new EntryList(
             rootLabel, VolumeManagerCommon.RootType.REMOVABLE, devicePath);
         removableModel = new NavigationModelFakeItem(
             removableEntry.label, NavigationModelItemType.ENTRY_LIST,
             removableEntry);
         removableModel.section = NavigationSection.REMOVABLE;
-        // Add partitions as entries.
-        for (const partition of removableGroup) {
-          // Only add partition if it doesn't exist as a child already.
-          if (removableEntry.findIndexByVolumeInfo(partition.volumeInfo) ===
-              -1) {
-            removableEntry.addEntry(new VolumeEntry(partition.volumeInfo));
-          }
+      }
+
+      // Remove partitions that aren't available anymore.
+      const existingVolumeInfos =
+          new Set(removableGroup.map(p => p.volumeInfo));
+      for (const partition of removableEntry.getUIChildren()) {
+        if (!existingVolumeInfos.has(partition.volumeInfo)) {
+          removableEntry.removeChildEntry(partition);
         }
       }
+
+      // Add partitions as entries.
+      for (const partition of removableGroup) {
+        // Only add partition if it doesn't exist as a child already.
+        if (removableEntry.findIndexByVolumeInfo(partition.volumeInfo) === -1) {
+          removableEntry.addEntry(new VolumeEntry(partition.volumeInfo));
+        }
+      }
+
       removableModels.set(devicePath, removableModel);
       this.navigationItems_.push(removableModel);
     }
@@ -733,7 +742,7 @@ class NavigationListModel extends cr.EventTarget {
    * @return {number} The index of the first found element or -1 if not found.
    */
   indexOf(modelItem, opt_fromIndex) {
-    for (var i = opt_fromIndex || 0; i < this.length; i++) {
+    for (let i = opt_fromIndex || 0; i < this.length; i++) {
       if (modelItem === this.item(i)) {
         return i;
       }
@@ -758,7 +767,7 @@ class NavigationListModel extends cr.EventTarget {
    * @returns {number} Index of the Downloads volume.
    */
   findDownloadsVolumeIndex_() {
-    for (var i = 0; i < this.volumeList_.length; i++) {
+    for (let i = 0; i < this.volumeList_.length; i++) {
       if (this.volumeList_[i].volumeInfo.volumeType ==
           VolumeManagerCommon.VolumeType.DOWNLOADS) {
         return i;

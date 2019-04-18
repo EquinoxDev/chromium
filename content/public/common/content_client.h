@@ -135,9 +135,6 @@ class CONTENT_EXPORT ContentClient {
     std::vector<std::string> csp_bypassing_schemes;
     // See https://www.w3.org/TR/powerful-features/#is-origin-trustworthy.
     std::vector<std::string> secure_schemes;
-    // Registers a serialized origin or a hostname pattern that should be
-    // considered trustworthy.
-    std::vector<std::string> secure_origins;
     // Registers a URL scheme as strictly empty documents, allowing them to
     // commit synchronously.
     std::vector<std::string> empty_document_schemes;
@@ -155,6 +152,12 @@ class CONTENT_EXPORT ContentClient {
 
   // Returns a string resource given its id.
   virtual base::string16 GetLocalizedString(int message_id) const;
+
+  // Returns a string resource given its id and replace $1 with the given
+  // replacement.
+  virtual base::string16 GetLocalizedString(
+      int message_id,
+      const base::string16& replacement) const;
 
   // Return the contents of a resource in a StringPiece given the resource id.
   virtual base::StringPiece GetDataResource(

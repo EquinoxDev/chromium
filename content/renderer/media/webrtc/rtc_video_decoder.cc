@@ -13,6 +13,7 @@
 #include "base/numerics/safe_conversions.h"
 #include "base/synchronization/waitable_event.h"
 #include "base/task_runner_util.h"
+#include "base/threading/thread_restrictions.h"
 #include "build/build_config.h"
 #include "content/renderer/media/webrtc/webrtc_video_frame_adapter.h"
 #include "gpu/command_buffer/common/mailbox_holder.h"
@@ -136,6 +137,9 @@ std::unique_ptr<RTCVideoDecoder> RTCVideoDecoder::Create(
       return decoder;
   }
 
+  // This wait is necessary because this task is completed in GPU process
+  // asynchronously but WebRTC API is synchronous.
+  base::ScopedAllowBaseSyncPrimitivesOutsideBlockingScope allow_wait;
   base::WaitableEvent waiter(base::WaitableEvent::ResetPolicy::MANUAL,
                              base::WaitableEvent::InitialState::NOT_SIGNALED);
   decoder.reset(new RTCVideoDecoder(type, factories));
@@ -243,12 +247,11 @@ int32_t RTCVideoDecoder::Decode(
     // http://crosbug.com/p/21913 is fixed.
 
     DCHECK(new_frame_size.IsEmpty());
-    // Increase the error counter, if we are already in an error state. Also,
-    // increase the counter if we keep receiving keyframes without size set.
-    vda_error_counter_ +=
-        vda_error_counter_ || input_image._frameType == webrtc::kVideoFrameKey
-            ? 1
-            : 0;
+    if (vda_error_counter_ ||
+        input_image._frameType == webrtc::VideoFrameType::kVideoFrameKey) {
+      ++vda_error_counter_;
+    }
+
     if (ShouldFallbackToSoftwareDecode())
       return WEBRTC_VIDEO_CODEC_FALLBACK_SOFTWARE;
     DVLOG(1) << "The first frame should have resolution. Drop this.";

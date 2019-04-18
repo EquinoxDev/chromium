@@ -262,15 +262,6 @@ void FeatureInfo::Initialize(ContextType context_type,
   disallowed_features_ = disallowed_features;
   context_type_ = context_type;
   is_passthrough_cmd_decoder_ = is_passthrough_cmd_decoder;
-  switch (context_type) {
-    case CONTEXT_TYPE_WEBGL1:
-    case CONTEXT_TYPE_OPENGLES2:
-      break;
-    default:
-      // https://crbug.com/826509
-      workarounds_.use_client_side_arrays_for_stream_buffers = false;
-      break;
-  }
   InitializeFeatures();
   initialized_ = true;
 }
@@ -332,6 +323,13 @@ void FeatureInfo::EnableCHROMIUMTextureStorageImage() {
   if (!feature_flags_.chromium_texture_storage_image) {
     feature_flags_.chromium_texture_storage_image = true;
     AddExtensionString("GL_CHROMIUM_texture_storage_image");
+  }
+}
+
+void FeatureInfo::EnableEXTFloatBlend() {
+  if (!feature_flags_.ext_float_blend) {
+    AddExtensionString("GL_EXT_float_blend");
+    feature_flags_.ext_float_blend = true;
   }
 }
 
@@ -1525,13 +1523,13 @@ void FeatureInfo::InitializeFeatures() {
     AddExtensionString("GL_MESA_framebuffer_flip_y");
   }
 
-  // Only supporting ANGLE_multiview in passthrough mode - not implemented in
+  // Only supporting OVR_multiview in passthrough mode - not implemented in
   // validating command decoder. The extension is only available in ANGLE and in
   // that case Chromium should be using passthrough by default.
   if (is_passthrough_cmd_decoder_ &&
-      gfx::HasExtension(extensions, "GL_ANGLE_multiview")) {
-    AddExtensionString("GL_ANGLE_multiview");
-    feature_flags_.angle_multiview = true;
+      gfx::HasExtension(extensions, "GL_OVR_multiview2")) {
+    AddExtensionString("GL_OVR_multiview2");
+    feature_flags_.ovr_multiview2 = true;
   }
 
   if (is_passthrough_cmd_decoder_ &&
@@ -1570,6 +1568,7 @@ void FeatureInfo::InitializeFeatures() {
   if (gfx::HasExtension(extensions,
                         "GL_AMD_framebuffer_multisample_advanced")) {
     feature_flags_.amd_framebuffer_multisample_advanced = true;
+    AddExtensionString("GL_AMD_framebuffer_multisample_advanced");
   }
 }
 
@@ -1671,6 +1670,14 @@ void FeatureInfo::InitializeFloatAndHalfFloatFeatures(
     feature_flags_.chromium_color_buffer_float_rgba = true;
     if (!disallowed_features_.chromium_color_buffer_float_rgba) {
       EnableCHROMIUMColorBufferFloatRGBA();
+    }
+  }
+
+  // Assume all desktop (!gl_version_info_->is_es) supports float blend
+  if (!gl_version_info_->is_es ||
+      gfx::HasExtension(extensions, "GL_EXT_float_blend")) {
+    if (!disallowed_features_.ext_float_blend) {
+      EnableEXTFloatBlend();
     }
   }
 
@@ -1781,15 +1788,6 @@ void FeatureInfo::InitializeFloatAndHalfFloatFeatures(
     ext_color_buffer_half_float_available_ = true;
     if (!disallowed_features_.ext_color_buffer_half_float)
       EnableEXTColorBufferHalfFloat();
-  }
-
-  // assume all desktop (!gl_version_info_->is_es) supports float blend
-  if (gfx::HasExtension(extensions, "GL_EXT_float_blend") &&
-      !gl_version_info_->is_es) {
-    if (!disallowed_features_.ext_float_blend) {
-      AddExtensionString("GL_EXT_float_blend");
-      feature_flags_.ext_float_blend = true;
-    }
   }
 
   if (enable_texture_float) {

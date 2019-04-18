@@ -6,7 +6,6 @@ package org.chromium.chrome.browser.appmenu;
 
 import android.animation.Animator;
 import android.animation.Animator.AnimatorListener;
-import android.animation.AnimatorListenerAdapter;
 import android.animation.AnimatorSet;
 import android.content.Context;
 import android.content.res.Resources;
@@ -27,7 +26,6 @@ import android.view.View.OnKeyListener;
 import android.view.ViewGroup;
 import android.view.ViewStub;
 import android.view.WindowManager;
-import android.view.accessibility.AccessibilityEvent;
 import android.widget.AdapterView;
 import android.widget.AdapterView.OnItemClickListener;
 import android.widget.ImageButton;
@@ -168,12 +166,14 @@ public class AppMenu implements OnItemClickListener, OnKeyListener {
      *                              Can be {@code null} if no item should be highlighted.  Note that
      *                              {@code 0} is dedicated to custom menu items and can be declared
      *                              by external apps.
+     * @param circleHighlightItem   Whether the highlighted item should use a circle highlight or
+     *                              not.
      * @param showFromBottom        Whether the appearance animation should run from the bottom up.
      */
     void show(Context context, final View anchorView, boolean isByPermanentButton,
             int screenRotation, Rect visibleDisplayFrame, int screenHeight,
             @IdRes int footerResourceId, @IdRes int headerResourceId, Integer highlightedItemId,
-            boolean showFromBottom) {
+            boolean circleHighlightItem, boolean showFromBottom) {
         mPopup = new PopupWindow(context);
         mPopup.setFocusable(true);
         mPopup.setInputMethodMode(PopupWindow.INPUT_METHOD_NOT_NEEDED);
@@ -257,9 +257,13 @@ public class AppMenu implements OnItemClickListener, OnKeyListener {
                 (ViewGroup) LayoutInflater.from(context).inflate(R.layout.app_menu_layout, null);
         mListView = (ListView) contentView.findViewById(R.id.app_menu_list);
 
-        int footerHeight =
-                inflateFooter(footerResourceId, contentView, menuWidth, highlightedItemId);
+        int footerHeight = inflateFooter(footerResourceId, contentView, menuWidth);
         int headerHeight = inflateHeader(headerResourceId, contentView, menuWidth);
+
+        if (highlightedItemId != null) {
+            View viewToHighlight = contentView.findViewById(highlightedItemId);
+            ViewHighlighter.turnOnHighlight(viewToHighlight, circleHighlightItem);
+        }
 
         // Set the adapter after the header is added to avoid crashes on JellyBean.
         // See crbug.com/761726.
@@ -350,7 +354,7 @@ public class AppMenu implements OnItemClickListener, OnKeyListener {
                 if (!mIsByPermanentButton) offsets[1] += padding.bottom;
             }
 
-            if (!ApiCompatibilityUtils.isLayoutRtl(anchorView.getRootView())) {
+            if (anchorView.getRootView().getLayoutDirection() != View.LAYOUT_DIRECTION_RTL) {
                 offsets[0] = anchorView.getWidth() - popupWidth;
             }
         }
@@ -530,25 +534,10 @@ public class AppMenu implements OnItemClickListener, OnKeyListener {
         }
 
         mMenuItemEnterAnimator.addListener(mAnimationHistogramRecorder);
-        mMenuItemEnterAnimator.addListener(new AnimatorListenerAdapter() {
-            @Override
-            public void onAnimationEnd(Animator animation) {
-                focusHighlightedView();
-            }
-        });
         mMenuItemEnterAnimator.start();
     }
 
-    private void focusHighlightedView() {
-        View highlightedView = mAdapter.getHighlightedView();
-        if (highlightedView == null) return;
-
-        highlightedView.requestFocus();
-        highlightedView.sendAccessibilityEvent(AccessibilityEvent.TYPE_VIEW_FOCUSED);
-    }
-
-    private int inflateFooter(
-            int footerResourceId, View contentView, int menuWidth, Integer highlightedItemId) {
+    private int inflateFooter(int footerResourceId, View contentView, int menuWidth) {
         if (footerResourceId == 0) {
             mFooterView = null;
             return 0;
@@ -561,11 +550,6 @@ public class AppMenu implements OnItemClickListener, OnKeyListener {
         int widthMeasureSpec = MeasureSpec.makeMeasureSpec(menuWidth, MeasureSpec.EXACTLY);
         int heightMeasureSpec = MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED);
         mFooterView.measure(widthMeasureSpec, heightMeasureSpec);
-
-        if (highlightedItemId != null) {
-            View viewToHighlight = mFooterView.findViewById(highlightedItemId);
-            ViewHighlighter.turnOnHighlight(viewToHighlight, viewToHighlight != mFooterView);
-        }
 
         if (mHandler != null) mHandler.onFooterViewInflated(mFooterView);
 

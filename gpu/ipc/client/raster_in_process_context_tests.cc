@@ -5,7 +5,6 @@
 #include <memory>
 
 #include "build/build_config.h"
-#include "cc/paint/color_space_transfer_cache_entry.h"
 #include "components/viz/common/resources/resource_format.h"
 #include "components/viz/test/test_gpu_memory_buffer_manager.h"
 #include "gpu/command_buffer/client/raster_implementation.h"
@@ -105,16 +104,15 @@ TEST_F(RasterInProcessCommandBufferTest,
   ri_->WaitSyncTokenCHROMIUM(sii->GenUnverifiedSyncToken().GetConstData());
 
   // Call BeginRasterCHROMIUM.
-  cc::RasterColorSpace raster_color_space(color_space, 0);
   ri_->BeginRasterCHROMIUM(/*sk_color=*/0, /*msaa_sample_count=*/0,
-                           /*can_use_lcd_text=*/false,
-                           raster_color_space, mailbox.name);
+                           /*can_use_lcd_text=*/false, color_space,
+                           mailbox.name);
   EXPECT_EQ(static_cast<GLenum>(GL_NO_ERROR), ri_->GetError());
 
   // Should flag an error this command is not allowed between a Begin and
   // EndRasterCHROMIUM.
-  SyncToken sync_token;
-  ri_->GenUnverifiedSyncTokenCHROMIUM(sync_token.GetData());
+  GLuint id;
+  ri_->GenQueriesEXT(1, &id);
   EXPECT_EQ(static_cast<GLenum>(GL_INVALID_OPERATION), ri_->GetError());
 
   // Confirm that we skip over without error.

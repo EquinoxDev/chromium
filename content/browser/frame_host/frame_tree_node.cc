@@ -18,6 +18,7 @@
 #include "base/strings/string_util.h"
 #include "content/browser/devtools/devtools_instrumentation.h"
 #include "content/browser/frame_host/frame_tree.h"
+#include "content/browser/frame_host/navigation_controller_impl.h"
 #include "content/browser/frame_host/navigation_request.h"
 #include "content/browser/frame_host/navigator.h"
 #include "content/browser/frame_host/render_frame_host_impl.h"
@@ -138,6 +139,8 @@ FrameTreeNode::~FrameTreeNode() {
   // Remove the children.
   current_frame_host()->ResetChildren();
 
+  current_frame_host()->ResetLoadingState();
+
   // If the removed frame was created by a script, then its history entry will
   // never be reused - we can save some memory by removing the history entry.
   // See also https://crbug.com/784356.
@@ -167,6 +170,12 @@ FrameTreeNode::~FrameTreeNode() {
     navigation_request_.reset();
     DidStopLoading();
   }
+
+  // ~SiteProcessCountTracker DCHECKs in some tests if CleanUpNavigation is not
+  // called last. Ideally this would be closer to (possible before) the
+  // ResetLoadingState() call above.
+  render_manager_.CleanUpNavigation();
+  DCHECK(!IsLoading());
 }
 
 void FrameTreeNode::AddObserver(Observer* observer) {
@@ -554,10 +563,8 @@ bool FrameTreeNode::NotifyUserActivation() {
   }
   replication_state_.has_received_user_gesture = true;
 
-  // TODO(mustaq): The following block relaxes UAv2 a bit to make it slightly
-  // closer to the old (v1) model, to address a Hangout regression.  We will
-  // remove this after implementing a mechanism to delegate activation to
-  // subframes (https://crbug.com/728334)
+  // See the "Same-origin Visibility" section in |UserActivationState| class
+  // doc.
   if (base::FeatureList::IsEnabled(features::kUserActivationV2) &&
       base::FeatureList::IsEnabled(
           features::kUserActivationSameOriginVisibility)) {
@@ -570,6 +577,11 @@ bool FrameTreeNode::NotifyUserActivation() {
       }
     }
   }
+
+  NavigationControllerImpl* controller =
+      static_cast<NavigationControllerImpl*>(navigator()->GetController());
+  if (controller)
+    controller->NotifyUserActivation();
 
   return true;
 }
@@ -645,6 +657,13 @@ void FrameTreeNode::UpdateFramePolicyHeaders(
   // Notify any proxies if the policies have been changed.
   if (changed)
     render_manager()->OnDidSetFramePolicyHeaders();
+}
+
+// TODO(lanwei): Also transfer user activation in the frame trees in other
+// (i.e non-source non-destination) renderer processes. crbug.com/928838.
+void FrameTreeNode::TransferActivationFrom(FrameTreeNode* source) {
+  if (source)
+    user_activation_state_.TransferFrom(source->user_activation_state_);
 }
 
 void FrameTreeNode::PruneChildFrameNavigationEntries(

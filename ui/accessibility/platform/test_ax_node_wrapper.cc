@@ -5,10 +5,12 @@
 #include "ui/accessibility/platform/test_ax_node_wrapper.h"
 
 #include <unordered_map>
+#include <utility>
 
 #include "base/stl_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "ui/accessibility/ax_action_data.h"
+#include "ui/accessibility/ax_role_properties.h"
 #include "ui/accessibility/ax_table_info.h"
 #include "ui/accessibility/ax_tree_observer.h"
 #include "ui/gfx/geometry/rect_conversions.h"
@@ -29,6 +31,13 @@ gfx::Vector2d g_offset;
 //   - For testing purposes, assume there is a single node being focused in the
 //     entire tree and if such node is deleted, focus is completely lost.
 std::unordered_map<AXTree*, AXNode*> g_focused_node_in_tree;
+
+// A global indicating the last node which ShowContextMenu was called from.
+AXNode* g_node_from_last_show_context_menu;
+
+// A global indicating the last node which accessibility perform action
+// default action was called from.
+AXNode* g_node_from_last_default_action;
 
 // A simple implementation of AXTreeObserver to catch when AXNodes are
 // deleted so we can delete their wrappers.
@@ -68,6 +77,16 @@ void TestAXNodeWrapper::SetGlobalCoordinateOffset(const gfx::Vector2d& offset) {
   g_offset = offset;
 }
 
+// static
+const AXNode* TestAXNodeWrapper::GetNodeFromLastShowContextMenu() {
+  return g_node_from_last_show_context_menu;
+}
+
+// static
+const AXNode* TestAXNodeWrapper::GetNodeFromLastDefaultAction() {
+  return g_node_from_last_default_action;
+}
+
 TestAXNodeWrapper::~TestAXNodeWrapper() {
   platform_node_->Destroy();
 }
@@ -78,6 +97,13 @@ const AXNodeData& TestAXNodeWrapper::GetData() const {
 
 const AXTreeData& TestAXNodeWrapper::GetTreeData() const {
   return tree_->data();
+}
+
+AXNodePosition::AXPositionInstance TestAXNodeWrapper::CreateTextPositionAt(
+    int offset,
+    ax::mojom::TextAffinity affinity) const {
+  return ui::AXNodePosition::CreateTextPosition(GetTreeData().tree_id,
+                                                node_->id(), offset, affinity);
 }
 
 gfx::NativeViewAccessible TestAXNodeWrapper::GetParent() {
@@ -101,17 +127,43 @@ gfx::NativeViewAccessible TestAXNodeWrapper::ChildAtIndex(int index) {
       nullptr;
 }
 
-gfx::Rect TestAXNodeWrapper::GetClippedScreenBoundsRect() const {
-  // We could add clipping here if needed.
-  gfx::RectF bounds = GetData().relative_bounds.bounds;
-  bounds.Offset(g_offset);
-  return gfx::ToEnclosingRect(bounds);
+gfx::Rect TestAXNodeWrapper::GetBoundsRect(
+    const AXCoordinateSystem coordinate_system,
+    const AXClippingBehavior clipping_behavior,
+    AXOffscreenResult* offscreen_result) const {
+  switch (coordinate_system) {
+    case AXCoordinateSystem::kScreen: {
+      // We could optionally add clipping here if ever needed.
+      gfx::RectF bounds = GetData().relative_bounds.bounds;
+      bounds.Offset(g_offset);
+      return gfx::ToEnclosingRect(bounds);
+    }
+    case AXCoordinateSystem::kRootFrame:
+    case AXCoordinateSystem::kFrame:
+      NOTIMPLEMENTED();
+      return gfx::Rect();
+  }
 }
 
-gfx::Rect TestAXNodeWrapper::GetUnclippedScreenBoundsRect() const {
-  gfx::RectF bounds = GetData().relative_bounds.bounds;
-  bounds.Offset(g_offset);
-  return gfx::ToEnclosingRect(bounds);
+gfx::Rect TestAXNodeWrapper::GetRangeBoundsRect(
+    const int start_offset,
+    const int end_offset,
+    const AXCoordinateSystem coordinate_system,
+    const AXClippingBehavior clipping_behavior,
+    AXOffscreenResult* offscreen_result) const {
+  switch (coordinate_system) {
+    case AXCoordinateSystem::kScreen: {
+      // Ignoring start, len, and clipped, as there's no clean way to map these
+      // via unit tests.
+      gfx::RectF bounds = GetData().relative_bounds.bounds;
+      bounds.Offset(g_offset);
+      return gfx::ToEnclosingRect(bounds);
+    }
+    case AXCoordinateSystem::kRootFrame:
+    case AXCoordinateSystem::kFrame:
+      NOTIMPLEMENTED();
+      return gfx::Rect();
+  }
 }
 
 TestAXNodeWrapper* TestAXNodeWrapper::HitTestSyncInternal(int x, int y) {
@@ -202,6 +254,20 @@ void TestAXNodeWrapper::ReplaceIntAttribute(int32_t node_id,
   node->SetData(new_data);
 }
 
+void TestAXNodeWrapper::ReplaceFloatAttribute(
+    ax::mojom::FloatAttribute attribute,
+    float value) {
+  AXNodeData new_data = GetData();
+  std::vector<std::pair<ax::mojom::FloatAttribute, float>>& attributes =
+      new_data.float_attributes;
+
+  base::EraseIf(attributes,
+                [attribute](auto& pair) { return pair.first == attribute; });
+
+  new_data.AddFloatAttribute(attribute, value);
+  node_->SetData(new_data);
+}
+
 void TestAXNodeWrapper::ReplaceBoolAttribute(ax::mojom::BoolAttribute attribute,
                                              bool value) {
   AXNodeData new_data = GetData();
@@ -213,6 +279,36 @@ void TestAXNodeWrapper::ReplaceBoolAttribute(ax::mojom::BoolAttribute attribute,
 
   new_data.AddBoolAttribute(attribute, value);
   node_->SetData(new_data);
+}
+
+void TestAXNodeWrapper::ReplaceStringAttribute(
+    ax::mojom::StringAttribute attribute,
+    std::string value) {
+  AXNodeData new_data = GetData();
+  std::vector<std::pair<ax::mojom::StringAttribute, std::string>>& attributes =
+      new_data.string_attributes;
+
+  base::EraseIf(attributes,
+                [attribute](auto& pair) { return pair.first == attribute; });
+
+  new_data.AddStringAttribute(attribute, value);
+  node_->SetData(new_data);
+}
+
+void TestAXNodeWrapper::ReplaceTreeDataTextSelection(int32_t anchor_node_id,
+                                                     int32_t anchor_offset,
+                                                     int32_t focus_node_id,
+                                                     int32_t focus_offset) {
+  if (!tree_)
+    return;
+
+  AXTreeData new_tree_data = GetTreeData();
+  new_tree_data.sel_anchor_object_id = anchor_node_id;
+  new_tree_data.sel_anchor_offset = anchor_offset;
+  new_tree_data.sel_focus_object_id = focus_node_id;
+  new_tree_data.sel_focus_offset = focus_offset;
+
+  tree_->UpdateData(new_tree_data);
 }
 
 bool TestAXNodeWrapper::IsTable() const {
@@ -227,11 +323,11 @@ int TestAXNodeWrapper::GetTableColCount() const {
   return node_->GetTableColCount();
 }
 
-int TestAXNodeWrapper::GetTableAriaRowCount() const {
+base::Optional<int32_t> TestAXNodeWrapper::GetTableAriaRowCount() const {
   return node_->GetTableAriaRowCount();
 }
 
-int TestAXNodeWrapper::GetTableAriaColCount() const {
+base::Optional<int32_t> TestAXNodeWrapper::GetTableAriaColCount() const {
   return node_->GetTableAriaColCount();
 }
 
@@ -330,47 +426,98 @@ int32_t TestAXNodeWrapper::CellIndexToId(int32_t cell_index) const {
   return -1;
 }
 
+bool TestAXNodeWrapper::IsCellOrHeaderOfARIATable() const {
+  return node_->IsCellOrHeaderOfARIATable();
+}
+
+bool TestAXNodeWrapper::IsCellOrHeaderOfARIAGrid() const {
+  return node_->IsCellOrHeaderOfARIAGrid();
+}
+
 bool TestAXNodeWrapper::AccessibilityPerformAction(
     const ui::AXActionData& data) {
-  if (data.action == ax::mojom::Action::kScrollToPoint) {
-    g_offset = gfx::Vector2d(data.target_point.x(), data.target_point.y());
-    return true;
-  }
+  switch (data.action) {
+    case ax::mojom::Action::kScrollToPoint:
+      g_offset = gfx::Vector2d(data.target_point.x(), data.target_point.y());
+      return true;
 
-  if (data.action == ax::mojom::Action::kScrollToMakeVisible) {
-    auto offset = node_->data().relative_bounds.bounds.OffsetFromOrigin();
-    g_offset = gfx::Vector2d(-offset.x(), -offset.y());
-    return true;
-  }
+    case ax::mojom::Action::kScrollToMakeVisible: {
+      auto offset = node_->data().relative_bounds.bounds.OffsetFromOrigin();
+      g_offset = gfx::Vector2d(-offset.x(), -offset.y());
+      return true;
+    }
 
-  if (GetData().role == ax::mojom::Role::kListBoxOption &&
-      data.action == ax::mojom::Action::kDoDefault) {
-    bool current_value =
-        GetData().GetBoolAttribute(ax::mojom::BoolAttribute::kSelected);
-    ReplaceBoolAttribute(ax::mojom::BoolAttribute::kSelected, !current_value);
-  }
+    case ax::mojom::Action::kDoDefault:
+      if (GetData().role == ax::mojom::Role::kListBoxOption ||
+          GetData().role == ax::mojom::Role::kCell) {
+        bool current_value =
+            GetData().GetBoolAttribute(ax::mojom::BoolAttribute::kSelected);
+        ReplaceBoolAttribute(ax::mojom::BoolAttribute::kSelected,
+                             !current_value);
+      }
+      g_node_from_last_default_action = node_;
+      return true;
 
-  if (data.action == ax::mojom::Action::kSetSelection) {
-    ReplaceIntAttribute(data.anchor_node_id,
-                        ax::mojom::IntAttribute::kTextSelStart,
-                        data.anchor_offset);
-    ReplaceIntAttribute(data.anchor_node_id,
-                        ax::mojom::IntAttribute::kTextSelEnd,
-                        data.focus_offset);
-    return true;
-  }
+    case ax::mojom::Action::kSetValue:
+      if (IsRangeValueSupported(GetData())) {
+        ReplaceFloatAttribute(ax::mojom::FloatAttribute::kValueForRange,
+                              std::stof(data.value));
+      } else if (GetData().role == ax::mojom::Role::kTextField) {
+        ReplaceStringAttribute(ax::mojom::StringAttribute::kValue, data.value);
+      }
+      return true;
 
-  if (data.action == ax::mojom::Action::kFocus) {
-    g_focused_node_in_tree[tree_] = node_;
-    return true;
-  }
+    case ax::mojom::Action::kSetSelection: {
+      ReplaceIntAttribute(data.anchor_node_id,
+                          ax::mojom::IntAttribute::kTextSelStart,
+                          data.anchor_offset);
+      ReplaceIntAttribute(data.focus_node_id,
+                          ax::mojom::IntAttribute::kTextSelEnd,
+                          data.focus_offset);
+      ReplaceTreeDataTextSelection(data.anchor_node_id, data.anchor_offset,
+                                   data.focus_node_id, data.focus_offset);
+      return true;
+    }
 
-  return true;
+    case ax::mojom::Action::kFocus:
+      g_focused_node_in_tree[tree_] = node_;
+      return true;
+
+    case ax::mojom::Action::kShowContextMenu:
+      g_node_from_last_show_context_menu = node_;
+      return true;
+
+    default:
+      return true;
+  }
 }
 
 base::string16 TestAXNodeWrapper::GetLocalizedRoleDescriptionForUnlabeledImage()
     const {
   return base::ASCIIToUTF16("Unlabeled image");
+}
+
+base::string16 TestAXNodeWrapper::GetLocalizedStringForLandmarkType() const {
+  const AXNodeData& data = GetData();
+  switch (data.role) {
+    case ax::mojom::Role::kBanner:
+      return base::ASCIIToUTF16("banner");
+
+    case ax::mojom::Role::kComplementary:
+      return base::ASCIIToUTF16("complementary");
+
+    case ax::mojom::Role::kContentInfo:
+    case ax::mojom::Role::kFooter:
+      return base::ASCIIToUTF16("content information");
+
+    case ax::mojom::Role::kRegion:
+      if (data.HasStringAttribute(ax::mojom::StringAttribute::kName))
+        return base::ASCIIToUTF16("region");
+      FALLTHROUGH;
+
+    default:
+      return {};
+  }
 }
 
 base::string16 TestAXNodeWrapper::GetLocalizedStringForImageAnnotationStatus(
@@ -381,12 +528,12 @@ base::string16 TestAXNodeWrapper::GetLocalizedStringForImageAnnotationStatus(
           "To get missing image descriptions, open the context menu.");
     case ax::mojom::ImageAnnotationStatus::kAnnotationPending:
       return base::ASCIIToUTF16("Getting description...");
-    case ax::mojom::ImageAnnotationStatus::kAnnotationEmpty:
-      return base::ASCIIToUTF16("No description is available.");
     case ax::mojom::ImageAnnotationStatus::kAnnotationAdult:
-      return base::ASCIIToUTF16("Appears to be adult content.");
+      return base::ASCIIToUTF16(
+          "Appears to contain adult content. No description available.");
+    case ax::mojom::ImageAnnotationStatus::kAnnotationEmpty:
     case ax::mojom::ImageAnnotationStatus::kAnnotationProcessFailed:
-      return base::ASCIIToUTF16("Unable to get a description.");
+      return base::ASCIIToUTF16("No description available.");
     case ax::mojom::ImageAnnotationStatus::kNone:
     case ax::mojom::ImageAnnotationStatus::kIneligibleForAnnotation:
     case ax::mojom::ImageAnnotationStatus::kAnnotationSucceeded:
@@ -394,6 +541,17 @@ base::string16 TestAXNodeWrapper::GetLocalizedStringForImageAnnotationStatus(
   }
 
   NOTREACHED();
+  return base::string16();
+}
+
+base::string16 TestAXNodeWrapper::GetStyleNameAttributeAsLocalizedString()
+    const {
+  AXNode* current_node = node_;
+  while (current_node) {
+    if (current_node->data().role == ax::mojom::Role::kMark)
+      return base::ASCIIToUTF16("mark");
+    current_node = current_node->parent();
+  }
   return base::string16();
 }
 
@@ -437,6 +595,28 @@ int32_t TestAXNodeWrapper::GetPosInSet() const {
 
 int32_t TestAXNodeWrapper::GetSetSize() const {
   return node_->GetSetSize();
+}
+
+// Recursive helper function for GetDescendants. Aggregates all of the
+// descendants for a given node within the descendants vector.
+void TestAXNodeWrapper::Descendants(
+    const AXNode* node,
+    std::vector<gfx::NativeViewAccessible>* descendants) const {
+  std::vector<AXNode*> child_nodes = node->children();
+  for (AXNode* child : child_nodes) {
+    descendants->emplace_back(ax_platform_node()
+                                  ->GetDelegate()
+                                  ->GetFromNodeID(child->id())
+                                  ->GetNativeViewAccessible());
+    Descendants(child, descendants);
+  }
+}
+
+const std::vector<gfx::NativeViewAccessible> TestAXNodeWrapper::GetDescendants()
+    const {
+  std::vector<gfx::NativeViewAccessible> descendants;
+  Descendants(node_, &descendants);
+  return descendants;
 }
 
 }  // namespace ui

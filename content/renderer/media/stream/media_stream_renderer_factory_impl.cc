@@ -8,7 +8,6 @@
 
 #include "base/strings/utf_string_conversions.h"
 #include "content/renderer/media/stream/media_stream_video_renderer_sink.h"
-#include "content/renderer/media/stream/media_stream_video_track.h"
 #include "content/renderer/media/stream/track_audio_renderer.h"
 #include "content/renderer/media/webrtc/peer_connection_dependency_factory.h"
 #include "content/renderer/media/webrtc/peer_connection_remote_audio_source.h"
@@ -17,6 +16,7 @@
 #include "content/renderer/render_thread_impl.h"
 #include "third_party/blink/public/platform/modules/mediastream/media_stream_audio_track.h"
 #include "third_party/blink/public/platform/web_media_stream.h"
+#include "third_party/blink/public/web/modules/mediastream/media_stream_video_track.h"
 #include "third_party/webrtc/api/media_stream_interface.h"
 
 namespace content {
@@ -64,8 +64,8 @@ MediaStreamRendererFactoryImpl::GetVideoRenderer(
 
   blink::WebVector<blink::WebMediaStreamTrack> video_tracks =
       web_stream.VideoTracks();
-  if (video_tracks.IsEmpty() ||
-      !MediaStreamVideoTrack::GetTrack(video_tracks[0])) {
+  if (video_tracks.empty() ||
+      !blink::MediaStreamVideoTrack::GetTrack(video_tracks[0])) {
     return nullptr;
   }
 
@@ -82,7 +82,7 @@ MediaStreamRendererFactoryImpl::GetAudioRenderer(
   DCHECK(!web_stream.IsNull());
   blink::WebVector<blink::WebMediaStreamTrack> audio_tracks =
       web_stream.AudioTracks();
-  if (audio_tracks.IsEmpty()) {
+  if (audio_tracks.empty()) {
     WebRtcLogMessage("No audio tracks in media stream (return null).");
     return nullptr;
   }

@@ -171,8 +171,10 @@ Polymer({
     this.activePointer_ = null;
     if (!this.pointerGesture_) {
       this.dispatchPointerEvent_(e);
-      // If the stroke was not cancelled, record metrics.
+      // If the stroke was not cancelled (type == pointercanel),
+      // notify about mutation and record metrics.
       if (e.type == 'pointerup') {
+        this.dispatchEvent(new CustomEvent('stroke-added'));
         if (e.pointerType == 'mouse') {
           PDFMetrics.record(PDFMetrics.UserAction.ANNOTATE_STROKE_DEVICE_MOUSE);
         } else if (e.pointerType == 'pen') {
@@ -223,12 +225,15 @@ Polymer({
     this.$.frame.src = 'ink/index.html';
     await new Promise(resolve => this.$.frame.onload = resolve);
     this.ink_ = await this.$.frame.contentWindow.initInk();
+    this.ink_.addUndoStateListener(
+        e => this.dispatchEvent(
+            new CustomEvent('undo-state-changed', {detail: e})));
     this.ink_.setPDF(data);
     this.state_ = State.ACTIVE;
     this.viewportChanged();
-    // TODO(dstockwell): we shouldn't need this extra flush.
-    await this.ink_.flush();
-    await this.ink_.flush();
+    // Wait for the next task to avoid a race where Ink drops the background
+    // color.
+    await new Promise(resolve => setTimeout(resolve));
     this.ink_.setOutOfBoundsColor(BACKGROUND_COLOR);
     const spacing = Viewport.PAGE_SHADOW.top + Viewport.PAGE_SHADOW.bottom;
     this.ink_.setPageSpacing(spacing);

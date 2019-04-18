@@ -88,7 +88,7 @@ class ModuleScriptLoaderTestModulator final : public DummyModulator {
       requests_.emplace_back(request, TextPosition::MinimumPosition());
     }
   }
-  Vector<ModuleRequest> ModuleRequestsFromScriptModule(ScriptModule) override {
+  Vector<ModuleRequest> ModuleRequestsFromModuleRecord(ModuleRecord) override {
     return requests_;
   }
 
@@ -184,18 +184,17 @@ void ModuleScriptLoaderTest::InitializeForWorklet() {
   reporting_proxy_ = std::make_unique<MockWorkerReportingProxy>();
   auto creation_params = std::make_unique<GlobalScopeCreationParams>(
       url_, mojom::ScriptType::kModule,
-      OffMainThreadWorkerScriptFetchOption::kEnabled, "UserAgent",
-      nullptr /* web_worker_fetch_context */, Vector<CSPHeaderAndType>(),
-      network::mojom::ReferrerPolicy::kDefault, security_origin_.get(),
-      true /* is_secure_context */, HttpsState::kModern,
+      OffMainThreadWorkerScriptFetchOption::kEnabled, "GlobalScopeName",
+      "UserAgent", nullptr /* web_worker_fetch_context */,
+      Vector<CSPHeaderAndType>(), network::mojom::ReferrerPolicy::kDefault,
+      security_origin_.get(), true /* is_secure_context */, HttpsState::kModern,
       nullptr /* worker_clients */, mojom::IPAddressSpace::kLocal,
       nullptr /* origin_trial_token */, base::UnguessableToken::Create(),
       nullptr /* worker_settings */, kV8CacheOptionsDefault,
       MakeGarbageCollected<WorkletModuleResponsesMap>());
   global_scope_ = MakeGarbageCollected<WorkletGlobalScope>(
       std::move(creation_params), *reporting_proxy_, &GetFrame());
-  ASSERT_TRUE(global_scope_->ScriptController()->InitializeContext(
-      "Dummy Context", NullURL()));
+  ASSERT_TRUE(global_scope_->ScriptController()->Initialize(NullURL()));
   modulator_ = MakeGarbageCollected<ModuleScriptLoaderTestModulator>(
       global_scope_->ScriptController()->GetScriptState());
 }
@@ -203,7 +202,7 @@ void ModuleScriptLoaderTest::InitializeForWorklet() {
 void ModuleScriptLoaderTest::TestFetchDataURL(
     ModuleScriptCustomFetchType custom_fetch_type,
     TestModuleScriptLoaderClient* client) {
-  ModuleScriptLoaderRegistry* registry = ModuleScriptLoaderRegistry::Create();
+  auto* registry = MakeGarbageCollected<ModuleScriptLoaderRegistry>();
   KURL url("data:text/javascript,export default 'grapes';");
   ModuleScriptLoader::Fetch(ModuleScriptFetchRequest::CreateForTest(url),
                             fetcher_, ModuleGraphLevel::kTopLevelModuleFetch,
@@ -260,7 +259,7 @@ TEST_F(ModuleScriptLoaderTest, FetchDataURL_OnWorklet) {
 void ModuleScriptLoaderTest::TestInvalidSpecifier(
     ModuleScriptCustomFetchType custom_fetch_type,
     TestModuleScriptLoaderClient* client) {
-  ModuleScriptLoaderRegistry* registry = ModuleScriptLoaderRegistry::Create();
+  auto* registry = MakeGarbageCollected<ModuleScriptLoaderRegistry>();
   KURL url("data:text/javascript,import 'invalid';export default 'grapes';");
   GetModulator()->SetModuleRequests({"invalid"});
   ModuleScriptLoader::Fetch(ModuleScriptFetchRequest::CreateForTest(url),
@@ -304,7 +303,7 @@ TEST_F(ModuleScriptLoaderTest, InvalidSpecifier_OnWorklet) {
 void ModuleScriptLoaderTest::TestFetchInvalidURL(
     ModuleScriptCustomFetchType custom_fetch_type,
     TestModuleScriptLoaderClient* client) {
-  ModuleScriptLoaderRegistry* registry = ModuleScriptLoaderRegistry::Create();
+  auto* registry = MakeGarbageCollected<ModuleScriptLoaderRegistry>();
   KURL url;
   EXPECT_FALSE(url.IsValid());
   ModuleScriptLoader::Fetch(ModuleScriptFetchRequest::CreateForTest(url),
@@ -347,7 +346,7 @@ void ModuleScriptLoaderTest::TestFetchURL(
   url_test_helpers::RegisterMockedURLLoad(
       url, test::CoreTestDataPath("module.js"), "text/javascript");
 
-  ModuleScriptLoaderRegistry* registry = ModuleScriptLoaderRegistry::Create();
+  auto* registry = MakeGarbageCollected<ModuleScriptLoaderRegistry>();
   ModuleScriptLoader::Fetch(ModuleScriptFetchRequest::CreateForTest(url),
                             fetcher_, ModuleGraphLevel::kTopLevelModuleFetch,
                             GetModulator(), custom_fetch_type, registry,

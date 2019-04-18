@@ -5,7 +5,7 @@
 #include "chrome/browser/media/webrtc/native_desktop_media_list.h"
 
 #include "base/bind.h"
-#include "base/hash.h"
+#include "base/hash/hash.h"
 #include "base/single_thread_task_runner.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/task/post_task.h"
@@ -322,7 +322,7 @@ void NativeDesktopMediaList::RefreshForAuraWindows(
     native_ids.push_back(source.id);
   }
 
-  if (native_ids.size() > 0) {
+  if (!native_ids.empty()) {
 #if defined(USE_AURA)
     pending_native_thumbnail_capture_ = true;
 #endif

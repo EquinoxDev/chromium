@@ -95,7 +95,7 @@ class WebRequestAPI : public BrowserContextKeyedAPI,
     // in-progress network requests. If the request will *not* be handled by
     // the proxy, |callback| should be invoked with |base::nullopt|.
     virtual void HandleAuthRequest(
-        net::AuthChallengeInfo* auth_info,
+        const net::AuthChallengeInfo& auth_info,
         scoped_refptr<net::HttpResponseHeaders> response_headers,
         int32_t request_id,
         AuthRequestCallback callback);
@@ -134,7 +134,7 @@ class WebRequestAPI : public BrowserContextKeyedAPI,
     Proxy* GetProxyFromRequestId(const content::GlobalRequestID& id);
 
     void MaybeProxyAuthRequest(
-        net::AuthChallengeInfo* auth_info,
+        const net::AuthChallengeInfo& auth_info,
         scoped_refptr<net::HttpResponseHeaders> response_headers,
         const content::GlobalRequestID& request_id,
         AuthRequestCallback callback);
@@ -198,6 +198,7 @@ class WebRequestAPI : public BrowserContextKeyedAPI,
       content::RenderFrameHost* frame,
       int render_process_id,
       bool is_navigation,
+      bool is_download,
       network::mojom::URLLoaderFactoryRequest* factory_request,
       network::mojom::TrustedURLLoaderHeaderClientPtrInfo* header_client);
 
@@ -208,7 +209,7 @@ class WebRequestAPI : public BrowserContextKeyedAPI,
   // thread.
   bool MaybeProxyAuthRequest(
       content::BrowserContext* browser_context,
-      net::AuthChallengeInfo* auth_info,
+      const net::AuthChallengeInfo& auth_info,
       scoped_refptr<net::HttpResponseHeaders> response_headers,
       const content::GlobalRequestID& request_id,
       bool is_main_frame,
@@ -223,7 +224,8 @@ class WebRequestAPI : public BrowserContextKeyedAPI,
   void MaybeProxyWebSocket(
       content::RenderFrameHost* frame,
       network::mojom::WebSocketRequest* request,
-      network::mojom::AuthenticationHandlerPtr* auth_handler);
+      network::mojom::AuthenticationHandlerPtr* auth_handler,
+      network::mojom::TrustedHeaderClientPtr* header_client);
 
   void ForceProxyForTesting();
 
@@ -357,6 +359,11 @@ class ExtensionWebRequestEventRouter {
                       GURL* new_url,
                       bool* should_collapse_initiator);
 
+  using BeforeSendHeadersCallback =
+      base::OnceCallback<void(const std::set<std::string>& removed_headers,
+                              const std::set<std::string>& set_headers,
+                              int error_code)>;
+
   // Dispatches the onBeforeSendHeaders event. This is fired for HTTP(s)
   // requests only, and allows modification of the outgoing request headers.
   // Returns net::ERR_IO_PENDING if an extension is intercepting the request, OK
@@ -364,7 +371,7 @@ class ExtensionWebRequestEventRouter {
   int OnBeforeSendHeaders(void* browser_context,
                           const extensions::InfoMap* extension_info_map,
                           const WebRequestInfo* request,
-                          net::CompletionOnceCallback callback,
+                          BeforeSendHeadersCallback callback,
                           net::HttpRequestHeaders* headers);
 
   // Dispatches the onSendHeaders event. This is fired for HTTP(s) requests
@@ -445,6 +452,10 @@ class ExtensionWebRequestEventRouter {
                       const std::string& event_name,
                       const std::string& sub_event_name,
                       uint64_t request_id,
+                      int render_process_id,
+                      int web_view_instance_id,
+                      int worker_thread_id,
+                      int64_t service_worker_version_id,
                       EventResponse* response);
 
   // Adds a listener to the given event. |event_name| specifies the event being
@@ -459,15 +470,16 @@ class ExtensionWebRequestEventRouter {
                         const std::string& sub_event_name,
                         const RequestFilter& filter,
                         int extra_info_spec,
-                        int embedder_process_id,
+                        int render_process_id,
                         int web_view_instance_id,
+                        int worker_thread_id,
+                        int64_t service_worker_version_id,
                         base::WeakPtr<IPC::Sender> ipc_sender);
 
   // Removes the listeners for a given <webview>.
-  void RemoveWebViewEventListeners(
-      void* browser_context,
-      int embedder_process_id,
-      int web_view_instance_id);
+  void RemoveWebViewEventListeners(void* browser_context,
+                                   int render_process_id,
+                                   int web_view_instance_id);
 
   // Called when an incognito browser_context is created or destroyed.
   void OnOTRBrowserContextCreated(void* original_browser_context,
@@ -490,6 +502,9 @@ class ExtensionWebRequestEventRouter {
   // ExtraInfoSpec::EXTRA_HEADERS set.
   bool HasAnyExtraHeadersListener(void* browser_context);
 
+  // Like above, but for usage on the UI thread.
+  bool HasAnyExtraHeadersListenerOnUI(content::BrowserContext* browser_context);
+
  private:
   friend class WebRequestAPI;
   friend class base::NoDestructor<ExtensionWebRequestEventRouter>;
@@ -511,32 +526,42 @@ class ExtensionWebRequestEventRouter {
                            TestModifications);
 
   struct EventListener {
-    // An EventListener is uniquely defined by five properties.
     // TODO(rdevlin.cronin): There are two types of EventListeners - those
     // associated with WebViews and those that are not. The ones associated with
-    // WebViews are always identified by all five properties. The other ones
+    // WebViews are always identified by all seven properties. The other ones
     // will always have web_view_instance_id = 0. Unfortunately, the
-    // callbacks/interfaces for these ones don't specify embedder_process_id.
+    // callbacks/interfaces for these ones don't specify render_process_id.
     // This is why we need the LooselyMatches method, and the need for a
     // |strict| argument on RemoveEventListener.
     struct ID {
       ID(void* browser_context,
          const std::string& extension_id,
          const std::string& sub_event_name,
-         int embedder_process_id,
-         int web_view_instance_id);
+         int render_process_id,
+         int web_view_instance_id,
+         int worker_thread_id,
+         int64_t service_worker_version_id);
 
-      // If web_view_instance_id is 0, then ignore embedder_process_id.
+      ID(const ID& source);
+
+      // If web_view_instance_id is 0, then ignore render_process_id.
       // TODO(rdevlin.cronin): In a more sane world, LooselyMatches wouldn't be
       // necessary.
       bool LooselyMatches(const ID& that) const;
 
       bool operator==(const ID& that) const;
+
       void* browser_context;
       std::string extension_id;
       std::string sub_event_name;
-      int embedder_process_id;
+      // In the case of a webview, this is the process ID of the embedder.
+      int render_process_id;
       int web_view_instance_id;
+      // The worker_thread_id and service_worker_version_id members are only
+      // meaningful for event listeners for ServiceWorker events. Otherwise,
+      // they are initialized to sentinel values.
+      int worker_thread_id;
+      int64_t service_worker_version_id;
     };
 
     EventListener(ID id);
@@ -559,6 +584,7 @@ class ExtensionWebRequestEventRouter {
   using Listeners = std::vector<std::unique_ptr<EventListener>>;
   using ListenerMapForBrowserContext = std::map<std::string, Listeners>;
   using ListenerMap = std::map<void*, ListenerMapForBrowserContext>;
+  using ExtraHeadersListenerCountMap = std::map<void*, int>;
   using BlockedRequestMap = std::map<uint64_t, BlockedRequest>;
   // Map of request_id -> bit vector of EventTypes already signaled
   using SignaledRequestMap = std::map<uint64_t, int>;
@@ -708,13 +734,27 @@ class ExtensionWebRequestEventRouter {
   // Helper for |HasAnyExtraHeadersListener()|.
   bool HasAnyExtraHeadersListenerImpl(void* browser_context);
 
+  // Called on the UI thread to update |browser_contexts_with_extra_headers_|.
+  void UpdateExtraHeadersListenerOnUI(void* browser_context,
+                                      bool has_extra_headers_listeners);
+
   // Get the number of listeners - for testing only.
   size_t GetListenerCountForTesting(void* browser_context,
                                     const std::string& event_name);
 
+  // TODO(karandeepb): The below code should be refactored to have a single map
+  // to store per-browser-context data.
+
   // A map for each browser_context that maps an event name to a set of
   // extensions that are listening to that event.
   ListenerMap listeners_;
+
+  // Count of listeners per browser context which request extra headers.
+  ExtraHeadersListenerCountMap extra_headers_listener_count_;
+
+  // Accessed on the UI thread to check if a given BrowserContext has any
+  // extra headers listeners.
+  std::set<content::BrowserContext*> browser_contexts_with_extra_headers_;
 
   // A map of network requests that are waiting for at least one event handler
   // to respond.
@@ -789,6 +829,8 @@ class WebRequestInternalEventHandledFunction
       const std::string& event_name,
       const std::string& sub_event_name,
       uint64_t request_id,
+      int render_process_id,
+      int web_view_instance_id,
       std::unique_ptr<ExtensionWebRequestEventRouter::EventResponse> response);
 
   // ExtensionFunction:

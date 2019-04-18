@@ -18,6 +18,7 @@
 #include "content/browser/web_package/signed_exchange_handler.h"
 #include "content/browser/web_package/signed_exchange_prefetch_metric_recorder.h"
 #include "content/browser/web_package/signed_exchange_reporter.h"
+#include "content/browser/web_package/signed_exchange_request_matcher.h"
 #include "content/browser/web_package/signed_exchange_utils.h"
 #include "content/public/common/content_features.h"
 #include "content/public/common/origin_util.h"
@@ -44,7 +45,8 @@ constexpr char kNoSniffHeaderValue[] = "nosniff";
 net::RedirectInfo CreateRedirectInfo(
     const GURL& new_url,
     const network::ResourceRequest& outer_request,
-    const network::ResourceResponseHead& outer_response) {
+    const network::ResourceResponseHead& outer_response,
+    bool is_fallback_redirect) {
   // https://wicg.github.io/webpackage/loading.html#mp-http-fetch
   // Step 3. Set actualResponse's status to 303. [spec text]
   return net::RedirectInfo::ComputeRedirectInfo(
@@ -57,7 +59,8 @@ net::RedirectInfo CreateRedirectInfo(
       outer_request.referrer_policy, outer_request.referrer.spec(), 303,
       new_url,
       net::RedirectUtil::GetReferrerPolicyHeader(outer_response.headers.get()),
-      false /* insecure_scheme_was_upgraded */);
+      false /* insecure_scheme_was_upgraded */, true /* copy_fragment */,
+      is_fallback_redirect);
 }
 
 bool HasNoSniffHeader(const network::ResourceResponseHead& response) {
@@ -121,7 +124,8 @@ SignedExchangeLoader::SignedExchangeLoader(
     scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory,
     URLLoaderThrottlesGetter url_loader_throttles_getter,
     base::RepeatingCallback<int(void)> frame_tree_node_id_getter,
-    scoped_refptr<SignedExchangePrefetchMetricRecorder> metric_recorder)
+    scoped_refptr<SignedExchangePrefetchMetricRecorder> metric_recorder,
+    const std::string& accept_langs)
     : outer_request_(outer_request),
       outer_response_timing_info_(
           std::make_unique<ResponseTimingInfo>(outer_response)),
@@ -136,8 +140,8 @@ SignedExchangeLoader::SignedExchangeLoader(
       url_loader_throttles_getter_(std::move(url_loader_throttles_getter)),
       frame_tree_node_id_getter_(frame_tree_node_id_getter),
       metric_recorder_(std::move(metric_recorder)),
+      accept_langs_(accept_langs),
       weak_factory_(this) {
-  DCHECK(signed_exchange_utils::IsSignedExchangeHandlingEnabled());
   DCHECK(outer_request_.url.is_valid());
 
   // |metric_recorder_| could be null in some tests.
@@ -227,13 +231,17 @@ void SignedExchangeLoader::OnStartLoadingResponseBody(
       base::BindOnce(&SignedExchangeLoader::OnHTTPExchangeFound,
                      weak_factory_.GetWeakPtr()),
       std::move(cert_fetcher_factory), outer_request_.load_flags,
+      std::make_unique<SignedExchangeRequestMatcher>(outer_request_.headers,
+                                                     accept_langs_),
       std::move(devtools_proxy_), reporter_.get(), frame_tree_node_id_getter_);
 }
 
 void SignedExchangeLoader::OnComplete(
     const network::URLLoaderCompletionStatus& status) {
-  DCHECK(!encoded_data_length_);
-  encoded_data_length_ = status.encoded_data_length;
+  DCHECK(!outer_response_length_info_);
+  outer_response_length_info_ = OuterResponseLengthInfo();
+  outer_response_length_info_->encoded_data_length = status.encoded_data_length;
+  outer_response_length_info_->decoded_body_length = status.decoded_body_length;
   NotifyClientOnCompleteIfReady();
 }
 
@@ -295,7 +303,8 @@ void SignedExchangeLoader::OnHTTPExchangeFound(
     fallback_url_ = request_url;
     DCHECK(outer_response_timing_info_);
     forwarding_client_->OnReceiveRedirect(
-        CreateRedirectInfo(request_url, outer_request_, outer_response_),
+        CreateRedirectInfo(request_url, outer_request_, outer_response_,
+                           true /* is_fallback_redirect */),
         std::move(outer_response_timing_info_)->CreateRedirectResponseHead());
     forwarding_client_.reset();
     return;
@@ -305,7 +314,8 @@ void SignedExchangeLoader::OnHTTPExchangeFound(
 
   DCHECK(outer_response_timing_info_);
   forwarding_client_->OnReceiveRedirect(
-      CreateRedirectInfo(request_url, outer_request_, outer_response_),
+      CreateRedirectInfo(request_url, outer_request_, outer_response_,
+                         false /* is_fallback_redirect */),
       std::move(outer_response_timing_info_)->CreateRedirectResponseHead());
   forwarding_client_.reset();
 
@@ -359,21 +369,23 @@ void SignedExchangeLoader::FinishReadingBody(int result) {
 }
 
 void SignedExchangeLoader::NotifyClientOnCompleteIfReady() {
-  // If |encoded_data_length_| or |decoded_body_read_result_| is unavailable, do
-  // nothing and rely on the subsequent call to notify client.
-  if (!encoded_data_length_ || !decoded_body_read_result_)
+  // If |outer_response_length_info_| or |decoded_body_read_result_| is
+  // unavailable, do nothing and rely on the subsequent call to notify client.
+  if (!outer_response_length_info_ || !decoded_body_read_result_)
     return;
 
   ReportLoadResult(*decoded_body_read_result_ == net::OK
                        ? SignedExchangeLoadResult::kSuccess
                        : SignedExchangeLoadResult::kMerkleIntegrityError);
 
-  // TODO(https://crbug.com/803774): Fill the data length information (
-  // encoded_body_length, decoded_body_length) too.
   network::URLLoaderCompletionStatus status;
   status.error_code = *decoded_body_read_result_;
   status.completion_time = base::TimeTicks::Now();
-  status.encoded_data_length = *encoded_data_length_;
+  status.encoded_data_length = outer_response_length_info_->encoded_data_length;
+  status.encoded_body_length =
+      outer_response_length_info_->decoded_body_length -
+      signed_exchange_handler_->GetExchangeHeaderLength();
+  status.decoded_body_length = body_data_pipe_adapter_->TransferredBytes();
 
   if (ssl_info_) {
     DCHECK((url_loader_options_ &
@@ -397,7 +409,7 @@ void SignedExchangeLoader::ReportLoadResult(SignedExchangeLoadResult result) {
   }
 
   if (reporter_)
-    reporter_->ReportResult(result);
+    reporter_->ReportResultAndFinish(result);
 }
 
 void SignedExchangeLoader::SetSignedExchangeHandlerFactoryForTest(

@@ -32,6 +32,7 @@
 #include "ui/compositor/layer_owner.h"
 #include "ui/compositor/scoped_layer_animation_settings.h"
 #include "ui/gfx/skbitmap_operations.h"
+#include "ui/keyboard/keyboard_controller.h"
 #include "ui/views/accessible_pane_view.h"
 #include "ui/views/focus/focus_search.h"
 #include "ui/views/layout/fill_layout.h"
@@ -43,7 +44,7 @@ namespace ash {
 namespace {
 
 constexpr int kShelfRoundedCornerRadius = 28;
-constexpr int kShelfBlurRadius = 10;
+constexpr int kShelfBlurRadius = 30;
 constexpr float kShelfBlurQuality = 0.33f;
 
 // Return the first or last focusable child of |root|.
@@ -213,15 +214,6 @@ void ShelfWidget::DelegateView::UpdateOpaqueBackground() {
   const ShelfBackgroundType background_type =
       shelf_widget_->GetBackgroundType();
 
-  // If the app list is showing in clamshell mode, we should hide the shelf.
-  // otherwise, we should show it again. This creates a 'blending' effect
-  // between the two
-  if (background_type == SHELF_BACKGROUND_APP_LIST) {
-    opaque_background_.SetVisible(false);
-    UpdateBackgroundBlur();
-    return;
-  }
-
   if (!opaque_background_.visible())
     opaque_background_.SetVisible(true);
 
@@ -241,18 +233,30 @@ void ShelfWidget::DelegateView::UpdateOpaqueBackground() {
       -shelf->SelectValueForShelfAlignment(safety_margin, 0, 0));
 
   // Show rounded corners except in maximized (which includes split view) mode.
-  if (background_type == SHELF_BACKGROUND_MAXIMIZED) {
-    mask_ = nullptr;
-    opaque_background_.SetMaskLayer(nullptr);
-  } else {
-    if (!mask_) {
-      mask_ = views::Painter::CreatePaintedLayer(
-          views::Painter::CreateSolidRoundRectPainter(SK_ColorBLACK, radius));
-      mask_->layer()->SetFillsBoundsOpaquely(false);
-      opaque_background_.SetMaskLayer(mask_->layer());
+  if (ash::features::ShouldUseShaderRoundedCorner()) {
+    if (background_type == SHELF_BACKGROUND_MAXIMIZED) {
+      opaque_background_.SetRoundedCornerRadius({0, 0, 0, 0});
+    } else {
+      opaque_background_.SetRoundedCornerRadius({radius, radius, 0, 0});
+      opaque_background_.AddCacheRenderSurfaceRequest();
     }
-    if (mask_->layer()->bounds() != opaque_background_bounds)
-      mask_->layer()->SetBounds(opaque_background_bounds);
+  } else {
+    if (background_type == SHELF_BACKGROUND_MAXIMIZED) {
+      if (mask_)
+        opaque_background_.RemoveCacheRenderSurfaceRequest();
+      mask_ = nullptr;
+      opaque_background_.SetMaskLayer(nullptr);
+    } else {
+      if (!mask_) {
+        mask_ = views::Painter::CreatePaintedLayer(
+            views::Painter::CreateSolidRoundRectPainter(SK_ColorBLACK, radius));
+        mask_->layer()->SetFillsBoundsOpaquely(false);
+        opaque_background_.SetMaskLayer(mask_->layer());
+        opaque_background_.AddCacheRenderSurfaceRequest();
+      }
+      if (mask_->layer()->bounds() != opaque_background_bounds)
+        mask_->layer()->SetBounds(opaque_background_bounds);
+    }
   }
   opaque_background_.SetBounds(opaque_background_bounds);
   UpdateBackgroundBlur();
@@ -304,7 +308,8 @@ bool ShelfWidget::GetHitTestRects(aura::Window* target,
   // of the shelf.
   DCHECK(login_shelf_view_->visible());
   gfx::Rect login_view_button_bounds =
-      login_shelf_view_->get_button_union_bounds();
+      login_shelf_view_->ConvertRectToWidget(login_shelf_view_->GetMirroredRect(
+          login_shelf_view_->get_button_union_bounds()));
   aura::Window* source = login_shelf_view_->GetWidget()->GetNativeWindow();
   aura::Window::ConvertRectToTarget(source, target->parent(),
                                     &login_view_button_bounds);
@@ -369,6 +374,7 @@ ShelfWidget::~ShelfWidget() {
 void ShelfWidget::Initialize() {
   // Sets initial session state to make sure the UI is properly shown.
   OnSessionStateChanged(Shell::Get()->session_controller()->GetSessionState());
+  GetFocusManager()->set_arrow_key_traversal_enabled_for_widget(true);
 }
 
 void ShelfWidget::Shutdown() {
@@ -438,7 +444,7 @@ void ShelfWidget::PostCreateShelf() {
 }
 
 bool ShelfWidget::IsShowingAppList() const {
-  return GetAppListButton() && GetAppListButton()->is_showing_app_list();
+  return GetAppListButton() && GetAppListButton()->IsShowingAppList();
 }
 
 bool ShelfWidget::IsShowingMenu() const {
@@ -492,15 +498,24 @@ void ShelfWidget::set_default_last_focusable_child(
       default_last_focusable_child);
 }
 
+void ShelfWidget::FocusFirstOrLastFocusableChild(bool last) {
+  // This is only ever called during an active session.
+  if (!shelf_view_->visible())
+    return;
+  views::View* to_focus = shelf_view_->FindFirstOrLastFocusableChild(last);
+
+  Shell::Get()->focus_cycler()->FocusWidget(to_focus->GetWidget());
+  to_focus->GetFocusManager()->SetFocusedView(to_focus);
+}
+
 void ShelfWidget::OnWidgetActivationChanged(views::Widget* widget,
                                             bool active) {
   if (active) {
     // Do not focus the default element if the widget activation came from the
-    // overflow bubble focus cycling. The setter of
-    // |activated_from_overflow_bubble_| should handle focusing the correct
-    // view.
-    if (activated_from_overflow_bubble_) {
-      activated_from_overflow_bubble_ = false;
+    // another widget's focus cycling. The setter of
+    // |activated_from_other_widget_| should handle focusing the correct view.
+    if (activated_from_other_widget_) {
+      activated_from_other_widget_ = false;
       return;
     }
     delegate_view_->SetPaneFocusAndFocusDefault();
@@ -524,6 +539,20 @@ void ShelfWidget::OnSessionStateChanged(session_manager::SessionState state) {
   // * when views based shelf is disabled
   // * in UNKNOWN state - it might be called before shelf was initialized
   // * on secondary screens in states other than ACTIVE
+  //
+  // TODO(alemate): better handle show-hide for some UI screens:
+  // https://crbug.com/935842
+  // https://crbug.com/935844
+  // https://crbug.com/935846
+  // https://crbug.com/935847
+  // https://crbug.com/935852
+  // https://crbug.com/935853
+  // https://crbug.com/935856
+  // https://crbug.com/935857
+  // https://crbug.com/935858
+  // https://crbug.com/935860
+  // https://crbug.com/935861
+  // https://crbug.com/935863
   bool using_views_shelf = IsUsingViewsShelf();
   bool unknown_state = state == session_manager::SessionState::UNKNOWN;
   bool hide_on_secondary_screen = shelf_->ShouldHideOnSecondaryDisplay(state);

@@ -32,13 +32,15 @@
 #include "third_party/blink/renderer/core/layout/min_max_size.h"
 #include "third_party/blink/renderer/core/layout/overflow_model.h"
 #include "third_party/blink/renderer/platform/graphics/scroll_types.h"
-#include "third_party/blink/renderer/platform/wtf/compiler.h"
 
 namespace blink {
 
 class EventHandler;
 class LayoutBlockFlow;
 class LayoutMultiColumnSpannerPlaceholder;
+class NGBoxFragmentBuilder;
+class NGConstraintSpace;
+class ShapeOutsideInfo;
 struct BoxLayoutExtraInput;
 <<<<<<< HEAD
 =======
@@ -46,8 +48,6 @@ class NGBreakToken;
 class NGLayoutResult;
 >>>>>>> 1edcc2f128d290860af09401391ae79df290b5f3
 struct NGPhysicalBoxStrut;
-class ShapeOutsideInfo;
-
 struct PaintInfo;
 struct WebScrollIntoViewParams;
 
@@ -913,6 +913,12 @@ class CORE_EXPORT LayoutBox : public LayoutBoxModelObject {
   const NGLayoutResult* GetCachedLayoutResult() const {
     return cached_layout_result_.get();
   }
+  // Returns the last layout result for this block flow with the given
+  // constraint space and break token, or null if it is not up-to-date or
+  // otherwise unavailable.
+  scoped_refptr<const NGLayoutResult> CachedLayoutResult(
+      const NGConstraintSpace&,
+      const NGBreakToken*);
 
   void SetSpannerPlaceholder(LayoutMultiColumnSpannerPlaceholder&);
   void ClearSpannerPlaceholder();
@@ -1103,10 +1109,10 @@ class CORE_EXPORT LayoutBox : public LayoutBoxModelObject {
 
   bool CanBeScrolledAndHasScrollableArea() const;
   virtual bool CanBeProgramaticallyScrolled() const;
-  virtual void Autoscroll(const IntPoint&);
+  virtual void Autoscroll(const LayoutPoint&);
   bool CanAutoscroll() const;
-  IntSize CalculateAutoscrollDirection(
-      const IntPoint& point_in_root_frame) const;
+  LayoutSize CalculateAutoscrollDirection(
+      const FloatPoint& point_in_root_frame) const;
   static LayoutBox* FindAutoscrollable(LayoutObject*);
   virtual void StopAutoscroll() {}
   virtual void MayUpdateHoverWhenContentUnderMouseChanged(EventHandler&);
@@ -1206,7 +1212,7 @@ class CORE_EXPORT LayoutBox : public LayoutBoxModelObject {
      // inline-block.
 
   bool ShrinkToAvoidFloats() const;
-  virtual bool AvoidsFloats() const;
+  virtual bool CreatesNewFormattingContext() const { return true; }
   bool ShouldBeConsideredAsReplaced() const;
 
   void UpdateFragmentationInfoForChild(LayoutBox&);
@@ -1390,28 +1396,6 @@ class CORE_EXPORT LayoutBox : public LayoutBoxModelObject {
 
   bool HasRelativeLogicalWidth() const;
   bool HasRelativeLogicalHeight() const;
-
-  bool HasHorizontalLayoutOverflow() const {
-    if (!LayoutOverflowIsSet())
-      return false;
-
-    LayoutRect layout_overflow_rect =
-        overflow_->layout_overflow->LayoutOverflowRect();
-    LayoutRect no_overflow_rect = NoOverflowRect();
-    return layout_overflow_rect.X() < no_overflow_rect.X() ||
-           layout_overflow_rect.MaxX() > no_overflow_rect.MaxX();
-  }
-
-  bool HasVerticalLayoutOverflow() const {
-    if (!LayoutOverflowIsSet())
-      return false;
-
-    LayoutRect layout_overflow_rect =
-        overflow_->layout_overflow->LayoutOverflowRect();
-    LayoutRect no_overflow_rect = NoOverflowRect();
-    return layout_overflow_rect.Y() < no_overflow_rect.Y() ||
-           layout_overflow_rect.MaxY() > no_overflow_rect.MaxY();
-  }
 
   virtual LayoutBox* CreateAnonymousBoxWithSameTypeAs(
       const LayoutObject*) const {
@@ -1623,15 +1607,6 @@ class CORE_EXPORT LayoutBox : public LayoutBoxModelObject {
                                const HitTestLocation& location_in_container,
                                const LayoutPoint& accumulated_offset,
                                HitTestAction);
-  void AddLayerHitTestRects(
-      LayerHitTestRects&,
-      const PaintLayer* current_composited_layer,
-      const LayoutPoint& layer_offset,
-      TouchAction supported_fast_actions,
-      const LayoutRect& container_rect,
-      TouchAction container_whitelisted_touch_action) const override;
-  void ComputeSelfHitTestRects(Vector<LayoutRect>&,
-                               const LayoutPoint& layer_offset) const override;
 
   void InvalidatePaint(const PaintInvalidatorContext&) const override;
 
@@ -1654,13 +1629,15 @@ class CORE_EXPORT LayoutBox : public LayoutBoxModelObject {
       Length& logical_top,
       Length& logical_bottom,
       const LayoutBox* child,
-      const LayoutBoxModelObject* container_block);
+      const LayoutBoxModelObject* container_block,
+      const NGBoxFragmentBuilder* = nullptr);
   static void ComputeInlineStaticDistance(
       Length& logical_left,
       Length& logical_right,
       const LayoutBox* child,
       const LayoutBoxModelObject* container_block,
-      LayoutUnit container_logical_width);
+      LayoutUnit container_logical_width,
+      const NGBoxFragmentBuilder* = nullptr);
   static void ComputeLogicalLeftPositionedOffset(
       LayoutUnit& logical_left_pos,
       const LayoutBox* child,

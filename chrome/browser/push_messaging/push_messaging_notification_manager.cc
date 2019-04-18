@@ -16,6 +16,7 @@
 #include "base/task/post_task.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/engagement/site_engagement_service.h"
+#include "chrome/browser/notifications/platform_notification_service_factory.h"
 #include "chrome/browser/notifications/platform_notification_service_impl.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/push_messaging/push_messaging_constants.h"
@@ -36,6 +37,7 @@
 #include "content/public/common/url_constants.h"
 #include "net/base/registry_controlled_domains/registry_controlled_domain.h"
 #include "third_party/blink/public/common/notifications/notification_resources.h"
+#include "third_party/blink/public/mojom/notifications/notification.mojom-shared.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "url/gurl.h"
 
@@ -78,7 +80,7 @@ NotificationDatabaseData CreateDatabaseData(
   notification_data.title = url_formatter::FormatUrlForSecurityDisplay(
       origin, url_formatter::SchemeDisplay::OMIT_HTTP_AND_HTTPS);
   notification_data.direction =
-      blink::PlatformNotificationData::DIRECTION_LEFT_TO_RIGHT;
+      blink::mojom::NotificationDirection::LEFT_TO_RIGHT;
   notification_data.body =
       l10n_util::GetStringUTF16(IDS_PUSH_MESSAGING_GENERIC_NOTIFICATION_BODY);
   notification_data.tag = kPushMessagingForcedNotificationTag;
@@ -166,9 +168,9 @@ void PushMessagingNotificationManager::DidGetNotificationsFromDatabase(
           kPushMessagingForcedNotificationTag)
         continue;
 
-      PlatformNotificationServiceImpl::GetInstance()
+      PlatformNotificationServiceFactory::GetForProfile(profile_)
           ->ClosePersistentNotification(
-              profile_, notification_database_data.notification_id);
+              notification_database_data.notification_id);
       break;
     }
   }
@@ -261,38 +263,24 @@ void PushMessagingNotificationManager::ProcessSilentPush(
   scoped_refptr<PlatformNotificationContext> notification_context =
       GetStoragePartition(profile_, origin)->GetPlatformNotificationContext();
   int64_t next_persistent_notification_id =
-      PlatformNotificationServiceImpl::GetInstance()
-          ->ReadNextPersistentNotificationId(profile_);
+      PlatformNotificationServiceFactory::GetForProfile(profile_)
+          ->ReadNextPersistentNotificationId();
 
   notification_context->WriteNotificationData(
       next_persistent_notification_id, service_worker_registration_id, origin,
       database_data,
       base::BindOnce(
           &PushMessagingNotificationManager::DidWriteNotificationData,
-          weak_factory_.GetWeakPtr(), origin, database_data.notification_data,
-          std::move(message_handled_closure)));
+          weak_factory_.GetWeakPtr(), std::move(message_handled_closure)));
 }
 
 void PushMessagingNotificationManager::DidWriteNotificationData(
-    const GURL& origin,
-    const blink::PlatformNotificationData& notification_data,
     base::OnceClosure message_handled_closure,
     bool success,
     const std::string& notification_id) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
-  if (!success) {
+  if (!success)
     DLOG(ERROR) << "Writing forced notification to database should not fail";
-    std::move(message_handled_closure).Run();
-    return;
-  }
-
-  // Do not pass service worker scope. The origin will be used instead of the
-  // service worker scope to determine whether a notification should be
-  // attributed to a WebAPK on Android. This is OK because this code path is hit
-  // rarely.
-  PlatformNotificationServiceImpl::GetInstance()->DisplayPersistentNotification(
-      profile_, notification_id, GURL() /* service_worker_scope */, origin,
-      notification_data, blink::NotificationResources());
 
   std::move(message_handled_closure).Run();
 }
@@ -338,7 +326,7 @@ bool PushMessagingNotificationManager::ShouldSkipUserVisibleOnlyRequirements(
   if (!app_url)
     app_url = chromeos::android_sms::GetAndroidMessagesURL();
 
-  if (!origin.EqualsIgnoringRef(*app_url))
+  if (!origin.EqualsIgnoringRef(app_url->GetOrigin()))
     return false;
 
   return true;

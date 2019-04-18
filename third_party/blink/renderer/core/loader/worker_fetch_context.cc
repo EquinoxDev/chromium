@@ -24,7 +24,6 @@
 #include "third_party/blink/renderer/platform/loader/fetch/resource_fetcher.h"
 #include "third_party/blink/renderer/platform/loader/fetch/resource_fetcher_properties.h"
 #include "third_party/blink/renderer/platform/network/network_state_notifier.h"
-#include "third_party/blink/renderer/platform/network/network_utils.h"
 #include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 #include "third_party/blink/renderer/platform/supplementable.h"
 #include "third_party/blink/renderer/platform/weborigin/security_policy.h"
@@ -86,7 +85,7 @@ bool WorkerFetchContext::AllowScriptFromSource(const KURL& url) const {
 
 bool WorkerFetchContext::ShouldBlockRequestByInspector(const KURL& url) const {
   bool should_block_request = false;
-  probe::shouldBlockRequest(Probe(), url, &should_block_request);
+  probe::ShouldBlockRequest(Probe(), url, &should_block_request);
   return should_block_request;
 }
 
@@ -95,7 +94,7 @@ void WorkerFetchContext::DispatchDidBlockRequest(
     const FetchInitiatorInfo& fetch_initiator_info,
     ResourceRequestBlockedReason blocked_reason,
     ResourceType resource_type) const {
-  probe::didBlockRequest(global_scope_, resource_request, nullptr,
+  probe::DidBlockRequest(Probe(), resource_request, nullptr, Url(),
                          fetch_initiator_info, blocked_reason, resource_type);
 }
 
@@ -137,7 +136,6 @@ WorkerFetchContext::CreateWebSocketHandshakeThrottle() {
 
 bool WorkerFetchContext::ShouldBlockFetchByMixedContentCheck(
     mojom::RequestContextType request_context,
-    network::mojom::RequestContextFrameType frame_type,
     ResourceRequest::RedirectStatus redirect_status,
     const KURL& url,
     SecurityViolationReportingPolicy reporting_policy) const {
@@ -192,17 +190,16 @@ void WorkerFetchContext::PrepareRequest(
     ResourceRequest& request,
     const FetchInitiatorInfo& initiator_info,
     WebScopedVirtualTimePauser&,
-    RedirectType redirect_type,
     ResourceType resource_type) {
   String user_agent = global_scope_->UserAgent();
-  probe::applyUserAgentOverride(Probe(), &user_agent);
+  probe::ApplyUserAgentOverride(Probe(), &user_agent);
   DCHECK(!user_agent.IsNull());
   request.SetHTTPUserAgent(AtomicString(user_agent));
 
   WrappedResourceRequest webreq(request);
   web_context_->WillSendRequest(webreq);
 
-  probe::prepareRequest(global_scope_, nullptr, request, initiator_info,
+  probe::PrepareRequest(Probe(), nullptr, request, initiator_info,
                         resource_type);
 }
 
@@ -214,74 +211,7 @@ void WorkerFetchContext::AddAdditionalRequestHeaders(ResourceRequest& request) {
     return;
 
   if (save_data_enabled_)
-    request.SetHTTPHeaderField(http_names::kSaveData, "on");
-}
-
-void WorkerFetchContext::DispatchWillSendRequest(
-    unsigned long identifier,
-    const ResourceRequest& request,
-    const ResourceResponse& redirect_response,
-    ResourceType resource_type,
-    const FetchInitiatorInfo& initiator_info) {
-  probe::willSendRequest(global_scope_, identifier, nullptr, request,
-                         redirect_response, initiator_info, resource_type);
-}
-
-void WorkerFetchContext::DispatchDidReceiveResponse(
-    unsigned long identifier,
-    const ResourceRequest& request,
-    const ResourceResponse& response,
-    Resource* resource,
-    ResourceResponseType) {
-  if (response.HasMajorCertificateErrors()) {
-    WebMixedContentContextType context_type =
-        WebMixedContent::ContextTypeFromRequestContext(
-            request.GetRequestContext(),
-            false /* strictMixedContentCheckingForPlugin */);
-    if (context_type == WebMixedContentContextType::kBlockable) {
-      web_context_->DidRunContentWithCertificateErrors();
-    } else {
-      web_context_->DidDisplayContentWithCertificateErrors();
-    }
-  }
-  probe::didReceiveResourceResponse(Probe(), identifier, nullptr, response,
-                                    resource);
-}
-
-void WorkerFetchContext::DispatchDidReceiveData(unsigned long identifier,
-                                                const char* data,
-                                                uint64_t data_length) {
-  probe::didReceiveData(Probe(), identifier, nullptr, data, data_length);
-}
-
-void WorkerFetchContext::DispatchDidReceiveEncodedData(
-    unsigned long identifier,
-    size_t encoded_data_length) {
-  probe::didReceiveEncodedDataLength(Probe(), nullptr, identifier,
-                                     encoded_data_length);
-}
-
-void WorkerFetchContext::DispatchDidFinishLoading(
-    unsigned long identifier,
-    TimeTicks finish_time,
-    int64_t encoded_data_length,
-    int64_t decoded_body_length,
-    bool should_report_corb_blocking) {
-  probe::didFinishLoading(Probe(), identifier, nullptr, finish_time,
-                          encoded_data_length, decoded_body_length,
-                          should_report_corb_blocking);
-}
-
-void WorkerFetchContext::DispatchDidFail(const KURL& url,
-                                         unsigned long identifier,
-                                         const ResourceError& error,
-                                         int64_t encoded_data_length,
-                                         bool is_internal_request) {
-  probe::didFailLoading(Probe(), identifier, nullptr, error);
-  if (network_utils::IsCertificateTransparencyRequiredError(
-          error.ErrorCode())) {
-    CountUsage(WebFeature::kCertificateTransparencyRequiredErrorOnResourceLoad);
-  }
+    request.SetHttpHeaderField(http_names::kSaveData, "on");
 }
 
 void WorkerFetchContext::AddResourceTiming(const ResourceTimingInfo& info) {
@@ -299,7 +229,9 @@ void WorkerFetchContext::PopulateResourceRequest(
     const ClientHintsPreferences& hints_preferences,
     const FetchParameters::ResourceWidth& resource_width,
     ResourceRequest& out_request) {
-  FrameLoader::UpgradeInsecureRequest(out_request, global_scope_);
+  FrameLoader::UpgradeInsecureRequest(
+      out_request, global_scope_,
+      network::mojom::RequestContextFrameType::kNone);
   SetFirstPartyCookie(out_request);
   if (!out_request.TopFrameOrigin())
     out_request.SetTopFrameOrigin(GetTopFrameOrigin());

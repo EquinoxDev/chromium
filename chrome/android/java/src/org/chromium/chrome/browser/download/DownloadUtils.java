@@ -6,7 +6,6 @@ package org.chromium.chrome.browser.download;
 
 import android.app.Activity;
 import android.content.ActivityNotFoundException;
-import android.content.ContentResolver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.res.ColorStateList;
@@ -21,6 +20,7 @@ import android.text.TextUtils;
 import org.chromium.base.ApiCompatibilityUtils;
 import org.chromium.base.ApplicationStatus;
 import org.chromium.base.Callback;
+import org.chromium.base.ContentUriUtils;
 import org.chromium.base.ContextUtils;
 import org.chromium.base.FileUtils;
 import org.chromium.base.Log;
@@ -115,6 +115,7 @@ public class DownloadUtils {
     private static final String DEFAULT_MIME_TYPE = "*/*";
     private static final String MIME_TYPE_DELIMITER = "/";
     private static final String MIME_TYPE_SHARING_URL = "text/plain";
+    private static final String UNKNOWN_MIME_TYPE = "application/unknown";
 
     private static final String EXTRA_IS_OFF_THE_RECORD =
             "org.chromium.chrome.browser.download.IS_OFF_THE_RECORD";
@@ -181,7 +182,7 @@ public class DownloadUtils {
                 tab.loadUrl(params);
 
                 // Bring Chrome to the foreground, if possible.
-                Intent intent = Tab.createBringTabToFrontIntent(tab.getId());
+                Intent intent = IntentUtils.createBringTabToFrontIntent(tab.getId());
                 if (intent != null) {
                     intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
                     IntentUtils.safeStartActivity(appContext, intent);
@@ -570,7 +571,7 @@ public class DownloadUtils {
      * @return URI that points at that file, either as a content:// URI or a file:// URI.
      */
     public static Uri getUriForItem(String filePath) {
-        if (isContentUri(filePath)) return Uri.parse(filePath);
+        if (ContentUriUtils.isContentUri(filePath)) return Uri.parse(filePath);
 
         Uri uri = null;
 
@@ -588,9 +589,26 @@ public class DownloadUtils {
 
     @CalledByNative
     private static String getUriStringForPath(String filePath) {
-        if (isContentUri(filePath)) return filePath;
+        if (ContentUriUtils.isContentUri(filePath)) return filePath;
         Uri uri = getUriForItem(filePath);
         return uri != null ? uri.toString() : new String();
+    }
+
+    /**
+     * If the given MIME type is null, or one of the "generic" types (text/plain
+     * or application/octet-stream) map it to a type that Android can deal with.
+     * If the given type is not generic, return it unchanged.
+     * See {@code ChromeDownloadDelegate#remapGenericMimeType}.
+     *
+     * @param mimeType MIME type provided by the server.
+     * @param url URL of the data being loaded.
+     * @param filename file name obtained from content disposition header
+     * @return The MIME type that should be used for this data.
+     */
+    @CalledByNative
+    public static String remapGenericMimeType(String mimeType, String url, String filename) {
+        if (TextUtils.isEmpty(mimeType)) mimeType = UNKNOWN_MIME_TYPE;
+        return ChromeDownloadDelegate.remapGenericMimeType(mimeType, url, filename);
     }
 
     /**
@@ -633,7 +651,7 @@ public class DownloadUtils {
             // Share URIs use the content:// scheme when able, which looks bad when displayed
             // in the URL bar.
             Uri fileUri = contentUri;
-            if (!isContentUri(filePath)) {
+            if (!ContentUriUtils.isContentUri(filePath)) {
                 File file = new File(filePath);
                 fileUri = Uri.fromFile(file);
             }
@@ -650,7 +668,7 @@ public class DownloadUtils {
         try {
             // TODO(qinmin): Move this to an AsyncTask so we don't need to temper with strict mode.
             StrictMode.ThreadPolicy oldPolicy = StrictMode.allowThreadDiskReads();
-            Uri uri = isContentUri(filePath)
+            Uri uri = ContentUriUtils.isContentUri(filePath)
                     ? contentUri
                     : ApiCompatibilityUtils.getUriForDownloadedFile(new File(filePath));
             StrictMode.setThreadPolicy(oldPolicy);
@@ -667,6 +685,17 @@ public class DownloadUtils {
                         .show();
             }
             return false;
+        }
+    }
+
+    @CalledByNative
+    private static void openDownload(String filePath, String mimeType, String downloadGuid,
+            boolean isOffTheRecord, String originalUrl, String referer,
+            @DownloadMetrics.DownloadOpenSource int source) {
+        boolean canOpen = DownloadUtils.openFile(
+                filePath, mimeType, downloadGuid, isOffTheRecord, originalUrl, referer, source);
+        if (!canOpen) {
+            DownloadUtils.showDownloadManager(null, null);
         }
     }
 
@@ -696,6 +725,8 @@ public class DownloadUtils {
             Log.d(TAG, "Activity not found for " + intent.getType() + " over "
                     + intent.getData().getScheme(), ex);
         } catch (SecurityException ex) {
+            Log.d(TAG, "cannot open intent: " + intent, ex);
+        } catch (Exception ex) {
             Log.d(TAG, "cannot open intent: " + intent, ex);
         }
 
@@ -1183,6 +1214,10 @@ public class DownloadUtils {
      * @return If the path is in the download directory on primary storage.
      */
     public static boolean isInPrimaryStorageDownloadDirectory(String path) {
+        // Only primary storage can have content URI as file path.
+        if (ContentUriUtils.isContentUri(path)) return true;
+
+        // Check if the file path contains the external public directory.
         File primaryDir = null;
         try (StrictModeContext unused = StrictModeContext.allowDiskReads()) {
             primaryDir = Environment.getExternalStorageDirectory();
@@ -1190,6 +1225,27 @@ public class DownloadUtils {
         if (primaryDir == null || path == null) return false;
         String primaryPath = primaryDir.getAbsolutePath();
         return primaryPath == null ? false : path.contains(primaryPath);
+    }
+
+    /**
+     * Get the primary download directory in public external storage. The directory will be created
+     * if it doesn't exist.
+     * @return The download directory. Can be an invalid directory if failed to create the
+     *         directory.
+     */
+    public static File getPrimaryDownloadDirectory() {
+        File downloadDir =
+                Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS);
+
+        // Create the directory if needed.
+        if (!downloadDir.exists()) {
+            try {
+                downloadDir.mkdirs();
+            } catch (SecurityException e) {
+                Log.e(TAG, "Exception when creating download directory.", e);
+            }
+        }
+        return downloadDir;
     }
 
     /**
@@ -1209,15 +1265,6 @@ public class DownloadUtils {
             }
         }
         return originalUri;
-    }
-
-    /**
-     * @return whether a Uri has content scheme.
-     */
-    public static boolean isContentUri(String uri) {
-        if (uri == null) return false;
-        Uri parsedUri = Uri.parse(uri);
-        return parsedUri != null && ContentResolver.SCHEME_CONTENT.equals(parsedUri.getScheme());
     }
 
     private static native String nativeGetFailStateMessage(@FailState int failState);

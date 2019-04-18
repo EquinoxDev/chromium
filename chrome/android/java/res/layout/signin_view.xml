@@ -97,7 +97,7 @@
                     android:layout_marginStart="16dp"
                     tools:ignore="ContentDescription"
                     tools:src="@drawable/ic_expand_more_black_24dp"
-                    tools:tint="@color/dark_mode_tint"/>
+                    tools:tint="@color/standard_mode_tint"/>
             </LinearLayout>
             <TextView
                 android:id="@+id/signin_sync_title"
@@ -125,7 +125,7 @@
                 android:layout_marginStart="16dp"
                 android:layout_marginTop="16dp"
                 android:layout_marginEnd="16dp"/>
-            <TextView
+            <org.chromium.ui.widget.TextViewWithClickableSpans
                 android:id="@+id/signin_details_description"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"

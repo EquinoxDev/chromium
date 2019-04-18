@@ -34,8 +34,8 @@ constexpr base::TimeDelta kSyncConsentSettingsShowDelay =
     base::TimeDelta::FromSeconds(3);
 
 syncer::SyncService* GetSyncService(Profile* profile) {
-  if (ProfileSyncServiceFactory::HasProfileSyncService(profile))
-    return ProfileSyncServiceFactory::GetSyncServiceForProfile(profile);
+  if (ProfileSyncServiceFactory::HasSyncService(profile))
+    return ProfileSyncServiceFactory::GetForProfile(profile);
   return nullptr;
 }
 
@@ -60,10 +60,12 @@ void SyncConsentScreen::MaybeLaunchSyncConsentSettings(Profile* profile) {
   }
 }
 
-SyncConsentScreen::SyncConsentScreen(BaseScreenDelegate* base_screen_delegate,
-                                     SyncConsentScreenView* view)
-    : BaseScreen(base_screen_delegate, OobeScreen::SCREEN_SYNC_CONSENT),
-      view_(view) {
+SyncConsentScreen::SyncConsentScreen(
+    SyncConsentScreenView* view,
+    const base::RepeatingClosure& exit_callback)
+    : BaseScreen(OobeScreen::SCREEN_SYNC_CONSENT),
+      view_(view),
+      exit_callback_(exit_callback) {
   DCHECK(view_);
   view_->Bind(this);
 }
@@ -79,7 +81,7 @@ void SyncConsentScreen::Show() {
   UpdateScreen();
 
   if (behavior_ == SyncScreenBehavior::SKIP) {
-    Finish(ScreenExitCode::SYNC_CONSENT_FINISHED);
+    exit_callback_.Run();
     return;
   }
 
@@ -104,12 +106,12 @@ void SyncConsentScreen::Hide() {
 void SyncConsentScreen::OnUserAction(const std::string& action_id) {
   if (action_id == kUserActionContinueWithSyncOnly) {
     // TODO(alemate) https://crbug.com/822889
-    Finish(ScreenExitCode::SYNC_CONSENT_FINISHED);
+    exit_callback_.Run();
     return;
   }
   if (action_id == kUserActionContinueWithSyncAndPersonalization) {
     // TODO(alemate) https://crbug.com/822889
-    Finish(ScreenExitCode::SYNC_CONSENT_FINISHED);
+    exit_callback_.Run();
     return;
   }
   BaseScreen::OnUserAction(action_id);
@@ -125,14 +127,14 @@ void SyncConsentScreen::OnContinueAndReview(
   RecordConsent(consent_description, consent_confirmation);
   profile_->GetPrefs()->SetBoolean(prefs::kShowSyncSettingsOnSessionStart,
                                    true);
-  Finish(ScreenExitCode::SYNC_CONSENT_FINISHED);
+  exit_callback_.Run();
 }
 
 void SyncConsentScreen::OnContinueWithDefaults(
     const std::vector<int>& consent_description,
     const int consent_confirmation) {
   RecordConsent(consent_description, consent_confirmation);
-  Finish(ScreenExitCode::SYNC_CONSENT_FINISHED);
+  exit_callback_.Run();
 }
 
 void SyncConsentScreen::SetDelegateForTesting(
@@ -191,7 +193,7 @@ void SyncConsentScreen::UpdateScreen() {
 
   // Screen is shown and behavior has changed.
   if (behavior_ == SyncScreenBehavior::SKIP)
-    Finish(ScreenExitCode::SYNC_CONSENT_FINISHED);
+    exit_callback_.Run();
 
   if (behavior_ == SyncScreenBehavior::SHOW) {
     view_->SetThrobberVisible(false /*visible*/);

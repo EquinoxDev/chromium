@@ -44,7 +44,7 @@
 namespace cc {
 class Layer;
 class PictureLayer;
-}
+}  // namespace cc
 
 namespace blink {
 
@@ -57,7 +57,7 @@ class CORE_EXPORT LinkHighlightImpl final : public LinkHighlight,
                                             public CompositorAnimationDelegate,
                                             public CompositorAnimationClient {
  public:
-  static std::unique_ptr<LinkHighlightImpl> Create(Node*);
+  explicit LinkHighlightImpl(Node*);
   ~LinkHighlightImpl() override;
 
   void StartHighlightAnimationIfNeeded();
@@ -87,7 +87,7 @@ class CORE_EXPORT LinkHighlightImpl final : public LinkHighlight,
 
   Node* GetNode() const { return node_; }
 
-  CompositorElementId element_id() const;
+  CompositorElementId ElementIdForTesting() const { return element_id_; }
 
   const EffectPaintPropertyNode& Effect() const override;
 
@@ -99,8 +99,6 @@ class CORE_EXPORT LinkHighlightImpl final : public LinkHighlight,
   }
 
  private:
-  LinkHighlightImpl(Node*);
-
   void ReleaseResources();
   void ComputeQuads(const Node&, Vector<FloatQuad>&) const;
 
@@ -115,7 +113,7 @@ class CORE_EXPORT LinkHighlightImpl final : public LinkHighlight,
 
   class LinkHighlightFragment : private cc::ContentLayerClient {
    public:
-    LinkHighlightFragment(CompositorElementId);
+    LinkHighlightFragment();
     ~LinkHighlightFragment() override;
 
     cc::PictureLayer* Layer() const { return layer_.get(); }
@@ -146,7 +144,7 @@ class CORE_EXPORT LinkHighlightImpl final : public LinkHighlight,
   bool geometry_needs_update_;
   bool is_animating_;
   TimeTicks start_time_;
-  UniqueObjectId unique_id_;
+  CompositorElementId element_id_;
 };
 
 }  // namespace blink

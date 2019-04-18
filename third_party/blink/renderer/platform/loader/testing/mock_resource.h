@@ -29,6 +29,7 @@ class MockCacheHandler : public CachedMetadataHandler {
   bool IsServedFromCacheStorage() const override { return false; }
   void OnMemoryDump(WebProcessMemoryDump* pmd,
                     const String& dump_prefix) const override {}
+  size_t GetCodeCacheSize() const override { return 0; }
 
  private:
   std::unique_ptr<CachedMetadataSender> send_callback_;
@@ -44,8 +45,8 @@ class MockResource final : public Resource {
   static MockResource* Fetch(FetchParameters&,
                              ResourceFetcher*,
                              ResourceClient*);
-  static MockResource* Create(const ResourceRequest&);
-  static MockResource* Create(const KURL&);
+  explicit MockResource(const KURL&);
+  explicit MockResource(const ResourceRequest&);
   MockResource(const ResourceRequest&, const ResourceLoaderOptions&);
 
   CachedMetadataHandler* CreateCachedMetadataHandler(

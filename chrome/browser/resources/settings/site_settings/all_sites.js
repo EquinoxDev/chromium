@@ -54,7 +54,7 @@ Polymer({
      * filter the All Sites list.
      * @private
      */
-    searchQuery_: {
+    filter: {
       type: String,
       value: '',
       observer: 'forceListUpdate_',
@@ -67,11 +67,7 @@ Polymer({
      */
     sortMethods_: {
       type: Object,
-      value: {
-        name: 'name',
-        mostVisited: 'most-visited',
-        storage: 'data-stored',
-      },
+      value: settings.SortMethod,
       readOnly: true,
     },
 
@@ -105,6 +101,13 @@ Polymer({
      * }}
      */
     actionMenuModel_: Object,
+
+    /**
+     * The selected sort method.
+     * @type {!settings.SortMethod|undefined}
+     * @private
+     */
+    sortMethod_: String,
   },
 
   /** @private {?settings.LocalDataBrowserProxy} */
@@ -124,8 +127,6 @@ Polymer({
   ready: function() {
     this.addWebUIListener(
         'onStorageListFetched', this.onStorageListFetched.bind(this));
-    this.addWebUIListener(
-        'contentSettingSitePermissionChanged', this.populateList_.bind(this));
     this.addEventListener(
         'site-entry-selected',
         (/** @type {!CustomEvent<!{item: !SiteGroup, index: number}>} */ e) => {
@@ -134,11 +135,12 @@ Polymer({
     this.addEventListener('site-entry-storage-updated', () => {
       this.debounce('site-entry-storage-updated', () => {
         if (this.sortMethods_ &&
-            this.$.sortMethod.value == this.sortMethods_.storage) {
+            this.$.sortMethod.value == settings.SortMethod.STORAGE) {
           this.onSortMethodChanged_();
         }
       }, 500);
     });
+    this.sortMethod_ = this.$.sortMethod.value;
   },
 
   /** @override */
@@ -237,11 +239,11 @@ Polymer({
       return siteGroupList;
     }
 
-    if (sortMethod == this.sortMethods_.mostVisited) {
+    if (sortMethod == settings.SortMethod.MOST_VISITED) {
       siteGroupList.sort(this.mostVisitedComparator_);
-    } else if (sortMethod == this.sortMethods_.storage) {
+    } else if (sortMethod == settings.SortMethod.STORAGE) {
       siteGroupList.sort(this.storageComparator_);
-    } else if (sortMethod == this.sortMethods_.name) {
+    } else if (sortMethod == settings.SortMethod.NAME) {
       siteGroupList.sort(this.nameComparator_);
     }
     return siteGroupList;
@@ -299,19 +301,11 @@ Polymer({
   },
 
   /**
-   * Called when the input text in the search textbox is updated.
-   * @private
-   */
-  onSearchChanged_: function() {
-    const searchElement = this.$$('cr-search-field');
-    this.searchQuery_ = searchElement.getSearchInput().value.toLowerCase();
-  },
-
-  /**
    * Called when the user chooses a different sort method to the default.
    * @private
    */
   onSortMethodChanged_: function() {
+    this.sortMethod_ = this.$.sortMethod.value;
     this.filteredList_ =
         this.sortSiteGroupList_(this.filteredList_);
     // Force the iron-list to rerender its items, as the order has changed.
@@ -325,7 +319,7 @@ Polymer({
    */
   forceListUpdate_: function() {
     this.filteredList_ =
-        this.filterPopulatedList_(this.siteGroupMap, this.searchQuery_);
+        this.filterPopulatedList_(this.siteGroupMap, this.filter);
     this.$.allSitesList.fire('iron-resize');
   },
 
@@ -432,6 +426,7 @@ Polymer({
   onResetSettings_: function(e) {
     const contentSettingsTypes = this.getCategoryList();
     const index = this.actionMenuModel_.index;
+    this.browserProxy.recordAction(settings.AllSitesAction.RESET_PERMISSIONS);
     if (this.actionMenuModel_.item.etldPlus1 !=
         this.filteredList_[index].etldPlus1) {
       return;

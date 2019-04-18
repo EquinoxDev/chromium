@@ -887,6 +887,19 @@ void TemplateURLService::Shutdown() {
   web_data_service_ = nullptr;
 }
 
+void TemplateURLService::WaitUntilReadyToSync(base::OnceClosure done) {
+  DCHECK(!on_loaded_callback_for_sync_);
+
+  // We force a load here to allow remote updates to be processed, without
+  // waiting for the lazy load.
+  Load();
+
+  if (loaded_)
+    std::move(done).Run();
+  else
+    on_loaded_callback_for_sync_ = std::move(done);
+}
+
 syncer::SyncDataList TemplateURLService::GetAllSyncData(
     syncer::ModelType type) const {
   DCHECK_EQ(syncer::SEARCH_ENGINES, type);
@@ -1584,6 +1597,9 @@ void TemplateURLService::ChangeToLoadedState() {
       default_search_provider_source_);
   initial_default_search_provider_.reset();
 
+  if (on_loaded_callback_for_sync_)
+    std::move(on_loaded_callback_for_sync_).Run();
+
   on_loaded_callbacks_.Notify();
 }
 
@@ -1915,6 +1931,12 @@ bool TemplateURLService::ApplyDefaultSearchChangeNoMetrics(
     if (default_search_provider_) {
       TemplateURLData update_data(*data);
       update_data.sync_guid = default_search_provider_->sync_guid();
+
+      // Now that we are auto-updating the favicon_url as the user browses,
+      // respect the favicon_url entry in the database, instead of falling back
+      // to the one in the prepopulated list.
+      update_data.favicon_url = default_search_provider_->favicon_url();
+
       if (!default_search_provider_->safe_for_autoreplace()) {
         update_data.safe_for_autoreplace = false;
         update_data.SetKeyword(default_search_provider_->keyword());

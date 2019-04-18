@@ -26,6 +26,13 @@
 #error "This file requires ARC support."
 #endif
 
+// URLOpenerTest is parameterized on this enum to test with
+// enabled and disabled kExternalFilesLoadedInWebState feature flag.
+enum class ExternalFilesLoadedInWebStateFeature {
+  Disabled = 0,
+  Enabled,
+};
+
 @interface StubStartupInformation : NSObject <StartupInformation>
 @end
 @implementation StubStartupInformation
@@ -56,11 +63,6 @@
 @end
 
 class URLOpenerTest : public PlatformTest {
- protected:
-  void TearDown() override {
-    PlatformTest::TearDown();
-  }
-
  private:
   web::TestWebThreadBundle thread_bundle_;
 };
@@ -168,7 +170,17 @@ TEST_F(URLOpenerTest, HandleOpenURL) {
             else
               EXPECT_EQ(nil, startupInformation.startupParameters);
           } else if (result) {
-            EXPECT_EQ([params externalURL], [tabOpener url]);
+            if ([params completeURL].SchemeIsFile()) {
+              // External file:// URL will be loaded by WebState, which expects
+              // complete // file:// URL. chrome:// URL is expected to be
+              // displayed in the omnibox, and omnibox shows virtual URL.
+              EXPECT_EQ([params completeURL], [tabOpener url]);
+              EXPECT_EQ([params externalURL], [tabOpener virtualURL]);
+            } else {
+              // External chromium-x-callback:// URL will be loaded by
+              // WebState, which expects externalURL URL.
+              EXPECT_EQ([params externalURL], [tabOpener url]);
+            }
             tabOpener.completionBlock();
             EXPECT_EQ(nil, startupInformation.startupParameters);
           }

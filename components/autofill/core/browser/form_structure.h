@@ -147,7 +147,7 @@ class FormStructure {
 
   // Sets the field types to be those set for |cached_form|.
   void RetrieveFromCache(const FormStructure& cached_form,
-                         const bool apply_is_autofilled,
+                         const bool should_keep_cached_value,
                          const bool only_server_and_autofill_state);
 
   // Logs quality metrics for |this|, which should be a user-submitted form.
@@ -193,10 +193,6 @@ class FormStructure {
   // are accepted (e.g., <input type="text" autocomplete="region">).
   // All returned values are standardized to upper case.
   std::set<base::string16> PossibleValues(ServerFieldType type);
-
-  // Gets the form's current value for |type|. For example, it may return
-  // the contents of a text input or the currently selected <option>.
-  base::string16 GetUniqueValue(HtmlFieldType type) const;
 
   // Rationalize phone number fields in a given section, that is only fill
   // the fields that are considered composing a first complete phone number.
@@ -329,6 +325,14 @@ class FormStructure {
 
   void set_page_language(std::string language) {
     page_language_ = std::move(language);
+  }
+
+  bool value_from_dynamic_change_form() const {
+    return value_from_dynamic_change_form_;
+  }
+
+  void set_value_from_dynamic_change_form(bool v) {
+    value_from_dynamic_change_form_ = v;
   }
 
  private:
@@ -586,6 +590,8 @@ class FormStructure {
   // True iff queries encoded from this form structure should include rich
   // form/field metadata.
   bool is_rich_query_enabled_ = false;
+
+  bool value_from_dynamic_change_form_ = false;
 
   DISALLOW_COPY_AND_ASSIGN(FormStructure);
 };

@@ -7,8 +7,8 @@
 
 #include "third_party/blink/renderer/core/core_export.h"
 #include "third_party/blink/renderer/core/page/scrolling/fragment_anchor.h"
+#include "third_party/blink/renderer/core/scroll/scroll_types.h"
 #include "third_party/blink/renderer/platform/heap/handle.h"
-#include "third_party/blink/renderer/platform/scroll/scroll_types.h"
 
 namespace blink {
 
@@ -56,6 +56,9 @@ class CORE_EXPORT ElementFragmentAnchor final : public FragmentAnchor {
   void Trace(blink::Visitor*) override;
 
  private:
+  FRIEND_TEST_ALL_PREFIXES(ElementFragmentAnchorTest,
+                           AnchorRemovedBeforeBeginFrameCrash);
+
   void ApplyFocusIfNeeded();
 
   WeakMember<Node> anchor_node_;

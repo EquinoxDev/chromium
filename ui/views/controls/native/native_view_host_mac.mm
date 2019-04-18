@@ -30,17 +30,6 @@ void EnsureNativeViewHasNoChildWidgets(NSView* native_view) {
   }
 }
 
-AXPlatformNodeCocoa* ClosestPlatformAncestorNode(views::View* view) {
-  do {
-    gfx::NativeViewAccessible accessible = view->GetNativeViewAccessible();
-    if ([accessible isKindOfClass:[AXPlatformNodeCocoa class]]) {
-      return NSAccessibilityUnignoredAncestor(accessible);
-    }
-    view = view->parent();
-  } while (view);
-  return nil;
-}
-
 }  // namespace
 
 NativeViewHostMac::NativeViewHostMac(NativeViewHost* host) : host_(host) {
@@ -81,27 +70,6 @@ uint64_t NativeViewHostMac::GetNSViewId() const {
   return 0;
 }
 
-id NativeViewHostMac::GetAccessibilityElement() const {
-  // Find the closest ancestor view that participates in the views toolkit
-  // accessibility hierarchy and set its element as the native view's parent.
-  // This is necessary because a closer ancestor might already be attaching
-  // to the NSView/content hierarchy.
-  // For example, web content is currently embedded into the views hierarchy
-  // roughly like this:
-  // BrowserView (views)
-  // |_  WebView (views)
-  //   |_  NativeViewHost (views)
-  //     |_  WebContentView (Cocoa, is |native_view_| in this scenario,
-  //         |               accessibility ignored).
-  //         |_ RenderWidgetHostView (Cocoa)
-  // WebView specifies either the RenderWidgetHostView or the native view as
-  // its accessibility element. That means that if we were to set it as
-  // |native_view_|'s parent, the RenderWidgetHostView would be its own
-  // accessibility parent! Instead, we want to find the browser view and
-  // attach to its node.
-  return ClosestPlatformAncestorNode(host_->parent());
-}
-
 void NativeViewHostMac::OnHostableViewDestroying() {
   DCHECK(native_view_hostable_);
   host_->NativeViewDestroyed();
@@ -122,15 +90,22 @@ void NativeViewHostMac::AttachNativeView() {
   EnsureNativeViewHasNoChildWidgets(native_view_);
 
   auto* bridge_host = GetBridgedNativeWidgetHost();
-  DCHECK(bridge_host);
+  CHECK(bridge_host);
+
+  // TODO(https://crbug.com/933679): This is lifted out the ViewsHostableAttach
+  // call below because of crashes being observed in the field.
+  NSView* superview =
+      bridge_host->native_widget_mac()->GetNativeView().GetNativeNSView();
+  [superview addSubview:native_view_];
 
   if (native_view_hostable_) {
     native_view_hostable_->ViewsHostableAttach(this);
-  } else {
-    NSView* superview =
-        bridge_host->native_widget_mac()->GetNativeView().GetNativeNSView();
-    [superview addSubview:native_view_];
+    // Initially set the parent to match the views::Views parent. Note that this
+    // may be overridden (e.g, by views::WebView).
+    native_view_hostable_->ViewsHostableSetParentAccessible(
+        host_->parent()->GetNativeViewAccessible());
   }
+
   bridge_host->SetAssociationForView(host_, native_view_);
 }
 
@@ -187,6 +162,11 @@ bool NativeViewHostMac::SetCustomMask(std::unique_ptr<ui::LayerOwner> mask) {
 
 void NativeViewHostMac::SetHitTestTopInset(int top_inset) {
   NOTIMPLEMENTED();
+}
+
+int NativeViewHostMac::GetHitTestTopInset() const {
+  NOTIMPLEMENTED();
+  return 0;
 }
 
 void NativeViewHostMac::InstallClip(int x, int y, int w, int h) {
@@ -251,7 +231,10 @@ gfx::NativeView NativeViewHostMac::GetNativeViewContainer() const {
 }
 
 gfx::NativeViewAccessible NativeViewHostMac::GetNativeViewAccessible() {
-  return nullptr;
+  if (native_view_hostable_)
+    return native_view_hostable_->ViewsHostableGetAccessibilityElement();
+  else
+    return native_view_;
 }
 
 gfx::NativeCursor NativeViewHostMac::GetCursor(int x, int y) {
@@ -275,7 +258,17 @@ void NativeViewHostMac::SetVisible(bool visible) {
     [native_view_ setHidden:!visible];
 }
 
-void NativeViewHostMac::SetParentAccessible(gfx::NativeViewAccessible) {}
+void NativeViewHostMac::SetParentAccessible(
+    gfx::NativeViewAccessible parent_accessibility_element) {
+  if (native_view_hostable_) {
+    native_view_hostable_->ViewsHostableSetParentAccessible(
+        parent_accessibility_element);
+  } else {
+    // It is not easy to force a generic NSView to return a different
+    // accessibility parent. Fortunately, this interface is only ever used
+    // in practice to host a WebContentsView.
+  }
+}
 
 // static
 NativeViewHostWrapper* NativeViewHostWrapper::CreateWrapper(

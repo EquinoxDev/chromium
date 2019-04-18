@@ -91,6 +91,10 @@ WebURL WebDocumentLoaderImpl::UnreachableURL() const {
   return DocumentLoader::UnreachableURL();
 }
 
+int WebDocumentLoaderImpl::ErrorCode() const {
+  return DocumentLoader::ErrorCode();
+}
+
 void WebDocumentLoaderImpl::RedirectChain(WebVector<WebURL>& result) const {
   result.Assign(redirect_chain_);
 }
@@ -158,19 +162,16 @@ void WebDocumentLoaderImpl::ResumeParser() {
 }
 
 bool WebDocumentLoaderImpl::HasBeenLoadedAsWebArchive() const {
-  return Fetcher()->Archive() ||
-         (Fetcher()->ArchiveLoadResult() != mojom::MHTMLLoadResult::kSuccess);
+  return archive_ || (archive_load_result_ != mojom::MHTMLLoadResult::kSuccess);
 }
 
 WebArchiveInfo WebDocumentLoaderImpl::GetArchiveInfo() const {
-  const MHTMLArchive* archive = Fetcher()->Archive();
-  const mojom::MHTMLLoadResult load_result = Fetcher()->ArchiveLoadResult();
-
-  if (archive) {
-    DCHECK(archive->MainResource());
-    return {load_result, archive->MainResource()->Url(), archive->Date()};
+  if (archive_) {
+    DCHECK(archive_->MainResource());
+    return {archive_load_result_, archive_->MainResource()->Url(),
+            archive_->Date()};
   }
-  return {load_result, WebURL(), base::Time()};
+  return {archive_load_result_, WebURL(), base::Time()};
 }
 
 bool WebDocumentLoaderImpl::HadUserGesture() const {

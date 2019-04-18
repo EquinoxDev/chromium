@@ -16,6 +16,7 @@
 #include "third_party/skia/include/core/SkCanvas.h"
 #include "third_party/skia/include/core/SkRegion.h"
 #include "third_party/skia/include/core/SkSerialProcs.h"
+#include "third_party/skia/include/gpu/GrContext.h"
 
 namespace cc {
 namespace {
@@ -329,7 +330,7 @@ PaintOp::SerializeOptions::SerializeOptions(
     ClientPaintCache* paint_cache,
     SkCanvas* canvas,
     SkStrikeServer* strike_server,
-    SkColorSpace* color_space,
+    sk_sp<SkColorSpace> color_space,
     bool can_use_lcd_text,
     bool context_supports_distance_field_text,
     int max_texture_size,
@@ -340,7 +341,7 @@ PaintOp::SerializeOptions::SerializeOptions(
       paint_cache(paint_cache),
       canvas(canvas),
       strike_server(strike_server),
-      color_space(color_space),
+      color_space(std::move(color_space)),
       can_use_lcd_text(can_use_lcd_text),
       context_supports_distance_field_text(
           context_supports_distance_field_text),
@@ -351,6 +352,7 @@ PaintOp::SerializeOptions::SerializeOptions(
 PaintOp::SerializeOptions::SerializeOptions(const SerializeOptions&) = default;
 PaintOp::SerializeOptions& PaintOp::SerializeOptions::operator=(
     const SerializeOptions&) = default;
+PaintOp::SerializeOptions::~SerializeOptions() = default;
 
 PaintOp::DeserializeOptions::DeserializeOptions(
     TransferCacheDeserializeHelper* transfer_cache,
@@ -2244,7 +2246,7 @@ PaintOpBuffer::~PaintOpBuffer() {
   Reset();
 }
 
-void PaintOpBuffer::operator=(PaintOpBuffer&& other) {
+PaintOpBuffer& PaintOpBuffer::operator=(PaintOpBuffer&& other) {
   data_ = std::move(other.data_);
   used_ = other.used_;
   reserved_ = other.reserved_;
@@ -2259,6 +2261,7 @@ void PaintOpBuffer::operator=(PaintOpBuffer&& other) {
   other.used_ = 0;
   other.op_count_ = 0;
   other.reserved_ = 0;
+  return *this;
 }
 
 void PaintOpBuffer::Reset() {
@@ -2426,9 +2429,10 @@ void PaintOpBuffer::Playback(SkCanvas* canvas,
 
     if (op->IsPaintOpWithFlags()) {
       const auto* flags_op = static_cast<const PaintOpWithFlags*>(op);
+      auto* context = canvas->getGrContext();
       const ScopedRasterFlags scoped_flags(
           &flags_op->flags, new_params.image_provider, canvas->getTotalMatrix(),
-          iter.alpha());
+          context ? context->maxTextureSize() : 0, iter.alpha());
       if (const auto* raster_flags = scoped_flags.flags())
         flags_op->RasterWithFlags(canvas, raster_flags, new_params);
     } else {

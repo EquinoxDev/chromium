@@ -30,6 +30,8 @@ class MockTtsController : public TtsController {
 
   void Stop() override {}
 
+  void Stop(const GURL& source_url) override {}
+
   void Pause() override {}
 
   void Resume() override {}
@@ -56,7 +58,7 @@ class MockTtsController : public TtsController {
 
   TtsEngineDelegate* GetTtsEngineDelegate() override { return nullptr; }
 
-  void SetTtsPlatform(TtsPlatform* tts_platform) override{};
+  void SetTtsPlatform(TtsPlatform* tts_platform) override {}
 
   int QueueSize() override { return 0; }
 

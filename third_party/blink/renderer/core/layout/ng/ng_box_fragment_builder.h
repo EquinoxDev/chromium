@@ -73,6 +73,7 @@ class CORE_EXPORT NGBoxFragmentBuilder final
     borders_ = border;
     return *this;
   }
+  const NGBoxStrut& Borders() const { return borders_; }
   NGBoxFragmentBuilder& SetPadding(const NGBoxStrut& padding) {
     DCHECK_NE(BoxType(), NGPhysicalFragment::kInlineBox);
     padding_ = padding;
@@ -85,6 +86,7 @@ class CORE_EXPORT NGBoxFragmentBuilder final
     padding_ = NGBoxStrut(padding, IsFlippedLinesWritingMode(GetWritingMode()));
     return *this;
   }
+  const NGBoxStrut& Padding() const { return padding_; }
 
   // Remove all children.
   void RemoveChildren();

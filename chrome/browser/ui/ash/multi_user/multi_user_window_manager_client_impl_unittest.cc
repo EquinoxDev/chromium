@@ -38,7 +38,6 @@
 #include "chrome/browser/chromeos/profiles/profile_helper.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
 #include "chrome/browser/chromeos/settings/device_settings_service.h"
-#include "chrome/browser/chromeos/settings/stub_install_attributes.h"
 #include "chrome/browser/ui/ash/chrome_new_window_client.h"
 #include "chrome/browser/ui/ash/multi_user/multi_user_util.h"
 #include "chrome/browser/ui/ash/multi_user/multi_user_window_manager_client.h"
@@ -56,6 +55,7 @@
 #include "chrome/test/base/testing_browser_process.h"
 #include "chrome/test/base/testing_profile.h"
 #include "chrome/test/base/testing_profile_manager.h"
+#include "chromeos/tpm/stub_install_attributes.h"
 #include "components/account_id/account_id.h"
 #include "components/user_manager/scoped_user_manager.h"
 #include "components/user_manager/user_info.h"
@@ -826,6 +826,27 @@ TEST_F(MultiUserWindowManagerClientImplTest, TransientWindows) {
   ::wm::RemoveTransientChild(window(7), window(9));
 }
 
+// Verifies duplicate observers are not added for transient dialog windows.
+// https://crbug.com/937333
+TEST_F(MultiUserWindowManagerClientImplTest, SetWindowOwnerOnTransientDialog) {
+  SetUpForThisManyWindows(2);
+  aura::Window* parent = window(0);
+  aura::Window* transient = window(1);
+  const AccountId account_id(AccountId::FromUserEmail("A"));
+  multi_user_window_manager_client()->SetWindowOwner(parent, account_id);
+
+  // Simulate chrome::ShowWebDialog() showing a transient dialog, which calls
+  // SetWindowOwner() on the transient.
+  ::wm::AddTransientChild(parent, transient);
+  multi_user_window_manager_client()->SetWindowOwner(transient, account_id);
+
+  // Both windows are shown and owned by user A.
+  EXPECT_EQ("S[A], S[A]", GetStatus());
+
+  // Cleanup.
+  ::wm::RemoveTransientChild(parent, transient);
+}
+
 // Test that the initial visibility state gets remembered.
 TEST_F(MultiUserWindowManagerClientImplTest, PreserveInitialVisibility) {
   SetUpForThisManyWindows(4);
@@ -1437,17 +1458,24 @@ TEST_F(MultiUserWindowManagerClientImplTest, TeleportedWindowAvatarProperty) {
 
   SwitchActiveUser(user1);
 
-  // Window #0 has no kAvatarIconKey property before teloporting.
-  EXPECT_FALSE(window(0)->GetProperty(aura::client::kAvatarIconKey));
+  // This ternary doesn't make a lot of sense because the windows in this
+  // AshTest aren't created via the window service, but it's necessary to mirror
+  // the code in MultiUserWindowManagerClientImpl, where the content window's
+  // root window is the Ash host window.
+  aura::Window* property_window =
+      features::IsUsingWindowService() ? window(0)->GetRootWindow() : window(0);
+
+  // Window #0 has no kAvatarIconKey property before teleporting.
+  EXPECT_FALSE(property_window->GetProperty(aura::client::kAvatarIconKey));
 
   // Teleport window #0 to user2 and kAvatarIconKey property is present.
   multi_user_window_manager_client()->ShowWindowForUser(window(0), user2);
-  EXPECT_TRUE(window(0)->GetProperty(aura::client::kAvatarIconKey));
+  EXPECT_TRUE(property_window->GetProperty(aura::client::kAvatarIconKey));
 
-  // Teloport window #0 back to its owner (user1) and kAvatarIconKey property is
+  // Teleport window #0 back to its owner (user1) and kAvatarIconKey property is
   // gone.
   multi_user_window_manager_client()->ShowWindowForUser(window(0), user1);
-  EXPECT_FALSE(window(0)->GetProperty(aura::client::kAvatarIconKey));
+  EXPECT_FALSE(property_window->GetProperty(aura::client::kAvatarIconKey));
 }
 
 // Tests that the window order is preserved when switching between users. Also

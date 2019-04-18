@@ -68,6 +68,18 @@ class CORE_EXPORT NGBlockLayoutAlgorithm
   scoped_refptr<const NGLayoutResult> Layout() override;
 
  private:
+  NOINLINE scoped_refptr<const NGLayoutResult>
+  LayoutWithInlineChildLayoutContext();
+
+  inline scoped_refptr<const NGLayoutResult> Layout(
+      NGInlineChildLayoutContext* inline_child_layout_context);
+
+  scoped_refptr<const NGLayoutResult> FinishLayout(
+      NGPreviousInflowPosition*,
+      NGLogicalSize border_box_size,
+      const NGBoxStrut& borders,
+      const NGBoxStrut& scrollbars);
+
   // Return the BFC block offset of this block.
   LayoutUnit BfcBlockOffset() const {
     // If we have resolved our BFC block offset, use that.
@@ -183,6 +195,7 @@ class CORE_EXPORT NGBlockLayoutAlgorithm
       NGLayoutInputNode child,
       const NGBreakToken* child_break_token,
       NGPreviousInflowPosition*,
+      NGInlineChildLayoutContext*,
       scoped_refptr<const NGInlineBreakToken>* previous_inline_break_token);
 
   bool FinishInflow(
@@ -196,6 +209,7 @@ class CORE_EXPORT NGBlockLayoutAlgorithm
 >>>>>>> 1edcc2f128d290860af09401391ae79df290b5f3
       NGInflowChildData*,
       NGPreviousInflowPosition*,
+      NGInlineChildLayoutContext*,
       scoped_refptr<const NGInlineBreakToken>* previous_inline_break_token);
 
   // Return the amount of block space available in the current fragmentainer
@@ -300,8 +314,6 @@ class CORE_EXPORT NGBlockLayoutAlgorithm
   NGBoxStrut border_padding_;
   NGBoxStrut border_scrollbar_padding_;
   LayoutUnit intrinsic_block_size_;
-
-  NGInlineChildLayoutContext inline_child_layout_context_;
 
   // The line box index at which we ran out of space. This where we'll actually
   // end up breaking, unless we determine that we should break earlier in order
